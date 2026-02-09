@@ -39,8 +39,19 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
     if (card.type === 'Herói') {
       const existingHeroes = deck.filter(c => c.type === 'Herói');
       if (existingHeroes.length > 0) {
-        // Get the "Identity" (First word of the name)
-        const getIdentity = (name: string) => name.split(/[\s-]/)[0];
+        
+        // Helper to determine Hero Identity
+        const getIdentity = (name: string) => {
+          const n = name.toLowerCase();
+          // Regras Específicas
+          if (n.includes("mahina")) return "Mahina";
+          if (n.includes("otto") || n.includes("asmonious")) return "Asmonious";
+          if (n.includes("vellret")) return "Vellret";
+          
+          // Padrão: Primeira palavra
+          return name.split(/[\s-]/)[0];
+        };
+
         const currentIdentity = getIdentity(existingHeroes[0].name);
         const newIdentity = getIdentity(card.name);
         
@@ -371,7 +382,7 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
                 <div className="h-40 flex items-end gap-2 justify-center">
                   {[...Array(13)].map((_, i) => {
                     const count = stats.ctDistribution[i] || 0;
-                    const maxCount = Math.max(...Object.values(stats.ctDistribution), 1);
+                    const maxCount = Math.max(...(Object.values(stats.ctDistribution) as number[]), 1);
                     const height = (count / maxCount) * 100;
                     return (
                       <div key={i} className="flex flex-col items-center gap-2 group w-8">

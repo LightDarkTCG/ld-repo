@@ -12,7 +12,7 @@ import { CardData, ArchetypeData } from './types';
 
 // --- SUB-COMPONENTS ---
 
-const ArchetypeCard = ({ name, icon: Icon, imageUrl, color, description }: ArchetypeData) => (
+const ArchetypeCard: React.FC<ArchetypeData> = ({ name, icon: Icon, imageUrl, color, description }) => (
   <div className="bg-slate-900 border border-slate-800 p-4 rounded-lg hover:border-slate-600 transition group relative overflow-hidden h-full flex flex-col">
     <div className={`absolute top-0 right-0 p-2 opacity-5 group-hover:opacity-10 transition ${color || ''}`}>
       {imageUrl ? (
