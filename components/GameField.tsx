@@ -27,7 +27,7 @@ const zones: ZoneInfo[] = [
   {
     id: 'effect',
     title: 'Área Equipamento / Efeitos',
-    description: 'Máximo de 6 cartas na retaguarda. Aqui ficam Equipamentos acoplados aos combatentes à frente e cartas de Efeito contínuo.',
+    description: 'Máximo de 6 cartas na retaguarda. Aqui ficam Equipamentos e cartas de Efeito contínuo. É possível usar vários equipamentos no mesmo combatente/herói usando a mesma área.',
     type: 'effect',
     color: 'bg-blue-600',
     icon: Shield
@@ -51,7 +51,7 @@ const zones: ZoneInfo[] = [
   {
     id: 'main-deck',
     title: 'Deck Principal',
-    description: 'Seu baralho de compras. Mínimo de 40 cartas contendo Combatentes, Efeitos e Equipamentos.',
+    description: 'Seu baralho principal, contendo Combatentes, Efeitos e Equipamentos. O deck total contando com Heróis deve ter entre 30 a 35 cartas sem repetição entre elas.',
     type: 'deck',
     color: 'bg-slate-200 text-slate-900',
     icon: Layers
@@ -59,7 +59,7 @@ const zones: ZoneInfo[] = [
   {
     id: 'hero-deck',
     title: 'Deck de Heróis',
-    description: 'Baralho separado contendo apenas seus Heróis. Você escolhe um para começar ou invocar.',
+    description: 'Baralho separado contendo apenas seus Heróis. É possível usar apenas um Herói por deck, mas diversas variantes deles. exemplo Jenos Caído e Jenos Senhor do Macroverso no mesmo deck.',
     type: 'hero-deck',
     color: 'bg-amber-500 text-slate-900',
     icon: Crown
@@ -67,7 +67,7 @@ const zones: ZoneInfo[] = [
   {
     id: 'cost-mod',
     title: 'Modificadores de Custo',
-    description: 'Efeitos podem Aumentar (seta para cima) ou Reduzir (seta para baixo) o Custo/Categoria (CT) das cartas temporariamente.',
+    description: 'O custo de suas cartas pode mudar de acordo com alguns efeitos de cartas, aumentando ou diminuindo.',
     type: 'modifiers',
     color: 'bg-yellow-500 text-slate-900',
     icon: ArrowDown
@@ -75,7 +75,7 @@ const zones: ZoneInfo[] = [
   {
     id: 'deck-damage',
     title: 'Dano no Deck',
-    description: 'Certos efeitos "queimam" o deck do oponente, enviando cartas do topo direto para a Zona Morta.',
+    description: 'Certos efeitos "queimam" o deck do oponente, quando um valor de dano é dado ao deck, todos os combatentes com vida igual ou menor a esse dano morrem automaticamente ao serem invocados.',
     type: 'modifiers',
     color: 'bg-orange-600',
     icon: Flame

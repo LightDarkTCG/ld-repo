@@ -1,8 +1,9 @@
 import React, { useState, useMemo } from 'react';
-import { X, Search, Filter, Save, Download, Trash2, Plus, Minus, AlertTriangle, CheckCircle, BarChart3, Copy } from 'lucide-react';
-import { CardData, CardType } from '../types';
+import { X, Search, Save, Download, Trash2, Plus, Minus, AlertTriangle, CheckCircle, BarChart3, Copy, Eye } from 'lucide-react';
+import { CardData } from '../types';
 import { allCards, collectionsList, archetypesList } from '../data';
 import { Card } from './Card';
+import { CardDetailModal } from './CardDetailModal';
 
 interface DeckBuilderModalProps {
   isOpen: boolean;
@@ -14,11 +15,14 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
   const [searchTerm, setSearchTerm] = useState("");
   const [importCode, setImportCode] = useState("");
   const [activeTab, setActiveTab] = useState<'build' | 'stats' | 'save'>('build');
+  const [inspectCard, setInspectCard] = useState<CardData | null>(null);
   const [filters, setFilters] = useState({
     type: "Todos",
     archetype: "Todos",
     collection: "Todos",
-    ct: "Todos"
+    ct: "Todos",
+    minAtk: "",
+    minDef: ""
   });
 
   // --- Logic ---
@@ -114,7 +118,12 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
       Efeito: 0,
       Total: deck.length
     };
+    
+    // Initialize buckets 0 to 12 (12 will be 12+)
     const ctDistribution: Record<number, number> = {};
+    for (let i = 0; i <= 12; i++) {
+      ctDistribution[i] = 0;
+    }
 
     deck.forEach(card => {
       // Count Types
@@ -124,7 +133,8 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
       else if (card.type === 'Efeito') counts.Efeito++;
 
       // Count CT
-      const ct = card.ct || 0;
+      let ct = card.ct || 0;
+      if (ct > 12) ct = 12; // Group 12+
       ctDistribution[ct] = (ctDistribution[ct] || 0) + 1;
     });
 
@@ -136,13 +146,20 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
   // --- Filtered Pool ---
 
   const filteredPool = allCards.filter(card => {
-    const matchesSearch = card.name.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesSearch = card.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                          card.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                          card.description.toLowerCase().includes(searchTerm.toLowerCase());
+    
     const matchesType = filters.type === "Todos" || card.type === filters.type;
     const matchesArch = filters.archetype === "Todos" || card.archetype.includes(filters.archetype);
     const matchesColl = filters.collection === "Todos" || card.collection === filters.collection;
     const matchesCt = filters.ct === "Todos" || card.ct === parseInt(filters.ct);
     
-    return matchesSearch && matchesType && matchesArch && matchesColl && matchesCt;
+    // Changed to exact match (===) instead of >=
+    const matchesAtk = filters.minAtk === "" || (card.attack !== undefined && card.attack === parseInt(filters.minAtk));
+    const matchesDef = filters.minDef === "" || (card.defense !== undefined && card.defense === parseInt(filters.minDef));
+    
+    return matchesSearch && matchesType && matchesArch && matchesColl && matchesCt && matchesAtk && matchesDef;
   });
 
   if (!isOpen) return null;
@@ -150,6 +167,13 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
   return (
     <div className="fixed inset-0 z-[100] flex flex-col bg-[#0a0a0c] animate-in fade-in zoom-in duration-200">
       
+      {/* Inspect Modal */}
+      <CardDetailModal 
+        card={inspectCard} 
+        onClose={() => setInspectCard(null)} 
+        onSelectRelated={(related) => setInspectCard(related)}
+      />
+
       {/* Header */}
       <div className="bg-slate-900 border-b border-slate-800 p-4 flex justify-between items-center shadow-lg">
         <div className="flex items-center gap-4">
@@ -201,15 +225,16 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={16} />
                 <input 
                   type="text" 
-                  placeholder="Buscar carta..." 
+                  placeholder="Buscar carta (Nome, Descrição, Código)..." 
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="w-full bg-slate-900 border border-slate-700 rounded-lg py-2 pl-10 pr-4 text-white text-sm focus:border-purple-500 outline-none"
                 />
               </div>
-              <div className="flex gap-2 overflow-x-auto pb-1 custom-scrollbar">
+              
+              <div className="flex flex-wrap gap-2">
                 <select 
-                  className="bg-slate-900 text-xs text-white border border-slate-700 rounded px-2 py-1 outline-none"
+                  className="bg-slate-900 text-xs text-white border border-slate-700 rounded px-2 py-1 outline-none flex-1 min-w-[100px]"
                   value={filters.type} onChange={(e) => setFilters({...filters, type: e.target.value})}
                 >
                   <option value="Todos">Tipo: Todos</option>
@@ -218,20 +243,48 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
                   <option value="Equipamento">Equipamento</option>
                   <option value="Efeito">Efeito</option>
                 </select>
+
                 <select 
-                  className="bg-slate-900 text-xs text-white border border-slate-700 rounded px-2 py-1 outline-none"
+                  className="bg-slate-900 text-xs text-white border border-slate-700 rounded px-2 py-1 outline-none flex-1 min-w-[120px]"
+                  value={filters.archetype} onChange={(e) => setFilters({...filters, archetype: e.target.value})}
+                >
+                  <option value="Todos">Arq: Todos</option>
+                  {archetypesList.map(a => <option key={a.name} value={a.name}>{a.name}</option>)}
+                </select>
+
+                <select 
+                  className="bg-slate-900 text-xs text-white border border-slate-700 rounded px-2 py-1 outline-none w-20"
                   value={filters.ct} onChange={(e) => setFilters({...filters, ct: e.target.value})}
                 >
-                  <option value="Todos">CT: Todos</option>
+                  <option value="Todos">CT</option>
                   {[...Array(21)].map((_, i) => <option key={i} value={i}>{i}</option>)}
                 </select>
-                <select 
-                  className="bg-slate-900 text-xs text-white border border-slate-700 rounded px-2 py-1 outline-none w-32"
+              </div>
+
+              <div className="flex gap-2">
+                 <select 
+                  className="bg-slate-900 text-xs text-white border border-slate-700 rounded px-2 py-1 outline-none flex-1"
                   value={filters.collection} onChange={(e) => setFilters({...filters, collection: e.target.value})}
                 >
                   <option value="Todos">Coleção: Todas</option>
                   {collectionsList.map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
+
+                <input 
+                  type="number" 
+                  placeholder="ATK" 
+                  className="w-16 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs text-white focus:border-red-500 outline-none"
+                  value={filters.minAtk}
+                  onChange={(e) => setFilters({...filters, minAtk: e.target.value})}
+                />
+                
+                <input 
+                  type="number" 
+                  placeholder="VIDA" 
+                  className="w-16 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs text-white focus:border-blue-500 outline-none"
+                  value={filters.minDef}
+                  onChange={(e) => setFilters({...filters, minDef: e.target.value})}
+                />
               </div>
             </div>
 
@@ -243,22 +296,39 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
                   return (
                     <div 
                       key={idx} 
-                      onClick={() => !isInDeck && addToDeck(card)} 
-                      className={`cursor-pointer group relative ${isInDeck ? 'opacity-50 grayscale cursor-not-allowed' : ''}`}
+                      className={`cursor-pointer group relative ${isInDeck ? 'opacity-50' : ''}`}
                     >
-                      <div className="absolute top-2 right-2 z-10 opacity-0 group-hover:opacity-100 transition">
+                      <div className="absolute top-2 right-2 z-10 opacity-0 group-hover:opacity-100 transition flex flex-col gap-1">
+                         {/* Info Button */}
+                         <button 
+                           onClick={(e) => { e.stopPropagation(); setInspectCard(card); }}
+                           className="bg-blue-600 text-white rounded-full p-1 shadow-lg hover:scale-110 transition"
+                           title="Ver Detalhes"
+                         >
+                            <Eye size={16} />
+                         </button>
+                         {/* Add Button */}
                          {!isInDeck && (
-                           <div className="bg-green-600 text-white rounded-full p-1 shadow-lg">
+                           <button 
+                             onClick={() => addToDeck(card)}
+                             className="bg-green-600 text-white rounded-full p-1 shadow-lg hover:scale-110 transition"
+                             title="Adicionar ao Deck"
+                           >
                               <Plus size={16} />
-                           </div>
+                           </button>
                          )}
                       </div>
-                      <div className="pointer-events-none scale-[0.6] origin-top-left w-[170%] h-[170%] mb-[-70%] mr-[-70%]">
+                      
+                      <div 
+                        onClick={() => !isInDeck && addToDeck(card)}
+                        className={`pointer-events-none scale-[0.6] origin-top-left w-[170%] h-[170%] mb-[-70%] mr-[-70%] ${isInDeck ? 'grayscale' : ''}`}
+                      >
                          <Card {...card} />
                       </div>
+                      
                       {isInDeck && (
-                        <div className="absolute inset-0 flex items-center justify-center bg-black/50 backdrop-blur-[1px] rounded-xl">
-                          <CheckCircle className="text-green-500" size={32} />
+                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                          <CheckCircle className="text-green-500 drop-shadow-lg" size={32} />
                         </div>
                       )}
                     </div>
@@ -291,14 +361,27 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
                 ) : (
                   <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
                     {deck.map((card, idx) => (
-                      <div key={idx} onClick={() => removeFromDeck(idx)} className="cursor-pointer group relative hover:-translate-y-1 transition-transform">
-                        <div className="absolute -top-2 -right-2 z-10 opacity-0 group-hover:opacity-100 transition">
-                          <div className="bg-red-600 text-white rounded-full p-1 shadow-lg">
+                      <div key={idx} className="cursor-pointer group relative hover:-translate-y-1 transition-transform">
+                        <div className="absolute -top-2 -right-2 z-10 opacity-0 group-hover:opacity-100 transition flex gap-1">
+                          <button 
+                             onClick={(e) => { e.stopPropagation(); setInspectCard(card); }}
+                             className="bg-blue-600 text-white rounded-full p-1 shadow-lg hover:scale-110 transition"
+                             title="Ver Detalhes"
+                           >
+                              <Eye size={14} />
+                           </button>
+                          <button 
+                            onClick={() => removeFromDeck(idx)}
+                            className="bg-red-600 text-white rounded-full p-1 shadow-lg hover:scale-110 transition"
+                            title="Remover"
+                          >
                             <Minus size={14} />
-                          </div>
+                          </button>
                         </div>
                         {/* Mini Card Representation */}
-                        <div className={`rounded-lg border p-2 h-32 flex flex-col justify-between overflow-hidden relative ${
+                        <div 
+                          onClick={() => removeFromDeck(idx)}
+                          className={`rounded-lg border p-2 h-32 flex flex-col justify-between overflow-hidden relative ${
                           card.type === 'Herói' ? 'bg-red-950/50 border-red-800' :
                           card.type === 'Combatente' ? 'bg-blue-950/50 border-blue-800' :
                           card.type === 'Equipamento' ? 'bg-green-950/50 border-green-800' :
@@ -384,9 +467,11 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
                     const count = stats.ctDistribution[i] || 0;
                     const maxCount = Math.max(...(Object.values(stats.ctDistribution) as number[]), 1);
                     const height = (count / maxCount) * 100;
+                    const label = i === 12 ? '12+' : i.toString();
+
                     return (
-                      <div key={i} className="flex flex-col items-center gap-2 group w-8">
-                        <div className="relative w-full bg-slate-800 rounded-t-sm flex items-end justify-center group-hover:bg-slate-700 transition h-full">
+                      <div key={i} className="flex flex-col items-center gap-2 group w-8 h-full justify-end">
+                        <div className="relative w-full bg-slate-800 rounded-t-sm flex items-end justify-center group-hover:bg-slate-700 transition" style={{ height: '100%' }}>
                           <div 
                             className="w-full bg-indigo-500 opacity-80 hover:opacity-100 transition-all rounded-t-sm"
                             style={{ height: `${height}%` }}
@@ -395,14 +480,10 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
                             <span className="absolute -top-6 text-xs font-bold text-indigo-400">{count}</span>
                           )}
                         </div>
-                        <span className="text-xs text-slate-500 font-mono border-t border-slate-700 w-full text-center pt-1">{i}</span>
+                        <span className="text-xs text-slate-500 font-mono border-t border-slate-700 w-full text-center pt-1">{label}</span>
                       </div>
                     );
                   })}
-                  <div className="flex flex-col items-center gap-2 w-8">
-                     <span className="text-xs text-slate-600 mb-2">...</span>
-                     <span className="text-xs text-slate-500 font-mono pt-1">12+</span>
-                  </div>
                 </div>
               </div>
             </div>

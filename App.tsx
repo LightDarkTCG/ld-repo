@@ -2,11 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { 
   Zap, Heart, Layers, Hexagon, BookOpen,
   ShoppingCart, MapPin, ExternalLink, Search, Filter, Box,
-  Menu, X, ChevronRight, ChevronDown, ChevronUp, Scale, Ghost, Instagram, MessageCircle, Mail, Music
+  Menu, X, ChevronRight, ChevronDown, ChevronUp, Scale, Ghost, Instagram, MessageCircle, Mail, Music, Info,
+  Sword, Shield, Clock, AlertTriangle, Users, FileText, CheckCircle, Crown, Youtube
 } from 'lucide-react';
 import { Card } from './components/Card';
 import { GameField } from './components/GameField';
 import { DeckBuilderModal } from './components/DeckBuilderModal';
+import { CardDetailModal } from './components/CardDetailModal';
 import { allCards, archetypesList, collectionsList } from './data';
 import { CardData, ArchetypeData } from './types';
 
@@ -99,116 +101,284 @@ const GameLore = () => {
   )
 }
 
-const ManualModal = ({ isOpen, onClose }: { isOpen: boolean, onClose: () => void }) => {
-  if (!isOpen) return null;
+const TYPE_DEFINITIONS: Record<string, { text: string, colorName: string, colorClass: string }> = {
+  'Combatente': {
+    text: "As cartas combatentes são os ‘‘monstros’’ comuns e auxiliares de cada deck, eles não são classificados como heróis a não ser por efeitos únicos.",
+    colorName: "AZUL",
+    colorClass: "text-blue-500 border-blue-500"
+  },
+  'Herói': {
+    text: "As cartas de Heróis são o foco dos decks, eles inicialmente ficam fora do deck principal, em uma área própria e precisam de condições específicas para serem invocados (alguns heróis só podem ser invocados pelo seu próprio efeito seguindo suas regras enquanto outros dependem de cartas de invocação), não é permitido ter 2 heróis em campo ao mesmo tempo a não ser por efeitos específicos.",
+    colorName: "VERMELHO",
+    colorClass: "text-red-500 border-red-500"
+  },
+  'Efeito': {
+    text: "As cartas de efeitos são cartas de uso único ou contínuo que fazem uma ou mais ações, cada uma possui seu custo e condições de ativação que devem ser seguidas, uma carta de efeito após o término de seu uso é enviada a Zona Morta.",
+    colorName: "ROXO",
+    colorClass: "text-purple-500 border-purple-500"
+  },
+  'Equipamento': {
+    text: "As cartas de equipamentos alteram status, adicionam arquétipos ou geram algum efeito diferente ao combatente equipado. Elas se vinculam a um combatente/herói até que o mesmo deixe o campo, caso o equipado deixe o campo, equipamento vai para a Zona Morta, caso um herói seja substituído por outro, o equipamento passa para o novo herói, não há limites de equipamentos em um mesmo alvo, o que define a ordem de prioridade de efeito entre eles é a Categoria, quanto maior, mais prioridade.",
+    colorName: "VERDE",
+    colorClass: "text-green-500 border-green-500"
+  }
+};
+
+const TypeModal = ({ type, onClose }: { type: string | null, onClose: () => void }) => {
+  if (!type || !TYPE_DEFINITIONS[type]) return null;
+  const def = TYPE_DEFINITIONS[type];
+
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
-      <div className="bg-slate-900 w-full max-w-2xl max-h-[80vh] overflow-y-auto rounded-xl border border-slate-700 shadow-2xl relative animate-in fade-in zoom-in duration-200">
+    <div className="fixed inset-0 z-[90] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in zoom-in duration-200" onClick={onClose}>
+      <div className="bg-slate-900 border border-slate-700 p-8 rounded-xl max-w-lg w-full relative shadow-2xl" onClick={e => e.stopPropagation()}>
         <button onClick={onClose} className="absolute top-4 right-4 text-slate-400 hover:text-white">
           <X size={24} />
         </button>
-        <div className="p-8">
-          <h2 className="text-3xl font-bold text-white mb-6 flex items-center gap-2">
-            <BookOpen className="text-purple-500" /> Manual de Regras
-          </h2>
-          <div className="space-y-6">
-            <div className="bg-slate-800/50 p-4 rounded-lg border border-slate-700">
-              <h3 className="text-xl font-bold text-purple-400 mb-3">Conceitos Básicos</h3>
-              <ul className="list-disc pl-5 space-y-2 text-slate-300 text-sm">
-                <li><strong className="text-white">Vida:</strong> 20 Pontos.</li>
-                <li><strong className="text-white">Mana:</strong> 12 Pontos (fixo por rodada).</li>
-                <li><strong className="text-white">Objetivo:</strong> Reduzir a vida do oponente a 0.</li>
-              </ul>
-            </div>
-            <div className="bg-slate-800/50 p-4 rounded-lg border border-slate-700">
-              <h3 className="text-xl font-bold text-blue-400 mb-3">Zonas & Áreas</h3>
-              <div className="grid grid-cols-2 gap-4 text-sm text-slate-300">
-                <div>
-                  <strong className="text-white block">Zonas Permanentes:</strong>
-                  Deck Principal, Deck de Herói.
-                </div>
-                <div>
-                  <strong className="text-white block">Cemitérios:</strong>
-                  Zona Morta (descarte padrão), Zona Apagada (removido do jogo).
-                </div>
-                <div>
-                  <strong className="text-white block">Áreas de Campo:</strong>
-                  Área de Combatentes/Heróis (Frente), Área de Efeitos/Equipamentos (Retaguarda).
-                </div>
-              </div>
-            </div>
-            <div className="bg-slate-800/50 p-4 rounded-lg border border-slate-700">
-              <h3 className="text-xl font-bold text-green-400 mb-3">Mecânicas Especiais</h3>
-              <ul className="list-disc pl-5 space-y-2 text-slate-300 text-sm">
-                <li><strong className="text-white">CT (Custo/Categoria):</strong> Define o nível de poder e custo da carta. Pode ser Reduzido ou Aumentado por efeitos.</li>
-                <li><strong className="text-white">Runas:</strong> Recursos gerados em jogo para efeitos poderosos.</li>
-              </ul>
-            </div>
-          </div>
-          <button onClick={onClose} className="w-full mt-8 bg-purple-600 hover:bg-purple-500 text-white py-3 rounded-lg font-bold transition">
-            Entendi, Fechar Manual
-          </button>
+        <h3 className={`text-3xl font-black mb-4 uppercase tracking-wider ${def.colorClass.split(' ')[0]}`}>{type}</h3>
+        <p className="text-slate-300 leading-relaxed mb-6 text-justify">
+          {def.text}
+        </p>
+        <div className={`text-xs font-bold border py-2 px-4 rounded inline-block bg-slate-950 ${def.colorClass}`}>
+          COR DA CARTA: {def.colorName}
         </div>
       </div>
     </div>
   );
 };
 
-const CardDetailModal = ({ card, onClose }: { card: CardData | null, onClose: () => void }) => {
-  if (!card) return null;
+const ManualModal = ({ isOpen, onClose }: { isOpen: boolean, onClose: () => void }) => {
+  const [activeTab, setActiveTab] = useState<'intro' | 'cards' | 'turns' | 'advanced'>('intro');
+
+  if (!isOpen) return null;
+
+  const tabs = [
+    { id: 'intro', label: 'Básico', icon: Info },
+    { id: 'cards', label: 'Cartas', icon: Layers },
+    { id: 'turns', label: 'Turnos', icon: Clock },
+    { id: 'advanced', label: 'Regras', icon: Scale },
+  ];
 
   return (
-    <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md animate-in fade-in zoom-in duration-200">
-      <button 
-        onClick={onClose} 
-        className="absolute top-4 right-4 z-50 p-2 bg-slate-800 rounded-full text-slate-400 hover:text-white hover:bg-slate-700 transition"
-      >
-        <X size={24} />
-      </button>
-
-      <div className="w-full max-w-6xl max-h-[90vh] overflow-y-auto grid grid-cols-1 lg:grid-cols-2 gap-8 p-4 lg:p-8">
-        <div className="flex items-center justify-center">
-             <div className="scale-110 origin-center">
-                 <Card {...card} />
-             </div>
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md">
+      <div className="bg-[#0f0f13] w-full max-w-5xl h-[90vh] rounded-xl border border-slate-700 shadow-2xl flex flex-col relative overflow-hidden animate-in fade-in zoom-in duration-200">
+        
+        {/* Header */}
+        <div className="bg-slate-900 border-b border-slate-800 p-4 flex justify-between items-center shrink-0">
+          <h2 className="text-2xl font-black text-white flex items-center gap-2">
+            <BookOpen className="text-purple-500" /> MANUAL DE REGRAS
+          </h2>
+          <button onClick={onClose} className="text-slate-400 hover:text-white hover:bg-slate-800 p-2 rounded-full transition">
+            <X size={24} />
+          </button>
         </div>
-        <div className="flex flex-col gap-6 text-slate-200">
-          <div className="border-b border-slate-800 pb-4">
-            <div className="flex justify-between items-start mb-2">
-              <h2 className="text-4xl font-black text-white tracking-tight">{card.name}</h2>
-              <div className="flex items-center justify-center w-12 h-12 rounded-full border-2 border-yellow-600 bg-yellow-900/20 font-mono font-bold text-yellow-400 text-2xl shadow-lg" title="CT">
-                {card.ct}
+
+        {/* Tabs */}
+        <div className="flex bg-slate-950 border-b border-slate-800 overflow-x-auto shrink-0">
+          {tabs.map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id as any)}
+              className={`flex items-center gap-2 px-6 py-4 font-bold text-sm uppercase tracking-wider transition whitespace-nowrap border-b-2 ${activeTab === tab.id ? 'border-purple-500 text-white bg-slate-900' : 'border-transparent text-slate-500 hover:text-slate-300 hover:bg-slate-900/50'}`}
+            >
+              <tab.icon size={16} />
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto p-6 md:p-8 bg-[#0f0f13]">
+          <div className="max-w-4xl mx-auto space-y-8">
+            
+            {activeTab === 'intro' && (
+              <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-300">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="bg-slate-900/50 p-6 rounded-lg border border-slate-800">
+                    <h3 className="text-xl font-bold text-purple-400 mb-4 flex items-center gap-2"><CheckCircle size={20}/> O Que É Preciso</h3>
+                    <ul className="space-y-3 text-slate-300 text-sm leading-relaxed">
+                      <li><strong className="text-white">Deck:</strong> Composto por 30 a 35 cartas (contando com os heróis).</li>
+                      <li><strong className="text-white">Restrições:</strong> Não é permitido cartas repetidas. Apenas 1 Herói e suas variações no Deck.</li>
+                      <li><strong className="text-white">Opcionais:</strong> Campo físico, marcadores de status/vida/mana e dados D6/D20 para efeitos.</li>
+                    </ul>
+                  </div>
+                  <div className="bg-slate-900/50 p-6 rounded-lg border border-slate-800">
+                    <h3 className="text-xl font-bold text-blue-400 mb-4 flex items-center gap-2"><Info size={20}/> Status do Jogo</h3>
+                    <ul className="space-y-3 text-slate-300 text-sm leading-relaxed">
+                      <li><strong className="text-white">Vida:</strong> Padrão de 20 pontos. Se chegar a 0, você perde.</li>
+                      <li><strong className="text-white">Mana:</strong> Padrão de 12 pontos. Se renova no começo de cada rodada.</li>
+                      <li><strong className="text-white">Runas:</strong> Quantidade de recursos gerados usados para efeitos poderosos.</li>
+                      <li><strong className="text-white">Dano Deck:</strong> Dano acumulado nos combatentes do deck.</li>
+                    </ul>
+                  </div>
+                </div>
+
+                <div className="bg-slate-900/50 p-6 rounded-lg border border-slate-800">
+                  <h3 className="text-xl font-bold text-white mb-4">Estrutura do Jogo</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8 text-sm text-slate-300">
+                    <div>
+                      <p className="mb-2"><strong className="text-purple-400">Objetivo:</strong> Reduzir a vida do oponente a 0.</p>
+                      <p className="mb-2"><strong className="text-purple-400">Duelo:</strong> Melhor de 3 jogos (1x1 ou 2x2).</p>
+                      <p className="mb-2"><strong className="text-purple-400">Rodadas:</strong> Cada rodada possui 2 turnos (Ataque e Defesa) para cada jogador.</p>
+                    </div>
+                    <div>
+                      <p className="mb-2"><strong className="text-purple-400">Início:</strong> Pedra, Papel e Tesoura ou Dado para decidir quem começa.</p>
+                      <p className="mb-2"><strong className="text-purple-400">Mulligan:</strong> Jogadores compram 5 cartas. Podem retornar todas e comprar 5 novas uma única vez.</p>
+                      <p className="mb-2 text-yellow-500 italic">Nota: Na primeira rodada completa, nenhum combatente causa dano de combate.</p>
+                    </div>
+                  </div>
+                </div>
               </div>
-            </div>
-            <div className="flex flex-wrap gap-3 text-sm font-medium">
-              <span className="px-3 py-1 bg-slate-800 rounded text-slate-300 border border-slate-700">{card.type}</span>
-              <span className="px-3 py-1 bg-purple-900/30 rounded text-purple-300 border border-purple-800/50">{card.archetype}</span>
-              <span className="px-3 py-1 bg-blue-900/30 rounded text-blue-300 border border-blue-800/50 flex items-center gap-1">
-                 <Box size={14} /> {card.collection || "Coleção Base"}
-              </span>
-            </div>
-          </div>
+            )}
 
-          <div className="bg-slate-800/30 p-6 rounded-xl border border-slate-700/50">
-            <h4 className="text-sm font-bold text-slate-400 uppercase mb-3 flex items-center gap-2">
-              <Zap size={16} /> Efeito da Carta
-            </h4>
-            <p className="text-lg leading-relaxed text-slate-200 whitespace-pre-wrap">
-              {card.description}
-            </p>
-          </div>
+            {activeTab === 'cards' && (
+              <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-300">
+                <div className="bg-slate-900/50 p-6 rounded-lg border border-slate-800">
+                  <h3 className="text-xl font-bold text-white mb-4">Estrutura das Cartas</h3>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs text-slate-300">
+                    <div className="p-3 bg-black/30 rounded border border-slate-700">
+                      <strong className="block text-yellow-400 mb-1">Categoria (CT)</strong>
+                      Custo de invocação ou uso da carta.
+                    </div>
+                    <div className="p-3 bg-black/30 rounded border border-slate-700">
+                      <strong className="block text-white mb-1">Status</strong>
+                      Ataque e Vida (apenas Combatentes e Heróis).
+                    </div>
+                    <div className="p-3 bg-black/30 rounded border border-slate-700">
+                      <strong className="block text-purple-400 mb-1">Arquétipo</strong>
+                      Classificações que dão habilidades extras.
+                    </div>
+                    <div className="p-3 bg-black/30 rounded border border-slate-700">
+                      <strong className="block text-blue-400 mb-1">Tipo</strong>
+                      Ícone identificador (Espada, Escudo, etc).
+                    </div>
+                  </div>
+                </div>
 
-          <div className="bg-black/40 p-6 rounded-xl border-l-4 border-purple-600 italic">
-            <h4 className="text-sm font-bold text-purple-400 uppercase mb-3 flex items-center gap-2">
-              <BookOpen size={16} /> Lore
-            </h4>
-            <p className="text-slate-400 font-serif leading-relaxed">
-              "{card.lore || "Dados fragmentados... a história desta entidade perdeu-se no rasgo do Macroverso."}"
-            </p>
-          </div>
+                <div className="grid grid-cols-1 gap-4">
+                  <div className="flex gap-4 items-start bg-slate-900/50 p-4 rounded border-l-4 border-blue-500">
+                    <div className="bg-blue-900/20 p-3 rounded text-blue-500"><Sword size={24}/></div>
+                    <div>
+                      <h4 className="font-bold text-blue-400 text-lg">Combatente (Azul)</h4>
+                      <p className="text-slate-300 text-sm">Os "monstros" comuns e auxiliares. Não são classificados como Heróis a não ser por efeitos únicos.</p>
+                    </div>
+                  </div>
 
-          <div className="text-xs text-slate-600 font-mono mt-auto pt-4 border-t border-slate-800">
-            ID Código: {card.code}
+                  <div className="flex gap-4 items-start bg-slate-900/50 p-4 rounded border-l-4 border-red-500">
+                    <div className="bg-red-900/20 p-3 rounded text-red-500"><Crown size={24}/></div>
+                    <div>
+                      <h4 className="font-bold text-red-400 text-lg">Herói (Vermelho)</h4>
+                      <p className="text-slate-300 text-sm">Foco do deck. Ficam no Deck de Heróis (fora do principal). Precisam de condições específicas para invocar. Limite de 1 Herói em campo (salvo exceções).</p>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-4 items-start bg-slate-900/50 p-4 rounded border-l-4 border-green-500">
+                    <div className="bg-green-900/20 p-3 rounded text-green-500"><Scale size={24}/></div>
+                    <div>
+                      <h4 className="font-bold text-green-400 text-lg">Equipamento (Verde)</h4>
+                      <p className="text-slate-300 text-sm">Alteram status ou dão efeitos. Vinculados a um alvo. Se o alvo sai, o equipamento vai para a Zona Morta. Se um Herói é substituído, passa para o novo. Prioridade definida pelo CT (maior = mais prioridade).</p>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-4 items-start bg-slate-900/50 p-4 rounded border-l-4 border-purple-500">
+                    <div className="bg-purple-900/20 p-3 rounded text-purple-500"><Zap size={24}/></div>
+                    <div>
+                      <h4 className="font-bold text-purple-400 text-lg">Efeito (Roxo)</h4>
+                      <p className="text-slate-300 text-sm">Cartas de uso único ou contínuo. Possuem custo e condições. Após o uso, vão para a Zona Morta.</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'turns' && (
+              <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-300">
+                <div className="bg-slate-900/50 p-6 rounded-lg border border-slate-800">
+                  <h3 className="text-xl font-bold text-white mb-4">Estrutura da Rodada</h3>
+                  <p className="text-slate-300 text-sm mb-6">
+                    Formato de Ação e Reação. Quando o atacante joga, o defensor tem direito à Reação (pode usar cartas). Declarar ataque não é considerado ação padrão. Cartas usadas consomem Mana baseado no CT.
+                  </p>
+                  
+                  <div className="relative border-l-2 border-slate-700 ml-4 space-y-8 pb-4">
+                    <div className="relative pl-8">
+                      <div className="absolute -left-[9px] top-0 w-4 h-4 rounded-full bg-purple-500"></div>
+                      <h4 className="font-bold text-white">1. Início de Rodada</h4>
+                      <p className="text-xs text-slate-400">Recuperar Mana para 12. Comprar 1 Carta. Efeitos de Início de Turno ativam.</p>
+                    </div>
+                    <div className="relative pl-8">
+                      <div className="absolute -left-[9px] top-0 w-4 h-4 rounded-full bg-blue-500"></div>
+                      <h4 className="font-bold text-white">2. Turno de Ataque (Jogador 1)</h4>
+                      <p className="text-xs text-slate-400">J1 usa cartas -> J1 Ataca -> J2 Reage/Não Reage -> J1 Encerra turno.</p>
+                    </div>
+                    <div className="relative pl-8">
+                      <div className="absolute -left-[9px] top-0 w-4 h-4 rounded-full bg-red-500"></div>
+                      <h4 className="font-bold text-white">3. Turno de Ataque (Jogador 2)</h4>
+                      <p className="text-xs text-slate-400">J2 usa cartas -> J2 Ataca -> J1 Reage/Não Reage -> J2 Encerra turno.</p>
+                    </div>
+                    <div className="relative pl-8">
+                      <div className="absolute -left-[9px] top-0 w-4 h-4 rounded-full bg-green-500"></div>
+                      <h4 className="font-bold text-white">4. Fim da Rodada</h4>
+                      <p className="text-xs text-slate-400">Rodada encerra. Nova rodada inicia. Mana só recupera no começo da nova rodada.</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-slate-900/50 p-6 rounded-lg border border-slate-800">
+                  <h3 className="text-xl font-bold text-red-400 mb-4 flex items-center gap-2"><Sword size={20}/> Regras de Combate</h3>
+                  <ul className="list-disc pl-5 space-y-2 text-slate-300 text-sm">
+                    <li>Em seu turno, o jogador pode declarar ataque ao inimigo.</li>
+                    <li>Cada combatente pode atacar uma vez normalmente (exceto efeitos).</li>
+                    <li><strong>Alvos:</strong> Combatente Inimigo ou Jogador Inimigo (se não houver combatentes no campo).</li>
+                    <li><strong>Cálculo:</strong> Atacante usa seu ATAQUE contra a VIDA atual do alvo. O alvo perde vida igual ao ataque.</li>
+                    <li><strong>Morte:</strong> Vida reduzida a 0 = Enviado para Zona Morta.</li>
+                    <li><strong>Múltiplos Ataques:</strong> Um mesmo inimigo pode ser alvo de vários combatentes.</li>
+                    <li><strong>Invocação:</strong> Combatentes invocados após o primeiro ataque não podem realizar ataques no mesmo turno (exceto Heróis que se invocam).</li>
+                  </ul>
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'advanced' && (
+              <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-300">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="bg-slate-900/50 p-6 rounded-lg border border-slate-800">
+                    <h3 className="text-lg font-bold text-yellow-400 mb-3 flex items-center gap-2"><Layers size={18}/> Correntes (Chains)</h3>
+                    <p className="text-slate-300 text-sm leading-relaxed text-justify">
+                      Sequência de cartas jogadas em resposta umas às outras. A ordem de ativação é pela <strong>última carta usada</strong> (LIFO - Last In, First Out). A reação ativa antes da ação.
+                      <br/><br/>
+                      <strong>Prioridade de CT:</strong> Se duas cartas possuem o mesmo gatilho, a Categoria (CT) determina a prioridade. CTs mais altos têm precedência.
+                    </p>
+                  </div>
+                  
+                  <div className="bg-slate-900/50 p-6 rounded-lg border border-slate-800">
+                    <h3 className="text-lg font-bold text-purple-400 mb-3 flex items-center gap-2"><Ghost size={18}/> Sem Deck (Deck Out)</h3>
+                    <p className="text-slate-300 text-sm leading-relaxed text-justify">
+                      Caso o deck de um jogador acabe, ele <strong>não perde o jogo imediatamente</strong>. Em vez disso, ele perde <strong>3 de vida</strong> sempre que tiver que comprar uma carta e não puder.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="bg-slate-900/50 p-6 rounded-lg border border-slate-800">
+                  <h3 className="text-lg font-bold text-white mb-3 flex items-center gap-2"><FileText size={18}/> Observações Importantes</h3>
+                  <ul className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-slate-300">
+                    <li className="flex items-start gap-2"><span className="text-purple-500">•</span> Só é possível ter 1 Herói no Deck (mas quantas variações quiser).</li>
+                    <li className="flex items-start gap-2"><span className="text-purple-500">•</span> Vida 0 nem sempre significa fim de jogo (depende de efeitos).</li>
+                    <li className="flex items-start gap-2"><span className="text-purple-500">•</span> Se retirar/voltar carta ao Deck, embaralhe.</li>
+                    <li className="flex items-start gap-2"><span className="text-purple-500">•</span> Heróis retornam ao Deck de Heróis, não ao Principal.</li>
+                    <li className="flex items-start gap-2"><span className="text-purple-500">•</span> Vida (20) e Mana (12) podem ser ultrapassados por efeitos.</li>
+                    <li className="flex items-start gap-2"><span className="text-purple-500">•</span> Arquétipos Lúmen/Darkus podem evoluir com cartas específicas.</li>
+                    <li className="flex items-start gap-2"><span className="text-purple-500">•</span> Não há limite para cartas na mão.</li>
+                  </ul>
+                </div>
+
+                <div className="bg-gradient-to-r from-purple-900/20 to-blue-900/20 p-6 rounded-lg border border-slate-700">
+                  <h3 className="text-xl font-bold text-white mb-3 flex items-center gap-2"><Users size={20}/> Batalha de Duplas (2x2)</h3>
+                  <p className="text-slate-300 text-sm mb-2"><strong>Vida e Mana Compartilhadas:</strong> 40 de Vida e 24 de Mana para a dupla.</p>
+                  <p className="text-slate-300 text-sm mb-2"><strong>Dano Direto:</strong> Só é possível causar dano direto na vida da dupla caso ambos os campos inimigos estejam sem combatentes.</p>
+                  <p className="text-slate-300 text-sm"><strong>Estrutura:</strong> Segue a mesma do 1x1, mas a dupla compartilha o mesmo turno de ataque e defesa. Seus campos são separados.</p>
+                </div>
+              </div>
+            )}
+
           </div>
         </div>
       </div>
@@ -303,8 +473,10 @@ const CatalogModal = ({ isOpen, onClose }: { isOpen: boolean, onClose: () => voi
     const matchesArchetype = filters.archetype === "Todos" || card.archetype.includes(filters.archetype);
     const matchesCollection = filters.collection === "Todos" || (card.collection && card.collection === filters.collection);
     const matchesCt = filters.minCt === "" || card.ct === parseInt(filters.minCt);
-    const matchesAtk = filters.minAtk === "" || (card.attack !== undefined && card.attack >= parseInt(filters.minAtk));
-    const matchesDef = filters.minDef === "" || (card.defense !== undefined && card.defense >= parseInt(filters.minDef));
+    
+    // Changed to exact match (===) instead of >=
+    const matchesAtk = filters.minAtk === "" || (card.attack !== undefined && card.attack === parseInt(filters.minAtk));
+    const matchesDef = filters.minDef === "" || (card.defense !== undefined && card.defense === parseInt(filters.minDef));
 
     return matchesSearch && matchesType && matchesArchetype && matchesCollection && matchesCt && matchesAtk && matchesDef;
   });
@@ -313,7 +485,13 @@ const CatalogModal = ({ isOpen, onClose }: { isOpen: boolean, onClose: () => voi
 
   return (
     <div className="fixed inset-0 z-[70] flex flex-col bg-slate-950 animate-in fade-in duration-200">
-      <CardDetailModal card={selectedCard} onClose={() => setSelectedCard(null)} />
+      
+      {/* Use the new extracted component */}
+      <CardDetailModal 
+        card={selectedCard} 
+        onClose={() => setSelectedCard(null)} 
+        onSelectRelated={(related) => setSelectedCard(related)}
+      />
 
       <div className="bg-slate-900 border-b border-slate-800 p-4 flex justify-between items-center shadow-lg z-20">
         <div className="flex items-center gap-3">
@@ -394,7 +572,7 @@ const CatalogModal = ({ isOpen, onClose }: { isOpen: boolean, onClose: () => voi
              />
              <input 
                type="number" 
-               placeholder="DEF" 
+               placeholder="VIDA" 
                className="w-16 bg-slate-950 border border-slate-800 rounded-lg py-2 px-3 text-sm text-white focus:border-blue-500 outline-none"
                value={filters.minDef}
                onChange={(e) => setFilters({...filters, minDef: e.target.value})}
@@ -440,6 +618,7 @@ export default function App() {
   const [isBuyModalOpen, setIsBuyModalOpen] = useState(false);
   const [isCatalogOpen, setIsCatalogOpen] = useState(false);
   const [isDeckBuilderOpen, setIsDeckBuilderOpen] = useState(false);
+  const [selectedType, setSelectedType] = useState<string | null>(null);
   const [scrolled, setScrolled] = useState(false);
   const [currentVideoIndex, setCurrentVideoIndex] = useState(0);
   const [showcaseCards, setShowcaseCards] = useState<CardData[]>([]);
@@ -491,7 +670,7 @@ export default function App() {
     };
 
     rotateShowcase(); // Initial load
-    const interval = setInterval(rotateShowcase, 5000); // Rotate every 5 seconds
+    const interval = setInterval(rotateShowcase, 10000); // Rotate every 10 seconds
 
     return () => clearInterval(interval);
   }, []);
@@ -503,6 +682,7 @@ export default function App() {
       <BuyModal isOpen={isBuyModalOpen} onClose={() => setIsBuyModalOpen(false)} />
       <CatalogModal isOpen={isCatalogOpen} onClose={() => setIsCatalogOpen(false)} />
       <DeckBuilderModal isOpen={isDeckBuilderOpen} onClose={() => setIsDeckBuilderOpen(false)} />
+      <TypeModal type={selectedType} onClose={() => setSelectedType(null)} />
 
       {/* Navbar */}
       <nav className={`fixed w-full z-50 transition-all duration-300 border-b ${scrolled ? 'bg-[#0a0a0c]/95 border-slate-800 py-3' : 'bg-transparent border-transparent py-6'}`}>
@@ -516,6 +696,14 @@ export default function App() {
           </div>
 
           <div className="hidden md:flex items-center gap-8 text-sm font-medium uppercase tracking-wide">
+            <a 
+              href="https://lightdark.base44.app/" 
+              target="_blank" 
+              rel="noopener noreferrer" 
+              className="text-purple-400 hover:text-purple-300 transition flex items-center gap-2 font-bold animate-pulse"
+            >
+              <Zap size={16} /> APP DUELO
+            </a>
             <button onClick={() => setIsDeckBuilderOpen(true)} className="hover:text-purple-400 transition">MONTE SEU DECK</button>
             <a href="#arquetipos" className="hover:text-purple-400 transition">Arquétipos</a>
             <a href="#estrutura" className="hover:text-purple-400 transition">Campo</a>
@@ -534,6 +722,15 @@ export default function App() {
         {/* Mobile Menu */}
         {isMenuOpen && (
              <div className="md:hidden absolute top-full left-0 w-full bg-[#0a0a0c] border-b border-slate-800 p-4 flex flex-col gap-4 shadow-2xl animate-in slide-in-from-top-2">
+                <a 
+                  href="https://lightdark.base44.app/" 
+                  target="_blank" 
+                  rel="noopener noreferrer" 
+                  className="text-purple-400 hover:text-purple-300 font-bold flex items-center gap-2"
+                  onClick={()=>setIsMenuOpen(false)}
+                >
+                  <Zap size={16} /> APP DUELO
+                </a>
                 <button onClick={() => { setIsDeckBuilderOpen(true); setIsMenuOpen(false); }} className="text-white hover:text-purple-400 text-left">MONTE SEU DECK</button>
                 <a href="#arquetipos" className="text-white hover:text-purple-400" onClick={()=>setIsMenuOpen(false)}>Arquétipos</a>
                 <a href="#estrutura" className="text-white hover:text-purple-400" onClick={()=>setIsMenuOpen(false)}>Campo</a>
@@ -594,7 +791,7 @@ export default function App() {
       <section id="cartas" className="py-20 border-y border-slate-900 bg-[#0f0f13]">
         <div className="container mx-auto px-6">
           <div className="text-center mb-16">
-            <h3 className="text-3xl font-bold mb-4">O Arsenal</h3>
+            <h3 className="text-3xl font-bold mb-4">Tipos de Cartas</h3>
             <p className="text-slate-400 max-w-xl mx-auto">
               Domine as quatro categorias essenciais.
             </p>
@@ -602,7 +799,12 @@ export default function App() {
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 justify-items-center">
             {showcaseCards.map((card, idx) => (
-              <div key={`${card.code}-${idx}`} className="animate-in fade-in zoom-in duration-500">
+              <div 
+                key={`${card.code}-${idx}`} 
+                className="animate-in fade-in zoom-in duration-500 cursor-pointer"
+                onClick={() => setSelectedType(card.type)}
+                title="Clique para saber mais"
+              >
                 <Card {...card} />
               </div>
             ))}
@@ -644,7 +846,7 @@ export default function App() {
             <h4 className="font-bold text-white mb-2">LIGHT DARK TCG</h4>
             <p className="text-slate-500 text-sm">
               &copy; 2024. Todos os direitos reservados.<br/>
-              Conceito Insano, Darkus e Macroversal são marcas registradas.
+              Os personagens, nomes, e jogo são marcas registradas.
             </p>
           </div>
 
@@ -652,6 +854,10 @@ export default function App() {
             <a href="https://www.instagram.com/lightdarktcg/" target="_blank" rel="noopener noreferrer" className="text-slate-400 hover:text-purple-500 transition">
               <Instagram size={24} />
               <span className="sr-only">Instagram</span>
+            </a>
+            <a href="https://www.youtube.com/@LightDarkCardGame" target="_blank" rel="noopener noreferrer" className="text-slate-400 hover:text-red-600 transition">
+              <Youtube size={24} />
+              <span className="sr-only">YouTube</span>
             </a>
             <a href="https://chat.whatsapp.com/LbCUjK7svXzEnc5UGNE9ZC" target="_blank" rel="noopener noreferrer" className="text-slate-400 hover:text-green-500 transition">
               <MessageCircle size={24} />
