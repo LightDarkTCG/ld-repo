@@ -102,7 +102,7 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card, onClose,
       })
       .filter(item => item.score > 0) // Só retorna se tiver pontuação real
       .sort((a, b) => b.score - a.score)
-      .slice(0, 6); // Top 6 recomendações
+      .slice(0, 5); // Top 5 recomendações
 
     return scoredCards.map(item => item.card);
   }, [card]);
@@ -177,18 +177,19 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card, onClose,
               <h4 className="text-sm font-bold text-blue-400 uppercase mb-4 flex items-center gap-2 border-b border-slate-800 pb-2">
                 <LinkIcon size={16} /> Sinergias & Interações
               </h4>
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+              <div className="flex gap-4 overflow-x-auto pb-4 justify-start lg:justify-center custom-scrollbar">
                 {relatedCards.map((related, idx) => (
                   <div 
                     key={idx} 
                     onClick={() => handleRelatedClick(related)}
-                    className="cursor-pointer group flex flex-col gap-2"
+                    className="cursor-pointer group flex flex-col items-center flex-shrink-0 hover:scale-105 transition-transform"
+                    title={related.name}
                   >
-                    <div className="origin-top-left scale-[0.45] w-[220%] h-[220%] mb-[-120%] mr-[-120%] pointer-events-none">
-                       <Card {...related} />
-                    </div>
-                    <div className="text-[10px] text-center text-slate-400 group-hover:text-white truncate font-bold mt-2">
-                      {related.name}
+                    {/* Fixed container for the scaled card */}
+                    <div className="relative w-[130px] h-[190px]">
+                       <div className="absolute top-0 left-0 origin-top-left scale-[0.45] pointer-events-none">
+                          <Card {...related} />
+                       </div>
                     </div>
                   </div>
                 ))}
