@@ -307,12 +307,12 @@ const ManualModal = ({ isOpen, onClose }: { isOpen: boolean, onClose: () => void
                     <div className="relative pl-8">
                       <div className="absolute -left-[9px] top-0 w-4 h-4 rounded-full bg-blue-500"></div>
                       <h4 className="font-bold text-white">2. Turno de Ataque (Jogador 1)</h4>
-                      <p className="text-xs text-slate-400">J1 usa cartas -> J1 Ataca -> J2 Reage/Não Reage -> J1 Encerra turno.</p>
+                      <p className="text-xs text-slate-400">J1 usa cartas &rarr; J1 Ataca &rarr; J2 Reage/Não Reage &rarr; J1 Encerra turno.</p>
                     </div>
                     <div className="relative pl-8">
                       <div className="absolute -left-[9px] top-0 w-4 h-4 rounded-full bg-red-500"></div>
                       <h4 className="font-bold text-white">3. Turno de Ataque (Jogador 2)</h4>
-                      <p className="text-xs text-slate-400">J2 usa cartas -> J2 Ataca -> J1 Reage/Não Reage -> J2 Encerra turno.</p>
+                      <p className="text-xs text-slate-400">J2 usa cartas &rarr; J2 Ataca &rarr; J1 Reage/Não Reage &rarr; J2 Encerra turno.</p>
                     </div>
                     <div className="relative pl-8">
                       <div className="absolute -left-[9px] top-0 w-4 h-4 rounded-full bg-green-500"></div>
