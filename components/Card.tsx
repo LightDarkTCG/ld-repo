@@ -49,7 +49,7 @@ export const Card: React.FC<CardProps> = ({ name, type, archetype, ct, attack, d
   // MODO CARTA COMPLETA COM IMAGEM
   if (imageUrl) {
     return (
-      <div className={`group relative w-72 aspect-1/1.45 transition-all duration-500 hover:scale-105 cursor-pointer perspective-1000 ${styles.glow}`}>
+      <div className={`group relative w-full max-w-[18rem] aspect-[1/1.45] transition-all duration-500 hover:scale-105 cursor-pointer perspective-1000 ${styles.glow}`}>
         <img 
           src={imageUrl} 
           alt={name} 
@@ -63,7 +63,7 @@ export const Card: React.FC<CardProps> = ({ name, type, archetype, ct, attack, d
 
   // MODO GERADOR (Placeholder visual se não houver imagem)
   return (
-    <div className={`group relative w-72 h-[420px] transition-all duration-500 hover:scale-105 cursor-pointer perspective-1000 ${styles.glow}`}>
+    <div className={`group relative w-full max-w-[18rem] h-auto aspect-[1/1.45] transition-all duration-500 hover:scale-105 cursor-pointer perspective-1000 ${styles.glow}`}>
       <div className={`relative h-full w-full bg-slate-900 border-2 ${styles.border} rounded-xl p-3 flex flex-col shadow-2xl overflow-hidden`}>
         <div className="w-full flex justify-between items-start mb-2">
           <div className="flex flex-col max-w-[80%]">

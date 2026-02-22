@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from "motion/react";
 import { 
   Zap, Heart, Layers, Hexagon, BookOpen,
   ShoppingCart, MapPin, ExternalLink, Search, Filter, Box,
@@ -9,29 +10,30 @@ import { Card } from './components/Card';
 import { GameField } from './components/GameField';
 import { DeckBuilderModal } from './components/DeckBuilderModal';
 import { CardDetailModal } from './components/CardDetailModal';
+import GameBoard from './components/GameBoard';
 import { allCards, archetypesList, collectionsList } from './data';
 import { CardData, ArchetypeData } from './types';
 
 // --- SUB-COMPONENTS ---
 
 const ArchetypeCard: React.FC<ArchetypeData> = ({ name, icon: Icon, imageUrl, color, description }) => (
-  <div className="bg-slate-900 border border-slate-800 p-4 rounded-lg hover:border-slate-600 transition group relative overflow-hidden h-full flex flex-col">
-    <div className={`absolute top-0 right-0 p-2 opacity-5 group-hover:opacity-10 transition ${color || ''}`}>
+  <div className="bg-slate-900 border border-slate-800 p-2 md:p-4 rounded-lg hover:border-slate-600 transition group relative overflow-hidden h-full flex flex-col min-h-[100px] md:min-h-[280px]">
+    <div className={`absolute top-0 right-0 p-1 md:p-2 opacity-5 group-hover:opacity-10 transition ${color || ''}`}>
       {imageUrl ? (
-        <img src={imageUrl} alt="" className="w-12 h-12 object-contain grayscale" />
+        <img src={imageUrl} alt="" className="w-6 h-6 md:w-12 md:h-12 object-contain grayscale" />
       ) : Icon ? (
-        <Icon size={48} />
+        <Icon size={24} className="md:w-12 md:h-12" />
       ) : null}
     </div>
-    <div className="flex items-center gap-3 mb-3">
+    <div className="flex items-center gap-2 md:gap-4 mb-1 md:mb-4">
       {imageUrl ? (
-        <img src={imageUrl} alt={name} className="w-8 h-8 object-contain drop-shadow-lg" />
+        <img src={imageUrl} alt={name} className="w-8 h-8 md:w-14 md:h-14 object-contain drop-shadow-lg" />
       ) : Icon ? (
-        <Icon size={24} className={color} />
+        <Icon className={`${color} w-6 h-6 md:w-[42px] md:h-[42px]`} />
       ) : null}
-      <h4 className="text-slate-200 font-bold text-lg tracking-wide">{name}</h4>
+      <h4 className="text-slate-200 font-bold text-xs md:text-3xl tracking-wide leading-tight break-words">{name}</h4>
     </div>
-    <p className="text-slate-400 text-xs leading-relaxed z-10 border-t border-slate-800 pt-2 mt-auto">
+    <p className="text-slate-400 text-[9px] md:text-sm leading-relaxed z-10 border-t border-slate-800 pt-1 md:pt-3 mt-auto">
       {description}
     </p>
   </div>
@@ -173,15 +175,15 @@ const ManualModal = ({ isOpen, onClose }: { isOpen: boolean, onClose: () => void
         </div>
 
         {/* Tabs */}
-        <div className="flex bg-slate-950 border-b border-slate-800 overflow-x-auto shrink-0">
+        <div className="flex bg-slate-950 border-b border-slate-800 shrink-0 w-full">
           {tabs.map((tab) => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id as any)}
-              className={`flex items-center gap-2 px-6 py-4 font-bold text-sm uppercase tracking-wider transition whitespace-nowrap border-b-2 ${activeTab === tab.id ? 'border-purple-500 text-white bg-slate-900' : 'border-transparent text-slate-500 hover:text-slate-300 hover:bg-slate-900/50'}`}
+              className={`flex-1 flex items-center justify-center gap-1 md:gap-2 px-1 md:px-6 py-4 font-bold text-[10px] md:text-sm uppercase tracking-wider transition whitespace-nowrap border-b-2 ${activeTab === tab.id ? 'border-purple-500 text-white bg-slate-900' : 'border-transparent text-slate-500 hover:text-slate-300 hover:bg-slate-900/50'}`}
             >
-              <tab.icon size={16} />
-              {tab.label}
+              <tab.icon size={16} className="shrink-0" />
+              <span>{tab.label}</span>
             </button>
           ))}
         </div>
@@ -410,7 +412,31 @@ const BuyModal = ({ isOpen, onClose }: { isOpen: boolean, onClose: () => void })
                     <h4 className="font-bold text-white text-lg">Awaken Giants</h4>
                     <p className="text-slate-400 text-sm mt-1 leading-relaxed">
                       Av. África, 510 - Tibery<br/>
-                      Uberlândia - MG, 38405-096
+                      Uberlândia - MG
+                    </p>
+                  </div>
+                </div>
+                <div className="bg-slate-800/50 p-4 rounded border border-slate-700 flex gap-4 items-start hover:bg-slate-800 transition">
+                  <div className="bg-slate-900 p-2 rounded-full text-green-400 mt-1">
+                    <MapPin size={18} />
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-white text-lg">Reset Nerd Store</h4>
+                    <p className="text-slate-400 text-sm mt-1 leading-relaxed">
+                      R. Buriti Alegre, 1014 - Aparecida<br/>
+                      Uberlândia - MG
+                    </p>
+                  </div>
+                </div>
+                <div className="bg-slate-800/50 p-4 rounded border border-slate-700 flex gap-4 items-start hover:bg-slate-800 transition">
+                  <div className="bg-slate-900 p-2 rounded-full text-red-400 mt-1">
+                    <MapPin size={18} />
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-white text-lg">Mr. TCG</h4>
+                    <p className="text-slate-400 text-sm mt-1 leading-relaxed">
+                      Av. Fernando Costa, 387 - São Benedito<br/>
+                      Uberaba - MG
                     </p>
                   </div>
                 </div>
@@ -422,7 +448,7 @@ const BuyModal = ({ isOpen, onClose }: { isOpen: boolean, onClose: () => void })
                     <h4 className="font-bold text-white text-lg">Zebu Geek Store</h4>
                     <p className="text-slate-400 text-sm mt-1 leading-relaxed">
                       R. Rodolfo Lírio, 458 - Nossa Sra. da Abadia<br/>
-                      Uberaba - MG, 38025-500
+                      Uberaba - MG
                     </p>
                   </div>
                 </div>
@@ -515,87 +541,93 @@ const CatalogModal = ({ isOpen, onClose }: { isOpen: boolean, onClose: () => voi
           />
         </div>
 
-        <div className="flex flex-wrap gap-2 items-center flex-1">
-          <div className="flex items-center gap-2 bg-slate-950 border border-slate-800 rounded-lg px-3 py-2">
-            <span className="text-xs text-slate-500 uppercase font-bold"><Box size={14}/></span>
-            <select 
-              className="bg-purple-950 text-sm text-white outline-none cursor-pointer rounded px-2 w-40"
-              value={filters.collection}
-              onChange={(e) => setFilters({...filters, collection: e.target.value})}
-            >
-              <option className="bg-purple-950" value="Todos">Todas as Coleções</option>
-              {collectionsList.map(c => <option className="bg-purple-950" key={c} value={c}>{c}</option>)}
-            </select>
+        <div className="flex flex-col md:flex-row flex-wrap gap-2 items-start md:items-center flex-1">
+          {/* Row 1 Mobile: Collection / Type */}
+          <div className="flex w-full md:w-auto gap-2">
+            <div className="flex items-center gap-2 bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 flex-1 md:flex-none">
+              <span className="text-xs text-slate-500 uppercase font-bold"><Box size={14}/></span>
+              <select 
+                className="bg-purple-950 text-sm text-white outline-none cursor-pointer rounded px-2 w-full md:w-40"
+                value={filters.collection}
+                onChange={(e) => setFilters({...filters, collection: e.target.value})}
+              >
+                <option className="bg-purple-950" value="Todos">Todas as Coleções</option>
+                {collectionsList.map(c => <option className="bg-purple-950" key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+
+            <div className="flex items-center gap-2 bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 flex-1 md:flex-none">
+              <Filter size={14} className="text-slate-500" />
+              <select 
+                className="bg-purple-950 text-sm text-white outline-none cursor-pointer rounded px-2 w-full"
+                value={filters.type}
+                onChange={(e) => setFilters({...filters, type: e.target.value})}
+              >
+                <option className="bg-purple-950" value="Todos">Todos os Tipos</option>
+                <option className="bg-purple-950" value="Herói">Herói</option>
+                <option className="bg-purple-950" value="Combatente">Combatente</option>
+                <option className="bg-purple-950" value="Equipamento">Equipamento</option>
+                <option className="bg-purple-950" value="Efeito">Efeito</option>
+              </select>
+            </div>
           </div>
 
-          <div className="flex items-center gap-2 bg-slate-950 border border-slate-800 rounded-lg px-3 py-2">
-            <Filter size={14} className="text-slate-500" />
-            <select 
-              className="bg-purple-950 text-sm text-white outline-none cursor-pointer rounded px-2"
-              value={filters.type}
-              onChange={(e) => setFilters({...filters, type: e.target.value})}
-            >
-              <option className="bg-purple-950" value="Todos">Todos os Tipos</option>
-              <option className="bg-purple-950" value="Herói">Herói</option>
-              <option className="bg-purple-950" value="Combatente">Combatente</option>
-              <option className="bg-purple-950" value="Equipamento">Equipamento</option>
-              <option className="bg-purple-950" value="Efeito">Efeito</option>
-            </select>
-          </div>
+          {/* Row 2 Mobile: Archetype / Stats / Clear */}
+          <div className="flex w-full md:w-auto gap-2 flex-wrap items-center">
+            <div className="flex items-center gap-2 bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 flex-1 md:flex-none min-w-[120px]">
+              <span className="text-xs text-slate-500 uppercase font-bold">Arquétipo</span>
+              <select 
+                className="bg-purple-950 text-sm text-white outline-none cursor-pointer w-full md:w-32 rounded px-2"
+                value={filters.archetype}
+                onChange={(e) => setFilters({...filters, archetype: e.target.value})}
+              >
+                <option className="bg-purple-950" value="Todos">Todos</option>
+                {archetypesList.map(a => <option className="bg-purple-950" key={a.name} value={a.name}>{a.name}</option>)}
+              </select>
+            </div>
 
-          <div className="flex items-center gap-2 bg-slate-950 border border-slate-800 rounded-lg px-3 py-2">
-            <span className="text-xs text-slate-500 uppercase font-bold">Arquétipo</span>
-            <select 
-              className="bg-purple-950 text-sm text-white outline-none cursor-pointer w-32 rounded px-2"
-              value={filters.archetype}
-              onChange={(e) => setFilters({...filters, archetype: e.target.value})}
-            >
-              <option className="bg-purple-950" value="Todos">Todos</option>
-              {archetypesList.map(a => <option className="bg-purple-950" key={a.name} value={a.name}>{a.name}</option>)}
-            </select>
-          </div>
-
-          <div className="flex items-center gap-2">
-             <input 
-               type="number" 
-               placeholder="CT" 
-               className="w-16 bg-slate-950 border border-slate-800 rounded-lg py-2 px-3 text-sm text-white focus:border-purple-500 outline-none"
-               value={filters.minCt}
-               onChange={(e) => setFilters({...filters, minCt: e.target.value})}
-             />
-             <input 
-               type="number" 
-               placeholder="ATK" 
-               className="w-16 bg-slate-950 border border-slate-800 rounded-lg py-2 px-3 text-sm text-white focus:border-red-500 outline-none"
-               value={filters.minAtk}
-               onChange={(e) => setFilters({...filters, minAtk: e.target.value})}
-             />
-             <input 
-               type="number" 
-               placeholder="VIDA" 
-               className="w-16 bg-slate-950 border border-slate-800 rounded-lg py-2 px-3 text-sm text-white focus:border-blue-500 outline-none"
-               value={filters.minDef}
-               onChange={(e) => setFilters({...filters, minDef: e.target.value})}
-             />
-          </div>
+            <div className="flex items-center gap-2 flex-1 md:flex-none">
+              <input 
+                type="number" 
+                placeholder="CT" 
+                className="w-full md:w-16 bg-slate-950 border border-slate-800 rounded-lg py-2 px-3 text-sm text-white focus:border-purple-500 outline-none"
+                value={filters.minCt}
+                onChange={(e) => setFilters({...filters, minCt: e.target.value})}
+              />
+              <input 
+                type="number" 
+                placeholder="ATK" 
+                className="w-full md:w-16 bg-slate-950 border border-slate-800 rounded-lg py-2 px-3 text-sm text-white focus:border-red-500 outline-none"
+                value={filters.minAtk}
+                onChange={(e) => setFilters({...filters, minAtk: e.target.value})}
+              />
+              <input 
+                type="number" 
+                placeholder="VIDA" 
+                className="w-full md:w-16 bg-slate-950 border border-slate-800 rounded-lg py-2 px-3 text-sm text-white focus:border-blue-500 outline-none"
+                value={filters.minDef}
+                onChange={(e) => setFilters({...filters, minDef: e.target.value})}
+              />
+            </div>
           
-          <button 
-            onClick={() => {
-              setFilters({ type: "Todos", archetype: "Todos", collection: "Todos", minCt: "", minAtk: "", minDef: "" });
-              setSearchTerm("");
-            }}
-            className="text-xs text-slate-400 hover:text-white underline ml-auto"
-          >
-            Limpar Filtros
-          </button>
+            <button 
+              onClick={() => {
+                setFilters({ type: "Todos", archetype: "Todos", collection: "Todos", minCt: "", minAtk: "", minDef: "" });
+                setSearchTerm("");
+              }}
+              className="text-xs text-slate-400 hover:text-white underline ml-auto md:ml-2 whitespace-nowrap"
+            >
+              Limpar Filtros
+            </button>
+          </div>
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-8 bg-[#0a0a0c]">
+      <div className="flex-1 overflow-y-auto p-4 md:p-8 bg-[#0a0a0c]">
         {filteredCards.length > 0 ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-8 justify-items-center">
+          <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-2 md:gap-8 justify-items-center">
             {filteredCards.map((card, idx) => (
-              <div key={idx} className="scale-90 origin-top" onClick={() => setSelectedCard(card)}>
+              <div key={idx} className="scale-[0.65] md:scale-90 origin-top w-full flex justify-center -mb-24 md:mb-0" onClick={() => setSelectedCard(card)}>
                  <Card {...card} />
               </div>
             ))}
@@ -612,16 +644,53 @@ const CatalogModal = ({ isOpen, onClose }: { isOpen: boolean, onClose: () => voi
   );
 };
 
+const TournamentModal = ({ isOpen, onClose }: { isOpen: boolean, onClose: () => void }) => {
+  if (!isOpen) return null;
+  return (
+    <div className="fixed inset-0 z-[100] flex flex-col bg-slate-950 animate-in fade-in duration-200">
+      <div className="bg-slate-900 border-b border-slate-800 p-4 flex justify-between items-center shadow-lg z-20">
+        <div className="flex items-center gap-3">
+          <Crown className="text-yellow-500" />
+          <h2 className="text-xl font-bold text-white">Criar Torneio</h2>
+        </div>
+        <button onClick={onClose} className="p-2 hover:bg-slate-800 rounded-full text-slate-400 hover:text-white transition">
+          <X size={24} />
+        </button>
+      </div>
+      <div className="flex-1 overflow-y-auto p-4 md:p-8 bg-[#0a0a0c] flex items-center justify-center">
+        <div className="text-center text-slate-500">
+          <Crown size={64} className="mx-auto mb-4 opacity-50" />
+          <p className="text-xl font-bold text-white mb-2">Área de Torneios</p>
+          <p>Em breve...</p>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 export default function App() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isManualOpen, setIsManualOpen] = useState(false);
   const [isBuyModalOpen, setIsBuyModalOpen] = useState(false);
   const [isCatalogOpen, setIsCatalogOpen] = useState(false);
   const [isDeckBuilderOpen, setIsDeckBuilderOpen] = useState(false);
+  const [isGameOpen, setIsGameOpen] = useState(false);
+  const [isTournamentOpen, setIsTournamentOpen] = useState(false);
   const [selectedType, setSelectedType] = useState<string | null>(null);
   const [scrolled, setScrolled] = useState(false);
   const [currentVideoIndex, setCurrentVideoIndex] = useState(0);
   const [showcaseCards, setShowcaseCards] = useState<CardData[]>([]);
+
+  // Check for game mode in URL
+  const [isGameMode, setIsGameMode] = useState(false);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('mode') === 'game') {
+      setIsGameMode(true);
+      setIsGameOpen(true);
+    }
+  }, []);
 
   const backgroundVideos = [
     "https://i.imgur.com/MEEgqLT.mp4",
@@ -670,10 +739,14 @@ export default function App() {
     };
 
     rotateShowcase(); // Initial load
-    const interval = setInterval(rotateShowcase, 10000); // Rotate every 10 seconds
+    const interval = setInterval(rotateShowcase, 15000); // Rotate every 15 seconds
 
     return () => clearInterval(interval);
   }, []);
+
+  if (isGameMode) {
+    return <GameBoard onClose={() => window.close()} />;
+  }
 
   return (
     <div className="min-h-screen bg-[#0a0a0c] text-slate-200 font-sans selection:bg-purple-500 selection:text-white overflow-x-hidden">
@@ -683,6 +756,7 @@ export default function App() {
       <CatalogModal isOpen={isCatalogOpen} onClose={() => setIsCatalogOpen(false)} />
       <DeckBuilderModal isOpen={isDeckBuilderOpen} onClose={() => setIsDeckBuilderOpen(false)} />
       <TypeModal type={selectedType} onClose={() => setSelectedType(null)} />
+      {isGameOpen && <GameBoard onClose={() => setIsGameOpen(false)} />}
 
       {/* Navbar */}
       <nav className={`fixed w-full z-50 transition-all duration-300 border-b ${scrolled ? 'bg-[#0a0a0c]/95 border-slate-800 py-3' : 'bg-transparent border-transparent py-6'}`}>
@@ -696,14 +770,12 @@ export default function App() {
           </div>
 
           <div className="hidden md:flex items-center gap-8 text-sm font-medium uppercase tracking-wide">
-            <a 
-              href="https://lightdark.base44.app/" 
-              target="_blank" 
-              rel="noopener noreferrer" 
+            <button 
+              onClick={() => setIsGameOpen(true)}
               className="text-purple-400 hover:text-purple-300 transition flex items-center gap-2 font-bold animate-pulse"
             >
               <Zap size={16} /> APP DUELO
-            </a>
+            </button>
             <button onClick={() => setIsDeckBuilderOpen(true)} className="hover:text-purple-400 transition">MONTE SEU DECK</button>
             <a href="#arquetipos" className="hover:text-purple-400 transition">Arquétipos</a>
             <a href="#estrutura" className="hover:text-purple-400 transition">Campo</a>
@@ -722,15 +794,12 @@ export default function App() {
         {/* Mobile Menu */}
         {isMenuOpen && (
              <div className="md:hidden absolute top-full left-0 w-full bg-[#0a0a0c] border-b border-slate-800 p-4 flex flex-col gap-4 shadow-2xl animate-in slide-in-from-top-2">
-                <a 
-                  href="https://lightdark.base44.app/" 
-                  target="_blank" 
-                  rel="noopener noreferrer" 
+                <button 
+                  onClick={() => { setIsGameOpen(true); setIsMenuOpen(false); }}
                   className="text-purple-400 hover:text-purple-300 font-bold flex items-center gap-2"
-                  onClick={()=>setIsMenuOpen(false)}
                 >
                   <Zap size={16} /> APP DUELO
-                </a>
+                </button>
                 <button onClick={() => { setIsDeckBuilderOpen(true); setIsMenuOpen(false); }} className="text-white hover:text-purple-400 text-left">MONTE SEU DECK</button>
                 <a href="#arquetipos" className="text-white hover:text-purple-400" onClick={()=>setIsMenuOpen(false)}>Arquétipos</a>
                 <a href="#estrutura" className="text-white hover:text-purple-400" onClick={()=>setIsMenuOpen(false)}>Campo</a>
@@ -760,8 +829,8 @@ export default function App() {
         </div>
 
         <div className="container mx-auto px-6 relative z-10 text-center">
-          <h2 className="text-purple-400 font-mono text-sm tracking-[0.3em] uppercase mb-4 animate-pulse drop-shadow-md">Invasão do Caos</h2>
-          <h1 className="text-6xl md:text-8xl font-black text-white mb-6 tracking-tighter drop-shadow-2xl">
+          <h2 className="text-purple-400 font-mono text-xs sm:text-sm tracking-[0.3em] uppercase mb-4 animate-pulse drop-shadow-md">Invasão do Caos</h2>
+          <h1 className="text-4xl sm:text-6xl md:text-8xl font-black text-white mb-6 tracking-tighter drop-shadow-2xl whitespace-nowrap">
             LIGHT <span className="text-transparent bg-clip-text bg-gradient-to-r from-purple-500 to-blue-500 drop-shadow-none">DARK</span>
           </h1>
           <p className="text-lg text-slate-200 mb-10 max-w-2xl mx-auto drop-shadow-lg font-medium">
@@ -797,17 +866,23 @@ export default function App() {
             </p>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 justify-items-center">
-            {showcaseCards.map((card, idx) => (
-              <div 
-                key={`${card.code}-${idx}`} 
-                className="animate-in fade-in zoom-in duration-500 cursor-pointer"
-                onClick={() => setSelectedType(card.type)}
-                title="Clique para saber mais"
-              >
-                <Card {...card} />
-              </div>
-            ))}
+          <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-8 px-4 md:px-0">
+            <AnimatePresence mode="wait">
+              {showcaseCards.map((card, idx) => (
+                <motion.div 
+                  key={`${card.code}-${idx}`} 
+                  initial={{ opacity: 0, scale: 0.9 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.9 }}
+                  transition={{ duration: 0.5 }}
+                  className="cursor-pointer max-w-[140px] md:max-w-none mx-auto"
+                  onClick={() => setSelectedType(card.type)}
+                  title="Clique para saber mais"
+                >
+                  <Card {...card} />
+                </motion.div>
+              ))}
+            </AnimatePresence>
           </div>
         </div>
       </section>
@@ -816,7 +891,7 @@ export default function App() {
       <section id="arquetipos" className="py-20 bg-slate-950">
         <div className="container mx-auto px-6">
           <h3 className="text-3xl font-bold mb-12 text-center text-white">Arquétipos</h3>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {archetypesList.map((arch, idx) => (
               <ArchetypeCard key={idx} {...arch} />
             ))}
@@ -834,7 +909,9 @@ export default function App() {
               <p className="text-slate-400">Interaja com as zonas abaixo para entender as regras.</p>
             </div>
 
-            <GameField />
+            <div className="transform scale-[0.6] origin-top w-[166%] -ml-[33%] md:w-full md:scale-100 md:ml-0 md:origin-center -mb-48 md:mb-0">
+              <GameField />
+            </div>
           </div>
         </div>
       </section>

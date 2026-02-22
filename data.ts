@@ -15,21 +15,21 @@ export const collectionsList = [
 
 export const archetypesList: ArchetypeData[] = [
     { name: "Macroversal", imageUrl: "https://i.imgur.com/PGwVIGi.png", description: "Uma vez por rodada, nega o primeiro efeito de carta com CT menor que a dele usado pelo inimigo." },
-    { name: "Furtivo", imageUrl: "https://i.imgur.com/fw1gNgu.png", description: "Não sofre dano de combate quando realiza ataques." },
-    { name: "Divindade", imageUrl: "https://i.imgur.com/bekva3i.png", description: "Recebe o dobro de status e efeitos de equipamentos." },
-    { name: "Conceito", imageUrl: "https://i.imgur.com/dZtBL71.png", description: "O combatente recupera 5 de vida no começo de cada rodada." },
-    { name: "Escolhido", imageUrl: "https://i.imgur.com/b50cI77.png", description: "Sempre que o inimigo invocar um Herói, recebe 5 em seus status." },
-    { name: "Insano", imageUrl: "https://i.imgur.com/SS2ezqu.png", description: "Causa 5 dano direto na vida do combatente que o eliminou (ignora efeitos/arquétipos)." },
-    { name: "Reativo", imageUrl: "https://i.imgur.com/jskfGBc.png", description: "Ao ter um aliado atacado, ataca outro combatente a escolha como resposta." },
-    { name: "Solador", imageUrl: "https://i.imgur.com/lUxmHOY.png", description: "Durante o combate, nenhum jogador pode usar efeitos de cartas nele." },
-    { name: "Sortudo", imageUrl: "https://i.imgur.com/zJYb33m.png", description: "Rerrole os dados usados você uma vez, escolhendo o melhor resultado." },
-    { name: "Azarado", imageUrl: "https://i.imgur.com/7L3Rmnb.png", description: "Uma vez por rodada, absorve um efeito de carta no lugar de outra carta do seu campo." },
-    { name: "Caos", imageUrl: "https://i.imgur.com/4lRPBsC.png", description: "Dano excedente na vida do alvo é retirado na vida do jogador atacado." },
-    { name: "Ordem", imageUrl: "https://i.imgur.com/UD1CHfR.png", description: "Dano excedente na vida do alvo é somado na vida do jogador atacante." },
-    { name: "Lúmen", imageUrl: "https://i.imgur.com/8wtvMke.png", description: "Reduz em 3 o dano recebido por combate." },
-    { name: "Darkus", imageUrl: "https://i.imgur.com/3taHUGK.png", description: "Reduz em 3 o dano recebido por efeitos de cartas." },
-    { name: "Cósmico", imageUrl: "https://i.imgur.com/iVc4vsJ.png", description: "Ao ser invocado, gera 1 Runa no seu lado do campo." },
-    { name: "Véu", imageUrl: "https://i.imgur.com/ts8GRy2.png", description: "O inimigo à frente perde seus arquétipos até sair de campo." }
+    { name: "Furtivo", imageUrl: "https://i.imgur.com/fw1gNgu.png", description: "Não sofre dano de combate quando realiza ataques, contudo, ainda ativa outros arquétipos como Reativo, Lúmen (também pode sofrer dano de efeitos de cartas inclusive do efeito da carta que atacou)." },
+    { name: "Divindade", imageUrl: "https://i.imgur.com/bekva3i.png", description: "Recebe o dobro de status e efeitos de equipamentos (equipamentos que retiram status ou causam algum debuff também terão esses efeitos negativos dobrados, equipamentos que dão exatamente 1 arquétipo só possuem o dobro de eficiência caso seja Lúmen ou Darkus)" },
+    { name: "Conceito", imageUrl: "https://i.imgur.com/dZtBL71.png", description: "O combatente recebe 5 de vida no começo de cada rodada, passando o limite de vida dele." },
+    { name: "Escolhido", imageUrl: "https://i.imgur.com/b50cI77.png", description: "Sempre que o inimigo invocar um Herói, recebe 5 em seus status, esse efeito é acumulativo e permanece mesmo que o herói deixe o campo." },
+    { name: "Insano", imageUrl: "https://i.imgur.com/SS2ezqu.png", description: "Causa 5 dano direto na vida do combatente que o eliminou por combate (ignora efeitos de cartas e arquétipos, exceto Véu)." },
+    { name: "Reativo", imageUrl: "https://i.imgur.com/jskfGBc.png", description: "Ao ter um aliado atacado, ataca outro combatente a escolha como resposta (esse ataque não é considerado combate, o atacante com reativo não recebe dano do alvo)." },
+    { name: "Solador", imageUrl: "https://i.imgur.com/lUxmHOY.png", description: "Durante o combate, nenhuma carta do jogador inimigo pode ser usada para interferir no combate (não podem ser usadas reações, negações de ataque, equipamentos são ignorados, efeitos de outros combatentes que mexam com o combate também não funcionam)." },
+    { name: "Sortudo", imageUrl: "https://i.imgur.com/zJYb33m.png", description: "Sempre que algum dado for rolado contra ou a favor do jogador que possui combatentes com \"Sortudo\" em campo, ele rola um dado extra (para cada Sortudo) e escolhe o melhor resultado para ele." },
+    { name: "Azarado", imageUrl: "https://i.imgur.com/7L3Rmnb.png", description: "Uma vez por rodada, o combatente com Azarado é alvo do primeiro efeito de carta no lugar de outra carta do seu campo (efeitos que causam dano em todos os combatentes afetam somente o Azarado fazendo ele tomar todas as instâncias do dano)." },
+    { name: "Caos", imageUrl: "https://i.imgur.com/4lRPBsC.png", description: "Dano excedente na vida do alvo durante um combate é retirado na vida do jogador atacado (aplica somente durante seu turno de ataque e não quando é atacado no turno do jogador inimigo)." },
+    { name: "Ordem", imageUrl: "https://i.imgur.com/UD1CHfR.png", description: "Dano excedente na vida do alvo é somado na vida do jogador atacante (aplica somente durante seu turno de ataque e não quando é atacado no turno do jogador inimigo)." },
+    { name: "Lúmen", imageUrl: "https://i.imgur.com/8wtvMke.png", description: "Reduz em 3 o dano recebido por combate, o arquétipo Lúmen pode aumentar sua eficiência com outras cartas, aumentando sua negação de dano." },
+    { name: "Darkus", imageUrl: "https://i.imgur.com/3taHUGK.png", description: "Reduz em 3 o dano recebido por efeitos de cartas, o arquétipo Darkus pode aumentar sua eficiência com outras cartas, aumentando sua negação de dano." },
+    { name: "Cósmico", imageUrl: "https://i.imgur.com/iVc4vsJ.png", description: "Ao entrar em campo ou ser descartado diretamente para alguma Zona, o combatente gera 1 Runa no seu lado do campo." },
+    { name: "Véu", imageUrl: "https://i.imgur.com/ts8GRy2.png", description: "O inimigo na área a frente do combatente com Véu perde seus arquétipos até ser enviado a alguma Zona, Deck ou mão (em caso de dois combantes com Véu em frente ao outro, ambos ficam sem os Arquétipos até que um deles saia do campo)." }
   ];
 
 export const allCards: CardData[] = [
