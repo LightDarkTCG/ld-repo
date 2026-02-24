@@ -11,6 +11,7 @@ import { GameField } from './components/GameField';
 import { DeckBuilderModal } from './components/DeckBuilderModal';
 import { CardDetailModal } from './components/CardDetailModal';
 import GameBoard from './components/GameBoard';
+import { TournamentManager } from './components/TournamentManager';
 import { allCards, archetypesList, collectionsList } from './data';
 import { CardData, ArchetypeData } from './types';
 
@@ -63,25 +64,28 @@ const GameLore = () => {
           <div className={`relative transition-all duration-700 ease-in-out ${isExpanded ? 'max-h-[2000px]' : 'max-h-40 overflow-hidden'}`}>
              <div className="prose prose-invert prose-lg mx-auto text-slate-400 leading-relaxed text-justify">
                 <p className="mb-6 first-letter:text-5xl first-letter:font-bold first-letter:text-white first-letter:mr-1 first-letter:float-left">
-                   Light Dark TCG é um jogo de cartas / tabuleiro épico que mergulha os jogadores na origem do Macroverso. Antes de existir qualquer universo, havia apenas o Nada, um vazio preto e silencioso. Foi desse vazio que surgiu o Mestre, entidade que, ao criar o Conceito da Existência, abriu caminho para o nascimento do Tempo, do Fogo, da Água, do Desejo e de inúmeras forças cósmicas. Cada conceito molda realidades inteiras e disputa influência sobre os universos.
+                  Light Dark TCG é um jogo de cartas épico que nasceu de uma RPG de mesa que existe a mais de uma década. "Antes de existir qualquer universo, havia apenas o Nada, um vazio preto e silencioso. Foi desse vazio que surgiu o Mestre, entidade que, ao criar os Conceitos, começando com o da Criação e da Existência, abriu caminho para o nascimento do Tempo, do Fogo, da Água, do Desejo e de inúmeras forças cósmicas. Cada conceito molda realidades inteiras e disputa influência sobre os universos, se algo existe é porque existe uma entidade pensante ou não.
                 </p>
                 <p className="mb-6">
-                  No Macroverso Zero, Salazar, a Paz, reinava, mas sua bondade era passiva, uma calmaria que permitia que as sombras se aprofundassem. Na sua luz branda, o Conceito Desejo e o Nada, o fim de todas as coisas, encontraram terreno fértil para crescer.
+                  No Primeiro Macroverso, Salazar, o Conceito da Paz, reinava, mas sua bondade era passiva, uma calmaria que permitia que as sombras se aprofundassem. Na sua luz branda, o Conceito Desejo encontrou um terreno fértil para crescer.
                 </p>
                 <p className="mb-6">
-                  A queda foi inevitável, a barreira entre os mundos, foi rasgada, e a guerra cósmica entre a Criação (Selena), o Tempo (Arqcuia) e as forças da escuridão começou, deixando um universo quebrado como herança.
+                  A queda foi inevitável, a barreira entre os mundos, foi rasgada, e a guerra cósmica entre a Criação (Selena), e muitos outros contra as forças da escuridão começou, deixando um universo quebrado como herança.
                 </p>
                 <p className="mb-6">
-                  É neste mundo fraturado que uma nova geração de heróis e monstros se ergue, todos marcados pelo legado de seus pais e deuses. Eles são a Legião dos Quebrados: princesas exiladas como Hyummeng; amantes amaldiçoados como Kevin e Blair, a Eterna; guerreiros forjados na dor como Criven e Donnie; e almas torturadas buscando um propósito, como Floquinho, Três e Jenos.
+                  É neste mundo fraturado que uma nova geração de heróis e monstros se ergue, todos marcados pelo legado de seus pais e de seres que eles nem mesmo sabem da existência. Eles são os Escolhidos: princesas exiladas como Hyummeng; amantes amaldiçoados como Kevin e Blair, a Eterna; guerreiros forjados na dor como Criven e Donnie; e almas torturadas buscando um propósito, como Floquinho, Três e Jenos.
+                </p>
+                <p className="mb-6 italic text-slate-300">
+                  É claro, há muita história oculta a ser descoberta, muitas tramas e plots escondidos nas entrelinhas...
                 </p>
                 <p className="mb-6">
                   Agora, eles lutam não apenas contra os Errantes colossais ou os exércitos de Asmonious, mas também contra a desilusão. Pois neste novo mundo, as linhas se borraram: heróis são traídos por seus aliados mais confiáveis, vilões como Von Linden se tornam amigos, e a própria loucura, abraçada por acadêmicos como Patrick, pode ser a única forma de enxergar a verdade.
                 </p>
                 <p className="mb-6 border-l-4 border-purple-500 pl-4 italic bg-slate-900/50 p-4 rounded-r">
-                   No jogo, os jogadores assumem o papel de heróis, dragões, Conceitos ou variantes de personagens lendários, disputando poder, formando alianças e enfrentando escolhas que podem preservar ou destruir toda a criação. O jogo combina estratégia, cartas, narrativa dinâmica e múltiplos caminhos, permitindo que cada partida seja única. Seu objetivo? Decidir o destino da realidade: manter o equilíbrio entre o bem e o mau ou liberar o caos definitivo.
+                   No jogo, os jogadores assumem o papel de heróis, dragões, Conceitos ou variantes de personagens lendários, disputando poder, formando alianças e enfrentando escolhas que podem preservar ou destruir toda a criação. O jogo combina estratégia, múltiplas estratégias, ação e reação frenética, permitindo que cada partida seja única. Seu objetivo? Zerar a vida do outro jogador!
                 </p>
                 <p>
-                  "Light e Dark" é uma saga sobre os filhos pagando pelos pecados de seus pais. É uma história sobre como o amor, a lealdade e o sacrifício sobrevivem em um universo onde a paz se revelou uma mentira e a traição é uma constante. Presos entre a luz de um futuro que desejam e a escuridão de um passado que os assombra, eles precisam fazer uma escolha: tentarão consertar o mundo que herdaram, ou o queimarão até as cinzas para construir algo novo?
+                  Acima de tudo "Light e Dark" é uma saga sobre os filhos pagando pelos pecados de seus pais. É uma história sobre como o amor, a lealdade e o sacrifício sobrevivem em um universo onde a paz se revelou uma mentira e a traição é uma constante. Presos entre a luz de um futuro que desejam e a escuridão de um passado que os assombra, é uma homenagem aos mais de 50 jogadores que passaram por essa campanha, a todos os personagens criados e todas as amizades feitas.
                 </p>
              </div>
              {!isExpanded && (
@@ -404,19 +408,19 @@ const BuyModal = ({ isOpen, onClose }: { isOpen: boolean, onClose: () => void })
             <div>
               <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-4 border-b border-slate-800 pb-2">Lojas Físicas</h3>
               <div className="space-y-3">
-                <div className="bg-slate-800/50 p-4 rounded border border-slate-700 flex gap-4 items-start hover:bg-slate-800 transition">
+                <a href="https://www.instagram.com/fantasystoreudia/" target="_blank" rel="noopener noreferrer" className="bg-slate-800/50 p-4 rounded border border-slate-700 flex gap-4 items-start hover:bg-slate-800 transition block cursor-pointer">
                   <div className="bg-slate-900 p-2 rounded-full text-purple-400 mt-1">
                     <MapPin size={18} />
                   </div>
                   <div>
-                    <h4 className="font-bold text-white text-lg">Awaken Giants</h4>
+                    <h4 className="font-bold text-white text-lg">Fantasy Store</h4>
                     <p className="text-slate-400 text-sm mt-1 leading-relaxed">
                       Av. África, 510 - Tibery<br/>
                       Uberlândia - MG
                     </p>
                   </div>
-                </div>
-                <div className="bg-slate-800/50 p-4 rounded border border-slate-700 flex gap-4 items-start hover:bg-slate-800 transition">
+                </a>
+                <a href="https://www.instagram.com/resetnerdstore/" target="_blank" rel="noopener noreferrer" className="bg-slate-800/50 p-4 rounded border border-slate-700 flex gap-4 items-start hover:bg-slate-800 transition block cursor-pointer">
                   <div className="bg-slate-900 p-2 rounded-full text-green-400 mt-1">
                     <MapPin size={18} />
                   </div>
@@ -427,8 +431,8 @@ const BuyModal = ({ isOpen, onClose }: { isOpen: boolean, onClose: () => void })
                       Uberlândia - MG
                     </p>
                   </div>
-                </div>
-                <div className="bg-slate-800/50 p-4 rounded border border-slate-700 flex gap-4 items-start hover:bg-slate-800 transition">
+                </a>
+                <a href="https://www.instagram.com/mr.marlontcg/" target="_blank" rel="noopener noreferrer" className="bg-slate-800/50 p-4 rounded border border-slate-700 flex gap-4 items-start hover:bg-slate-800 transition block cursor-pointer">
                   <div className="bg-slate-900 p-2 rounded-full text-red-400 mt-1">
                     <MapPin size={18} />
                   </div>
@@ -439,8 +443,8 @@ const BuyModal = ({ isOpen, onClose }: { isOpen: boolean, onClose: () => void })
                       Uberaba - MG
                     </p>
                   </div>
-                </div>
-                <div className="bg-slate-800/50 p-4 rounded border border-slate-700 flex gap-4 items-start hover:bg-slate-800 transition">
+                </a>
+                <a href="https://www.instagram.com/zebugeekstore/" target="_blank" rel="noopener noreferrer" className="bg-slate-800/50 p-4 rounded border border-slate-700 flex gap-4 items-start hover:bg-slate-800 transition block cursor-pointer">
                   <div className="bg-slate-900 p-2 rounded-full text-blue-400 mt-1">
                     <MapPin size={18} />
                   </div>
@@ -451,7 +455,7 @@ const BuyModal = ({ isOpen, onClose }: { isOpen: boolean, onClose: () => void })
                       Uberaba - MG
                     </p>
                   </div>
-                </div>
+                </a>
               </div>
             </div>
             <div>
@@ -644,29 +648,7 @@ const CatalogModal = ({ isOpen, onClose }: { isOpen: boolean, onClose: () => voi
   );
 };
 
-const TournamentModal = ({ isOpen, onClose }: { isOpen: boolean, onClose: () => void }) => {
-  if (!isOpen) return null;
-  return (
-    <div className="fixed inset-0 z-[100] flex flex-col bg-slate-950 animate-in fade-in duration-200">
-      <div className="bg-slate-900 border-b border-slate-800 p-4 flex justify-between items-center shadow-lg z-20">
-        <div className="flex items-center gap-3">
-          <Crown className="text-yellow-500" />
-          <h2 className="text-xl font-bold text-white">Criar Torneio</h2>
-        </div>
-        <button onClick={onClose} className="p-2 hover:bg-slate-800 rounded-full text-slate-400 hover:text-white transition">
-          <X size={24} />
-        </button>
-      </div>
-      <div className="flex-1 overflow-y-auto p-4 md:p-8 bg-[#0a0a0c] flex items-center justify-center">
-        <div className="text-center text-slate-500">
-          <Crown size={64} className="mx-auto mb-4 opacity-50" />
-          <p className="text-xl font-bold text-white mb-2">Área de Torneios</p>
-          <p>Em breve...</p>
-        </div>
-      </div>
-    </div>
-  );
-};
+
 
 export default function App() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -755,6 +737,7 @@ export default function App() {
       <BuyModal isOpen={isBuyModalOpen} onClose={() => setIsBuyModalOpen(false)} />
       <CatalogModal isOpen={isCatalogOpen} onClose={() => setIsCatalogOpen(false)} />
       <DeckBuilderModal isOpen={isDeckBuilderOpen} onClose={() => setIsDeckBuilderOpen(false)} />
+      {isTournamentOpen && <TournamentManager onClose={() => setIsTournamentOpen(false)} />}
       <TypeModal type={selectedType} onClose={() => setSelectedType(null)} />
       {isGameOpen && <GameBoard onClose={() => setIsGameOpen(false)} />}
 
@@ -775,6 +758,12 @@ export default function App() {
               className="text-purple-400 hover:text-purple-300 transition flex items-center gap-2 font-bold animate-pulse"
             >
               <Zap size={16} /> APP DUELO
+            </button>
+            <button 
+              onClick={() => setIsTournamentOpen(true)}
+              className="text-yellow-500 hover:text-yellow-400 transition flex items-center gap-2 font-bold"
+            >
+              <Crown size={16} /> CRIAR TORNEIO
             </button>
             <button onClick={() => setIsDeckBuilderOpen(true)} className="hover:text-purple-400 transition">MONTE SEU DECK</button>
             <a href="#arquetipos" className="hover:text-purple-400 transition">Arquétipos</a>
@@ -799,6 +788,12 @@ export default function App() {
                   className="text-purple-400 hover:text-purple-300 font-bold flex items-center gap-2"
                 >
                   <Zap size={16} /> APP DUELO
+                </button>
+                <button 
+                  onClick={() => { setIsTournamentOpen(true); setIsMenuOpen(false); }}
+                  className="text-yellow-500 hover:text-yellow-400 font-bold flex items-center gap-2"
+                >
+                  <Crown size={16} /> CRIAR TORNEIO
                 </button>
                 <button onClick={() => { setIsDeckBuilderOpen(true); setIsMenuOpen(false); }} className="text-white hover:text-purple-400 text-left">MONTE SEU DECK</button>
                 <a href="#arquetipos" className="text-white hover:text-purple-400" onClick={()=>setIsMenuOpen(false)}>Arquétipos</a>

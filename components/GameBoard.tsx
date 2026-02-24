@@ -9,10 +9,24 @@ interface GameBoardProps {
 
 const THEMES = [
   { id: 'default', name: 'Padrão', url: null },
-  { id: 'fire', name: 'Fogo', url: 'https://images.unsplash.com/photo-1542259681-d4cd7a93f130?q=80&w=1000&auto=format&fit=crop' },
-  { id: 'water', name: 'Água', url: 'https://images.unsplash.com/photo-1518837695005-2083093ee35b?q=80&w=1000&auto=format&fit=crop' },
-  { id: 'forest', name: 'Floresta', url: 'https://images.unsplash.com/photo-1448375240586-dfd8f3793300?q=80&w=1000&auto=format&fit=crop' },
-  { id: 'dark', name: 'Trevas', url: 'https://images.unsplash.com/photo-1516617442634-75371039cb3a?q=80&w=1000&auto=format&fit=crop' },
+  { id: 'theme1', name: 'Tema 1', url: 'https://i.imgur.com/MEEgqLT.mp4' },
+  { id: 'theme2', name: 'Tema 2', url: 'https://i.imgur.com/NiXDYQ6.mp4' },
+  { id: 'theme3', name: 'Tema 3', url: 'https://i.imgur.com/uyLhRyw.mp4' },
+  { id: 'theme4', name: 'Tema 4', url: 'https://i.imgur.com/IxbaBFg.mp4' },
+  { id: 'theme5', name: 'Tema 5', url: 'https://i.imgur.com/sRRvrf0.mp4' },
+  { id: 'theme6', name: 'Tema 6', url: 'https://i.imgur.com/3haDaoN.mp4' },
+  { id: 'theme7', name: 'Tema 7', url: 'https://i.imgur.com/N1xEGwR.mp4' },
+  { id: 'theme8', name: 'Tema 8', url: 'https://i.imgur.com/zyPclYX.mp4' },
+  { id: 'theme9', name: 'Tema 9', url: 'https://i.imgur.com/B44C6fM.mp4' },
+  { id: 'theme10', name: 'Tema 10', url: 'https://i.imgur.com/9EOlPvn.mp4' },
+  { id: 'theme11', name: 'Tema 11', url: 'https://i.imgur.com/GGYybtc.mp4' },
+  { id: 'theme12', name: 'Tema 12', url: 'https://i.imgur.com/bemqfcI.mp4' },
+  { id: 'theme13', name: 'Tema 13', url: 'https://i.imgur.com/cClnOWH.mp4' },
+  { id: 'theme14', name: 'Tema 14', url: 'https://i.imgur.com/wTrMCso.mp4' },
+  { id: 'theme15', name: 'Tema 15', url: 'https://i.imgur.com/gTf8uZY.mp4' },
+  { id: 'theme16', name: 'Tema 16', url: 'https://i.imgur.com/YAgBkS9.mp4' },
+  { id: 'theme17', name: 'Tema 17', url: 'https://i.imgur.com/veA5rlN.mp4' },
+  { id: 'theme18', name: 'Tema 18', url: 'https://i.imgur.com/sh4o4pA.mp4' },
 ];
 
 export default function GameBoard({ onClose }: GameBoardProps) {
@@ -90,7 +104,7 @@ export default function GameBoard({ onClose }: GameBoardProps) {
   const QuickButton = ({ value, onClick, small = false }: { value: number, onClick: () => void, small?: boolean }) => (
     <button 
       onClick={onClick}
-      className={`${small ? 'w-6 h-6 md:w-12 md:h-12 text-[10px]' : 'w-8 h-8 md:w-12 md:h-12 text-xs'} md:text-base rounded-full bg-slate-400/20 hover:bg-slate-400/40 text-slate-300 hover:text-white font-bold flex items-center justify-center transition active:scale-95 border border-slate-500/30`}
+      className={`${small ? 'w-6 h-6 md:w-12 md:h-12 text-[10px]' : 'w-8 h-8 md:w-12 md:h-12 text-xs'} md:text-base rounded-full bg-black/40 backdrop-blur-md hover:bg-black/60 text-white font-bold flex items-center justify-center transition active:scale-95 border border-white/20 shadow-lg`}
     >
       {value > 0 ? `+${value}` : value}
     </button>
@@ -123,17 +137,28 @@ export default function GameBoard({ onClose }: GameBoardProps) {
     return (
       <div className={`flex-1 flex flex-col p-2 md:p-8 relative ${rotated ? 'rotate-180' : ''} min-h-0`}>
         
-        {/* Background Image */}
+        {/* Background Image/Video */}
         {background && (
           <div className="absolute inset-0 z-0">
-            <img src={background} alt="Theme" className="w-full h-full object-cover opacity-30" />
-            <div className="absolute inset-0 bg-gradient-to-b from-[#0f172a]/80 to-[#0f172a]/90"></div>
+            {background.endsWith('.mp4') ? (
+              <video 
+                src={background} 
+                autoPlay 
+                loop 
+                muted 
+                playsInline 
+                className="w-full h-full object-cover opacity-80"
+              />
+            ) : (
+              <img src={background} alt="Theme" className="w-full h-full object-cover opacity-80" />
+            )}
+            <div className="absolute inset-0 bg-black/40"></div>
           </div>
         )}
 
         {/* Turn Indicator */}
         <div className="flex justify-center mb-2 md:mb-8 relative z-10 shrink-0">
-          <div className={`px-4 py-1 md:px-6 md:py-2 rounded-lg font-bold uppercase tracking-widest text-[10px] md:text-base shadow-lg transition-colors duration-300 ${isActive ? 'bg-yellow-500 text-black' : 'bg-white text-black'}`}>
+          <div className={`px-4 py-1 md:px-6 md:py-2 rounded-lg font-bold uppercase tracking-widest text-[10px] md:text-base shadow-lg transition-colors duration-300 backdrop-blur-md border border-white/20 ${isActive ? 'bg-yellow-500/90 text-black' : 'bg-black/60 text-white'}`}>
             {isActive ? 'Turno de Ação' : 'Turno de Reação'}
           </div>
         </div>
@@ -355,7 +380,18 @@ export default function GameBoard({ onClose }: GameBoardProps) {
                     className="relative aspect-video rounded-lg overflow-hidden border-2 border-slate-700 hover:border-white transition group"
                   >
                     {theme.url ? (
-                      <img src={theme.url} alt={theme.name} className="w-full h-full object-cover" />
+                      theme.url.endsWith('.mp4') ? (
+                        <video 
+                          src={theme.url} 
+                          autoPlay 
+                          loop 
+                          muted 
+                          playsInline 
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <img src={theme.url} alt={theme.name} className="w-full h-full object-cover" />
+                      )
                     ) : (
                       <div className="w-full h-full bg-slate-800 flex items-center justify-center text-slate-500 font-bold">Padrão</div>
                     )}
@@ -389,25 +425,25 @@ export default function GameBoard({ onClose }: GameBoardProps) {
       />
 
       {/* Center Bar */}
-      <div className="h-10 md:h-20 bg-[#1e293b] border-y border-slate-700 flex items-center justify-between px-2 md:px-12 relative z-50 shrink-0 shadow-2xl">
+      <div className="h-10 md:h-20 bg-black/60 backdrop-blur-md border-y border-white/20 flex items-center justify-between px-2 md:px-12 relative z-50 shrink-0 shadow-2xl">
         
         {/* Menu Button */}
         <button 
           onClick={() => setIsMenuOpen(true)}
-          className="bg-slate-700 hover:bg-slate-600 text-white p-2 rounded-lg transition"
+          className="bg-black/50 hover:bg-black/70 border border-white/20 text-white p-2 rounded-lg transition"
         >
           <Menu size={20} />
         </button>
 
         <div className="flex items-center gap-2 md:gap-4">
-          <div className="border border-slate-500 rounded px-2 py-1 md:px-4 md:py-2">
-            <span className="text-white font-bold text-sm md:text-xl uppercase tracking-widest">Rodada: {rounds}</span>
+          <div className="border border-white/20 bg-black/40 rounded px-2 py-1 md:px-4 md:py-2">
+            <span className="text-white font-bold text-sm md:text-xl uppercase tracking-widest drop-shadow-md">Rodada: {rounds}</span>
           </div>
         </div>
 
         <button
           onClick={passTurn}
-          className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-1 md:px-10 md:py-3 rounded font-bold uppercase tracking-widest shadow-lg transition active:scale-95 text-xs md:text-lg"
+          className="bg-blue-600/80 hover:bg-blue-500/90 border border-blue-400/50 text-white px-4 py-1 md:px-10 md:py-3 rounded font-bold uppercase tracking-widest shadow-[0_0_15px_rgba(37,99,235,0.5)] transition active:scale-95 text-xs md:text-lg"
         >
           Passar Turno
         </button>
