@@ -377,10 +377,38 @@ const ManualModal = ({ isOpen, onClose }: { isOpen: boolean, onClose: () => void
                 </div>
 
                 <div className="bg-gradient-to-r from-purple-900/20 to-blue-900/20 p-6 rounded-lg border border-slate-700">
-                  <h3 className="text-xl font-bold text-white mb-3 flex items-center gap-2"><Users size={20}/> Batalha de Duplas (2x2)</h3>
-                  <p className="text-slate-300 text-sm mb-2"><strong>Vida e Mana Compartilhadas:</strong> 40 de Vida e 24 de Mana para a dupla.</p>
-                  <p className="text-slate-300 text-sm mb-2"><strong>Dano Direto:</strong> Só é possível causar dano direto na vida da dupla caso ambos os campos inimigos estejam sem combatentes.</p>
-                  <p className="text-slate-300 text-sm"><strong>Estrutura:</strong> Segue a mesma do 1x1, mas a dupla compartilha o mesmo turno de ataque e defesa. Seus campos são separados.</p>
+                  <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2"><Zap size={20}/> Atualizações do Sistema</h3>
+                  <ul className="space-y-4 text-slate-300 text-sm">
+                    <li>
+                      <strong className="text-purple-400 block mb-1">1. Reações Limitadas</strong>
+                      Apenas uma carta de reação a uma ação (desde que tenha mana).
+                    </li>
+                    <li>
+                      <strong className="text-purple-400 block mb-1">2. Correntes Inquebráveis</strong>
+                      Não pode quebrar a corrente de efeitos de cartas.
+                    </li>
+                    <li>
+                      <strong className="text-purple-400 block mb-1">3. Ordem de Autoridade</strong>
+                      Efeitos com "A Qualquer Momento" (exceto Macroversal) &gt; Dano no Deck/Primordial &gt; Arquétipo &gt; Efeitos de começo de rodada &gt; Efeitos de começo de turno &gt; Efeitos normais (efeitos condicionais não se aplicam nessa ordem e devem seguir as condições).<br/>
+                      <span className="text-slate-400 italic mt-1 block">Exemplo: se a carta dar 5 de dano no começo da rodada, e tiver um Conceito, ele recupera as 5 de vida antes.</span>
+                    </li>
+                    <li>
+                      <strong className="text-purple-400 block mb-1">4. Remoção de Alvo</strong>
+                      Remover um alvo de um ataque durante o combate nega o ataque do atacante, ele não poderá atacar nesse mesmo turno.
+                    </li>
+                    <li>
+                      <strong className="text-purple-400 block mb-1">5. Invocação de Heróis</strong>
+                      Heróis só podem ser invocados por outras cartas de invocação caso não possuam condições de invocação próprias na carta de herói. Nesses casos, deve-se cumprir a condição de invocação.
+                    </li>
+                    <li>
+                      <strong className="text-purple-400 block mb-1">6. Dano Primordial (Dano no Deck)</strong>
+                      O Dano no Deck ou Dano Primordial se aplica a todas as cartas do jogador inimigo (Deck, mão ou Zonas) e deve ser aplicado quando o Herói ou Combatente é invocado, removendo a vida dele. Caso ela seja zerada, ele é enviado a Zona Morta, ignorando arquétipos e efeitos. Se ele não morrer, é invocado com menos vida (ex: toma 5 de dano no deck e tem 7 de vida, é invocado com 2 de vida). Combatentes e Heróis mortos pelo Dano Primordial não podem usar seus efeitos de campo, de invocação ou de serem eliminados por combate, pois eles oficialmente não entram em campo.
+                    </li>
+                    <li>
+                      <strong className="text-purple-400 block mb-1">7. Equipamentos no Inimigo</strong>
+                      Equipamentos podem ser colocados no campo inimigo equipando um combatente dele (exceto se especificar na própria carta).
+                    </li>
+                  </ul>
                 </div>
               </div>
             )}
