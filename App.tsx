@@ -202,8 +202,8 @@ const ManualModal = ({ isOpen, onClose }: { isOpen: boolean, onClose: () => void
                   <div className="bg-slate-900/50 p-6 rounded-lg border border-slate-800">
                     <h3 className="text-xl font-bold text-purple-400 mb-4 flex items-center gap-2"><CheckCircle size={20}/> O Que É Preciso</h3>
                     <ul className="space-y-3 text-slate-300 text-sm leading-relaxed">
-                      <li><strong className="text-white">Deck:</strong> Composto por 30 a 35 cartas (contando com os heróis).</li>
-                      <li><strong className="text-white">Restrições:</strong> Não é permitido cartas repetidas. Apenas 1 Herói e suas variações no Deck.</li>
+                      <li><strong className="text-white">Deck:</strong> Composto por 30 a 35 cartas (contando com os heróis, se houver).</li>
+                      <li><strong className="text-white">Restrições:</strong> Não é permitido cartas repetidas. O uso de Herói é opcional, mas se usar, apenas 1 Herói e suas variações no Deck (com exceções para heróis que interagem entre si).</li>
                       <li><strong className="text-white">Opcionais:</strong> Campo físico, marcadores de status/vida/mana e dados D6/D20 para efeitos.</li>
                     </ul>
                   </div>
@@ -366,7 +366,7 @@ const ManualModal = ({ isOpen, onClose }: { isOpen: boolean, onClose: () => void
                 <div className="bg-slate-900/50 p-6 rounded-lg border border-slate-800">
                   <h3 className="text-lg font-bold text-white mb-3 flex items-center gap-2"><FileText size={18}/> Observações Importantes</h3>
                   <ul className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-slate-300">
-                    <li className="flex items-start gap-2"><span className="text-purple-500">•</span> Só é possível ter 1 Herói no Deck (mas quantas variações quiser).</li>
+                    <li className="flex items-start gap-2"><span className="text-purple-500">•</span> O uso de Herói é opcional, mas se usar, só é possível ter 1 Herói no Deck (com exceções para heróis que interagem entre si).</li>
                     <li className="flex items-start gap-2"><span className="text-purple-500">•</span> Vida 0 nem sempre significa fim de jogo (depende de efeitos).</li>
                     <li className="flex items-start gap-2"><span className="text-purple-500">•</span> Se retirar/voltar carta ao Deck, embaralhe.</li>
                     <li className="flex items-start gap-2"><span className="text-purple-500">•</span> Heróis retornam ao Deck de Heróis, não ao Principal.</li>
@@ -407,6 +407,10 @@ const ManualModal = ({ isOpen, onClose }: { isOpen: boolean, onClose: () => void
                     <li>
                       <strong className="text-purple-400 block mb-1">7. Equipamentos no Inimigo</strong>
                       Equipamentos podem ser colocados no campo inimigo equipando um combatente dele (exceto se especificar na própria carta).
+                    </li>
+                    <li>
+                      <strong className="text-purple-400 block mb-1">8. Sinergia de Heróis</strong>
+                      Heróis cujo o efeito interaja com outro herói que não possui o mesmo nome podem ser colocados no mesmo deck (exemplo Otto e Asmonious).
                     </li>
                   </ul>
                 </div>
