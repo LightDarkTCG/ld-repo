@@ -165,8 +165,8 @@ const ManualModal = ({ isOpen, onClose }: { isOpen: boolean, onClose: () => void
   ];
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md">
-      <div className="bg-[#0f0f13] w-full max-w-5xl h-[90vh] rounded-xl border border-slate-700 shadow-2xl flex flex-col relative overflow-hidden animate-in fade-in zoom-in duration-200">
+    <div className="fixed inset-0 z-[100] flex flex-col bg-[#0a0a0c] animate-in fade-in zoom-in duration-200">
+      <div className="w-full flex-1 flex flex-col relative overflow-hidden">
         
         {/* Header */}
         <div className="bg-slate-900 border-b border-slate-800 p-4 flex justify-between items-center shrink-0">

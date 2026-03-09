@@ -109,7 +109,10 @@ export const GameField = () => {
 
   // Common styles for slots
   const slotBaseClass = "relative rounded-lg border-2 transition-all duration-300 cursor-pointer flex items-center justify-center group overflow-hidden shadow-lg backdrop-blur-sm";
-  const slotInactiveClass = "border-slate-700/50 bg-slate-800/40 hover:bg-slate-700/60 hover:border-slate-500 hover:shadow-purple-500/10";
+  const slotInactiveBase = "border-slate-700/50 bg-slate-800/40";
+  const slotInactiveDefault = `${slotInactiveBase} hover:bg-slate-700/60 hover:border-slate-500 hover:shadow-purple-500/10`;
+  const slotInactiveCombatant = `${slotInactiveBase} hover:border-slate-400/50 hover:bg-[linear-gradient(to_bottom,rgba(239,68,68,0.25)_50%,rgba(59,130,246,0.25)_50%)] hover:shadow-[0_-12px_20px_rgba(239,68,68,0.5),0_12px_20px_rgba(59,130,246,0.5)]`;
+  const slotInactiveEffect = `${slotInactiveBase} hover:border-slate-400/50 hover:bg-[linear-gradient(to_bottom,rgba(168,85,247,0.25)_50%,rgba(34,197,94,0.25)_50%)] hover:shadow-[0_-12px_20px_rgba(168,85,247,0.5),0_12px_20px_rgba(34,197,94,0.5)]`;
   const slotActiveClass = "border-yellow-400 bg-slate-700 shadow-[0_0_20px_rgba(250,204,21,0.2)] scale-105 z-20";
 
   return (
@@ -151,9 +154,9 @@ export const GameField = () => {
                <div 
                  key={`comb-${i}`} 
                  onClick={() => handleZoneClick('combatant')}
-                 className={`${slotBaseClass} ${activeZone === 'combatant' ? slotActiveClass : slotInactiveClass}`}
+                 className={`${slotBaseClass} ${activeZone === 'combatant' ? slotActiveClass : slotInactiveCombatant}`}
                >
-                  <Sword className="text-slate-600 group-hover:text-red-500 transition duration-500 opacity-30 group-hover:opacity-100" size={32} />
+                  <Sword className="text-slate-600 group-hover:text-white transition duration-500 opacity-30 group-hover:opacity-100" size={32} />
                   <span className="absolute bottom-2 text-[10px] uppercase font-bold text-slate-600 tracking-widest opacity-0 group-hover:opacity-100 transition-opacity">Combat</span>
                </div>
              ))}
@@ -165,9 +168,9 @@ export const GameField = () => {
                <div 
                  key={`eff-${i}`} 
                  onClick={() => handleZoneClick('effect')}
-                 className={`${slotBaseClass} ${activeZone === 'effect' ? slotActiveClass : slotInactiveClass}`}
+                 className={`${slotBaseClass} ${activeZone === 'effect' ? slotActiveClass : slotInactiveEffect}`}
                >
-                  <Shield className="text-slate-600 group-hover:text-blue-500 transition duration-500 opacity-30 group-hover:opacity-100" size={32} />
+                  <Shield className="text-slate-600 group-hover:text-white transition duration-500 opacity-30 group-hover:opacity-100" size={32} />
                   <span className="absolute bottom-2 text-[10px] uppercase font-bold text-slate-600 tracking-widest opacity-0 group-hover:opacity-100 transition-opacity">Effect</span>
                </div>
              ))}
@@ -179,7 +182,7 @@ export const GameField = () => {
             {/* COL 1: Graveyard */}
             <div 
               onClick={() => handleZoneClick('graveyard')}
-              className={`${slotBaseClass} ${activeZone === 'graveyard' ? slotActiveClass : slotInactiveClass} flex-col gap-2`}
+              className={`${slotBaseClass} ${activeZone === 'graveyard' ? slotActiveClass : slotInactiveDefault} flex-col gap-2`}
             >
                <Skull className="text-slate-500" size={32} />
                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Morta</span>
@@ -203,7 +206,7 @@ export const GameField = () => {
             {/* COL 3: Main Deck */}
             <div 
               onClick={() => handleZoneClick('main-deck')}
-              className={`${slotBaseClass} ${activeZone === 'main-deck' ? slotActiveClass : slotInactiveClass} flex-col gap-2`}
+              className={`${slotBaseClass} ${activeZone === 'main-deck' ? slotActiveClass : slotInactiveDefault} flex-col gap-2`}
             >
                <Layers className="text-slate-500" size={32} />
                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest text-center">Deck<br/>Principal</span>
@@ -212,7 +215,7 @@ export const GameField = () => {
             {/* COL 4: Hero Deck */}
             <div 
               onClick={() => handleZoneClick('hero-deck')}
-              className={`${slotBaseClass} ${activeZone === 'hero-deck' ? slotActiveClass : slotInactiveClass} flex-col gap-2`}
+              className={`${slotBaseClass} ${activeZone === 'hero-deck' ? slotActiveClass : slotInactiveDefault} flex-col gap-2`}
             >
                <Crown className="text-amber-600" size={32} />
                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest text-center">Deck<br/>Herói</span>
@@ -250,7 +253,7 @@ export const GameField = () => {
             {/* COL 6: Banished */}
             <div 
               onClick={() => handleZoneClick('banished')}
-              className={`${slotBaseClass} ${activeZone === 'banished' ? slotActiveClass : slotInactiveClass} flex-col gap-2`}
+              className={`${slotBaseClass} ${activeZone === 'banished' ? slotActiveClass : slotInactiveDefault} flex-col gap-2`}
             >
                <Ban className="text-slate-500" size={32} />
                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest text-center">Zona<br/>Apagada</span>

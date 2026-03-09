@@ -151,8 +151,7 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
 
   const filteredPool = allCards.filter(card => {
     const matchesSearch = card.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                          card.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                          card.description.toLowerCase().includes(searchTerm.toLowerCase());
+                          card.code.toLowerCase().includes(searchTerm.toLowerCase());
     
     const matchesType = filters.type === "Todos" || card.type === filters.type;
     const matchesArch = filters.archetype === "Todos" || card.archetype.includes(filters.archetype);
@@ -258,7 +257,7 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={16} />
                     <input 
                       type="text" 
-                      placeholder="Buscar carta..." 
+                      placeholder="Nome ou Código..." 
                       value={searchTerm}
                       onChange={(e) => setSearchTerm(e.target.value)}
                       className="w-full bg-slate-900 border border-slate-700 rounded-lg py-2 pl-10 pr-4 text-white text-sm focus:border-purple-500 outline-none"
