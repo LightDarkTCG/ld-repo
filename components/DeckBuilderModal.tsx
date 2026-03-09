@@ -22,7 +22,8 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
     collection: "Todos",
     ct: "Todos",
     minAtk: "",
-    minDef: ""
+    minDef: "",
+    effectWord: ""
   });
 
   const [isFiltersCollapsed, setIsFiltersCollapsed] = useState(false);
@@ -161,8 +162,9 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
     // Changed to exact match (===) instead of >=
     const matchesAtk = filters.minAtk === "" || (card.attack !== undefined && card.attack === parseInt(filters.minAtk));
     const matchesDef = filters.minDef === "" || (card.defense !== undefined && card.defense === parseInt(filters.minDef));
+    const matchesEffectWord = filters.effectWord === "" || card.description.toLowerCase().includes(filters.effectWord.toLowerCase());
     
-    return matchesSearch && matchesType && matchesArch && matchesColl && matchesCt && matchesAtk && matchesDef;
+    return matchesSearch && matchesType && matchesArch && matchesColl && matchesCt && matchesAtk && matchesDef && matchesEffectWord;
   });
 
   if (!isOpen) return null;
@@ -318,8 +320,18 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
                     />
                   </div>
 
+                  <div className="flex gap-2">
+                    <input 
+                      type="text" 
+                      placeholder="Palavra no Efeito (ex: Qualquer momento)" 
+                      className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs text-white focus:border-purple-500 outline-none"
+                      value={filters.effectWord}
+                      onChange={(e) => setFilters({...filters, effectWord: e.target.value})}
+                    />
+                  </div>
+
                   <button 
-                    onClick={() => setFilters({ type: "Todos", archetype: "Todos", collection: "Todos", ct: "Todos", minAtk: "", minDef: "" })}
+                    onClick={() => setFilters({ type: "Todos", archetype: "Todos", collection: "Todos", ct: "Todos", minAtk: "", minDef: "", effectWord: "" })}
                     className="w-full text-center text-xs text-slate-500 hover:text-white underline py-1"
                   >
                     Limpar Filtros

@@ -412,6 +412,11 @@ const ManualModal = ({ isOpen, onClose }: { isOpen: boolean, onClose: () => void
                       <strong className="text-purple-400 block mb-1">8. Sinergia de Heróis</strong>
                       Heróis cujo o efeito interaja com outro herói que não possui o mesmo nome podem ser colocados no mesmo deck (exemplo Otto e Asmonious).
                     </li>
+                    <li>
+                      <strong className="text-purple-400 block mb-1">9. Efeitos em Combate</strong>
+                      Somente efeitos de combatentes condicionais ou com "A Qualquer Momento" podem ser usados durante o combate.<br/>
+                      <span className="text-slate-400 italic mt-1 block">Ex: "Durante o combate esse combatente recebe 8 de ataque" ou "A qualquer momento, retire 3 de ataque desse combatente e remova uma carta".</span>
+                    </li>
                   </ul>
                 </div>
               </div>
