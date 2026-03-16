@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { X, Search, Save, Download, Trash2, Plus, Minus, AlertTriangle, CheckCircle, BarChart3, Copy, Eye, ChevronDown, ChevronUp, ChevronRight, ChevronLeft } from 'lucide-react';
+import { X, Search, Save, Download, Trash2, Plus, Minus, AlertTriangle, CheckCircle, BarChart3, Copy, Eye, ChevronDown, ChevronUp, ChevronRight, ChevronLeft, Layers } from 'lucide-react';
 import { CardData } from '../types';
 import { allCards, collectionsList, archetypesList } from '../data';
 import { Card } from './Card';
@@ -12,6 +12,7 @@ interface DeckBuilderModalProps {
 
 export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onClose }) => {
   const [deck, setDeck] = useState<CardData[]>([]);
+  const [sideDeck, setSideDeck] = useState<CardData[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [importCode, setImportCode] = useState("");
   const [activeTab, setActiveTab] = useState<'build' | 'stats' | 'save'>('build');
@@ -31,21 +32,16 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
 
   // --- Logic ---
 
-  const addToDeck = (card: CardData) => {
-    if (deck.length >= 35) {
-      alert("O deck não pode ter mais de 35 cartas.");
-      return;
-    }
-
+  const addToDeck = (card: CardData, isSide: boolean = false) => {
     // 1 Copy Limit Rule
-    if (deck.some(c => c.code === card.code)) {
-      alert("Você só pode adicionar 1 cópia de cada carta.");
+    if (deck.some(c => c.code === card.code) || sideDeck.some(c => c.code === card.code)) {
+      alert("Você só pode adicionar 1 cópia de cada carta (Deck + Side Deck).");
       return;
     }
 
     // Hero Restriction Logic
     if (card.type === 'Herói') {
-      const existingHeroes = deck.filter(c => c.type === 'Herói');
+      const existingHeroes = [...deck, ...sideDeck].filter(c => c.type === 'Herói');
       if (existingHeroes.length > 0) {
         
         // Helper to determine Hero Identity
@@ -70,43 +66,76 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
       }
     }
 
-    setDeck([...deck, card]);
+    if (isSide) {
+      setSideDeck([...sideDeck, card]);
+    } else {
+      setDeck([...deck, card]);
+    }
   };
 
-  const removeFromDeck = (indexToRemove: number) => {
-    setDeck(deck.filter((_, index) => index !== indexToRemove));
+  const removeFromDeck = (indexToRemove: number, isSide: boolean = false) => {
+    if (isSide) {
+      setSideDeck(sideDeck.filter((_, index) => index !== indexToRemove));
+    } else {
+      setDeck(deck.filter((_, index) => index !== indexToRemove));
+    }
   };
 
   const clearDeck = () => {
-    if (confirm("Tem certeza que deseja limpar todo o deck?")) {
+    if (confirm("Tem certeza que deseja limpar todo o deck e o side deck?")) {
       setDeck([]);
+      setSideDeck([]);
     }
   };
 
   // --- Import / Export ---
 
+  const isValidToSave = deck.length >= 30 && deck.length <= 35 && sideDeck.length <= 5 && deck.some(c => c.type === 'Herói');
+
   const generateDeckCode = () => {
-    const codes = deck.map(c => c.code);
-    return btoa(JSON.stringify(codes));
+    if (!isValidToSave) return "";
+    const mainCodes = deck.map(c => c.code);
+    const sideCodes = sideDeck.map(c => c.code);
+    return btoa(JSON.stringify({ main: mainCodes, side: sideCodes }));
   };
 
   const loadDeckFromCode = () => {
     try {
       const decoded = atob(importCode);
-      const codes: string[] = JSON.parse(decoded);
+      const parsed = JSON.parse(decoded);
       
-      const newDeck: CardData[] = [];
+      let mainCodes: string[] = [];
+      let sideCodes: string[] = [];
+
+      if (Array.isArray(parsed)) {
+        mainCodes = parsed;
+      } else if (parsed && parsed.main) {
+        mainCodes = parsed.main;
+        sideCodes = parsed.side || [];
+      } else {
+        throw new Error("Invalid format");
+      }
+      
+      const newMainDeck: CardData[] = [];
+      const newSideDeck: CardData[] = [];
       let missingCount = 0;
 
-      codes.forEach(code => {
+      mainCodes.forEach(code => {
         const found = allCards.find(c => c.code === code);
-        if (found) newDeck.push(found);
+        if (found) newMainDeck.push(found);
         else missingCount++;
       });
 
-      setDeck(newDeck);
+      sideCodes.forEach(code => {
+        const found = allCards.find(c => c.code === code);
+        if (found) newSideDeck.push(found);
+        else missingCount++;
+      });
+
+      setDeck(newMainDeck);
+      setSideDeck(newSideDeck);
       setImportCode("");
-      alert(`Deck carregado! ${newDeck.length} cartas encontradas.${missingCount > 0 ? ` ${missingCount} cartas não identificadas.` : ''}`);
+      alert(`Deck carregado! ${newMainDeck.length} cartas no principal, ${newSideDeck.length} no side deck.${missingCount > 0 ? ` ${missingCount} cartas não identificadas.` : ''}`);
     } catch (e) {
       alert("Código de deck inválido.");
     }
@@ -145,7 +174,7 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
     return { counts, ctDistribution };
   }, [deck]);
 
-  const isValidDeckSize = deck.length >= 30 && deck.length <= 35;
+  const isValidDeckSize = deck.length >= 30 && deck.length <= 35 && sideDeck.length <= 5;
 
   // --- Filtered Pool ---
 
@@ -343,7 +372,9 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
             <div className="flex-1 overflow-y-auto p-2 md:p-4">
               <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-2 md:gap-3">
                 {filteredPool.map((card, idx) => {
-                  const isInDeck = deck.some(c => c.code === card.code);
+                  const isInMain = deck.some(c => c.code === card.code);
+                  const isInSide = sideDeck.some(c => c.code === card.code);
+                  const isInDeck = isInMain || isInSide;
                   return (
                     <div 
                       key={idx} 
@@ -360,18 +391,27 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
                          </button>
                          {/* Add Button */}
                          {!isInDeck && (
-                           <button 
-                             onClick={() => addToDeck(card)}
-                             className="bg-green-600 text-white rounded-full p-1 shadow-lg hover:scale-110 transition"
-                             title="Adicionar ao Deck"
-                           >
-                              <Plus size={12} />
-                           </button>
+                           <>
+                             <button 
+                               onClick={() => addToDeck(card, false)}
+                               className="bg-green-600 text-white rounded-full p-1 shadow-lg hover:scale-110 transition"
+                               title="Adicionar ao Deck Principal"
+                             >
+                                <Plus size={12} />
+                             </button>
+                             <button 
+                               onClick={() => addToDeck(card, true)}
+                               className="bg-teal-600 text-white rounded-full p-1 shadow-lg hover:scale-110 transition"
+                               title="Adicionar ao Side Deck"
+                             >
+                                <Layers size={12} />
+                             </button>
+                           </>
                          )}
                       </div>
                       
                       <div 
-                        onClick={() => !isInDeck && addToDeck(card)}
+                        onClick={() => !isInDeck && addToDeck(card, false)}
                         className={`pointer-events-none scale-[0.6] origin-top-left w-[170%] h-[170%] mb-[-70%] mr-[-70%] ${isInDeck ? 'grayscale' : ''}`}
                       >
                          <Card {...card} />
@@ -403,19 +443,19 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
                    <button className="md:hidden text-slate-400">
                       {isDeckCollapsed ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
                    </button>
-                   <h3 className="font-bold text-white text-sm md:text-base whitespace-nowrap">Seu Deck ({deck.length})</h3>
+                   <h3 className="font-bold text-white text-sm md:text-base whitespace-nowrap">Seu Deck ({deck.length + sideDeck.length})</h3>
                 </div>
                 
                 {!isDeckCollapsed && (
-                  <button onClick={(e) => { e.stopPropagation(); setDeck([]); }} className="text-xs text-red-400 hover:text-red-300 flex items-center gap-1 px-2 py-1 rounded hover:bg-red-900/20">
+                  <button onClick={(e) => { e.stopPropagation(); clearDeck(); }} className="text-xs text-red-400 hover:text-red-300 flex items-center gap-1 px-2 py-1 rounded hover:bg-red-900/20">
                     <Trash2 size={14} /> <span className="hidden md:inline">Limpar</span>
                   </button>
                 )}
               </div>
 
               {!isDeckCollapsed && (
-                <div className="flex-1 overflow-y-auto p-2 md:p-4 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')] min-h-0">
-                  {deck.length === 0 ? (
+                <div className="flex-1 overflow-y-auto p-2 md:p-4 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')] min-h-0 flex flex-col gap-6">
+                  {deck.length === 0 && sideDeck.length === 0 ? (
                     <div className="h-full flex flex-col items-center justify-center text-slate-600">
                       <div className="bg-slate-900 p-4 rounded-full mb-4">
                         <Save size={32} />
@@ -423,47 +463,113 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
                       <p className="text-sm text-center px-4">Selecione cartas à esquerda (ou acima) para adicionar.</p>
                     </div>
                   ) : (
-                    <div className="grid grid-cols-3 md:grid-cols-3 lg:grid-cols-4 gap-2 md:gap-3">
-                      {deck.map((card, idx) => (
-                        <div key={idx} className="cursor-pointer group relative hover:-translate-y-1 transition-transform">
-                          <div className="absolute -top-2 -right-2 z-10 opacity-100 md:opacity-0 group-hover:opacity-100 transition flex gap-1">
-                            <button 
-                               onClick={(e) => { e.stopPropagation(); setInspectCard(card); }}
-                               className="bg-blue-600 text-white rounded-full p-1 shadow-lg hover:scale-110 transition"
-                               title="Ver Detalhes"
-                             >
-                                <Eye size={12} />
-                             </button>
-                            <button 
-                              onClick={() => removeFromDeck(idx)}
-                              className="bg-red-600 text-white rounded-full p-1 shadow-lg hover:scale-110 transition"
-                              title="Remover"
-                            >
-                              <Minus size={12} />
-                            </button>
+                    <>
+                      {/* Main Deck */}
+                      <div>
+                        <h4 className="text-white font-bold mb-3 border-b border-slate-700 pb-1 flex justify-between items-center">
+                          <span>Deck Principal</span>
+                          <span className={`text-xs px-2 py-0.5 rounded ${deck.length >= 30 && deck.length <= 35 ? 'bg-green-900/50 text-green-400' : 'bg-red-900/50 text-red-400'}`}>{deck.length} / 30-35</span>
+                        </h4>
+                        {deck.length === 0 ? (
+                          <div className="text-slate-500 text-sm italic">Vazio</div>
+                        ) : (
+                          <div className="grid grid-cols-3 md:grid-cols-3 lg:grid-cols-4 gap-2 md:gap-3">
+                            {deck.map((card, idx) => (
+                              <div key={`main-${idx}`} className="cursor-pointer group relative hover:-translate-y-1 transition-transform">
+                                <div className="absolute -top-2 -right-2 z-10 opacity-100 md:opacity-0 group-hover:opacity-100 transition flex gap-1">
+                                  <button 
+                                     onClick={(e) => { e.stopPropagation(); setInspectCard(card); }}
+                                     className="bg-blue-600 text-white rounded-full p-1 shadow-lg hover:scale-110 transition"
+                                     title="Ver Detalhes"
+                                   >
+                                      <Eye size={12} />
+                                   </button>
+                                  <button 
+                                    onClick={() => removeFromDeck(idx, false)}
+                                    className="bg-red-600 text-white rounded-full p-1 shadow-lg hover:scale-110 transition"
+                                    title="Remover"
+                                  >
+                                    <Minus size={12} />
+                                  </button>
+                                </div>
+                                {/* Mini Card Representation */}
+                                <div 
+                                  className={`rounded-lg border p-1 md:p-2 h-24 md:h-32 flex flex-col justify-between overflow-hidden relative ${
+                                  card.type === 'Herói' ? 'bg-red-950/50 border-red-800' :
+                                  card.type === 'Combatente' ? 'bg-blue-950/50 border-blue-800' :
+                                  card.type === 'Equipamento' ? 'bg-green-950/50 border-green-800' :
+                                  'bg-purple-950/50 border-purple-800'
+                                }`}>
+                                  {card.imageUrl && (
+                                    <img src={card.imageUrl} className="absolute inset-0 w-full h-full object-cover opacity-30" alt="" />
+                                  )}
+                                  <div className="relative z-10">
+                                    <div className="text-[8px] md:text-[10px] uppercase font-bold tracking-wider opacity-70 truncate">{card.type}</div>
+                                    <div className="font-bold text-[10px] md:text-xs leading-tight line-clamp-2">{card.name}</div>
+                                  </div>
+                                  <div className="relative z-10 self-end bg-black/50 px-1 md:px-2 rounded text-[10px] md:text-xs font-mono text-yellow-400">
+                                    CT {card.ct}
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
                           </div>
-                          {/* Mini Card Representation */}
-                          <div 
-                            className={`rounded-lg border p-1 md:p-2 h-24 md:h-32 flex flex-col justify-between overflow-hidden relative ${
-                            card.type === 'Herói' ? 'bg-red-950/50 border-red-800' :
-                            card.type === 'Combatente' ? 'bg-blue-950/50 border-blue-800' :
-                            card.type === 'Equipamento' ? 'bg-green-950/50 border-green-800' :
-                            'bg-purple-950/50 border-purple-800'
-                          }`}>
-                            {card.imageUrl && (
-                              <img src={card.imageUrl} className="absolute inset-0 w-full h-full object-cover opacity-30" alt="" />
-                            )}
-                            <div className="relative z-10">
-                              <div className="text-[8px] md:text-[10px] uppercase font-bold tracking-wider opacity-70 truncate">{card.type}</div>
-                              <div className="font-bold text-[10px] md:text-xs leading-tight line-clamp-2">{card.name}</div>
-                            </div>
-                            <div className="relative z-10 self-end bg-black/50 px-1 md:px-2 rounded text-[10px] md:text-xs font-mono text-yellow-400">
-                              CT {card.ct}
-                            </div>
+                        )}
+                      </div>
+
+                      {/* Side Deck */}
+                      <div>
+                        <h4 className="text-white font-bold mb-3 border-b border-slate-700 pb-1 flex justify-between items-center">
+                          <span>Side Deck</span>
+                          <span className={`text-xs px-2 py-0.5 rounded ${sideDeck.length <= 5 ? 'bg-green-900/50 text-green-400' : 'bg-red-900/50 text-red-400'}`}>{sideDeck.length} / 5</span>
+                        </h4>
+                        {sideDeck.length === 0 ? (
+                          <div className="text-slate-500 text-sm italic">Vazio</div>
+                        ) : (
+                          <div className="grid grid-cols-3 md:grid-cols-3 lg:grid-cols-4 gap-2 md:gap-3">
+                            {sideDeck.map((card, idx) => (
+                              <div key={`side-${idx}`} className="cursor-pointer group relative hover:-translate-y-1 transition-transform">
+                                <div className="absolute -top-2 -right-2 z-10 opacity-100 md:opacity-0 group-hover:opacity-100 transition flex gap-1">
+                                  <button 
+                                     onClick={(e) => { e.stopPropagation(); setInspectCard(card); }}
+                                     className="bg-blue-600 text-white rounded-full p-1 shadow-lg hover:scale-110 transition"
+                                     title="Ver Detalhes"
+                                   >
+                                      <Eye size={12} />
+                                   </button>
+                                  <button 
+                                    onClick={() => removeFromDeck(idx, true)}
+                                    className="bg-red-600 text-white rounded-full p-1 shadow-lg hover:scale-110 transition"
+                                    title="Remover"
+                                  >
+                                    <Minus size={12} />
+                                  </button>
+                                </div>
+                                {/* Mini Card Representation */}
+                                <div 
+                                  className={`rounded-lg border p-1 md:p-2 h-24 md:h-32 flex flex-col justify-between overflow-hidden relative ${
+                                  card.type === 'Herói' ? 'bg-red-950/50 border-red-800' :
+                                  card.type === 'Combatente' ? 'bg-blue-950/50 border-blue-800' :
+                                  card.type === 'Equipamento' ? 'bg-green-950/50 border-green-800' :
+                                  'bg-purple-950/50 border-purple-800'
+                                }`}>
+                                  {card.imageUrl && (
+                                    <img src={card.imageUrl} className="absolute inset-0 w-full h-full object-cover opacity-30" alt="" />
+                                  )}
+                                  <div className="relative z-10">
+                                    <div className="text-[8px] md:text-[10px] uppercase font-bold tracking-wider opacity-70 truncate">{card.type}</div>
+                                    <div className="font-bold text-[10px] md:text-xs leading-tight line-clamp-2">{card.name}</div>
+                                  </div>
+                                  <div className="relative z-10 self-end bg-black/50 px-1 md:px-2 rounded text-[10px] md:text-xs font-mono text-yellow-400">
+                                    CT {card.ct}
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
                           </div>
-                        </div>
-                      ))}
-                    </div>
+                        )}
+                      </div>
+                    </>
                   )}
                 </div>
               )}
@@ -510,15 +616,19 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
                     <div className="space-y-2 md:space-y-3">
                       <div className={`flex items-center gap-2 md:gap-3 p-2 md:p-3 rounded border ${deck.length >= 30 ? 'bg-green-900/20 border-green-800 text-green-400' : 'bg-red-900/20 border-red-800 text-red-400'}`}>
                         {deck.length >= 30 ? <CheckCircle size={16} className="md:w-5 md:h-5" /> : <AlertTriangle size={16} className="md:w-5 md:h-5" />}
-                        <span className="text-xs md:text-base">Mínimo 30 cartas ({deck.length})</span>
+                        <span className="text-xs md:text-base">Mínimo 30 cartas no Principal ({deck.length})</span>
                       </div>
                       <div className={`flex items-center gap-2 md:gap-3 p-2 md:p-3 rounded border ${deck.length <= 35 ? 'bg-green-900/20 border-green-800 text-green-400' : 'bg-red-900/20 border-red-800 text-red-400'}`}>
                         {deck.length <= 35 ? <CheckCircle size={16} className="md:w-5 md:h-5" /> : <AlertTriangle size={16} className="md:w-5 md:h-5" />}
-                        <span className="text-xs md:text-base">Máximo 35 cartas ({deck.length})</span>
+                        <span className="text-xs md:text-base">Máximo 35 cartas no Principal ({deck.length})</span>
+                      </div>
+                      <div className={`flex items-center gap-2 md:gap-3 p-2 md:p-3 rounded border ${sideDeck.length <= 5 ? 'bg-green-900/20 border-green-800 text-green-400' : 'bg-red-900/20 border-red-800 text-red-400'}`}>
+                        {sideDeck.length <= 5 ? <CheckCircle size={16} className="md:w-5 md:h-5" /> : <AlertTriangle size={16} className="md:w-5 md:h-5" />}
+                        <span className="text-xs md:text-base">Máximo 5 cartas no Side Deck ({sideDeck.length})</span>
                       </div>
                       <div className={`flex items-center gap-2 md:gap-3 p-2 md:p-3 rounded border ${stats.counts.Heroi > 0 ? 'bg-green-900/20 border-green-800 text-green-400' : 'bg-yellow-900/20 border-yellow-800 text-yellow-400'}`}>
                         {stats.counts.Heroi > 0 ? <CheckCircle size={16} className="md:w-5 md:h-5" /> : <AlertTriangle size={16} className="md:w-5 md:h-5" />}
-                        <span className="text-xs md:text-base">Pelo menos 1 Herói</span>
+                        <span className="text-xs md:text-base">Pelo menos 1 Herói no Principal</span>
                       </div>
                     </div>
                   </div>
@@ -564,24 +674,34 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
                   <h3 className="text-2xl font-bold text-white mb-2">Salvar Deck</h3>
                   <p className="text-slate-400 mb-4">Copie o código abaixo para salvar ou compartilhar seu deck.</p>
                   
-                  {deck.length > 0 ? (
-                    <div className="flex gap-2">
-                      <input 
-                        readOnly
-                        value={generateDeckCode()}
-                        className="flex-1 bg-black border border-slate-700 rounded p-3 text-xs font-mono text-green-400 overflow-hidden text-ellipsis"
-                      />
-                      <button 
-                        onClick={() => {
-                          navigator.clipboard.writeText(generateDeckCode());
-                          alert("Código copiado!");
-                        }}
-                        className="bg-slate-800 hover:bg-slate-700 text-white p-3 rounded border border-slate-600 transition"
-                        title="Copiar"
-                      >
-                        <Copy size={20} />
-                      </button>
-                    </div>
+                  {deck.length > 0 || sideDeck.length > 0 ? (
+                    isValidToSave ? (
+                      <div className="flex gap-2">
+                        <input 
+                          readOnly
+                          value={generateDeckCode()}
+                          className="flex-1 bg-black border border-slate-700 rounded p-3 text-xs font-mono text-green-400 overflow-hidden text-ellipsis"
+                        />
+                        <button 
+                          onClick={() => {
+                            navigator.clipboard.writeText(generateDeckCode());
+                            alert("Código copiado!");
+                          }}
+                          className="bg-slate-800 hover:bg-slate-700 text-white p-3 rounded border border-slate-600 transition"
+                          title="Copiar"
+                        >
+                          <Copy size={20} />
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="text-red-500 bg-red-900/20 p-4 rounded border border-red-800 text-left text-sm space-y-2">
+                        <p className="font-bold mb-2">O deck não cumpre as regras de montagem e não pode ser salvo:</p>
+                        {deck.length < 30 && <p>• O deck principal precisa ter no mínimo 30 cartas. (Atual: {deck.length})</p>}
+                        {deck.length > 35 && <p>• O deck principal pode ter no máximo 35 cartas. (Atual: {deck.length})</p>}
+                        {sideDeck.length > 5 && <p>• O Side Deck pode ter no máximo 5 cartas. (Atual: {sideDeck.length})</p>}
+                        {stats.counts.Heroi === 0 && <p>• O deck principal precisa ter pelo menos 1 Herói.</p>}
+                      </div>
+                    )
                   ) : (
                     <div className="text-yellow-500 bg-yellow-900/20 p-4 rounded border border-yellow-800">
                       Monte um deck primeiro para gerar um código.
