@@ -29,7 +29,7 @@ export const archetypesList: ArchetypeData[] = [
     { name: "Lúmen", imageUrl: "https://i.imgur.com/8wtvMke.png", description: "Reduz em 3 o dano recebido por combate, o arquétipo Lúmen pode aumentar sua eficiência com outras cartas, aumentando sua negação de dano." },
     { name: "Darkus", imageUrl: "https://i.imgur.com/3taHUGK.png", description: "Reduz em 3 o dano recebido por efeitos de cartas, o arquétipo Darkus pode aumentar sua eficiência com outras cartas, aumentando sua negação de dano." },
     { name: "Cósmico", imageUrl: "https://i.imgur.com/iVc4vsJ.png", description: "Ao entrar em campo ou ser descartado diretamente para alguma Zona, o combatente gera 1 Runa no seu lado do campo." },
-    { name: "Véu", imageUrl: "https://i.imgur.com/ts8GRy2.png", description: "O inimigo na área a frente do combatente com Véu perde seus arquétipos até ser enviado a alguma Zona, Deck ou mão (em caso de dois combantes com Véu em frente ao outro, ambos ficam sem os Arquétipos até que um deles saia do campo)." }
+    { name: "Véu", imageUrl: "https://i.imgur.com/ts8GRy2.png", description: "O inimigo na área a frente do combatente com Véu perde seus arquétipos até ser enviado a alguma Zona, Deck ou mão (em caso de dois combantes com Véu em frente ao outro, ambos ficam sem os Arquétipos até que um deles saia do campo), esse efeito dura enquanto o combatente com Véu estiver na área." }
   ];
 
 export const allCards: CardData[] = [

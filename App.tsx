@@ -184,7 +184,11 @@ const ManualModal = ({ isOpen, onClose }: { isOpen: boolean, onClose: () => void
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id as any)}
-              className={`flex-1 flex items-center justify-center gap-1 md:gap-2 px-1 md:px-6 py-4 font-bold text-[10px] md:text-sm uppercase tracking-wider transition whitespace-nowrap border-b-2 ${activeTab === tab.id ? 'border-purple-500 text-white bg-slate-900' : 'border-transparent text-slate-500 hover:text-slate-300 hover:bg-slate-900/50'}`}
+              className={`flex-1 flex items-center justify-center gap-1 md:gap-2 px-1 md:px-6 py-4 font-bold text-[10px] md:text-sm uppercase tracking-wider transition whitespace-nowrap border-b-2 ${
+                activeTab === tab.id 
+                  ? (tab.id === 'advanced' ? 'border-yellow-500 text-yellow-500 bg-slate-900' : 'border-purple-500 text-white bg-slate-900') 
+                  : (tab.id === 'advanced' ? 'border-transparent text-yellow-500/70 hover:text-yellow-500 hover:bg-slate-900/50' : 'border-transparent text-slate-500 hover:text-slate-300 hover:bg-slate-900/50')
+              }`}
             >
               <tab.icon size={16} className="shrink-0" />
               <span>{tab.label}</span>
@@ -213,7 +217,6 @@ const ManualModal = ({ isOpen, onClose }: { isOpen: boolean, onClose: () => void
                       <li><strong className="text-white">Vida:</strong> Padrão de 20 pontos. Se chegar a 0, você perde.</li>
                       <li><strong className="text-white">Mana:</strong> Padrão de 12 pontos. Se renova no começo de cada rodada.</li>
                       <li><strong className="text-white">Runas:</strong> Quantidade de recursos gerados usados para efeitos poderosos.</li>
-                      <li><strong className="text-white">Dano Deck:</strong> Dano acumulado nos combatentes do deck.</li>
                     </ul>
                   </div>
                 </div>
@@ -376,46 +379,50 @@ const ManualModal = ({ isOpen, onClose }: { isOpen: boolean, onClose: () => void
                   </ul>
                 </div>
 
-                <div className="bg-gradient-to-r from-purple-900/20 to-blue-900/20 p-6 rounded-lg border border-slate-700">
-                  <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2"><Zap size={20}/> Atualizações do Sistema</h3>
+                <div className="bg-gradient-to-r from-yellow-900/20 to-amber-900/20 p-6 rounded-lg border border-yellow-700/50">
+                  <h3 className="text-xl font-bold text-yellow-500 mb-4 flex items-center gap-2"><Scale size={20}/> REGRAS</h3>
                   <ul className="space-y-4 text-slate-300 text-sm">
                     <li>
-                      <strong className="text-purple-400 block mb-1">1. Reações Limitadas</strong>
+                      <strong className="text-yellow-500 block mb-1">1. Reações Limitadas</strong>
                       Apenas uma carta de reação a uma ação (desde que tenha mana).
                     </li>
                     <li>
-                      <strong className="text-purple-400 block mb-1">2. Correntes Inquebráveis</strong>
+                      <strong className="text-yellow-500 block mb-1">2. Correntes Inquebráveis</strong>
                       Não pode quebrar a corrente de efeitos de cartas.
                     </li>
                     <li>
-                      <strong className="text-purple-400 block mb-1">3. Ordem de Autoridade</strong>
+                      <strong className="text-yellow-500 block mb-1">3. Ordem de Autoridade</strong>
                       Efeitos com "A Qualquer Momento" (exceto Macroversal) &gt; Dano no Deck/Primordial &gt; Arquétipo &gt; Efeitos de começo de rodada &gt; Efeitos de começo de turno &gt; Efeitos normais (efeitos condicionais não se aplicam nessa ordem e devem seguir as condições).<br/>
                       <span className="text-slate-400 italic mt-1 block">Exemplo: se a carta dar 5 de dano no começo da rodada, e tiver um Conceito, ele recupera as 5 de vida antes.</span>
                     </li>
                     <li>
-                      <strong className="text-purple-400 block mb-1">4. Remoção de Alvo</strong>
+                      <strong className="text-yellow-500 block mb-1">4. Remoção de Alvo</strong>
                       Remover um alvo de um ataque durante o combate nega o ataque do atacante, ele não poderá atacar nesse mesmo turno.
                     </li>
                     <li>
-                      <strong className="text-purple-400 block mb-1">5. Invocação de Heróis</strong>
+                      <strong className="text-yellow-500 block mb-1">5. Invocação de Heróis</strong>
                       Heróis só podem ser invocados por outras cartas de invocação caso não possuam condições de invocação próprias na carta de herói. Nesses casos, deve-se cumprir a condição de invocação.
                     </li>
                     <li>
-                      <strong className="text-purple-400 block mb-1">6. Dano Primordial (Dano no Deck)</strong>
+                      <strong className="text-yellow-500 block mb-1">6. Dano Primordial (Dano no Deck)</strong>
                       O Dano no Deck ou Dano Primordial se aplica a todas as cartas do jogador inimigo (Deck, mão ou Zonas) e deve ser aplicado quando o Herói ou Combatente é invocado, removendo a vida dele. Caso ela seja zerada, ele é enviado a Zona Morta, ignorando arquétipos e efeitos. Se ele não morrer, é invocado com menos vida (ex: toma 5 de dano no deck e tem 7 de vida, é invocado com 2 de vida). Combatentes e Heróis mortos pelo Dano Primordial não podem usar seus efeitos de campo, de invocação ou de serem eliminados por combate, pois eles oficialmente não entram em campo.
                     </li>
                     <li>
-                      <strong className="text-purple-400 block mb-1">7. Equipamentos no Inimigo</strong>
+                      <strong className="text-yellow-500 block mb-1">7. Equipamentos no Inimigo</strong>
                       Equipamentos podem ser colocados no campo inimigo equipando um combatente dele (exceto se especificar na própria carta).
                     </li>
                     <li>
-                      <strong className="text-purple-400 block mb-1">8. Sinergia de Heróis</strong>
+                      <strong className="text-yellow-500 block mb-1">8. Sinergia de Heróis</strong>
                       Heróis cujo o efeito interaja com outro herói que não possui o mesmo nome podem ser colocados no mesmo deck (exemplo Otto e Asmonious).
                     </li>
                     <li>
-                      <strong className="text-purple-400 block mb-1">9. Efeitos em Combate</strong>
+                      <strong className="text-yellow-500 block mb-1">9. Efeitos em Combate</strong>
                       Somente efeitos de combatentes condicionais ou com "A Qualquer Momento" podem ser usados durante o combate.<br/>
                       <span className="text-slate-400 italic mt-1 block">Ex: "Durante o combate esse combatente recebe 8 de ataque" ou "A qualquer momento, retire 3 de ataque desse combatente e remova uma carta".</span>
+                    </li>
+                    <li>
+                      <strong className="text-yellow-500 block mb-1">10. Invocação Negada</strong>
+                      Quando um Herói (do tipo que se invoca pelo próprio efeito) tem sua invocação negada, ele fica impossibilitado de ser invocado novamente até a rodada seguinte.
                     </li>
                   </ul>
                 </div>
