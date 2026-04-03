@@ -92,7 +92,6 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
   const isValidToSave = useMemo(() => {
     const hasValidSize = deck.length >= 30 && deck.length <= 35 && sideDeck.length <= 5;
     const mainHeroes = deck.filter(c => c.type === 'Herói');
-    const hasHero = mainHeroes.length > 0;
     
     let hasSingleHeroIdentity = true;
     if (mainHeroes.length > 1) {
@@ -100,7 +99,7 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
       hasSingleHeroIdentity = mainHeroes.every(h => getIdentity(h.name) === firstIdentity);
     }
 
-    return hasValidSize && hasHero && hasSingleHeroIdentity;
+    return hasValidSize && hasSingleHeroIdentity;
   }, [deck, sideDeck]);
 
   const generateDeckCode = () => {
@@ -637,10 +636,6 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
                         {sideDeck.length <= 5 ? <CheckCircle size={16} className="md:w-5 md:h-5" /> : <AlertTriangle size={16} className="md:w-5 md:h-5" />}
                         <span className="text-xs md:text-base">Máximo 5 cartas no Side Deck ({sideDeck.length})</span>
                       </div>
-                      <div className={`flex items-center gap-2 md:gap-3 p-2 md:p-3 rounded border ${stats.counts.Heroi > 0 ? 'bg-green-900/20 border-green-800 text-green-400' : 'bg-yellow-900/20 border-yellow-800 text-yellow-400'}`}>
-                        {stats.counts.Heroi > 0 ? <CheckCircle size={16} className="md:w-5 md:h-5" /> : <AlertTriangle size={16} className="md:w-5 md:h-5" />}
-                        <span className="text-xs md:text-base">Pelo menos 1 Herói no Principal</span>
-                      </div>
                       <div className={`flex items-center gap-2 md:gap-3 p-2 md:p-3 rounded border ${deck.filter(c => c.type === 'Herói').length <= 1 || deck.filter(c => c.type === 'Herói').every(h => getIdentity(h.name) === getIdentity(deck.filter(c => c.type === 'Herói')[0].name)) ? 'bg-green-900/20 border-green-800 text-green-400' : 'bg-red-900/20 border-red-800 text-red-400'}`}>
                         {deck.filter(c => c.type === 'Herói').length <= 1 || deck.filter(c => c.type === 'Herói').every(h => getIdentity(h.name) === getIdentity(deck.filter(c => c.type === 'Herói')[0].name)) ? <CheckCircle size={16} className="md:w-5 md:h-5" /> : <AlertTriangle size={16} className="md:w-5 md:h-5" />}
                         <span className="text-xs md:text-base">Apenas 1 tipo de Herói no Principal</span>
@@ -714,7 +709,6 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
                         {deck.length < 30 && <p>• O deck principal precisa ter no mínimo 30 cartas. (Atual: {deck.length})</p>}
                         {deck.length > 35 && <p>• O deck principal pode ter no máximo 35 cartas. (Atual: {deck.length})</p>}
                         {sideDeck.length > 5 && <p>• O Side Deck pode ter no máximo 5 cartas. (Atual: {sideDeck.length})</p>}
-                        {stats.counts.Heroi === 0 && <p>• O deck principal precisa ter pelo menos 1 Herói.</p>}
                         {deck.filter(c => c.type === 'Herói').length > 1 && !deck.filter(c => c.type === 'Herói').every(h => getIdentity(h.name) === getIdentity(deck.filter(c => c.type === 'Herói')[0].name)) && <p>• O deck principal só pode ter Heróis de um único tipo/identidade.</p>}
                       </div>
                     )
