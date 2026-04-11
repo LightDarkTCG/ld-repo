@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import LifeCounter from './game/LifeCounter';
 import SmallCounter from './game/SmallCounter';
-import { X, Plus, Minus, Menu, RotateCcw, Image as ImageIcon, LogOut, Check } from 'lucide-react';
+import { X, Plus, Minus, Menu, RotateCcw, Image as ImageIcon, LogOut, Check, History } from 'lucide-react';
 
 interface GameBoardProps {
   onClose: () => void;
@@ -40,6 +40,7 @@ export default function GameBoard({ onClose }: GameBoardProps) {
   const [showResetModal, setShowResetModal] = useState(false);
   const [showThemeModal, setShowThemeModal] = useState(false);
   const [themeTargetPlayer, setThemeTargetPlayer] = useState<1 | 2 | null>(null);
+  const [isLogOpen, setIsLogOpen] = useState(false);
 
   // Backgrounds
   const [p1Background, setP1Background] = useState<string | null>(null);
@@ -59,16 +60,52 @@ export default function GameBoard({ onClose }: GameBoardProps) {
   const [p2DeckDamage, setP2DeckDamage] = useState(0);
   const [p2Runes, setP2Runes] = useState(0);
 
+  // Action Log
+  const [actionLogs, setActionLogs] = useState<{ round: number, turn: number, activePlayer: number, diffs: string[] }[]>([]);
+  const [turnStartState, setTurnStartState] = useState({
+    p1Mana: 12, p1Life: 20, p1CtReduction: 0, p1DeckDamage: 0, p1Runes: 0,
+    p2Mana: 12, p2Life: 20, p2CtReduction: 0, p2DeckDamage: 0, p2Runes: 0,
+  });
+
   const passTurn = () => {
+    const diffs: string[] = [];
+    
+    if (p1Life !== turnStartState.p1Life) diffs.push(`P1 Vida: ${turnStartState.p1Life} -> ${p1Life}`);
+    if (p1Mana !== turnStartState.p1Mana) diffs.push(`P1 Mana: ${turnStartState.p1Mana} -> ${p1Mana}`);
+    if (p1CtReduction !== turnStartState.p1CtReduction) diffs.push(`P1 CT: ${turnStartState.p1CtReduction} -> ${p1CtReduction}`);
+    if (p1DeckDamage !== turnStartState.p1DeckDamage) diffs.push(`P1 Dano Deck: ${turnStartState.p1DeckDamage} -> ${p1DeckDamage}`);
+    if (p1Runes !== turnStartState.p1Runes) diffs.push(`P1 Runas: ${turnStartState.p1Runes} -> ${p1Runes}`);
+
+    if (p2Life !== turnStartState.p2Life) diffs.push(`P2 Vida: ${turnStartState.p2Life} -> ${p2Life}`);
+    if (p2Mana !== turnStartState.p2Mana) diffs.push(`P2 Mana: ${turnStartState.p2Mana} -> ${p2Mana}`);
+    if (p2CtReduction !== turnStartState.p2CtReduction) diffs.push(`P2 CT: ${turnStartState.p2CtReduction} -> ${p2CtReduction}`);
+    if (p2DeckDamage !== turnStartState.p2DeckDamage) diffs.push(`P2 Dano Deck: ${turnStartState.p2DeckDamage} -> ${p2DeckDamage}`);
+    if (p2Runes !== turnStartState.p2Runes) diffs.push(`P2 Runas: ${turnStartState.p2Runes} -> ${p2Runes}`);
+
+    if (diffs.length > 0) {
+      setActionLogs(prev => [...prev, { round: rounds, turn: turns, activePlayer, diffs }]);
+    }
+
     const newTurns = turns + 1;
     setTurns(newTurns);
     setActivePlayer(activePlayer === 1 ? 2 : 1);
+    
+    let nextP1Mana = p1Mana;
+    let nextP2Mana = p2Mana;
+
     if (newTurns === 2) {
       setRounds(rounds + 1);
       setTurns(0);
       setP1Mana(12);
       setP2Mana(12);
+      nextP1Mana = 12;
+      nextP2Mana = 12;
     }
+
+    setTurnStartState({
+      p1Mana: nextP1Mana, p1Life, p1CtReduction, p1DeckDamage, p1Runes,
+      p2Mana: nextP2Mana, p2Life, p2CtReduction, p2DeckDamage, p2Runes,
+    });
   };
 
   const handleReset = (startingPlayer: 1 | 2) => {
@@ -89,6 +126,12 @@ export default function GameBoard({ onClose }: GameBoardProps) {
     setP2CtReduction(0);
     setP2DeckDamage(0);
     setP2Runes(0);
+
+    setActionLogs([]);
+    setTurnStartState({
+      p1Mana: 12, p1Life: 20, p1CtReduction: 0, p1DeckDamage: 0, p1Runes: 0,
+      p2Mana: 12, p2Life: 20, p2CtReduction: 0, p2DeckDamage: 0, p2Runes: 0,
+    });
 
     setShowResetModal(false);
     setIsMenuOpen(false);
@@ -411,6 +454,41 @@ export default function GameBoard({ onClose }: GameBoardProps) {
         </div>
       )}
 
+      {/* Log Modal */}
+      {isLogOpen && (
+        <div className="absolute inset-0 z-[130] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in zoom-in duration-200">
+          <div className="bg-[#1e293b] w-full max-w-md rounded-2xl border border-slate-700 shadow-2xl p-6 max-h-[80vh] flex flex-col">
+            <div className="flex justify-between items-center mb-4 shrink-0">
+              <h3 className="text-xl font-bold text-white flex items-center gap-2"><History size={20} /> Log de Ações</h3>
+              <button onClick={() => setIsLogOpen(false)} className="text-slate-400 hover:text-white"><X size={24} /></button>
+            </div>
+            
+            <div className="flex-1 overflow-y-auto space-y-4 pr-2">
+              {actionLogs.length === 0 ? (
+                <p className="text-slate-500 text-center py-8">Nenhuma ação registrada ainda.</p>
+              ) : (
+                actionLogs.map((log, idx) => (
+                  <div key={idx} className="bg-slate-800/50 border border-slate-700 rounded-lg p-3">
+                    <div className="flex justify-between items-center mb-2 border-b border-slate-700 pb-1">
+                      <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Rodada {log.round}</span>
+                      <span className="text-xs font-bold text-blue-400">Jogador {log.activePlayer}</span>
+                    </div>
+                    <ul className="space-y-1">
+                      {log.diffs.map((diff, i) => (
+                        <li key={i} className="text-sm text-slate-300 flex items-center gap-2">
+                          <span className="w-1.5 h-1.5 rounded-full bg-slate-500"></span>
+                          {diff}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Player 1 (Top - Rotated) */}
       <PlayerBoard
         mana={p1Mana} setMana={setP1Mana}
@@ -441,12 +519,22 @@ export default function GameBoard({ onClose }: GameBoardProps) {
           </div>
         </div>
 
-        <button
-          onClick={passTurn}
-          className="bg-blue-600/80 hover:bg-blue-500/90 border border-blue-400/50 text-white px-4 py-1 md:px-10 md:py-3 rounded font-bold uppercase tracking-widest shadow-[0_0_15px_rgba(37,99,235,0.5)] transition active:scale-95 text-xs md:text-lg"
-        >
-          Passar Turno
-        </button>
+        <div className="flex items-center gap-2 md:gap-4">
+          <button
+            onClick={() => setIsLogOpen(true)}
+            className="bg-slate-700/80 hover:bg-slate-600/90 border border-slate-500/50 text-white p-1 md:px-4 md:py-3 rounded font-bold uppercase tracking-widest shadow-[0_0_15px_rgba(100,116,139,0.5)] transition active:scale-95 text-xs md:text-lg flex items-center justify-center"
+            title="Log de Ações"
+          >
+            <History size={18} className="md:mr-2" />
+            <span className="hidden md:inline">Log</span>
+          </button>
+          <button
+            onClick={passTurn}
+            className="bg-blue-600/80 hover:bg-blue-500/90 border border-blue-400/50 text-white px-4 py-1 md:px-10 md:py-3 rounded font-bold uppercase tracking-widest shadow-[0_0_15px_rgba(37,99,235,0.5)] transition active:scale-95 text-xs md:text-lg"
+          >
+            Passar Turno
+          </button>
+        </div>
       </div>
 
       {/* Player 2 (Bottom) */}

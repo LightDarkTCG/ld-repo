@@ -424,6 +424,10 @@ const ManualModal = ({ isOpen, onClose }: { isOpen: boolean, onClose: () => void
                       <strong className="text-yellow-500 block mb-1">10. Invocação Negada</strong>
                       Quando um Herói (do tipo que se invoca pelo próprio efeito) tem sua invocação negada, ele fica impossibilitado de ser invocado novamente até a rodada seguinte.
                     </li>
+                    <li>
+                      <strong className="text-yellow-500 block mb-1">11. Resoluções Automáticas</strong>
+                      Não é possível responder cartas que não foram ativadas por escolha de jogador, exemplo: "Invocação do Herói Criven", nesse caso ele é tratado como resolução a ação feita, que foi invocar o herói inimigo.
+                    </li>
                   </ul>
                 </div>
               </div>
