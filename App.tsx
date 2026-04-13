@@ -58,35 +58,54 @@ const GameLore = () => {
     <section className="py-20 bg-[#0a0a0c] border-b border-slate-900 relative">
        <div className="container mx-auto px-6 max-w-4xl">
           <div className="text-center mb-10">
-            <h2 className="text-3xl md:text-4xl font-bold text-white mb-2">A Origem do Macroverso</h2>
+            <h2 className="text-3xl md:text-4xl font-bold text-white mb-2">O Fim do Macroverso?</h2>
             <div className="h-1 w-24 bg-gradient-to-r from-purple-600 to-blue-600 mx-auto rounded-full"></div>
           </div>
-          <div className={`relative transition-all duration-700 ease-in-out ${isExpanded ? 'max-h-[2000px]' : 'max-h-40 overflow-hidden'}`}>
+          <div className={`relative transition-all duration-700 ease-in-out ${isExpanded ? 'max-h-[3000px]' : 'max-h-40 overflow-hidden'}`}>
              <div className="prose prose-invert prose-lg mx-auto text-slate-400 leading-relaxed text-justify">
                 <p className="mb-6 first-letter:text-5xl first-letter:font-bold first-letter:text-white first-letter:mr-1 first-letter:float-left">
-                  Light Dark TCG é um jogo de cartas épico que nasceu de uma RPG de mesa que existe a mais de uma década. "Antes de existir qualquer universo, havia apenas o Nada, um vazio preto e silencioso. Foi desse vazio que surgiu o Mestre, entidade que, ao criar os Conceitos, começando com o da Criação e da Existência, abriu caminho para o nascimento do Tempo, do Fogo, da Água, do Desejo e de inúmeras forças cósmicas. Cada conceito molda realidades inteiras e disputa influência sobre os universos, se algo existe é porque existe uma entidade pensante ou não.
+                  Light Dark TCG é um jogo de cartas épico que nasceu de uma RPG de mesa que existe a mais de uma década.
                 </p>
                 <p className="mb-6">
-                  No Primeiro Macroverso, Salazar, o Conceito da Paz, reinava, mas sua bondade era passiva, uma calmaria que permitia que as sombras se aprofundassem. Na sua luz branda, o Conceito Desejo encontrou um terreno fértil para crescer.
+                  "Antes de existir qualquer universo, havia apenas duas coisas, Nada e o Mestre. Foi nesse contexto que o Mestre, que ao criar algo, criou antes o Caos, a mudança, a necessidade de algo sair da imobildiade, e após isso, criou os Conceitos, como a Criação e a Existência, abrindo o caminho para o nascimento do Tempo, do Fogo, da Água, do Desejo e de inúmeras forças cósmicas. Cada conceito molda realidades inteiras e disputa influência e coexistem sobre os universos, se algo existe é porque existe uma entidade pensante ou não.
                 </p>
                 <p className="mb-6">
-                  A queda foi inevitável, a barreira entre os mundos, foi rasgada, e a guerra cósmica entre a Criação (Selena), e muitos outros contra as forças da escuridão começou, deixando um universo quebrado como herança.
+                  No Primeiro Macroverso, Salazar, o até então Conceito da Paz reinava, mas sua bondade era passiva, uma calmaria que permitia que as sombras se aprofundassem. Na sua luz branda, o Conceito Desejo encontrou um terreno fértil para crescer, manipulando a todos, desde outros Conceitos como o Tempo até o primogênito de Salazar, o inocente Ikari.
                 </p>
                 <p className="mb-6">
-                  É neste mundo fraturado que uma nova geração de heróis e monstros se ergue, todos marcados pelo legado de seus pais e de seres que eles nem mesmo sabem da existência. Eles são os Escolhidos: princesas exiladas como Hyummeng; amantes amaldiçoados como Kevin e Blair, a Eterna; guerreiros forjados na dor como Criven e Donnie; e almas torturadas buscando um propósito, como Floquinho, Três e Jenos.
+                  A queda foi inevitável, a barreira entre os mundos, foi rasgada, e na tentativa de salvar o Macroverso de sua aniquilação pelas mãos do Nada, O Conceito Paz se dividiu em 3 entidades: Solus, Salazar e Jim.<br/>
+                  Contudo, o estrago já havia sido feito e o Macroverso 1 foi reiniciado, se tornando o 2, 3 e assim até o Macroverso 13 que é onde estamos atualmente.
                 </p>
-                <p className="mb-6 italic text-slate-300">
-                  É claro, há muita história oculta a ser descoberta, muitas tramas e plots escondidos nas entrelinhas...
+                <p className="mb-6">
+                  É neste mundo fraturado que uma nova geração de heróis e monstros se ergue, todos marcados pelo legado de seus pais e de seres que eles nem mesmo sabem da existência. Eles são os Escolhidos; princesas exiladas como Hyummeng; amantes amaldiçoados como Kevin e Blair, a Eterna; guerreiros forjados na dor como Criven e Donnie; e almas torturadas buscando um propósito, como Floquinho, Três e Jenos.
+                </p>
+                <p className="mb-6 italic text-purple-500 font-bold animate-flicker">
+                  É claro, há muita história oculta a ser descoberta, muitas tramas e plots escondidos nas entrelinhas... tudo feito por Mim...
                 </p>
                 <p className="mb-6">
                   Agora, eles lutam não apenas contra os Errantes colossais ou os exércitos de Asmonious, mas também contra a desilusão. Pois neste novo mundo, as linhas se borraram: heróis são traídos por seus aliados mais confiáveis, vilões como Von Linden se tornam amigos, e a própria loucura, abraçada por acadêmicos como Patrick, pode ser a única forma de enxergar a verdade.
                 </p>
                 <p className="mb-6 border-l-4 border-purple-500 pl-4 italic bg-slate-900/50 p-4 rounded-r">
-                   No jogo, os jogadores assumem o papel de heróis, dragões, Conceitos ou variantes de personagens lendários, disputando poder, formando alianças e enfrentando escolhas que podem preservar ou destruir toda a criação. O jogo combina estratégia, múltiplas estratégias, ação e reação frenética, permitindo que cada partida seja única. Seu objetivo? Zerar a vida do outro jogador!
+                   No jogo, os jogadores assumem o papel de heróis, dragões, Conceitos ou variantes de personagens lendários, disputando poder, fazendo combos e criando interações únicas entre as cartas. O jogo combina estratégia, ação e reação frenética, permitindo que cada partida seja única. Seu objetivo? Zerar a vida do outro jogador!
                 </p>
-                <p>
-                  Acima de tudo "Light e Dark" é uma saga sobre os filhos pagando pelos pecados de seus pais. É uma história sobre como o amor, a lealdade e o sacrifício sobrevivem em um universo onde a paz se revelou uma mentira e a traição é uma constante. Presos entre a luz de um futuro que desejam e a escuridão de um passado que os assombra, é uma homenagem aos mais de 50 jogadores que passaram por essa campanha, a todos os personagens criados e todas as amizades feitas.
+                <p className="mb-6">
+                  Acima de tudo "Light e Dark" é uma homenagem aos mais de 50 jogadores que já passaram e jogaram essa campanha, sobre amigos que fizemos, sobre relacionamentos desenvolvidos, a lore também é saga sobre os filhos pagando pelos pecados de seus pais.
                 </p>
+                <p className="mb-6">
+                  É uma história sobre como o amor, a lealdade e o sacrifício sobrevivem em um universo onde a paz se revelou uma mentira e a traição é uma constante. Presos entre a luz de um futuro que desejam e a escuridão de um passado que os assombra.
+                </p>
+                <p className="mb-8 text-xl font-bold text-white text-center">
+                  Contudo... o que acontece quando a maior força de todas... decide ter vontade própria?
+                </p>
+                
+                <div className="w-full aspect-video rounded-xl overflow-hidden border border-slate-700 shadow-2xl">
+                  <video 
+                    src="https://i.imgur.com/Zxsefl0.mp4" 
+                    controls 
+                    className="w-full h-full object-cover"
+                    poster="https://i.imgur.com/cDLxOtO.png"
+                  />
+                </div>
              </div>
              {!isExpanded && (
                <div className="absolute bottom-0 left-0 w-full h-32 bg-gradient-to-t from-[#0a0a0c] via-[#0a0a0c]/80 to-transparent pointer-events-none"></div>
@@ -528,9 +547,38 @@ const BuyModal = ({ isOpen, onClose }: { isOpen: boolean, onClose: () => void })
   );
 };
 
+const EASTER_EGG_SEQUENCE = [
+  "2025/0001/00116",
+  "2025/0001/00333",
+  "2025/0001/00183",
+  "2025/0001/00235",
+  "2025/0001/00232",
+  "2025/0001/00092",
+  "2025/0001/00001",
+  "2025/0001/00214"
+];
+
+const playBeep = () => {
+  try {
+    const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.frequency.value = 600;
+    gain.gain.setValueAtTime(0.1, ctx.currentTime);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.1);
+  } catch (e) {
+    console.error("Audio context not supported", e);
+  }
+};
+
 const CatalogModal = ({ isOpen, onClose }: { isOpen: boolean, onClose: () => void }) => {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedCard, setSelectedCard] = useState<CardData | null>(null);
+  const [easterEggStep, setEasterEggStep] = useState(0);
+  const [showEasterEgg, setShowEasterEgg] = useState(false);
   const [filters, setFilters] = useState({
     type: "Todos",
     archetype: "Todos",
@@ -539,6 +587,26 @@ const CatalogModal = ({ isOpen, onClose }: { isOpen: boolean, onClose: () => voi
     minAtk: "",
     minDef: ""
   });
+
+  const handleCardClick = (card: CardData) => {
+    setSelectedCard(card);
+    
+    if (card.code === EASTER_EGG_SEQUENCE[easterEggStep]) {
+      playBeep();
+      const nextStep = easterEggStep + 1;
+      if (nextStep === EASTER_EGG_SEQUENCE.length) {
+        setShowEasterEgg(true);
+        setEasterEggStep(0);
+      } else {
+        setEasterEggStep(nextStep);
+      }
+    } else if (card.code === EASTER_EGG_SEQUENCE[0]) {
+      playBeep();
+      setEasterEggStep(1);
+    } else {
+      setEasterEggStep(0);
+    }
+  };
 
   const filteredCards = allCards.filter(card => {
     const searchLower = searchTerm.toLowerCase();
@@ -568,8 +636,35 @@ const CatalogModal = ({ isOpen, onClose }: { isOpen: boolean, onClose: () => voi
       <CardDetailModal 
         card={selectedCard} 
         onClose={() => setSelectedCard(null)} 
-        onSelectRelated={(related) => setSelectedCard(related)}
+        onSelectRelated={(related) => handleCardClick(related)}
       />
+
+      {/* Easter Egg Modal */}
+      {showEasterEgg && (
+        <div className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in zoom-in duration-300">
+          <div className="bg-slate-900 border-2 border-purple-500 rounded-2xl p-8 max-w-md w-full text-center shadow-[0_0_30px_rgba(168,85,247,0.4)]">
+            <h3 className="text-2xl font-black text-white mb-4 animate-pulse">O Caminho foi Revelado</h3>
+            <p className="text-slate-300 mb-8 text-lg">
+              Parabéns, você está no caminho certo, pegue seu prêmio!
+            </p>
+            <a 
+              href="https://drive.google.com/file/d/1SaajXaxuvF8JFCNqPVnaNeJ-IpyVP4qb/view?usp=sharing"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-block bg-purple-600 hover:bg-purple-500 text-white font-bold py-3 px-8 rounded-full transition-all hover:scale-105 hover:shadow-[0_0_15px_rgba(168,85,247,0.6)]"
+              onClick={() => setShowEasterEgg(false)}
+            >
+              Resgatar Prêmio
+            </a>
+            <button 
+              onClick={() => setShowEasterEgg(false)}
+              className="block w-full mt-4 text-slate-500 hover:text-slate-400 text-sm"
+            >
+              Fechar
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="bg-slate-900 border-b border-slate-800 p-4 flex justify-between items-center shadow-lg z-20">
         <div className="flex items-center gap-3">
@@ -679,7 +774,7 @@ const CatalogModal = ({ isOpen, onClose }: { isOpen: boolean, onClose: () => voi
         {filteredCards.length > 0 ? (
           <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-2 md:gap-8 justify-items-center">
             {filteredCards.map((card, idx) => (
-              <div key={idx} className="scale-[0.65] md:scale-90 origin-top w-full flex justify-center -mb-24 md:mb-0" onClick={() => setSelectedCard(card)}>
+              <div key={idx} className="scale-[0.65] md:scale-90 origin-top w-full flex justify-center -mb-24 md:mb-0" onClick={() => handleCardClick(card)}>
                  <Card {...card} />
               </div>
             ))}
@@ -873,11 +968,11 @@ export default function App() {
 
         <div className="container mx-auto px-6 relative z-10 text-center">
           <h2 className="text-purple-400 font-mono text-xs sm:text-sm tracking-[0.3em] uppercase mb-4 animate-pulse drop-shadow-md">Invasão do Caos</h2>
-          <h1 className="text-4xl sm:text-6xl md:text-8xl font-black text-white mb-6 tracking-tighter drop-shadow-2xl whitespace-nowrap">
-            LIGHT <span className="text-transparent bg-clip-text bg-gradient-to-r from-purple-500 to-blue-500 drop-shadow-none">DARK</span>
+          <h1 className="text-4xl sm:text-6xl md:text-8xl font-black text-purple-600 mb-6 tracking-tighter drop-shadow-2xl whitespace-nowrap glitch-text" data-text="LIGHT DARK">
+            LIGHT DARK
           </h1>
           <p className="text-lg text-slate-200 mb-10 max-w-2xl mx-auto drop-shadow-lg font-medium">
-            A batalha final entre Ordem e Caos. Monte seu deck, escolha seu Herói e domine a Zona de Combate neste TCG de Ação e Reação.
+            O Caos começou a invadir, Escolhidos, Arautos, precisamos de vocês! Monte seu deck, escolha seu Herói e domine os duelos neste TCG frenético.
           </p>
           
           <div className="flex flex-col sm:flex-row gap-4 justify-center">

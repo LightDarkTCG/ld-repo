@@ -162,9 +162,10 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card, onClose,
             <h4 className="text-sm font-bold text-purple-400 uppercase mb-3 flex items-center gap-2">
               <BookOpen size={16} /> Lore
             </h4>
-            <p className="text-slate-400 font-serif leading-relaxed">
-              "{card.lore || "Dados fragmentados... a história desta entidade perdeu-se no rasgo do Macroverso."}"
-            </p>
+            <p 
+              className="text-slate-400 font-serif leading-relaxed"
+              dangerouslySetInnerHTML={{ __html: card.lore ? `"${card.lore}"` : '"Dados fragmentados... a história desta entidade perdeu-se no rasgo do Macroverso."' }}
+            />
           </div>
 
           <div className="text-xs text-slate-600 font-mono pt-2 border-t border-slate-800 flex items-center gap-1">
