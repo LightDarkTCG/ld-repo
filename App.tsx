@@ -99,12 +99,12 @@ const GameLore = () => {
                 </p>
                 
                 <div className="w-full aspect-video rounded-xl overflow-hidden border border-slate-700 shadow-2xl">
-                  <video 
-                    src="https://i.imgur.com/Zxsefl0.mp4" 
-                    controls 
-                    className="w-full h-full object-cover"
-                    poster="https://i.imgur.com/cDLxOtO.png"
-                  />
+                  <iframe 
+                    src="https://drive.google.com/file/d/1F5prk1S1SY_kdq_XV9JkdkAnIrD7mG-L/preview" 
+                    className="w-full h-full border-0"
+                    allow="autoplay; fullscreen"
+                    title="Light Dark TCG Lore Video"
+                  ></iframe>
                 </div>
              </div>
              {!isExpanded && (
