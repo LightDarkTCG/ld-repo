@@ -648,7 +648,7 @@ const CatalogModal = ({ isOpen, onClose }: { isOpen: boolean, onClose: () => voi
               Parabéns, você está no caminho certo, pegue seu prêmio!
             </p>
             <a 
-              href="https://drive.google.com/file/d/1SaajXaxuvF8JFCNqPVnaNeJ-IpyVP4qb/view?usp=sharing"
+              href="https://drive.google.com/file/d/1gB661Rzj3zvXfD9-5NeIDq2acyPniU1x/view?usp=sharing"
               target="_blank"
               rel="noopener noreferrer"
               className="inline-block bg-purple-600 hover:bg-purple-500 text-white font-bold py-3 px-8 rounded-full transition-all hover:scale-105 hover:shadow-[0_0_15px_rgba(168,85,247,0.6)]"
