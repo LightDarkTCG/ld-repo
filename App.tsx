@@ -399,7 +399,7 @@ const ManualModal = ({ isOpen, onClose }: { isOpen: boolean, onClose: () => void
                 </div>
 
                 <div className="bg-gradient-to-r from-yellow-900/20 to-amber-900/20 p-6 rounded-lg border border-yellow-700/50">
-                  <h3 className="text-xl font-bold text-yellow-500 mb-4 flex items-center gap-2"><Scale size={20}/> REGRAS</h3>
+                  <h3 className="text-xl font-bold text-yellow-500 mb-4 flex items-center gap-2"><Scale size={20}/> PATCH NOTES</h3>
                   <ul className="space-y-4 text-slate-300 text-sm">
                     <li>
                       <strong className="text-yellow-500 block mb-1">1. Reações Limitadas</strong>
@@ -446,6 +446,14 @@ const ManualModal = ({ isOpen, onClose }: { isOpen: boolean, onClose: () => void
                     <li>
                       <strong className="text-yellow-500 block mb-1">11. Resoluções Automáticas</strong>
                       Não é possível responder cartas que não foram ativadas por escolha de jogador, exemplo: "Invocação do Herói Criven", nesse caso ele é tratado como resolução a ação feita, que foi invocar o herói inimigo.
+                    </li>
+                    <li>
+                      <strong className="text-yellow-500 block mb-1">12. Efeitos Negados e Invocações</strong>
+                      <div className="space-y-2">
+                        <p>Cartas com "nega o efeito de carta" não podem ser usadas para negar invocação (nunca puderam), combatentes com efeitos negados perdem todos os efeitos enquanto estiverem em campo, eles se tornaram combatentes/Heróis sem efeitos.</p>
+                        <p>Efeitos de combatentes podem ser negados mesmo que não estejam em uso. Ex: O efeito do Dragão da Floresta Jovem se ativa quando ele ataca e no começo da rodada, agora não precisa mais dos gatilhos para se negar o efeito dele. (a não ser que a carta diga "quando o jogador inimigo usar efeito...")</p>
+                        <p>Cartas com "nega uma carta usada" podem ser usadas para negar invocações.</p>
+                      </div>
                     </li>
                   </ul>
                 </div>
@@ -968,9 +976,14 @@ export default function App() {
 
         <div className="container mx-auto px-6 relative z-10 text-center">
           <h2 className="text-purple-400 font-mono text-xs sm:text-sm tracking-[0.3em] uppercase mb-4 animate-pulse drop-shadow-md">Invasão do Caos</h2>
-          <h1 className="text-4xl sm:text-6xl md:text-8xl font-black text-purple-600 mb-6 tracking-tighter drop-shadow-2xl whitespace-nowrap glitch-text" data-text="LIGHT DARK">
-            LIGHT DARK
-          </h1>
+          <div className="relative inline-block mb-6">
+            <h1 className="text-4xl sm:text-6xl md:text-8xl font-black text-purple-600 tracking-tighter drop-shadow-2xl whitespace-nowrap glitch-text" data-text="LIGHT DARK">
+              LIGHT DARK
+            </h1>
+            <span className="absolute top-1/2 -translate-y-1/2 left-[102%] text-3xl sm:text-5xl md:text-7xl font-mono text-purple-500 animate-flicker-rare opacity-0 tracking-normal drop-shadow-md pointer-events-none">
+              1/5
+            </span>
+          </div>
           <p className="text-lg text-slate-200 mb-10 max-w-2xl mx-auto drop-shadow-lg font-medium">
             O Caos começou a invadir, Escolhidos, Arautos, precisamos de vocês! Monte seu deck, escolha seu Herói e domine os duelos neste TCG frenético.
           </p>

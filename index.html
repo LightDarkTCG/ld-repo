@@ -42,8 +42,25 @@
           text-shadow: none;
         }
       }
+      @keyframes flicker-rare {
+        0%, 90% {
+          opacity: 0;
+          text-shadow: none;
+        }
+        90.1%, 92%, 94.1%, 96%, 98.1%, 100% {
+          opacity: 1;
+          text-shadow: 0 0 15px rgba(168, 85, 247, 0.9), 0 0 30px rgba(168, 85, 247, 0.7);
+        }
+        92.1%, 94%, 96.1%, 98% {
+          opacity: 0.2;
+          text-shadow: none;
+        }
+      }
       .animate-flicker {
         animation: flicker 5s infinite;
+      }
+      .animate-flicker-rare {
+        animation: flicker-rare 10s infinite;
       }
       
       .glitch-text {
