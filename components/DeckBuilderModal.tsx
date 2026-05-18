@@ -21,6 +21,7 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
     type: "Todos",
     archetype: "Todos",
     collection: "Todos",
+    frame: "Todos",
     ct: "Todos",
     minAtk: "",
     minDef: "",
@@ -195,6 +196,7 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
     const matchesType = filters.type === "Todos" || card.type === filters.type;
     const matchesArch = filters.archetype === "Todos" || card.archetype.includes(filters.archetype);
     const matchesColl = filters.collection === "Todos" || card.collection === filters.collection;
+    const matchesFrame = filters.frame === "Todos" || (card.frame || "Legado") === filters.frame;
     const matchesCt = filters.ct === "Todos" || card.ct === parseInt(filters.ct);
     
     // Changed to exact match (===) instead of >=
@@ -202,7 +204,7 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
     const matchesDef = filters.minDef === "" || (card.defense !== undefined && card.defense === parseInt(filters.minDef));
     const matchesEffectWord = filters.effectWord === "" || card.description.toLowerCase().includes(filters.effectWord.toLowerCase());
     
-    return matchesSearch && matchesType && matchesArch && matchesColl && matchesCt && matchesAtk && matchesDef && matchesEffectWord;
+    return matchesSearch && matchesType && matchesArch && matchesColl && matchesFrame && matchesCt && matchesAtk && matchesDef && matchesEffectWord;
   });
 
   if (!isOpen) return null;
@@ -303,11 +305,20 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
                     />
                   </div>
                   
-                  <div className="flex flex-wrap gap-2">
-                    <select 
-                      className="bg-slate-900 text-xs text-white border border-slate-700 rounded px-2 py-1 outline-none flex-1 min-w-[80px]"
-                      value={filters.type} onChange={(e) => setFilters({...filters, type: e.target.value})}
-                    >
+                    <div className="flex flex-wrap gap-2">
+                      <select 
+                        className="bg-slate-900 text-xs text-white border border-slate-700 rounded px-2 py-1 outline-none flex-1 min-w-[80px]"
+                        value={filters.frame} onChange={(e) => setFilters({...filters, frame: e.target.value})}
+                      >
+                        <option value="Todos">Frame: Todos</option>
+                        <option value="Legado">Legado</option>
+                        <option value="Moderno">Moderno</option>
+                      </select>
+
+                      <select 
+                        className="bg-slate-900 text-xs text-white border border-slate-700 rounded px-2 py-1 outline-none flex-1 min-w-[80px]"
+                        value={filters.type} onChange={(e) => setFilters({...filters, type: e.target.value})}
+                      >
                       <option value="Todos">Tipo: Todos</option>
                       <option value="Herói">Herói</option>
                       <option value="Combatente">Combatente</option>
@@ -369,7 +380,7 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
                   </div>
 
                   <button 
-                    onClick={() => setFilters({ type: "Todos", archetype: "Todos", collection: "Todos", ct: "Todos", minAtk: "", minDef: "", effectWord: "" })}
+                    onClick={() => setFilters({ type: "Todos", archetype: "Todos", collection: "Todos", frame: "Todos", ct: "Todos", minAtk: "", minDef: "", effectWord: "" })}
                     className="w-full text-center text-xs text-slate-500 hover:text-white underline py-1"
                   >
                     Limpar Filtros

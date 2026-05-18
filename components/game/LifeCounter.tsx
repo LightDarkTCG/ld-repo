@@ -15,7 +15,6 @@ const LifeCounter: React.FC<LifeCounterProps> = ({ imageUrl, value, onChange, ti
     <div className={`relative flex flex-col items-center justify-center bg-black/40 backdrop-blur-md rounded-xl border-2 ${borderColor} overflow-hidden h-20 md:h-32 w-full transition-all duration-300 shadow-xl`}>
       {/* Background Image with Overlay */}
       <div className="absolute inset-0 z-0">
-        <img src={imageUrl} alt={title} className="w-full h-full object-cover opacity-30" />
         <div className="absolute inset-0 bg-gradient-to-b from-transparent via-black/40 to-black/80"></div>
       </div>
 

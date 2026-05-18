@@ -41,6 +41,14 @@ export default function GameBoard({ onClose }: GameBoardProps) {
   const [showThemeModal, setShowThemeModal] = useState(false);
   const [themeTargetPlayer, setThemeTargetPlayer] = useState<1 | 2 | null>(null);
   const [isLogOpen, setIsLogOpen] = useState(false);
+  const [showSetup, setShowSetup] = useState(true);
+
+  // Match settings
+  const [p1Name, setP1Name] = useState('Jogador 1');
+  const [p2Name, setP2Name] = useState('Jogador 2');
+  const [matchFormat, setMatchFormat] = useState<1 | 3 | 5>(3);
+  const [p1Wins, setP1Wins] = useState(0);
+  const [p2Wins, setP2Wins] = useState(0);
 
   // Backgrounds
   const [p1Background, setP1Background] = useState<string | null>(null);
@@ -52,6 +60,7 @@ export default function GameBoard({ onClose }: GameBoardProps) {
   const [p1CtReduction, setP1CtReduction] = useState(0);
   const [p1DeckDamage, setP1DeckDamage] = useState(0);
   const [p1Runes, setP1Runes] = useState(0);
+  const [p1Insanity, setP1Insanity] = useState(100);
 
   // Player 2 (bottom)
   const [p2Mana, setP2Mana] = useState(12);
@@ -59,12 +68,13 @@ export default function GameBoard({ onClose }: GameBoardProps) {
   const [p2CtReduction, setP2CtReduction] = useState(0);
   const [p2DeckDamage, setP2DeckDamage] = useState(0);
   const [p2Runes, setP2Runes] = useState(0);
+  const [p2Insanity, setP2Insanity] = useState(100);
 
   // Action Log
   const [actionLogs, setActionLogs] = useState<{ round: number, turn: number, activePlayer: number, diffs: string[] }[]>([]);
   const [turnStartState, setTurnStartState] = useState({
-    p1Mana: 12, p1Life: 20, p1CtReduction: 0, p1DeckDamage: 0, p1Runes: 0,
-    p2Mana: 12, p2Life: 20, p2CtReduction: 0, p2DeckDamage: 0, p2Runes: 0,
+    p1Mana: 12, p1Life: 20, p1CtReduction: 0, p1DeckDamage: 0, p1Runes: 0, p1Insanity: 100,
+    p2Mana: 12, p2Life: 20, p2CtReduction: 0, p2DeckDamage: 0, p2Runes: 0, p2Insanity: 100,
   });
 
   const passTurn = () => {
@@ -73,14 +83,16 @@ export default function GameBoard({ onClose }: GameBoardProps) {
     if (p1Life !== turnStartState.p1Life) diffs.push(`P1 Vida: ${turnStartState.p1Life} -> ${p1Life}`);
     if (p1Mana !== turnStartState.p1Mana) diffs.push(`P1 Mana: ${turnStartState.p1Mana} -> ${p1Mana}`);
     if (p1CtReduction !== turnStartState.p1CtReduction) diffs.push(`P1 CT: ${turnStartState.p1CtReduction} -> ${p1CtReduction}`);
-    if (p1DeckDamage !== turnStartState.p1DeckDamage) diffs.push(`P1 Dano Deck: ${turnStartState.p1DeckDamage} -> ${p1DeckDamage}`);
+    if (p1DeckDamage !== turnStartState.p1DeckDamage) diffs.push(`P1 Dano Primordial: ${turnStartState.p1DeckDamage} -> ${p1DeckDamage}`);
     if (p1Runes !== turnStartState.p1Runes) diffs.push(`P1 Runas: ${turnStartState.p1Runes} -> ${p1Runes}`);
+    if (p1Insanity !== turnStartState.p1Insanity) diffs.push(`P1 Insanidade: ${turnStartState.p1Insanity} -> ${p1Insanity}`);
 
     if (p2Life !== turnStartState.p2Life) diffs.push(`P2 Vida: ${turnStartState.p2Life} -> ${p2Life}`);
     if (p2Mana !== turnStartState.p2Mana) diffs.push(`P2 Mana: ${turnStartState.p2Mana} -> ${p2Mana}`);
     if (p2CtReduction !== turnStartState.p2CtReduction) diffs.push(`P2 CT: ${turnStartState.p2CtReduction} -> ${p2CtReduction}`);
-    if (p2DeckDamage !== turnStartState.p2DeckDamage) diffs.push(`P2 Dano Deck: ${turnStartState.p2DeckDamage} -> ${p2DeckDamage}`);
+    if (p2DeckDamage !== turnStartState.p2DeckDamage) diffs.push(`P2 Dano Primordial: ${turnStartState.p2DeckDamage} -> ${p2DeckDamage}`);
     if (p2Runes !== turnStartState.p2Runes) diffs.push(`P2 Runas: ${turnStartState.p2Runes} -> ${p2Runes}`);
+    if (p2Insanity !== turnStartState.p2Insanity) diffs.push(`P2 Insanidade: ${turnStartState.p2Insanity} -> ${p2Insanity}`);
 
     if (diffs.length > 0) {
       setActionLogs(prev => [...prev, { round: rounds, turn: turns, activePlayer, diffs }]);
@@ -103,8 +115,8 @@ export default function GameBoard({ onClose }: GameBoardProps) {
     }
 
     setTurnStartState({
-      p1Mana: nextP1Mana, p1Life, p1CtReduction, p1DeckDamage, p1Runes,
-      p2Mana: nextP2Mana, p2Life, p2CtReduction, p2DeckDamage, p2Runes,
+      p1Mana: nextP1Mana, p1Life, p1CtReduction, p1DeckDamage, p1Runes, p1Insanity,
+      p2Mana: nextP2Mana, p2Life, p2CtReduction, p2DeckDamage, p2Runes, p2Insanity,
     });
   };
 
@@ -119,6 +131,7 @@ export default function GameBoard({ onClose }: GameBoardProps) {
     setP1CtReduction(0);
     setP1DeckDamage(0);
     setP1Runes(0);
+    setP1Insanity(100);
 
     // Reset P2
     setP2Mana(12);
@@ -126,11 +139,12 @@ export default function GameBoard({ onClose }: GameBoardProps) {
     setP2CtReduction(0);
     setP2DeckDamage(0);
     setP2Runes(0);
+    setP2Insanity(100);
 
     setActionLogs([]);
     setTurnStartState({
-      p1Mana: 12, p1Life: 20, p1CtReduction: 0, p1DeckDamage: 0, p1Runes: 0,
-      p2Mana: 12, p2Life: 20, p2CtReduction: 0, p2DeckDamage: 0, p2Runes: 0,
+      p1Mana: 12, p1Life: 20, p1CtReduction: 0, p1DeckDamage: 0, p1Runes: 0, p1Insanity: 100,
+      p2Mana: 12, p2Life: 20, p2CtReduction: 0, p2DeckDamage: 0, p2Runes: 0, p2Insanity: 100,
     });
 
     setShowResetModal(false);
@@ -159,6 +173,7 @@ export default function GameBoard({ onClose }: GameBoardProps) {
     ctReduction, setCtReduction, 
     deckDamage, setDeckDamage, 
     runes, setRunes,
+    insanity, setInsanity,
     rotated = false,
     isActive = false,
     background = null,
@@ -201,8 +216,44 @@ export default function GameBoard({ onClose }: GameBoardProps) {
 
         {/* Turn Indicator */}
         <div className="flex justify-center mb-2 md:mb-8 relative z-10 shrink-0">
-          <div className={`px-4 py-1 md:px-6 md:py-2 rounded-lg font-bold uppercase tracking-widest text-[10px] md:text-base shadow-lg transition-colors duration-300 backdrop-blur-md border border-white/20 ${isActive ? 'bg-yellow-500/90 text-black' : 'bg-black/60 text-white'}`}>
-            {isActive ? 'Turno de Ação' : 'Turno de Reação'}
+          <div className="flex flex-col items-center gap-1.5 md:gap-3">
+            <div className="flex items-center gap-2 md:gap-4">
+              {/* Turn Indicator placed to the left */}
+              <div className={`px-4 py-1 md:px-6 md:py-2 rounded-lg font-bold uppercase tracking-widest text-[8px] sm:text-[10px] md:text-base shadow-lg transition-colors duration-300 backdrop-blur-md border border-white/20 ${isActive ? 'bg-yellow-500/90 text-black shadow-[0_0_15px_rgba(234,179,8,0.5)]' : 'bg-black/60 text-white'}`}>
+                {isActive ? 'Turno de Ação' : 'Turno de Reação'}
+              </div>
+
+              {/* Player Name Tag */}
+              <button 
+                onClick={() => {
+                  if (playerNum === 1) {
+                    setP1Wins((prev) => (prev + 1) % (Math.ceil(matchFormat / 2) + 1));
+                  } else {
+                    setP2Wins((prev) => (prev + 1) % (Math.ceil(matchFormat / 2) + 1));
+                  }
+                }}
+                className="bg-black/60 border border-white/20 text-white font-bold text-[10px] md:text-sm px-4 py-1 md:py-2 rounded-full drop-shadow-md hover:bg-white/10 transition flex items-center gap-2"
+                title="Clique para adicionar vitória"
+              >
+                <span className="opacity-70 text-purple-400">P{playerNum}</span> | {playerNum === 1 ? p1Name : p2Name}
+              </button>
+            </div>
+            
+            {/* Win Indicators */}
+            {matchFormat > 1 && (
+              <div className="flex gap-2.5 mt-1">
+                {Array.from({ length: Math.ceil(matchFormat / 2) }).map((_, i) => (
+                  <div 
+                    key={i} 
+                    className={`w-3 h-3 md:w-5 md:h-5 rounded-full border-2 border-white/30 transition-all ${
+                      (playerNum === 1 ? p1Wins : p2Wins) > i 
+                      ? 'bg-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.8)] border-blue-400' 
+                      : 'bg-black/40'
+                    }`}
+                  />
+                ))}
+              </div>
+            )}
           </div>
         </div>
 
@@ -266,7 +317,7 @@ export default function GameBoard({ onClose }: GameBoardProps) {
                 imageUrl="https://i.imgur.com/ewap7GN.png"
                 value={deckDamage} 
                 onChange={setDeckDamage}
-                title="Dano no Deck"
+                title="Dano Primordial"
                 borderColor={getDeckDamageBorderColor(deckDamage)}
               />
               <div className="flex flex-col gap-0.5 md:gap-2">
@@ -290,6 +341,22 @@ export default function GameBoard({ onClose }: GameBoardProps) {
               </div>
             </div>
 
+            {/* Insanidade */}
+            <div className="flex items-center gap-1 md:gap-4">
+              <SmallCounter 
+                imageUrl=""
+                value={insanity} 
+                onChange={setInsanity}
+                title="Insanidade"
+                borderColor="border-purple-600"
+                textColor="text-purple-300"
+              />
+              <div className="flex flex-col gap-0.5 md:gap-2">
+                <QuickButton value={5} onClick={() => setInsanity(insanity + 5)} small />
+                <QuickButton value={-5} onClick={() => setInsanity(insanity - 5)} small />
+              </div>
+            </div>
+
           </div>
         </div>
         
@@ -303,7 +370,76 @@ export default function GameBoard({ onClose }: GameBoardProps) {
   return (
     <div className="fixed inset-0 z-[100] h-screen w-full bg-[#0f172a] flex flex-col overflow-hidden font-sans">
       
-      {/* Menu Button Removed - Moved to Center Bar */}
+      {/* Starting Setup Modal */}
+      {showSetup && (
+        <div className="absolute inset-0 z-[200] bg-black/90 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-300">
+          <div className="bg-[#1e293b] w-full max-w-lg rounded-3xl border-2 border-purple-500/50 shadow-[0_0_40px_rgba(168,85,247,0.3)] p-8">
+            <h2 className="text-3xl font-black text-white mb-6 text-center tracking-tighter flex items-center justify-center gap-3">
+              <LogOut className="rotate-180 text-purple-400" />
+              NOVO DUELO
+            </h2>
+            
+            <div className="space-y-6">
+              {/* Nomes dos Jogadores */}
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-slate-400 text-sm font-bold mb-2 uppercase tracking-widest">Jogador 1 (Topo)</label>
+                  <input 
+                    type="text" 
+                    value={p1Name}
+                    onChange={(e) => setP1Name(e.target.value)}
+                    className="w-full bg-slate-900 border-2 border-slate-700 focus:border-purple-500 rounded-xl px-4 py-3 text-white font-bold outline-none transition"
+                    placeholder="Nome do Jogador 1"
+                  />
+                </div>
+                <div>
+                  <label className="block text-slate-400 text-sm font-bold mb-2 uppercase tracking-widest">Jogador 2 (Baixo)</label>
+                  <input 
+                    type="text" 
+                    value={p2Name}
+                    onChange={(e) => setP2Name(e.target.value)}
+                    className="w-full bg-slate-900 border-2 border-slate-700 focus:border-blue-500 rounded-xl px-4 py-3 text-white font-bold outline-none transition"
+                    placeholder="Nome do Jogador 2"
+                  />
+                </div>
+              </div>
+
+              {/* Formato da Partida */}
+              <div>
+                <label className="block text-slate-400 text-sm font-bold mb-3 uppercase tracking-widest text-center">Formato da Partida</label>
+                <div className="grid grid-cols-3 gap-3">
+                  {[1, 3, 5].map((fmt) => (
+                    <button
+                      key={fmt}
+                      onClick={() => setMatchFormat(fmt as 1 | 3 | 5)}
+                      className={`py-3 rounded-xl font-black text-lg transition-all border-2 ${
+                        matchFormat === fmt 
+                        ? 'bg-purple-600 border-purple-400 text-white shadow-[0_0_15px_rgba(168,85,247,0.6)] scale-105' 
+                        : 'bg-slate-800 border-slate-700 text-slate-400 hover:border-slate-500'
+                      }`}
+                    >
+                      MD{fmt}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-center text-xs text-slate-500 mt-3 font-semibold">
+                  {matchFormat === 1 && "Vitória Simples - 1 Jogo"}
+                  {matchFormat === 3 && "Melhor de 3 - Vence quem ganhar 2"}
+                  {matchFormat === 5 && "Melhor de 5 - Vence quem ganhar 3"}
+                </p>
+              </div>
+
+              {/* Iniciar Button */}
+              <button 
+                onClick={() => setShowSetup(false)}
+                className="w-full bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 text-white font-black py-4 rounded-xl shadow-lg border border-white/20 transition-all hover:scale-[1.02] active:scale-95 text-lg"
+              >
+                COMEÇAR DUELO
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Menu Overlay */}
       {isMenuOpen && (
@@ -496,6 +632,7 @@ export default function GameBoard({ onClose }: GameBoardProps) {
         ctReduction={p1CtReduction} setCtReduction={setP1CtReduction}
         deckDamage={p1DeckDamage} setDeckDamage={setP1DeckDamage}
         runes={p1Runes} setRunes={setP1Runes}
+        insanity={p1Insanity} setInsanity={setP1Insanity}
         rotated={true}
         isActive={activePlayer === 1}
         background={p1Background}
@@ -544,6 +681,7 @@ export default function GameBoard({ onClose }: GameBoardProps) {
         ctReduction={p2CtReduction} setCtReduction={setP2CtReduction}
         deckDamage={p2DeckDamage} setDeckDamage={setP2DeckDamage}
         runes={p2Runes} setRunes={setP2Runes}
+        insanity={p2Insanity} setInsanity={setP2Insanity}
         rotated={false}
         isActive={activePlayer === 2}
         background={p2Background}

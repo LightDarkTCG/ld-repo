@@ -15,7 +15,6 @@ const SmallCounter: React.FC<SmallCounterProps> = ({ imageUrl, value, onChange, 
     <div className={`relative flex flex-col items-center justify-center bg-black/40 backdrop-blur-md rounded-lg border ${borderColor} overflow-hidden h-14 md:h-24 w-full transition-all duration-300 shadow-lg`}>
       {/* Background Image with Overlay */}
       <div className="absolute inset-0 z-0">
-        <img src={imageUrl} alt={title} className="w-full h-full object-cover opacity-30" />
         <div className="absolute inset-0 bg-gradient-to-b from-transparent via-black/40 to-black/80"></div>
       </div>
 

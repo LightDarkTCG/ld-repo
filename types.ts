@@ -7,6 +7,7 @@ export interface CardData {
   type: CardType;
   archetype: string;
   collection: string;
+  frame?: 'Legado' | 'Moderno';
   ct: number;
   attack?: number;
   defense?: number;

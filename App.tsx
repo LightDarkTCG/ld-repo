@@ -411,7 +411,7 @@ const ManualModal = ({ isOpen, onClose }: { isOpen: boolean, onClose: () => void
                     </li>
                     <li>
                       <strong className="text-yellow-500 block mb-1">3. Ordem de Autoridade</strong>
-                      Efeitos com "A Qualquer Momento" (exceto Macroversal) &gt; Dano no Deck/Primordial &gt; Arquétipo &gt; Efeitos de começo de rodada &gt; Efeitos de começo de turno &gt; Efeitos normais (efeitos condicionais não se aplicam nessa ordem e devem seguir as condições).<br/>
+                      Efeitos com "A Qualquer Momento" (exceto Macroversal) &gt; Dano Primordial &gt; Arquétipo &gt; Efeitos de começo de rodada &gt; Efeitos de começo de turno &gt; Efeitos normais (efeitos condicionais não se aplicam nessa ordem e devem seguir as condições).<br/>
                       <span className="text-slate-400 italic mt-1 block">Exemplo: se a carta dar 5 de dano no começo da rodada, e tiver um Conceito, ele recupera as 5 de vida antes.</span>
                     </li>
                     <li>
@@ -423,8 +423,8 @@ const ManualModal = ({ isOpen, onClose }: { isOpen: boolean, onClose: () => void
                       Heróis só podem ser invocados por outras cartas de invocação caso não possuam condições de invocação próprias na carta de herói. Nesses casos, deve-se cumprir a condição de invocação.
                     </li>
                     <li>
-                      <strong className="text-yellow-500 block mb-1">6. Dano Primordial (Dano no Deck)</strong>
-                      O Dano no Deck ou Dano Primordial se aplica a todas as cartas do jogador inimigo (Deck, mão ou Zonas) e deve ser aplicado quando o Herói ou Combatente é invocado, removendo a vida dele. Caso ela seja zerada, ele é enviado a Zona Morta, ignorando arquétipos e efeitos. Se ele não morrer, é invocado com menos vida (ex: toma 5 de dano no deck e tem 7 de vida, é invocado com 2 de vida). Combatentes e Heróis mortos pelo Dano Primordial não podem usar seus efeitos de campo, de invocação ou de serem eliminados por combate, pois eles oficialmente não entram em campo.
+                      <strong className="text-yellow-500 block mb-1">6. Dano Primordial</strong>
+                      O Dano Primordial se aplica a todas as cartas do jogador inimigo (Deck, mão ou Zonas) e deve ser aplicado quando o Herói ou Combatente é invocado, removendo a vida dele. Caso ela seja zerada, ele é enviado a Zona Morta, ignorando arquétipos e efeitos. Se ele não morrer, é invocado com menos vida (ex: toma 5 de dano primordial e tem 7 de vida, é invocado com 2 de vida). Combatentes e Heróis mortos pelo Dano Primordial não podem usar seus efeitos de campo, de invocação ou de serem eliminados por combate, pois eles oficialmente não entram em campo.
                     </li>
                     <li>
                       <strong className="text-yellow-500 block mb-1">7. Equipamentos no Inimigo</strong>
@@ -591,6 +591,7 @@ const CatalogModal = ({ isOpen, onClose }: { isOpen: boolean, onClose: () => voi
     type: "Todos",
     archetype: "Todos",
     collection: "Todos",
+    frame: "Todos",
     minCt: "",
     minAtk: "",
     minDef: ""
@@ -626,13 +627,14 @@ const CatalogModal = ({ isOpen, onClose }: { isOpen: boolean, onClose: () => voi
     const matchesType = filters.type === "Todos" || card.type === filters.type;
     const matchesArchetype = filters.archetype === "Todos" || card.archetype.includes(filters.archetype);
     const matchesCollection = filters.collection === "Todos" || (card.collection && card.collection === filters.collection);
+    const matchesFrame = filters.frame === "Todos" || (card.frame || "Legado") === filters.frame;
     const matchesCt = filters.minCt === "" || card.ct === parseInt(filters.minCt);
     
     // Changed to exact match (===) instead of >=
     const matchesAtk = filters.minAtk === "" || (card.attack !== undefined && card.attack === parseInt(filters.minAtk));
     const matchesDef = filters.minDef === "" || (card.defense !== undefined && card.defense === parseInt(filters.minDef));
 
-    return matchesSearch && matchesType && matchesArchetype && matchesCollection && matchesCt && matchesAtk && matchesDef;
+    return matchesSearch && matchesType && matchesArchetype && matchesCollection && matchesFrame && matchesCt && matchesAtk && matchesDef;
   });
 
   if (!isOpen) return null;
@@ -712,6 +714,19 @@ const CatalogModal = ({ isOpen, onClose }: { isOpen: boolean, onClose: () => voi
             </div>
 
             <div className="flex items-center gap-2 bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 flex-1 md:flex-none">
+              <span className="text-xs text-slate-500 uppercase font-bold">Frame</span>
+              <select 
+                className="bg-purple-950 text-sm text-white outline-none cursor-pointer rounded px-2 w-full md:w-32"
+                value={filters.frame}
+                onChange={(e) => setFilters({...filters, frame: e.target.value})}
+              >
+                <option className="bg-purple-950" value="Todos">Todos</option>
+                <option className="bg-purple-950" value="Legado">Legado</option>
+                <option className="bg-purple-950" value="Moderno">Moderno</option>
+              </select>
+            </div>
+
+            <div className="flex items-center gap-2 bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 flex-1 md:flex-none">
               <Filter size={14} className="text-slate-500" />
               <select 
                 className="bg-purple-950 text-sm text-white outline-none cursor-pointer rounded px-2 w-full"
@@ -767,7 +782,7 @@ const CatalogModal = ({ isOpen, onClose }: { isOpen: boolean, onClose: () => voi
           
             <button 
               onClick={() => {
-                setFilters({ type: "Todos", archetype: "Todos", collection: "Todos", minCt: "", minAtk: "", minDef: "" });
+                setFilters({ type: "Todos", archetype: "Todos", collection: "Todos", frame: "Todos", minCt: "", minAtk: "", minDef: "" });
                 setSearchTerm("");
               }}
               className="text-xs text-slate-400 hover:text-white underline ml-auto md:ml-2 whitespace-nowrap"

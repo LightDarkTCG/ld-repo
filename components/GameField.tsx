@@ -74,8 +74,8 @@ const zones: ZoneInfo[] = [
   },
   {
     id: 'deck-damage',
-    title: 'Dano no Deck',
-    description: 'Certos efeitos "queimam" o deck do oponente, quando um valor de dano é dado ao deck, todos os combatentes com vida igual ou menor a esse dano morrem automaticamente ao serem invocados.',
+    title: 'Dano Primordial',
+    description: 'Certos efeitos "queimam" o deck do oponente, quando um valor de dano é dado ao deck (Dano Primordial), todos os combatentes perdem vida igual a esse dano e morrem automaticamente ao serem invocados se zerar a vida.',
     type: 'modifiers',
     color: 'bg-orange-600',
     icon: Flame
@@ -236,7 +236,7 @@ export const GameField = () => {
                <div 
                  onClick={() => handleZoneClick('deck-damage')}
                  className={`flex-1 rounded border border-slate-700 hover:border-orange-500 hover:bg-orange-500/10 cursor-pointer flex items-center justify-center transition ${activeZone === 'deck-damage' ? 'bg-orange-500/20 border-orange-400' : ''}`}
-                 title="Dano no Deck"
+                 title="Dano Primordial"
                >
                   <Flame size={20} className="text-slate-400" />
                </div>
