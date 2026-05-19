@@ -539,13 +539,26 @@ const BuyModal = ({ isOpen, onClose }: { isOpen: boolean, onClose: () => void })
                 href="https://mypcards.com/LightDarkCardGame" 
                 target="_blank" 
                 rel="noopener noreferrer"
-                className="flex items-center justify-between bg-gradient-to-r from-purple-700 to-indigo-700 hover:from-purple-600 hover:to-indigo-600 p-4 rounded-lg transition group shadow-lg shadow-purple-900/20"
+                className="flex items-center justify-between bg-gradient-to-r from-purple-700 to-indigo-700 hover:from-purple-600 hover:to-indigo-600 p-4 rounded-lg transition group shadow-lg shadow-purple-900/20 mb-3"
               >
                 <div className="flex flex-col">
                    <span className="font-bold text-white text-lg">MypCards</span>
                    <span className="text-purple-200 text-xs">Loja Oficial Online</span>
                 </div>
                 <ExternalLink size={20} className="text-white/80 group-hover:text-white group-hover:translate-x-1 transition-transform" />
+              </a>
+
+              <a 
+                href="https://lista.mercadolivre.com.br/_CustId_3408665465?item_id=MLB6798439252&category_id=MLB432989&seller_id=3408665465&client=recoview-selleritems&recos_listing=true#origin=vip&component=sellerData&typeSeller=classic" 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="flex items-center justify-between bg-gradient-to-r from-yellow-600 to-yellow-500 hover:from-yellow-500 hover:to-yellow-400 p-4 rounded-lg transition group shadow-lg shadow-yellow-900/20"
+              >
+                <div className="flex flex-col">
+                   <span className="font-bold text-black text-lg">Mercado Livre</span>
+                   <span className="text-black/70 text-xs font-medium">Produtos Selecionados</span>
+                </div>
+                <ExternalLink size={20} className="text-black group-hover:scale-110 transition-transform" />
               </a>
             </div>
           </div>
@@ -580,6 +593,31 @@ const playBeep = () => {
   } catch (e) {
     console.error("Audio context not supported", e);
   }
+};
+
+const LoreModal = ({ isOpen, onClose }: { isOpen: boolean, onClose: () => void }) => {
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-[70] flex flex-col bg-[#0a0a0c] animate-in fade-in duration-200">
+      <div className="bg-slate-900 border-b border-slate-800 p-4 flex justify-between items-center shadow-lg z-20">
+        <div className="flex items-center gap-3">
+          <BookOpen className="text-purple-500" />
+          <h2 className="text-xl font-bold text-white">Lore do Mundo</h2>
+        </div>
+        <button onClick={onClose} className="p-2 hover:bg-slate-800 rounded-full text-slate-400 hover:text-white transition">
+          <X size={24} />
+        </button>
+      </div>
+
+      <div className="flex-1 overflow-y-auto p-4 md:p-8 relative">
+          <div className="max-w-4xl mx-auto space-y-4">
+            <h3 className="text-2xl font-bold text-white mb-4">A vastidão de Light Dark TCG</h3>
+            <p className="text-slate-400">Em breve, mais informações sobre a lore do universo...</p>
+          </div>
+      </div>
+    </div>
+  );
 };
 
 const CatalogModal = ({ isOpen, onClose }: { isOpen: boolean, onClose: () => void }) => {
@@ -687,14 +725,14 @@ const CatalogModal = ({ isOpen, onClose }: { isOpen: boolean, onClose: () => voi
       </div>
 
       <div className="bg-slate-900/50 border-b border-slate-800 p-4 flex flex-col xl:flex-row gap-4 z-10">
-        <div className="relative w-full xl:w-80">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
+        <div className="flex items-center bg-slate-950 border border-slate-700 rounded-lg overflow-hidden w-full xl:w-80 shrink-0">
+          <Search className="ml-3 text-slate-500 shrink-0" size={18} />
           <input 
             type="text" 
             placeholder="Nome, Código ou Palavra Chave..." 
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full bg-slate-950 border border-slate-700 rounded-lg py-2 pl-10 pr-4 text-white focus:outline-none focus:border-purple-500 transition"
+            className="w-full bg-transparent py-2 pl-2 pr-4 text-white focus:outline-none transition"
           />
         </div>
 
@@ -821,6 +859,7 @@ export default function App() {
   const [isManualOpen, setIsManualOpen] = useState(false);
   const [isBuyModalOpen, setIsBuyModalOpen] = useState(false);
   const [isCatalogOpen, setIsCatalogOpen] = useState(false);
+  const [isLoreOpen, setIsLoreOpen] = useState(false);
   const [isDeckBuilderOpen, setIsDeckBuilderOpen] = useState(false);
   const [isGameOpen, setIsGameOpen] = useState(false);
   const [isTournamentOpen, setIsTournamentOpen] = useState(false);
@@ -902,6 +941,7 @@ export default function App() {
       <ManualModal isOpen={isManualOpen} onClose={() => setIsManualOpen(false)} />
       <BuyModal isOpen={isBuyModalOpen} onClose={() => setIsBuyModalOpen(false)} />
       <CatalogModal isOpen={isCatalogOpen} onClose={() => setIsCatalogOpen(false)} />
+      <LoreModal isOpen={isLoreOpen} onClose={() => setIsLoreOpen(false)} />
       <DeckBuilderModal isOpen={isDeckBuilderOpen} onClose={() => setIsDeckBuilderOpen(false)} />
       {isTournamentOpen && <TournamentManager onClose={() => setIsTournamentOpen(false)} />}
       <TypeModal type={selectedType} onClose={() => setSelectedType(null)} />
@@ -983,8 +1023,11 @@ export default function App() {
             autoPlay
             muted
             playsInline
+            controlsList="nodownload noplaybackrate"
+            disablePictureInPicture
+            onContextMenu={(e) => e.preventDefault()}
             onEnded={() => setCurrentVideoIndex((prev) => (prev + 1) % backgroundVideos.length)} 
-            className="absolute top-0 left-0 w-full h-full object-cover opacity-50 transition-opacity duration-1000"
+            className="absolute top-0 left-0 w-full h-full object-cover opacity-50 transition-opacity duration-1000 pointer-events-none"
           />
           <div className="absolute inset-0 bg-gradient-to-b from-[#0a0a0c]/80 via-[#0a0a0c]/40 to-[#0a0a0c]"></div>
         </div>
@@ -1015,6 +1058,12 @@ export default function App() {
               className="px-8 py-4 rounded font-bold border border-slate-400/50 bg-black/30 hover:bg-slate-800 transition text-slate-200 flex items-center gap-2 justify-center backdrop-blur-sm"
             >
               <Search size={18} /> Catálogo
+            </button>
+            <button 
+              onClick={() => setIsLoreOpen(true)}
+              className="px-8 py-4 rounded font-bold border border-slate-400/50 bg-black/30 hover:bg-slate-800 transition text-slate-200 flex items-center gap-2 justify-center backdrop-blur-sm"
+            >
+              <BookOpen size={18} /> Lore
             </button>
           </div>
         </div>

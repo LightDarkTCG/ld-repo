@@ -205,7 +205,10 @@ export default function GameBoard({ onClose }: GameBoardProps) {
                 loop 
                 muted 
                 playsInline 
-                className="w-full h-full object-cover opacity-80"
+                controlsList="nodownload noplaybackrate"
+                disablePictureInPicture
+                onContextMenu={(e) => e.preventDefault()}
+                className="w-full h-full object-cover opacity-80 pointer-events-none"
               />
             ) : (
               <img src={background} alt="Theme" className="w-full h-full object-cover opacity-80" />
@@ -566,7 +569,10 @@ export default function GameBoard({ onClose }: GameBoardProps) {
                           loop 
                           muted 
                           playsInline 
-                          className="w-full h-full object-cover"
+                          controlsList="nodownload noplaybackrate"
+                          disablePictureInPicture
+                          onContextMenu={(e) => e.preventDefault()}
+                          className="w-full h-full object-cover pointer-events-none"
                         />
                       ) : (
                         <img src={theme.url} alt={theme.name} className="w-full h-full object-cover" />

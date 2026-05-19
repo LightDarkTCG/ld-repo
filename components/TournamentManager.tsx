@@ -203,39 +203,91 @@ export const TournamentManager = ({ onClose }: { onClose: () => void }) => {
       return Math.random() - 0.5;
     });
 
+    const hasPlayed = (p1Id: string, p2Id: string) => {
+      return matches.some(m => 
+        (m.player1?.id === p1Id && m.player2?.id === p2Id) ||
+        (m.player1?.id === p2Id && m.player2?.id === p1Id)
+      );
+    };
+
+    const hasHadBye = (pId: string) => {
+      return matches.some(m => m.isBye && m.player1?.id === pId);
+    };
+
     let newMatches: Match[] = [];
     let matchCounter = matches.length + 1;
-    
-    // Simple pairing: 1v2, 3v4...
-    // Doesn't check for previous matchups in this simple version
-    for (let i = 0; i < ps.length; i += 2) {
-      if (i + 1 < ps.length) {
-        newMatches.push({
-          id: `m_${matchCounter++}`,
-          round: roundNum,
-          player1: ps[i],
-          player2: ps[i+1],
-          score1: null,
-          score2: null,
-          winnerId: null,
-          status: 'pending'
-        });
-      } else {
-        // Bye
-        newMatches.push({
-          id: `m_${matchCounter++}`,
-          round: roundNum,
-          player1: ps[i],
-          player2: null,
-          score1: null,
-          score2: null,
-          winnerId: ps[i].id,
-          status: 'completed',
-          isBye: true
-        });
-        // Award bye points immediately
-        updateParticipantStats(ps[i].id, parseFloat(swissPtsBye), 0, 0, 0);
+    const paired = new Set<string>();
+
+    // 1. Assign BYE if odd. Look for lowest ranked player who hasn't had a BYE.
+    if (ps.length % 2 !== 0) {
+      let byePlayerIndex = -1;
+      for (let i = ps.length - 1; i >= 0; i--) {
+        if (!hasHadBye(ps[i].id)) {
+          byePlayerIndex = i;
+          break;
+        }
       }
+      if (byePlayerIndex === -1) byePlayerIndex = ps.length - 1;
+      
+      const byePlayer = ps[byePlayerIndex];
+      paired.add(byePlayer.id);
+      newMatches.push({
+        id: `m_${matchCounter++}`,
+        round: roundNum,
+        player1: byePlayer,
+        player2: null,
+        score1: 2,
+        score2: 1,
+        winnerId: byePlayer.id,
+        status: 'completed',
+        isBye: true
+      });
+      // Award bye points immediately (now granting 1 win as per request)
+      updateParticipantStats(byePlayer.id, parseFloat(swissPtsBye), 1, 0, 0);
+    }
+    
+    // 2. Greedy pairing avoiding repeat matches
+    for (let i = 0; i < ps.length; i++) {
+        if (paired.has(ps[i].id)) continue;
+        
+        let p1 = ps[i];
+        let p2Index = -1;
+        
+        // Find best opponent (closest in score) that hasn't played p1
+        for (let j = i + 1; j < ps.length; j++) {
+            if (paired.has(ps[j].id)) continue;
+            if (!hasPlayed(p1.id, ps[j].id)) {
+                p2Index = j;
+                break;
+            }
+        }
+        
+        // Fallback: If no unplayed opponent is found, just pair with the next available
+        if (p2Index === -1) {
+            for (let j = i + 1; j < ps.length; j++) {
+                if (!paired.has(ps[j].id)) {
+                    p2Index = j;
+                    break;
+                }
+            }
+        }
+        
+        if (p2Index !== -1) {
+            const p2 = ps[p2Index];
+            paired.add(p1.id);
+            paired.add(p2.id);
+            
+            newMatches.push({
+              id: `m_${matchCounter++}`,
+              round: roundNum,
+              player1: p1,
+              player2: p2,
+              score1: null,
+              score2: null,
+              winnerId: null,
+              status: 'pending'
+            });
+        }
     }
     
     setMatches([...matches, ...newMatches]);
