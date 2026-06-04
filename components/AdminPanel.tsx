@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Settings, Lock, Plus, Trash2, X, Image as ImageIcon, Edit2, Check, Layout, Clock, Grid, Palette, ChevronRight, Layers, BookOpen, Database } from 'lucide-react';
-import { signInWithEmailAndPassword, createUserWithEmailAndPassword, onAuthStateChanged, signOut } from 'firebase/auth';
+import { signInWithEmailAndPassword, onAuthStateChanged, signOut } from 'firebase/auth';
 import { collection, getDocs, addDoc, deleteDoc, updateDoc, doc, setDoc, getDoc } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { auth, db, storage } from '../firebase';
@@ -14,7 +14,6 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
   const [user, setUser] = useState(auth.currentUser);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [isLogin, setIsLogin] = useState(true);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -123,11 +122,7 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
     e.preventDefault();
     setError('');
     try {
-      if (isLogin) {
-        await signInWithEmailAndPassword(auth, email, password);
-      } else {
-        await createUserWithEmailAndPassword(auth, email, password);
-      }
+      await signInWithEmailAndPassword(auth, email, password);
     } catch (err: any) {
       setError(err.message || 'Erro de autenticação.');
     }
@@ -417,14 +412,9 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
                 <input type="email" placeholder="Email..." value={email} onChange={e => setEmail(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded p-2 text-white" required />
                 <input type="password" placeholder="Senha..." value={password} onChange={e => setPassword(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded p-2 text-white" required />
                 <button type="submit" className="w-full bg-purple-600 hover:bg-purple-500 text-white font-bold py-2 rounded transition">
-                  {isLogin ? 'Entrar' : 'Criar Conta'}
+                  Entrar
                 </button>
               </form>
-              <div className="mt-4 text-center">
-                <button onClick={() => setIsLogin(!isLogin)} className="text-slate-400 hover:text-purple-400 text-sm">
-                  {isLogin ? 'Criar acesso' : 'Fazer login'}
-                </button>
-              </div>
             </div>
           ) : (
             <div className="flex flex-col md:flex-row gap-6">

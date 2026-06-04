@@ -972,7 +972,12 @@ export default function App() {
       {isTournamentOpen && <TournamentManager onClose={() => setIsTournamentOpen(false)} />}
       <TypeModal type={selectedType} onClose={() => setSelectedType(null)} />
       {isGameOpen && <GameBoard onClose={() => setIsGameOpen(false)} />}
-      {adminMode !== 'none' && <AdminPanel adminType={adminMode} onClose={() => setAdminMode('none')} />}
+      {adminMode !== 'none' && <AdminPanel adminType={adminMode} onClose={() => {
+        if (adminMode === 'catalog') {
+          setIsCatalogOpen(true);
+        }
+        setAdminMode('none');
+      }} />}
 
       {/* Navbar */}
       <nav className={`fixed w-full z-50 transition-all duration-300 border-b ${scrolled ? 'bg-[#0a0a0c]/95 border-slate-800 py-3' : 'bg-transparent border-transparent py-6'}`}>

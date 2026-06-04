@@ -9,7 +9,6 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@dataconnect/generated": "file:src/dataconnect-generated",
     "firebase": "^12.14.0",
     "lucide-react": "^0.563.0",
     "motion": "^12.34.3",
