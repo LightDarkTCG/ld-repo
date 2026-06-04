@@ -1,7 +1,8 @@
 import React, { useState, useMemo } from 'react';
 import { X, Search, Save, Download, Trash2, Plus, Minus, AlertTriangle, CheckCircle, BarChart3, Copy, Eye, ChevronDown, ChevronUp, ChevronRight, ChevronLeft, Layers } from 'lucide-react';
 import { CardData } from '../types';
-import { allCards, collectionsList, archetypesList } from '../data';
+import { collectionsList, archetypesList } from '../data';
+import { useCards } from '../CardContext';
 import { Card } from './Card';
 import { CardDetailModal } from './CardDetailModal';
 
@@ -11,8 +12,10 @@ interface DeckBuilderModalProps {
 }
 
 export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onClose }) => {
+  const { cards: allCards } = useCards();
   const [deck, setDeck] = useState<CardData[]>([]);
   const [sideDeck, setSideDeck] = useState<CardData[]>([]);
+  const [confirmClear, setConfirmClear] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [importCode, setImportCode] = useState("");
   const [activeTab, setActiveTab] = useState<'build' | 'stats' | 'save'>('build');
@@ -82,10 +85,13 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
   };
 
   const clearDeck = () => {
-    if (confirm("Tem certeza que deseja limpar todo o deck e o side deck?")) {
-      setDeck([]);
-      setSideDeck([]);
+    if (!confirmClear) {
+      setConfirmClear(true);
+      return;
     }
+    setDeck([]);
+    setSideDeck([]);
+    setConfirmClear(false);
   };
 
   // --- Import / Export ---
@@ -331,7 +337,7 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
                       value={filters.archetype} onChange={(e) => setFilters({...filters, archetype: e.target.value})}
                     >
                       <option value="Todos">Arq: Todos</option>
-                      {archetypesList.map(a => <option key={a.name} value={a.name}>{a.name}</option>)}
+                      {Array.from(new Set(allCards.map(c => c.archetype).filter(Boolean).flatMap(a => a?.split(' / ') || []))).sort().map(a => <option key={a} value={a}>{a}</option>)}
                     </select>
 
                     <select 
@@ -349,7 +355,7 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
                       value={filters.collection} onChange={(e) => setFilters({...filters, collection: e.target.value})}
                     >
                       <option value="Todos">Coleção: Todas</option>
-                      {collectionsList.map(c => <option key={c} value={c}>{c}</option>)}
+                      {Array.from(new Set(allCards.map(c => c.collection).filter(Boolean))).sort().map(c => <option key={c} value={c}>{c}</option>)}
                     </select>
 
                     <input 
@@ -468,8 +474,8 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
                 </div>
                 
                 {!isDeckCollapsed && (
-                  <button onClick={(e) => { e.stopPropagation(); clearDeck(); }} className="text-xs text-red-400 hover:text-red-300 flex items-center gap-1 px-2 py-1 rounded hover:bg-red-900/20">
-                    <Trash2 size={14} /> <span className="hidden md:inline">Limpar</span>
+                  <button onClick={(e) => { e.stopPropagation(); clearDeck(); }} className={`text-xs flex items-center gap-1 px-2 py-1 rounded transition ${confirmClear ? 'text-white bg-red-800 animate-pulse' : 'text-red-400 hover:text-red-300 hover:bg-red-900/20'}`}>
+                    <Trash2 size={14} /> <span className="hidden md:inline">{confirmClear ? 'Certeza?' : 'Limpar'}</span>
                   </button>
                 )}
               </div>

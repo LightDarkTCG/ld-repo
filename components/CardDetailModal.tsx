@@ -1,8 +1,8 @@
-import React, { useMemo } from 'react';
-import { X, Zap, BookOpen, Box, Hash, Link as LinkIcon } from 'lucide-react';
+import React, { useMemo, useState, useEffect } from 'react';
+import { X, Zap, BookOpen, Box, Hash, Link as LinkIcon, Edit2, Check, Trash } from 'lucide-react';
 import { CardData } from '../types';
 import { Card } from './Card';
-import { allCards } from '../data';
+import { useCards } from '../CardContext';
 
 interface CardDetailModalProps {
   card: CardData | null;
@@ -10,8 +10,20 @@ interface CardDetailModalProps {
   onSelectRelated?: (card: CardData) => void;
 }
 
-export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card, onClose, onSelectRelated }) => {
-  if (!card) return null;
+export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card: initialCard, onClose, onSelectRelated }) => {
+  const { cards: allCards, archetypes, collections, saveCard, deleteCard } = useCards();
+  const [isEditing, setIsEditing] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [card, setCard] = useState<CardData | null>(initialCard);
+  const [originalCode, setOriginalCode] = useState(initialCard?.code);
+
+  useEffect(() => {
+    setCard(initialCard);
+    setOriginalCode(initialCard?.code);
+    setIsEditing(false);
+  }, [initialCard]);
+
+
 
   // --- Logic to find related cards ---
   const relatedCards = useMemo(() => {
@@ -105,7 +117,9 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card, onClose,
       .slice(0, 5); // Top 5 recomendações
 
     return scoredCards.map(item => item.card);
-  }, [card]);
+  }, [card, allCards]);
+
+  if (!card) return null;
 
   const handleRelatedClick = (related: CardData) => {
     if (onSelectRelated) {
@@ -113,14 +127,116 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card, onClose,
     }
   };
 
+  const handleCopyFromCard = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const code = e.target.value;
+    if (!code || !card) return;
+    const sourceCard = allCards.find(c => c.code === code);
+    if (sourceCard) {
+      setCard({
+        ...card,
+        name: sourceCard.name,
+        description: sourceCard.description || '',
+        type: sourceCard.type || 'Herói',
+        archetype: sourceCard.archetype || 'Desconhecido',
+        ct: sourceCard.ct || 0,
+        attack: sourceCard.attack || 0,
+        defense: sourceCard.defense || 0,
+        lore: sourceCard.lore || '',
+        collection: sourceCard.collection,
+        code: sourceCard.code
+      });
+    }
+    e.target.value = '';
+  };
+
+  const handleSave = async () => {
+    if (card) {
+      if (originalCode && originalCode !== card.code) {
+        await deleteCard(originalCode);
+      }
+      await saveCard(card);
+      setOriginalCode(card.code);
+      setIsEditing(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!confirmDelete) {
+      setConfirmDelete(true);
+      return;
+    }
+    if (card) {
+      console.log('handleDelete called, originalCode:', originalCode, 'card.code:', card.code);
+      if (originalCode) {
+        await deleteCard(originalCode);
+      } else {
+        await deleteCard(card.code);
+      }
+      onClose();
+    }
+  };
+
+  const handleSaveAndAddAnother = async () => {
+    if (card) {
+      if (originalCode && originalCode !== card.code) {
+        await deleteCard(originalCode);
+      }
+      await saveCard(card);
+      
+      const nextCode = `CUSTOM/${Date.now()}`;
+      setOriginalCode(nextCode);
+      
+      // Mantém no modo de edição e reseta parcialmente
+      setCard({
+        ...card,
+        name: "Nova Carta",
+        code: nextCode,
+        description: "Edite a carta para alterar sua descrição.",
+        lore: "Nova entidade surgida no Macroverso.",
+      });
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md animate-in fade-in zoom-in duration-200">
-      <button 
-        onClick={onClose} 
-        className="absolute top-4 right-4 z-50 p-2 bg-slate-800 rounded-full text-slate-400 hover:text-white hover:bg-slate-700 transition"
-      >
-        <X size={24} />
-      </button>
+      <div className="absolute top-4 right-4 flex gap-2 z-50">
+        {isEditing ? (
+          <>
+            <button 
+              onClick={handleDelete} 
+              className={`p-2 rounded-full text-white transition flex items-center gap-2 px-4 shadow-lg ${confirmDelete ? 'bg-red-700 hover:bg-red-600 shadow-red-900/80 animate-pulse' : 'bg-red-600 hover:bg-red-500 shadow-red-900/50'}`}
+            >
+              <Trash size={20} /> {confirmDelete ? "Tem certeza?" : "Apagar"}
+            </button>
+            <button 
+              onClick={handleSaveAndAddAnother} 
+              className="p-2 bg-blue-600 rounded-full text-white hover:bg-blue-500 transition flex items-center gap-2 px-4 shadow-lg shadow-blue-900/50"
+            >
+              <Check size={20} /> Salvar & Lote
+            </button>
+            <button 
+              onClick={handleSave} 
+              className="p-2 bg-green-600 rounded-full text-white hover:bg-green-500 transition flex items-center gap-2 px-4 shadow-lg shadow-green-900/50"
+            >
+              <Check size={20} /> Salvar
+            </button>
+          </>
+        ) : (
+          <button 
+            onClick={() => setIsEditing(true)} 
+            className="p-2 bg-slate-800 rounded-full text-purple-400 hover:text-white hover:bg-slate-700 transition"
+            title="Editar Carta"
+          >
+            <Edit2 size={24} />
+          </button>
+        )}
+        <button 
+          onClick={onClose} 
+          className="p-2 bg-slate-800 rounded-full text-slate-400 hover:text-white hover:bg-slate-700 transition"
+        >
+          <X size={24} />
+        </button>
+      </div>
 
       <div className="w-full max-w-6xl max-h-[90vh] overflow-y-auto grid grid-cols-1 lg:grid-cols-2 gap-8 p-4 lg:p-8 custom-scrollbar">
         
@@ -133,43 +249,155 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card, onClose,
 
         {/* Right Column: Info */}
         <div className="flex flex-col gap-6 text-slate-200">
+          {isEditing && (
+            <div className="bg-slate-800/50 p-3 rounded-lg border border-purple-500/50 mb-[-1rem]">
+              <label className="text-xs font-bold text-purple-400 block mb-1">Copiar dados de outra carta</label>
+              <select onChange={handleCopyFromCard} className="w-full bg-slate-900 border border-purple-700/50 rounded p-2 text-white text-sm outline-none">
+                <option value="">Selecione uma carta base (copia todos os dados exceto Imagem e Frame)...</option>
+                {allCards.map((c, idx) => <option key={`${c.code}-${idx}`} value={c.code}>{c.name} ({c.code})</option>)}
+              </select>
+            </div>
+          )}
           <div className="border-b border-slate-800 pb-4">
-            <div className="flex justify-between items-start mb-2">
-              <h2 className="text-3xl md:text-4xl font-black text-white tracking-tight">{card.name}</h2>
-              <div className="flex items-center justify-center w-12 h-12 rounded-full border-2 border-yellow-600 bg-yellow-900/20 font-mono font-bold text-yellow-400 text-2xl shadow-lg shrink-0" title="CT">
-                {card.ct}
+            <div className="flex justify-between items-start mb-4 gap-4">
+              {isEditing ? (
+                <input 
+                  type="text" 
+                  value={card.name} 
+                  onChange={(e) => setCard({...card, name: e.target.value})}
+                  className="w-full text-3xl md:text-4xl font-black text-white tracking-tight bg-slate-900 border border-slate-700 rounded p-2 focus:border-purple-500 outline-none"
+                />
+              ) : (
+                <h2 className="text-3xl md:text-4xl font-black text-white tracking-tight">{card.name}</h2>
+              )}
+              
+              {isEditing ? (
+                <div className="flex flex-col items-center">
+                  <label className="text-xs text-yellow-500 font-bold mb-1">Custo (CT)</label>
+                  <input 
+                    type="number" 
+                    value={card.ct} 
+                    onChange={(e) => setCard({...card, ct: parseInt(e.target.value) || 0})}
+                    className="w-16 h-12 rounded border-2 border-yellow-600 bg-slate-900 font-mono font-bold text-yellow-400 text-xl text-center focus:border-purple-500 outline-none title='Custo (CT)'"
+                  />
+                </div>
+              ) : (
+                <div className="flex flex-col items-center">
+                  <label className="text-xs text-yellow-500 font-bold mb-1">Custo (CT)</label>
+                  <div className="flex items-center justify-center w-12 h-12 rounded-full border-2 border-yellow-600 bg-yellow-900/20 font-mono font-bold text-yellow-400 text-xl shadow-lg shrink-0" title="Custo (CT)">
+                    {card.ct}
+                  </div>
+                </div>
+              )}
+            </div>
+            
+            {isEditing && (
+              <div className="grid grid-cols-2 gap-4 mb-4 mt-2">
+                <div>
+                  <label className="text-xs text-slate-400 font-bold uppercase mb-1 block">Ataque (ATK)</label>
+                  <input type="number" placeholder="ATK" value={card.attack || ''} onChange={(e) => setCard({...card, attack: e.target.value ? parseInt(e.target.value) : undefined})} className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white font-bold" />
+                </div>
+                <div>
+                  <label className="text-xs text-slate-400 font-bold uppercase mb-1 block">Defesa (DEF)</label>
+                  <input type="number" placeholder="DEF" value={card.defense || ''} onChange={(e) => setCard({...card, defense: e.target.value ? parseInt(e.target.value) : undefined})} className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white font-bold" />
+                </div>
               </div>
-            </div>
+            )}
+
             <div className="flex flex-wrap gap-3 text-sm font-medium">
-              <span className="px-3 py-1 bg-slate-800 rounded text-slate-300 border border-slate-700">{card.type}</span>
-              <span className="px-3 py-1 bg-purple-900/30 rounded text-purple-300 border border-purple-800/50">{card.archetype}</span>
-              <span className="px-3 py-1 bg-blue-900/30 rounded text-blue-300 border border-blue-800/50 flex items-center gap-1">
-                 <Box size={14} /> {card.collection || "Coleção Base"}
-              </span>
+              {isEditing ? (
+                 <select value={card.type} onChange={(e) => setCard({...card, type: e.target.value as CardData['type']})} className="px-3 py-1.5 bg-slate-800 rounded text-slate-300 border border-slate-700 outline-none">
+                    <option value="Herói">Herói</option>
+                    <option value="Combatente">Combatente</option>
+                    <option value="Equipamento">Equipamento</option>
+                    <option value="Efeito">Efeito</option>
+                 </select>
+              ) : (
+                 <span className="px-3 py-1 bg-slate-800 rounded text-slate-300 border border-slate-700">{card.type}</span>
+              )}
+
+              {isEditing ? (
+                <>
+                  <input list="archetypes-list" type="text" value={card.archetype} onChange={(e) => setCard({...card, archetype: e.target.value})} className="px-3 py-1.5 bg-purple-900/10 rounded text-purple-300 border border-purple-800/50 outline-none w-48 focus:border-purple-500" placeholder="Arquétipo" />
+                  <datalist id="archetypes-list">
+                    {archetypes.map(a => <option key={a.name} value={a.name} />)}
+                  </datalist>
+                </>
+              ) : (
+                <span className="px-3 py-1 bg-purple-900/30 rounded text-purple-300 border border-purple-800/50">{card.archetype}</span>
+              )}
+
+              {isEditing ? (
+                <>
+                  <input list="collections-list" type="text" value={card.collection} onChange={(e) => setCard({...card, collection: e.target.value})} className="px-3 py-1.5 bg-blue-900/10 rounded text-blue-300 border border-blue-800/50 outline-none w-48 focus:border-purple-500" placeholder="Coleção" />
+                  <datalist id="collections-list">
+                    {collections.map(c => <option key={c} value={c} />)}
+                  </datalist>
+                </>
+              ) : (
+                <span className="px-3 py-1 bg-blue-900/30 rounded text-blue-300 border border-blue-800/50 flex items-center gap-1">
+                  <Box size={14} /> {card.collection || "Coleção Base"}
+                </span>
+              )}
             </div>
+            
+            {isEditing && (
+              <div className="mt-4">
+                <input type="text" value={card.imageUrl || ''} onChange={(e) => setCard({...card, imageUrl: e.target.value})} className="w-full px-3 py-2 bg-slate-900 rounded text-slate-300 border border-slate-700 outline-none text-sm" placeholder="URL da Imagem (https://...)" />
+              </div>
+            )}
           </div>
 
           <div className="bg-slate-800/30 p-6 rounded-xl border border-slate-700/50">
             <h4 className="text-sm font-bold text-slate-400 uppercase mb-3 flex items-center gap-2">
               <Zap size={16} /> Efeito da Carta
             </h4>
-            <p className="text-lg leading-relaxed text-slate-200 whitespace-pre-wrap">
-              {card.description}
-            </p>
+            {isEditing ? (
+               <textarea 
+                 value={card.description}
+                 onChange={(e) => setCard({...card, description: e.target.value})}
+                 className="w-full h-32 bg-slate-900 border border-slate-700 rounded p-3 text-slate-200 outline-none focus:border-purple-500 custom-scrollbar"
+               />
+            ) : (
+              <p className="text-lg leading-relaxed text-slate-200 whitespace-pre-wrap">
+                {card.description}
+              </p>
+            )}
           </div>
 
           <div className="bg-black/40 p-6 rounded-xl border-l-4 border-purple-600 italic">
             <h4 className="text-sm font-bold text-purple-400 uppercase mb-3 flex items-center gap-2">
               <BookOpen size={16} /> Lore
             </h4>
-            <p 
-              className="text-slate-400 font-serif leading-relaxed"
-              dangerouslySetInnerHTML={{ __html: card.lore ? `"${card.lore}"` : '"Dados fragmentados... a história desta entidade perdeu-se no rasgo do Macroverso."' }}
-            />
+            {isEditing ? (
+              <textarea 
+                value={card.lore || ''}
+                onChange={(e) => setCard({...card, lore: e.target.value})}
+                className="w-full h-32 bg-slate-900/50 border border-purple-900/50 rounded p-3 text-slate-400 font-serif outline-none focus:border-purple-500 custom-scrollbar"
+                placeholder="Uma história se perde no tempo sem ninguém para contá-la..."
+              />
+            ) : (
+              <p 
+                className="text-slate-400 font-serif leading-relaxed"
+                dangerouslySetInnerHTML={{ __html: card.lore ? `"${card.lore}"` : '"Dados fragmentados... a história desta entidade perdeu-se no rasgo do Macroverso."' }}
+              />
+            )}
           </div>
 
-          <div className="text-xs text-slate-600 font-mono pt-2 border-t border-slate-800 flex items-center gap-1">
-            <Hash size={12}/> ID Código: {card.code}
+          <div className="text-xs text-slate-600 font-mono pt-2 border-t border-slate-800 flex flex-col gap-2">
+            <div className="flex items-center gap-1">
+              <Hash size={12}/> ID Código: 
+              {isEditing ? (
+                <input 
+                  type="text" 
+                  value={card.code} 
+                  onChange={(e) => setCard({...card, code: e.target.value})}
+                  className="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-slate-300 outline-none focus:border-purple-500 w-full ml-2"
+                />
+              ) : (
+                card.code
+              )}
+            </div>
           </div>
 
           {/* Related Cards Section */}

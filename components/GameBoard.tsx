@@ -1,35 +1,65 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import LifeCounter from './game/LifeCounter';
 import SmallCounter from './game/SmallCounter';
 import { X, Plus, Minus, Menu, RotateCcw, Image as ImageIcon, LogOut, Check, History } from 'lucide-react';
+import { ref, listAll, getDownloadURL } from 'firebase/storage';
+import { storage } from '../firebase';
 
 interface GameBoardProps {
   onClose: () => void;
 }
 
-const THEMES = [
-  { id: 'default', name: 'Padrão', url: null },
-  { id: 'theme1', name: 'Tema 1', url: 'https://i.imgur.com/MEEgqLT.mp4' },
-  { id: 'theme2', name: 'Tema 2', url: 'https://i.imgur.com/NiXDYQ6.mp4' },
-  { id: 'theme3', name: 'Tema 3', url: 'https://i.imgur.com/uyLhRyw.mp4' },
-  { id: 'theme4', name: 'Tema 4', url: 'https://i.imgur.com/IxbaBFg.mp4' },
-  { id: 'theme5', name: 'Tema 5', url: 'https://i.imgur.com/sRRvrf0.mp4' },
-  { id: 'theme6', name: 'Tema 6', url: 'https://i.imgur.com/3haDaoN.mp4' },
-  { id: 'theme7', name: 'Tema 7', url: 'https://i.imgur.com/N1xEGwR.mp4' },
-  { id: 'theme8', name: 'Tema 8', url: 'https://i.imgur.com/zyPclYX.mp4' },
-  { id: 'theme9', name: 'Tema 9', url: 'https://i.imgur.com/B44C6fM.mp4' },
-  { id: 'theme10', name: 'Tema 10', url: 'https://i.imgur.com/9EOlPvn.mp4' },
-  { id: 'theme11', name: 'Tema 11', url: 'https://i.imgur.com/GGYybtc.mp4' },
-  { id: 'theme12', name: 'Tema 12', url: 'https://i.imgur.com/bemqfcI.mp4' },
-  { id: 'theme13', name: 'Tema 13', url: 'https://i.imgur.com/cClnOWH.mp4' },
-  { id: 'theme14', name: 'Tema 14', url: 'https://i.imgur.com/wTrMCso.mp4' },
-  { id: 'theme15', name: 'Tema 15', url: 'https://i.imgur.com/gTf8uZY.mp4' },
-  { id: 'theme16', name: 'Tema 16', url: 'https://i.imgur.com/YAgBkS9.mp4' },
-  { id: 'theme17', name: 'Tema 17', url: 'https://i.imgur.com/veA5rlN.mp4' },
-  { id: 'theme18', name: 'Tema 18', url: 'https://i.imgur.com/sh4o4pA.mp4' },
-];
-
 export default function GameBoard({ onClose }: GameBoardProps) {
+  const [themes, setThemes] = useState([
+    { id: 'default', name: 'Padrão', url: null }
+  ]);
+
+  // Default Imgur themes disabled to test Firebase Storage
+  // const defaultImgurThemes = [
+  //   { id: 'theme1', name: 'Tema 1', url: 'https://i.imgur.com/MEEgqLT.mp4' },
+  //   { id: 'theme2', name: 'Tema 2', url: 'https://i.imgur.com/NiXDYQ6.mp4' },
+  //   { id: 'theme3', name: 'Tema 3', url: 'https://i.imgur.com/uyLhRyw.mp4' },
+  //   { id: 'theme4', name: 'Tema 4', url: 'https://i.imgur.com/IxbaBFg.mp4' },
+  //   { id: 'theme5', name: 'Tema 5', url: 'https://i.imgur.com/sRRvrf0.mp4' },
+  //   { id: 'theme6', name: 'Tema 6', url: 'https://i.imgur.com/3haDaoN.mp4' },
+  //   { id: 'theme7', name: 'Tema 7', url: 'https://i.imgur.com/N1xEGwR.mp4' },
+  //   { id: 'theme8', name: 'Tema 8', url: 'https://i.imgur.com/zyPclYX.mp4' },
+  //   { id: 'theme9', name: 'Tema 9', url: 'https://i.imgur.com/B44C6fM.mp4' },
+  //   { id: 'theme10', name: 'Tema 10', url: 'https://i.imgur.com/9EOlPvn.mp4' },
+  //   { id: 'theme11', name: 'Tema 11', url: 'https://i.imgur.com/GGYybtc.mp4' },
+  //   { id: 'theme12', name: 'Tema 12', url: 'https://i.imgur.com/bemqfcI.mp4' },
+  //   { id: 'theme13', name: 'Tema 13', url: 'https://i.imgur.com/cClnOWH.mp4' },
+  //   { id: 'theme14', name: 'Tema 14', url: 'https://i.imgur.com/wTrMCso.mp4' },
+  //   { id: 'theme15', name: 'Tema 15', url: 'https://i.imgur.com/gTf8uZY.mp4' },
+  //   { id: 'theme16', name: 'Tema 16', url: 'https://i.imgur.com/YAgBkS9.mp4' },
+  //   { id: 'theme17', name: 'Tema 17', url: 'https://i.imgur.com/veA5rlN.mp4' },
+  //   { id: 'theme18', name: 'Tema 18', url: 'https://i.imgur.com/sh4o4pA.mp4' }
+  // ];
+
+  useEffect(() => {
+    const fetchThemes = async () => {
+      try {
+        const listRef = ref(storage, 'duel_videos');
+        const res = await listAll(listRef);
+        if (res.items.length > 0) {
+          const urls = await Promise.all(res.items.map(item => getDownloadURL(item)));
+          const dynamicThemes = [
+            { id: 'default', name: 'Padrão', url: null },
+            ...urls.map((url, index) => ({
+              id: `theme${index + 1}`,
+              name: `Tema ${index + 1}`,
+              url: url
+            }))
+          ];
+          setThemes(dynamicThemes as any);
+        }
+      } catch (err) {
+        console.error("Failed to load duel themes from storage:", err);
+      }
+    };
+    fetchThemes();
+  }, []);
+
   // Rounds counter
   const [rounds, setRounds] = useState(1);
   const [turns, setTurns] = useState(0);
@@ -198,7 +228,7 @@ export default function GameBoard({ onClose }: GameBoardProps) {
         {/* Background Image/Video */}
         {background && (
           <div className="absolute inset-0 z-0">
-            {background.endsWith('.mp4') ? (
+            {background.includes('.mp4') || background.includes('firebasestorage') ? (
               <video 
                 src={background} 
                 autoPlay 
@@ -555,14 +585,14 @@ export default function GameBoard({ onClose }: GameBoardProps) {
               </div>
             ) : (
               <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                {THEMES.map(theme => (
+                {themes.map(theme => (
                   <button 
                     key={theme.id}
                     onClick={() => handleThemeSelect(theme.url)}
                     className="relative aspect-video rounded-lg overflow-hidden border-2 border-slate-700 hover:border-white transition group"
                   >
                     {theme.url ? (
-                      theme.url.endsWith('.mp4') ? (
+                      theme.url.includes('.mp4') || theme.url.includes('firebasestorage') ? (
                         <video 
                           src={theme.url} 
                           autoPlay 

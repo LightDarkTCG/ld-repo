@@ -1,0 +1,38 @@
+{
+  "entities": {
+    "LoreCategory": {
+      "title": "Lore Category",
+      "description": "A category/tab for organizing Lore.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "description": "Category name, like 'Planetas' or 'Raças'" },
+        "orderIndex": { "type": "number", "description": "Order to show the tabs" }
+      },
+      "required": ["name", "orderIndex"]
+    },
+    "LoreArticle": {
+      "title": "Lore Article",
+      "description": "An article within a lore category.",
+      "type": "object",
+      "properties": {
+        "categoryId": { "type": "string", "description": "ID of the parent category" },
+        "title": { "type": "string", "description": "Title of the lore entry" },
+        "content": { "type": "string", "description": "Main text/markdown content" },
+        "imageUrl": { "type": "string", "description": "Supporting image" },
+        "videoUrl": { "type": "string", "description": "Supporting video" },
+        "orderIndex": { "type": "number", "description": "Ordering within the category" }
+      },
+      "required": ["categoryId", "title", "content", "orderIndex"]
+    }
+  },
+  "firestore": {
+    "loreCategories": {
+      "schema": { "$ref": "#/entities/LoreCategory" },
+      "description": "A collection of lore categories."
+    },
+    "loreArticles": {
+      "schema": { "$ref": "#/entities/LoreArticle" },
+      "description": "A collection of lore articles."
+    }
+  }
+}

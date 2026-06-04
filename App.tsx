@@ -4,7 +4,7 @@ import {
   Zap, Heart, Layers, Hexagon, BookOpen,
   ShoppingCart, MapPin, ExternalLink, Search, Filter, Box,
   Menu, X, ChevronRight, ChevronDown, ChevronUp, Scale, Ghost, Instagram, MessageCircle, Mail, Music, Info,
-  Sword, Shield, Clock, AlertTriangle, Users, FileText, CheckCircle, Crown, Youtube
+  Sword, Shield, Clock, AlertTriangle, Users, FileText, CheckCircle, Crown, Youtube, Settings
 } from 'lucide-react';
 import { Card } from './components/Card';
 import { GameField } from './components/GameField';
@@ -12,7 +12,14 @@ import { DeckBuilderModal } from './components/DeckBuilderModal';
 import { CardDetailModal } from './components/CardDetailModal';
 import GameBoard from './components/GameBoard';
 import { TournamentManager } from './components/TournamentManager';
-import { allCards, archetypesList, collectionsList } from './data';
+import { AdminPanel } from './components/AdminPanel';
+import { LoreView } from './components/LoreView';
+import { db } from './firebase';
+import { collection, getDocs, doc, getDoc } from 'firebase/firestore';
+import { ref, listAll, getDownloadURL } from 'firebase/storage';
+import { storage } from './firebase';
+import { archetypesList, collectionsList } from './data';
+import { useCards } from './CardContext';
 import { CardData, ArchetypeData } from './types';
 
 // --- SUB-COMPONENTS ---
@@ -595,32 +602,8 @@ const playBeep = () => {
   }
 };
 
-const LoreModal = ({ isOpen, onClose }: { isOpen: boolean, onClose: () => void }) => {
-  if (!isOpen) return null;
-
-  return (
-    <div className="fixed inset-0 z-[70] flex flex-col bg-[#0a0a0c] animate-in fade-in duration-200">
-      <div className="bg-slate-900 border-b border-slate-800 p-4 flex justify-between items-center shadow-lg z-20">
-        <div className="flex items-center gap-3">
-          <BookOpen className="text-purple-500" />
-          <h2 className="text-xl font-bold text-white">Lore do Mundo</h2>
-        </div>
-        <button onClick={onClose} className="p-2 hover:bg-slate-800 rounded-full text-slate-400 hover:text-white transition">
-          <X size={24} />
-        </button>
-      </div>
-
-      <div className="flex-1 overflow-y-auto p-4 md:p-8 relative">
-          <div className="max-w-4xl mx-auto space-y-4">
-            <h3 className="text-2xl font-bold text-white mb-4">A vastidão de Light Dark TCG</h3>
-            <p className="text-slate-400">Em breve, mais informações sobre a lore do universo...</p>
-          </div>
-      </div>
-    </div>
-  );
-};
-
-const CatalogModal = ({ isOpen, onClose }: { isOpen: boolean, onClose: () => void }) => {
+const CatalogModal = ({ isOpen, onClose, onOpenAdmin }: { isOpen: boolean, onClose: () => void, onOpenAdmin: () => void }) => {
+  const { cards: allCards } = useCards();
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedCard, setSelectedCard] = useState<CardData | null>(null);
   const [easterEggStep, setEasterEggStep] = useState(0);
@@ -719,9 +702,18 @@ const CatalogModal = ({ isOpen, onClose }: { isOpen: boolean, onClose: () => voi
           <BookOpen className="text-purple-500" />
           <h2 className="text-xl font-bold text-white">Catálogo de Cartas <span className="text-slate-500 text-sm ml-2">({filteredCards.length} encontradas)</span></h2>
         </div>
-        <button onClick={onClose} className="p-2 hover:bg-slate-800 rounded-full text-slate-400 hover:text-white transition">
-          <X size={24} />
-        </button>
+        <div className="flex items-center gap-3">
+          <button 
+            onClick={onOpenAdmin} 
+            className="p-2 hover:bg-slate-800 rounded-full text-slate-400 hover:text-white transition"
+            title="Admin do Catálogo"
+          >
+            <Settings size={20} />
+          </button>
+          <button onClick={onClose} className="p-2 hover:bg-slate-800 rounded-full text-slate-400 hover:text-white transition">
+            <X size={24} />
+          </button>
+        </div>
       </div>
 
       <div className="bg-slate-900/50 border-b border-slate-800 p-4 flex flex-col xl:flex-row gap-4 z-10">
@@ -747,7 +739,7 @@ const CatalogModal = ({ isOpen, onClose }: { isOpen: boolean, onClose: () => voi
                 onChange={(e) => setFilters({...filters, collection: e.target.value})}
               >
                 <option className="bg-purple-950" value="Todos">Todas as Coleções</option>
-                {collectionsList.map(c => <option className="bg-purple-950" key={c} value={c}>{c}</option>)}
+                {Array.from(new Set(allCards.map(c => c.collection).filter(Boolean))).sort().map(c => <option className="bg-purple-950" key={c} value={c}>{c}</option>)}
               </select>
             </div>
 
@@ -790,7 +782,7 @@ const CatalogModal = ({ isOpen, onClose }: { isOpen: boolean, onClose: () => voi
                 onChange={(e) => setFilters({...filters, archetype: e.target.value})}
               >
                 <option className="bg-purple-950" value="Todos">Todos</option>
-                {archetypesList.map(a => <option className="bg-purple-950" key={a.name} value={a.name}>{a.name}</option>)}
+                {Array.from(new Set(allCards.map(c => c.archetype).filter(Boolean).flatMap(a => a?.split(' / ') || []))).sort().map(a => <option className="bg-purple-950" key={a} value={a}>{a}</option>)}
               </select>
             </div>
 
@@ -855,6 +847,7 @@ const CatalogModal = ({ isOpen, onClose }: { isOpen: boolean, onClose: () => voi
 
 
 export default function App() {
+  const { cards: allCards, collections, archetypes } = useCards();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isManualOpen, setIsManualOpen] = useState(false);
   const [isBuyModalOpen, setIsBuyModalOpen] = useState(false);
@@ -863,6 +856,7 @@ export default function App() {
   const [isDeckBuilderOpen, setIsDeckBuilderOpen] = useState(false);
   const [isGameOpen, setIsGameOpen] = useState(false);
   const [isTournamentOpen, setIsTournamentOpen] = useState(false);
+  const [adminMode, setAdminMode] = useState<'none' | 'home' | 'catalog' | 'master'>('none');
   const [selectedType, setSelectedType] = useState<string | null>(null);
   const [scrolled, setScrolled] = useState(false);
   const [currentVideoIndex, setCurrentVideoIndex] = useState(0);
@@ -870,6 +864,7 @@ export default function App() {
 
   // Check for game mode in URL
   const [isGameMode, setIsGameMode] = useState(false);
+  const [homeSettings, setHomeSettings] = useState<any>(null);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -877,28 +872,59 @@ export default function App() {
       setIsGameMode(true);
       setIsGameOpen(true);
     }
+
+    const fetchHomeSettings = async () => {
+      try {
+        const snap = await getDoc(doc(db, 'homeSettings', 'global'));
+        if (snap.exists()) {
+          setHomeSettings(snap.data());
+        }
+      } catch(e) {
+        console.error(e);
+      }
+    };
+    fetchHomeSettings();
   }, []);
 
-  const backgroundVideos = [
-    "https://i.imgur.com/MEEgqLT.mp4",
-    "https://i.imgur.com/NiXDYQ6.mp4",
-    "https://i.imgur.com/uyLhRyw.mp4",
-    "https://i.imgur.com/IxbaBFg.mp4",
-    "https://i.imgur.com/sRRvrf0.mp4",
-    "https://i.imgur.com/3haDaoN.mp4",
-    "https://i.imgur.com/N1xEGwR.mp4",
-    "https://i.imgur.com/zyPclYX.mp4",
-    "https://i.imgur.com/B44C6fM.mp4",
-    "https://i.imgur.com/9EOlPvn.mp4",
-    "https://i.imgur.com/GGYybtc.mp4",
-    "https://i.imgur.com/bemqfcI.mp4",
-    "https://i.imgur.com/cClnOWH.mp4",
-    "https://i.imgur.com/wTrMCso.mp4",
-    "https://i.imgur.com/gTf8uZY.mp4",
-    "https://i.imgur.com/YAgBkS9.mp4",
-    "https://i.imgur.com/veA5rlN.mp4",
-    "https://i.imgur.com/sh4o4pA.mp4"
-  ];
+  const [fetchedVideos, setFetchedVideos] = useState<string[]>([]);
+  useEffect(() => {
+    const fetchVideos = async () => {
+      try {
+        const listRef = ref(storage, 'home_videos');
+        const res = await listAll(listRef);
+        if (res.items.length > 0) {
+          const urls = await Promise.all(res.items.map(item => getDownloadURL(item)));
+          setFetchedVideos(urls);
+        }
+      } catch (err) {
+        console.error("Failed to load videos from storage:", err);
+      }
+    };
+    fetchVideos();
+  }, []);
+
+  const backgroundVideos = fetchedVideos;
+  
+  // const defaultImgurs = [
+  //   "https://i.imgur.com/MEEgqLT.mp4",
+  //   "https://i.imgur.com/NiXDYQ6.mp4",
+  //   "https://i.imgur.com/uyLhRyw.mp4",
+  //   "https://i.imgur.com/IxbaBFg.mp4",
+  //   "https://i.imgur.com/sRRvrf0.mp4",
+  //   "https://i.imgur.com/3haDaoN.mp4",
+  //   "https://i.imgur.com/N1xEGwR.mp4",
+  //   "https://i.imgur.com/zyPclYX.mp4",
+  //   "https://i.imgur.com/B44C6fM.mp4",
+  //   "https://i.imgur.com/9EOlPvn.mp4",
+  //   "https://i.imgur.com/GGYybtc.mp4",
+  //   "https://i.imgur.com/bemqfcI.mp4",
+  //   "https://i.imgur.com/cClnOWH.mp4",
+  //   "https://i.imgur.com/wTrMCso.mp4",
+  //   "https://i.imgur.com/gTf8uZY.mp4",
+  //   "https://i.imgur.com/YAgBkS9.mp4",
+  //   "https://i.imgur.com/veA5rlN.mp4",
+  //   "https://i.imgur.com/sh4o4pA.mp4"
+  // ];
 
   useEffect(() => {
     setCurrentVideoIndex(Math.floor(Math.random() * backgroundVideos.length));
@@ -940,12 +966,13 @@ export default function App() {
       
       <ManualModal isOpen={isManualOpen} onClose={() => setIsManualOpen(false)} />
       <BuyModal isOpen={isBuyModalOpen} onClose={() => setIsBuyModalOpen(false)} />
-      <CatalogModal isOpen={isCatalogOpen} onClose={() => setIsCatalogOpen(false)} />
-      <LoreModal isOpen={isLoreOpen} onClose={() => setIsLoreOpen(false)} />
+      <CatalogModal isOpen={isCatalogOpen} onClose={() => setIsCatalogOpen(false)} onOpenAdmin={() => { setIsCatalogOpen(false); setAdminMode('catalog'); }} />
+      {isLoreOpen && <LoreView onClose={() => setIsLoreOpen(false)} />}
       <DeckBuilderModal isOpen={isDeckBuilderOpen} onClose={() => setIsDeckBuilderOpen(false)} />
       {isTournamentOpen && <TournamentManager onClose={() => setIsTournamentOpen(false)} />}
       <TypeModal type={selectedType} onClose={() => setSelectedType(null)} />
       {isGameOpen && <GameBoard onClose={() => setIsGameOpen(false)} />}
+      {adminMode !== 'none' && <AdminPanel adminType={adminMode} onClose={() => setAdminMode('none')} />}
 
       {/* Navbar */}
       <nav className={`fixed w-full z-50 transition-all duration-300 border-b ${scrolled ? 'bg-[#0a0a0c]/95 border-slate-800 py-3' : 'bg-transparent border-transparent py-6'}`}>
@@ -1017,33 +1044,37 @@ export default function App() {
       {/* Hero Section */}
       <header className="relative pt-32 pb-20 lg:pt-48 lg:pb-32 overflow-hidden h-[80vh] flex items-center">
         <div className="absolute top-0 left-0 w-full h-full z-0 overflow-hidden">
-          <video 
-            key={currentVideoIndex} 
-            src={backgroundVideos[currentVideoIndex]}
-            autoPlay
-            muted
-            playsInline
-            controlsList="nodownload noplaybackrate"
-            disablePictureInPicture
-            onContextMenu={(e) => e.preventDefault()}
-            onEnded={() => setCurrentVideoIndex((prev) => (prev + 1) % backgroundVideos.length)} 
-            className="absolute top-0 left-0 w-full h-full object-cover opacity-50 transition-opacity duration-1000 pointer-events-none"
-          />
+          {backgroundVideos.length > 0 && (
+            <video 
+              key={currentVideoIndex} 
+              src={backgroundVideos[currentVideoIndex]}
+              autoPlay
+              muted
+              playsInline
+              controlsList="nodownload noplaybackrate"
+              disablePictureInPicture
+              onContextMenu={(e) => e.preventDefault()}
+              onEnded={() => setCurrentVideoIndex((prev) => (prev + 1) % backgroundVideos.length)} 
+              className="absolute top-0 left-0 w-full h-full object-cover opacity-50 transition-opacity duration-1000 pointer-events-none"
+            />
+          )}
           <div className="absolute inset-0 bg-gradient-to-b from-[#0a0a0c]/80 via-[#0a0a0c]/40 to-[#0a0a0c]"></div>
         </div>
 
         <div className="container mx-auto px-6 relative z-10 text-center">
-          <h2 className="text-purple-400 font-mono text-xs sm:text-sm tracking-[0.3em] uppercase mb-4 animate-pulse drop-shadow-md">Invasão do Caos</h2>
+          <h2 className="text-purple-400 font-mono text-xs sm:text-sm tracking-[0.3em] uppercase mb-4 animate-pulse drop-shadow-md">
+            {homeSettings?.topSubtitle || 'Invasão do Caos'}
+          </h2>
           <div className="relative inline-block mb-6">
-            <h1 className="text-4xl sm:text-6xl md:text-8xl font-black text-purple-600 tracking-tighter drop-shadow-2xl whitespace-nowrap glitch-text" data-text="LIGHT DARK">
-              LIGHT DARK
+            <h1 className={`text-4xl sm:text-6xl md:text-8xl font-black text-purple-600 tracking-tighter drop-shadow-2xl whitespace-nowrap ${(!homeSettings || homeSettings?.titleEffect === 'glitch') ? 'glitch-text' : homeSettings?.titleEffect === 'pulse' ? 'animate-pulse' : homeSettings?.titleEffect === 'glow' ? 'drop-shadow-[0_0_15px_rgba(168,85,247,0.8)]' : ''}`} data-text={homeSettings?.title || 'LIGHT DARK'}>
+              {homeSettings?.title || 'LIGHT DARK'}
             </h1>
             <span className="absolute top-1/2 -translate-y-1/2 left-[102%] text-3xl sm:text-5xl md:text-7xl font-mono text-purple-500 animate-flicker-rare opacity-0 tracking-normal drop-shadow-md pointer-events-none">
-              1/5
+              {homeSettings?.sideText || '1/5'}
             </span>
           </div>
           <p className="text-lg text-slate-200 mb-10 max-w-2xl mx-auto drop-shadow-lg font-medium">
-            O Caos começou a invadir, Escolhidos, Arautos, precisamos de vocês! Monte seu deck, escolha seu Herói e domine os duelos neste TCG frenético.
+            {homeSettings?.synopsis || 'O Caos começou a invadir, Escolhidos, Arautos, precisamos de vocês! Monte seu deck, escolha seu Herói e domine os duelos neste TCG frenético.'}
           </p>
           
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
@@ -1070,6 +1101,8 @@ export default function App() {
       </header>
 
       <GameLore />
+
+
 
       {/* Showcase Section */}
       <section id="cartas" className="py-20 border-y border-slate-900 bg-[#0f0f13]">
@@ -1107,7 +1140,7 @@ export default function App() {
         <div className="container mx-auto px-6">
           <h3 className="text-3xl font-bold mb-12 text-center text-white">Arquétipos</h3>
           <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            {archetypesList.map((arch, idx) => (
+            {archetypes.map((arch, idx) => (
               <ArchetypeCard key={idx} {...arch} />
             ))}
           </div>
@@ -1136,10 +1169,17 @@ export default function App() {
         <div className="container mx-auto px-6 flex flex-col md:flex-row justify-between items-center gap-6">
           <div className="text-center md:text-left">
             <h4 className="font-bold text-white mb-2">LIGHT DARK TCG</h4>
-            <p className="text-slate-500 text-sm">
+            <p className="text-slate-500 text-sm mb-4">
               &copy; 2024. Todos os direitos reservados.<br/>
               Os personagens, nomes, e jogo são marcas registradas.
             </p>
+            <button 
+              onClick={() => setAdminMode('home')} 
+              className="text-slate-700 hover:text-slate-500 transition"
+              title="Admin da Tela Inicial"
+            >
+              <Settings size={14} />
+            </button>
           </div>
 
           <div className="flex gap-6">
