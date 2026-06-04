@@ -1,0 +1,46 @@
+mutation SeedDatabase @transaction {
+  player_insertMany(data: [
+    {
+      id: "550e8400-e29b-41d4-a716-446655440001",
+      username: "pro_gamer_1",
+      email: "pro1@example.com",
+      joinDate: "2023-01-01"
+    },
+    {
+      id: "550e8400-e29b-41d4-a716-446655440002",
+      username: "casual_player_2",
+      email: "casual2@example.com",
+      joinDate: "2023-05-15"
+    }
+  ])
+  card_insertMany(data: [
+    {
+      id: "550e8400-e29b-41d4-a716-446655440003",
+      name: "Dragon Knight",
+      manaCost: 5,
+      attack: 7,
+      health: 8,
+      effectDescription: "Deals 2 damage to all enemies upon entry."
+    },
+    {
+      id: "550e8400-e29b-41d4-a716-446655440004",
+      name: "Heal Potion",
+      manaCost: 2,
+      attack: 0,
+      health: 0,
+      effectDescription: "Restores 5 health to your hero."
+    }
+  ])
+  collection_insertMany(data: [
+    {
+      playerId: "550e8400-e29b-41d4-a716-446655440001",
+      cardId: "550e8400-e29b-41d4-a716-446655440003",
+      quantity: 1
+    },
+    {
+      playerId: "550e8400-e29b-41d4-a716-446655440002",
+      cardId: "550e8400-e29b-41d4-a716-446655440004",
+      quantity: 3
+    }
+  ])
+}

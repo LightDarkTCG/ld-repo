@@ -1,0 +1,58 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    match /loreCategories/{categoryId} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+
+    match /loreArticles/{articleId} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+    match /loreUniverses/{universeId} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+    match /loreCharacters/{characterId} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+    match /wbSettings/{document=**} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+    match /wbTabs/{document=**} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+    match /wbItems/{document=**} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+    match /wbTimelineEvents/{document=**} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+    match /customCards/{document=**} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+    match /customArchetypes/{document=**} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+    match /homeSettings/{document=**} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+    match /appSettings/{document=**} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+  }
+}

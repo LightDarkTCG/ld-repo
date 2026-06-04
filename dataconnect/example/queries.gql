@@ -1,0 +1,23 @@
+mutation CreatePlayer($username: String!, $email: String!) @auth(level: PUBLIC) {
+  player_insert(data: { username: $username, email: $email, joinDate_expr: "request.time" })
+}
+
+mutation CreateDeck($deckName: String!, $playerId: UUID!) @auth(level: USER) {
+  deck_insert(data: { deckName: $deckName, playerId: $playerId, createdAt_expr: "request.time" })
+}
+
+query ListMyDecks @auth(level: USER) {
+  decks(where: { playerId: { eq_expr: "auth.uid" } }) {
+    deckName
+    createdAt
+    cards_via_DeckCard {
+      name
+      attack
+      health
+    }
+  }
+}
+
+mutation AddCardToDeck($deckId: UUID!, $cardId: UUID!, $quantity: Int!) @auth(level: USER) {
+  deckCard_insert(data: { deckId: $deckId, cardId: $cardId, quantity: $quantity })
+}

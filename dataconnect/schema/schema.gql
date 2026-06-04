@@ -1,0 +1,47 @@
+type Player @table {
+  username: String!
+  email: String!
+  joinDate: Date!
+  avatarUrl: String
+  bio: String
+  totalWins: Int
+}
+
+type Card @table {
+  name: String!
+  manaCost: Int!
+  attack: Int!
+  health: Int!
+  effectDescription: String!
+  rarity: String
+  imageUrl: String
+}
+
+type Deck @table {
+  deckName: String!
+  createdAt: Timestamp!
+  description: String
+  isPublic: Boolean
+  player: Player!
+}
+
+type Collection @table(key: ["player", "card"]) {
+  quantity: Int!
+  acquiredDate: Date
+  player: Player!
+  card: Card!
+}
+
+type Match @table {
+  matchDate: Timestamp!
+  resultStatus: String!
+  matchDuration: Int
+  winner: Player!
+  loser: Player!
+}
+
+type DeckCard @table(key: ["deck", "card"]) {
+  quantity: Int!
+  deck: Deck!
+  card: Card!
+}

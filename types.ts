@@ -16,6 +16,7 @@ export interface CardData {
   imageGradient?: string;
   code: string;
   lore?: string;
+  deleted?: boolean;
 }
 
 export interface ArchetypeData {
