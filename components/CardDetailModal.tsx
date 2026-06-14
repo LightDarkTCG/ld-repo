@@ -3,6 +3,8 @@ import { X, Zap, BookOpen, Box, Hash, Link as LinkIcon, Edit2, Check, Trash } fr
 import { CardData } from '../types';
 import { Card } from './Card';
 import { useCards } from '../CardContext';
+import { auth } from '../firebase';
+import { onAuthStateChanged } from 'firebase/auth';
 
 interface CardDetailModalProps {
   card: CardData | null;
@@ -16,6 +18,12 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card: initialC
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [card, setCard] = useState<CardData | null>(initialCard);
   const [originalCode, setOriginalCode] = useState(initialCard?.code);
+  const [user, setUser] = useState(auth.currentUser);
+
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, setUser);
+    return unsub;
+  }, []);
 
   useEffect(() => {
     setCard(initialCard);
@@ -202,26 +210,46 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card: initialC
       <div className="absolute top-4 right-4 flex gap-2 z-50">
         {isEditing ? (
           <>
+            {(() => {
+              const existingCard = allCards.find(c => c.code === originalCode);
+              return existingCard && (!existingCard.frame || existingCard.frame === 'Legado') && card.frame !== 'Moderno' ? (
+                <span className="text-red-400 font-bold text-xs flex items-center bg-black/50 px-3 py-1 rounded mt-1 sm:mt-0 max-w-[200px] text-right">
+                  ⚠️ Crie uma cópia ou mude o Frame para 'Moderno' para editar.
+                </span>
+              ) : null;
+            })()}
             <button 
               onClick={handleDelete} 
-              className={`p-2 rounded-full text-white transition flex items-center gap-2 px-4 shadow-lg ${confirmDelete ? 'bg-red-700 hover:bg-red-600 shadow-red-900/80 animate-pulse' : 'bg-red-600 hover:bg-red-500 shadow-red-900/50'}`}
+              disabled={(() => {
+                const existingCard = allCards.find(c => c.code === originalCode);
+                return existingCard ? (!existingCard.frame || existingCard.frame === 'Legado') : false;
+              })()}
+              className={`p-2 rounded-full text-white transition flex items-center gap-2 px-4 shadow-lg disabled:opacity-50 disabled:cursor-not-allowed ${confirmDelete ? 'bg-red-700 hover:bg-red-600 shadow-red-900/80 animate-pulse' : 'bg-red-600 hover:bg-red-500 shadow-red-900/50'}`}
             >
               <Trash size={20} /> {confirmDelete ? "Tem certeza?" : "Apagar"}
             </button>
             <button 
               onClick={handleSaveAndAddAnother} 
-              className="p-2 bg-blue-600 rounded-full text-white hover:bg-blue-500 transition flex items-center gap-2 px-4 shadow-lg shadow-blue-900/50"
+              disabled={(() => {
+                const existingCard = allCards.find(c => c.code === originalCode);
+                return existingCard ? (!existingCard.frame || existingCard.frame === 'Legado') && card.frame !== 'Moderno' : false;
+              })()}
+              className="p-2 bg-blue-600 rounded-full text-white hover:bg-blue-500 transition flex items-center gap-2 px-4 shadow-lg shadow-blue-900/50 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Check size={20} /> Salvar & Lote
             </button>
             <button 
               onClick={handleSave} 
-              className="p-2 bg-green-600 rounded-full text-white hover:bg-green-500 transition flex items-center gap-2 px-4 shadow-lg shadow-green-900/50"
+              disabled={(() => {
+                const existingCard = allCards.find(c => c.code === originalCode);
+                return existingCard ? (!existingCard.frame || existingCard.frame === 'Legado') && card.frame !== 'Moderno' : false;
+              })()}
+              className="p-2 bg-green-600 rounded-full text-white hover:bg-green-500 transition flex items-center gap-2 px-4 shadow-lg shadow-green-900/50 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Check size={20} /> Salvar
             </button>
           </>
-        ) : (
+        ) : user ? (
           <button 
             onClick={() => setIsEditing(true)} 
             className="p-2 bg-slate-800 rounded-full text-purple-400 hover:text-white hover:bg-slate-700 transition"
@@ -229,7 +257,7 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card: initialC
           >
             <Edit2 size={24} />
           </button>
-        )}
+        ) : null}
         <button 
           onClick={onClose} 
           className="p-2 bg-slate-800 rounded-full text-slate-400 hover:text-white hover:bg-slate-700 transition"
@@ -338,6 +366,15 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card: initialC
                 <span className="px-3 py-1 bg-blue-900/30 rounded text-blue-300 border border-blue-800/50 flex items-center gap-1">
                   <Box size={14} /> {card.collection || "Coleção Base"}
                 </span>
+              )}
+              
+              {isEditing ? (
+                 <select value={card.frame || 'Legado'} onChange={(e) => setCard({...card, frame: e.target.value as 'Legado' | 'Moderno'})} className="px-3 py-1.5 bg-indigo-900/10 rounded text-indigo-300 border border-indigo-800/50 outline-none">
+                    <option value="Legado">Frame Legado</option>
+                    <option value="Moderno">Frame Moderno</option>
+                 </select>
+              ) : (
+                 <span className="px-3 py-1 bg-indigo-900/30 rounded text-indigo-300 border border-indigo-800/50 hidden"></span>
               )}
             </div>
             

@@ -49,9 +49,9 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
   // --- Logic ---
 
   const addToDeck = (card: CardData, isSide: boolean = false) => {
-    // 1 Copy Limit Rule
-    if (deck.some(c => c.code === card.code) || sideDeck.some(c => c.code === card.code)) {
-      alert("Você só pode adicionar 1 cópia de cada carta (Deck + Side Deck).");
+    // 1 Copy Limit Rule (by name)
+    if (deck.some(c => c.name === card.name) || sideDeck.some(c => c.name === card.name)) {
+      alert(`Você já possui uma carta chamada "${card.name}" no deck. Apenas 1 cópia com o mesmo nome é permitida (Deck + Side Deck).`);
       return;
     }
 
@@ -106,7 +106,11 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
       hasSingleHeroIdentity = mainHeroes.every(h => getIdentity(h.name) === firstIdentity);
     }
 
-    return hasValidSize && hasSingleHeroIdentity;
+    const allCards = [...deck, ...sideDeck];
+    const uniqueNames = new Set(allCards.map(c => c.name));
+    const hasNoDuplicates = uniqueNames.size === allCards.length;
+
+    return hasValidSize && hasSingleHeroIdentity && hasNoDuplicates;
   }, [deck, sideDeck]);
 
   const generateDeckCode = () => {
@@ -399,8 +403,8 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
             <div className="flex-1 overflow-y-auto p-2 md:p-4">
               <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-2 md:gap-3">
                 {filteredPool.map((card, idx) => {
-                  const isInMain = deck.some(c => c.code === card.code);
-                  const isInSide = sideDeck.some(c => c.code === card.code);
+                  const isInMain = deck.some(c => c.name === card.name);
+                  const isInSide = sideDeck.some(c => c.name === card.name);
                   const isInDeck = isInMain || isInSide;
                   return (
                     <div 
@@ -657,6 +661,10 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
                         {deck.filter(c => c.type === 'Herói').length <= 1 || deck.filter(c => c.type === 'Herói').every(h => getIdentity(h.name) === getIdentity(deck.filter(c => c.type === 'Herói')[0].name)) ? <CheckCircle size={16} className="md:w-5 md:h-5" /> : <AlertTriangle size={16} className="md:w-5 md:h-5" />}
                         <span className="text-xs md:text-base">Apenas 1 tipo de Herói no Principal</span>
                       </div>
+                      <div className={`flex items-center gap-2 md:gap-3 p-2 md:p-3 rounded border ${new Set([...deck, ...sideDeck].map(c => c.name)).size === deck.length + sideDeck.length ? 'bg-green-900/20 border-green-800 text-green-400' : 'bg-red-900/20 border-red-800 text-red-400'}`}>
+                        {new Set([...deck, ...sideDeck].map(c => c.name)).size === deck.length + sideDeck.length ? <CheckCircle size={16} className="md:w-5 md:h-5" /> : <AlertTriangle size={16} className="md:w-5 md:h-5" />}
+                        <span className="text-xs md:text-base">Sem nomes repetidos (Deck + Side Deck)</span>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -727,6 +735,7 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
                         {deck.length > 35 && <p>• O deck principal pode ter no máximo 35 cartas. (Atual: {deck.length})</p>}
                         {sideDeck.length > 5 && <p>• O Side Deck pode ter no máximo 5 cartas. (Atual: {sideDeck.length})</p>}
                         {deck.filter(c => c.type === 'Herói').length > 1 && !deck.filter(c => c.type === 'Herói').every(h => getIdentity(h.name) === getIdentity(deck.filter(c => c.type === 'Herói')[0].name)) && <p>• O deck principal só pode ter Heróis de um único tipo/identidade.</p>}
+                        {new Set([...deck, ...sideDeck].map(c => c.name)).size !== deck.length + sideDeck.length && <p>• Você tem cartas com nomes repetidos.</p>}
                       </div>
                     )
                   ) : (

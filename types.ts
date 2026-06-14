@@ -17,6 +17,7 @@ export interface CardData {
   code: string;
   lore?: string;
   deleted?: boolean;
+  isHidden?: boolean;
 }
 
 export interface ArchetypeData {

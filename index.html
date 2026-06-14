@@ -12,6 +12,18 @@
         background-color: #0a0a0c;
         color: #e2e8f0;
       }
+      img, video {
+        -webkit-user-select: none;
+        -khtml-user-select: none;
+        -moz-user-select: none;
+        -o-user-select: none;
+        user-select: none;
+        -webkit-user-drag: none;
+        -khtml-user-drag: none;
+        -moz-user-drag: none;
+        -o-user-drag: none;
+        pointer-events: none;
+      }
       .font-mono {
         font-family: 'JetBrains Mono', monospace;
       }
@@ -35,25 +47,20 @@
       @keyframes flicker {
         0%, 19.999%, 22%, 62.999%, 64%, 64.999%, 70%, 100% {
           opacity: 1;
-          text-shadow: 0 0 10px rgba(147, 51, 234, 0.8), 0 0 20px rgba(147, 51, 234, 0.5);
         }
         20%, 21.999%, 63%, 63.999%, 65%, 69.999% {
           opacity: 0.4;
-          text-shadow: none;
         }
       }
       @keyframes flicker-rare {
         0%, 90% {
           opacity: 0;
-          text-shadow: none;
         }
         90.1%, 92%, 94.1%, 96%, 98.1%, 100% {
           opacity: 1;
-          text-shadow: 0 0 15px rgba(168, 85, 247, 0.9), 0 0 30px rgba(168, 85, 247, 0.7);
         }
         92.1%, 94%, 96.1%, 98% {
           opacity: 0.2;
-          text-shadow: none;
         }
       }
       .animate-flicker {

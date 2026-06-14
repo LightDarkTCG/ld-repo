@@ -1,8 +1,9 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { CardData, ArchetypeData } from './types';
 import { allCards as defaultCards, archetypesList as defaultArchetypes, collectionsList as defaultCollections } from './data';
-import { db } from './firebase';
+import { db, auth } from './firebase';
 import { collection, getDocs, doc, setDoc, onSnapshot, deleteDoc } from 'firebase/firestore';
+import { onAuthStateChanged } from 'firebase/auth';
 
 interface CardContextType {
   cards: CardData[];
@@ -11,18 +12,43 @@ interface CardContextType {
   loading: boolean;
   saveCard: (card: CardData) => Promise<void>;
   saveArchetype: (archetype: ArchetypeData) => Promise<void>;
+  saveCollection: (name: string) => Promise<void>;
   deleteCard: (code: string) => Promise<void>;
+  deleteCollection?: (name: string) => Promise<void>;
 }
 
 const CardContext = createContext<CardContextType | undefined>(undefined);
 
 export const CardProvider = ({ children }: { children: ReactNode }) => {
+  const [allMergedCards, setAllMergedCards] = useState<CardData[]>(defaultCards);
   const [cards, setCards] = useState<CardData[]>(defaultCards);
   const [archetypes, setArchetypes] = useState<ArchetypeData[]>(defaultArchetypes);
   const [loading, setLoading] = useState(true);
+  const [isAdmin, setIsAdmin] = useState(false);
 
-  // Collections are uniquely derived from all cards
-  const collections = Array.from(new Set(cards.map(c => c.collection).filter(Boolean))).sort() as string[];
+  const [explicitCollections, setExplicitCollections] = useState<string[]>([]);
+
+  // Collections are uniquely derived from all cards plus defaults and explicit ones
+  const collections = Array.from(new Set([
+    ...defaultCollections,
+    ...explicitCollections,
+    ...cards.map(c => c.collection).filter(Boolean)
+  ])).sort() as string[];
+
+  useEffect(() => {
+    const unsubAuth = onAuthStateChanged(auth, (u) => {
+      setIsAdmin(!!u);
+    });
+    return unsubAuth;
+  }, []);
+
+  useEffect(() => {
+    if (isAdmin) {
+      setCards(allMergedCards);
+    } else {
+      setCards(allMergedCards.filter(c => !c.isHidden));
+    }
+  }, [allMergedCards, isAdmin]);
 
   useEffect(() => {
     const unsubCards = onSnapshot(collection(db, 'customCards'), (snapshot) => {
@@ -42,8 +68,10 @@ export const CardProvider = ({ children }: { children: ReactNode }) => {
           mergedCards.push(v);
         }
       });
-      setCards(mergedCards);
-    }, (err) => console.error(err));
+      setAllMergedCards(mergedCards);
+    }, (err: any) => {
+      if (err.code !== 'unavailable') console.error(err);
+    });
 
     const unsubArchetypes = onSnapshot(collection(db, 'customArchetypes'), (snapshot) => {
       const customArchMap = new Map<string, ArchetypeData>();
@@ -61,17 +89,36 @@ export const CardProvider = ({ children }: { children: ReactNode }) => {
         }
       });
       setArchetypes(mergedArch);
-    }, (err) => console.error(err));
+    }, (err: any) => {
+      if (err.code !== 'unavailable') console.error(err);
+    });
+
+    const unsubCollections = onSnapshot(collection(db, 'customCollections'), (snapshot) => {
+      const dbCollections: string[] = [];
+      snapshot.forEach(doc => {
+        const data = doc.data();
+        if (data.name) dbCollections.push(data.name);
+      });
+      setExplicitCollections(dbCollections);
+    }, (err: any) => {
+      if (err.code !== 'unavailable') console.error(err);
+    });
 
     setLoading(false);
     return () => {
       unsubCards();
       unsubArchetypes();
+      unsubCollections();
     };
   }, []);
 
   const saveCard = async (card: CardData) => {
     if (!card.code) return;
+    const existingCard = cards.find(c => c.code === card.code);
+    if (existingCard && (!existingCard.frame || existingCard.frame === 'Legado') && card.frame !== 'Moderno') {
+      alert("Cartas com frame 'Legado' não podem ser substituídas. Mude o frame para 'Moderno' para poder salvar as edições.");
+      throw new Error("Cartas com frame 'Legado' não podem ser substituídas.");
+    }
     await setDoc(doc(db, 'customCards', card.code.replace(/\//g, '_')), card);
   };
 
@@ -80,8 +127,23 @@ export const CardProvider = ({ children }: { children: ReactNode }) => {
     await setDoc(doc(db, 'customArchetypes', archetype.name.replace(/\//g, '_')), archetype);
   };
 
+  const saveCollection = async (name: string) => {
+    if (!name.trim()) return;
+    await setDoc(doc(db, 'customCollections', name.replace(/\//g, '_')), { name: name.trim() });
+  };
+
+  const deleteCollection = async (name: string) => {
+    if (!name.trim()) return;
+    await deleteDoc(doc(db, 'customCollections', name.replace(/\//g, '_')));
+  };
+
   const deleteCard = async (code: string) => {
     if (!code) return;
+    const existingCard = cards.find(c => c.code === code);
+    if (existingCard && (!existingCard.frame || existingCard.frame === 'Legado')) {
+      alert("Cartas com frame 'Legado' não podem ser apagadas.");
+      throw new Error("Cartas com frame 'Legado' não podem ser apagadas.");
+    }
     try {
       console.log('deleting', code);
       const isDefault = defaultCards.some(d => d.code === code);
@@ -99,7 +161,7 @@ export const CardProvider = ({ children }: { children: ReactNode }) => {
   };
 
   return (
-    <CardContext.Provider value={{ cards, archetypes, collections, loading, saveCard, saveArchetype, deleteCard }}>
+    <CardContext.Provider value={{ cards, archetypes, collections, loading, saveCard, saveArchetype, saveCollection, deleteCard, deleteCollection }}>
       {children}
     </CardContext.Provider>
   );

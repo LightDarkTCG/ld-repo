@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from "motion/react";
 import { 
   Zap, Heart, Layers, Hexagon, BookOpen,
@@ -603,7 +603,7 @@ const playBeep = () => {
 };
 
 const CatalogModal = ({ isOpen, onClose, onOpenAdmin }: { isOpen: boolean, onClose: () => void, onOpenAdmin: () => void }) => {
-  const { cards: allCards } = useCards();
+  const { cards: allCards, collections, archetypes } = useCards();
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedCard, setSelectedCard] = useState<CardData | null>(null);
   const [easterEggStep, setEasterEggStep] = useState(0);
@@ -739,7 +739,7 @@ const CatalogModal = ({ isOpen, onClose, onOpenAdmin }: { isOpen: boolean, onClo
                 onChange={(e) => setFilters({...filters, collection: e.target.value})}
               >
                 <option className="bg-purple-950" value="Todos">Todas as Coleções</option>
-                {Array.from(new Set(allCards.map(c => c.collection).filter(Boolean))).sort().map(c => <option className="bg-purple-950" key={c} value={c}>{c}</option>)}
+                {collections.map(c => <option className="bg-purple-950" key={c} value={c}>{c}</option>)}
               </select>
             </div>
 
@@ -782,7 +782,7 @@ const CatalogModal = ({ isOpen, onClose, onOpenAdmin }: { isOpen: boolean, onClo
                 onChange={(e) => setFilters({...filters, archetype: e.target.value})}
               >
                 <option className="bg-purple-950" value="Todos">Todos</option>
-                {Array.from(new Set(allCards.map(c => c.archetype).filter(Boolean).flatMap(a => a?.split(' / ') || []))).sort().map(a => <option className="bg-purple-950" key={a} value={a}>{a}</option>)}
+                {archetypes.map(a => <option className="bg-purple-950" key={a.name} value={a.name}>{a.name}</option>)}
               </select>
             </div>
 
@@ -864,7 +864,20 @@ export default function App() {
 
   // Check for game mode in URL
   const [isGameMode, setIsGameMode] = useState(false);
-  const [homeSettings, setHomeSettings] = useState<any>(null);
+  const [homeSettings, setHomeSettings] = useState<any>({
+    title: 'LIGHT DARK',
+    topSubtitle: 'Invasão do Caos',
+    sideText: '1/5',
+    titleEffect: 'glitch',
+    primaryColor: '#a855f7',
+    titleShadowColor: '#a855f7',
+    titleShadowIntensity: 15,
+    sideTextColor: '#a855f7',
+    sideTextShadowColor: '#a855f7',
+    sideTextShadowIntensity: 10,
+    videos: [],
+    videoTransition: 'fade' // 'fade' | 'none'
+  });
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -872,18 +885,39 @@ export default function App() {
       setIsGameMode(true);
       setIsGameOpen(true);
     }
+    
+    // Recovery routine for accidentally deleted standard cards
+    import('firebase/firestore').then(({ doc, deleteDoc }) => {
+      deleteDoc(doc(db, 'customCards', '2025_0001_B0001')).catch(console.error);
+      deleteDoc(doc(db, 'customCards', '2025_0001_00001')).catch(console.error);
+      deleteDoc(doc(db, 'customCards', '2025_0001_00002')).catch(console.error);
+    });
 
     const fetchHomeSettings = async () => {
       try {
         const snap = await getDoc(doc(db, 'homeSettings', 'global'));
         if (snap.exists()) {
-          setHomeSettings(snap.data());
+          setHomeSettings((prev: any) => ({ ...prev, ...snap.data() }));
         }
       } catch(e) {
         console.error(e);
       }
     };
     fetchHomeSettings();
+  }, []);
+
+  useEffect(() => {
+    const handleContext = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (target.tagName.toLowerCase() === 'img' || target.tagName.toLowerCase() === 'video') {
+        e.preventDefault();
+      }
+    };
+    
+    document.addEventListener('contextmenu', handleContext);
+    return () => {
+      document.removeEventListener('contextmenu', handleContext);
+    };
   }, []);
 
   const [fetchedVideos, setFetchedVideos] = useState<string[]>([]);
@@ -896,35 +930,42 @@ export default function App() {
           const urls = await Promise.all(res.items.map(item => getDownloadURL(item)));
           setFetchedVideos(urls);
         }
-      } catch (err) {
-        console.error("Failed to load videos from storage:", err);
+      } catch (err: any) {
+        if (err.code !== 'storage/quota-exceeded') {
+          console.error("Failed to load videos from storage:", err);
+        }
       }
     };
     fetchVideos();
   }, []);
 
-  const backgroundVideos = fetchedVideos;
+  const backgroundVideos = homeSettings?.videos?.length > 0 ? homeSettings.videos : fetchedVideos.map(url => ({ url, duration: 0, position: 'center', transition: 'fade' }));
+
+  useEffect(() => {
+    if (!backgroundVideos || backgroundVideos.length === 0) return;
+    const currentVideo = backgroundVideos[currentVideoIndex];
+    if (currentVideo?.duration > 0) {
+      const timer = setTimeout(() => {
+        setCurrentVideoIndex((prev) => (prev + 1) % backgroundVideos.length);
+      }, currentVideo.duration * 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [currentVideoIndex, backgroundVideos]);
   
-  // const defaultImgurs = [
-  //   "https://i.imgur.com/MEEgqLT.mp4",
-  //   "https://i.imgur.com/NiXDYQ6.mp4",
-  //   "https://i.imgur.com/uyLhRyw.mp4",
-  //   "https://i.imgur.com/IxbaBFg.mp4",
-  //   "https://i.imgur.com/sRRvrf0.mp4",
-  //   "https://i.imgur.com/3haDaoN.mp4",
-  //   "https://i.imgur.com/N1xEGwR.mp4",
-  //   "https://i.imgur.com/zyPclYX.mp4",
-  //   "https://i.imgur.com/B44C6fM.mp4",
-  //   "https://i.imgur.com/9EOlPvn.mp4",
-  //   "https://i.imgur.com/GGYybtc.mp4",
-  //   "https://i.imgur.com/bemqfcI.mp4",
-  //   "https://i.imgur.com/cClnOWH.mp4",
-  //   "https://i.imgur.com/wTrMCso.mp4",
-  //   "https://i.imgur.com/gTf8uZY.mp4",
-  //   "https://i.imgur.com/YAgBkS9.mp4",
-  //   "https://i.imgur.com/veA5rlN.mp4",
-  //   "https://i.imgur.com/sh4o4pA.mp4"
-  // ];
+  const videoRefs = useRef<(HTMLVideoElement | null)[]>([]);
+
+  useEffect(() => {
+    videoRefs.current.forEach((vid, i) => {
+      if (vid) {
+        if (i === currentVideoIndex) {
+          vid.currentTime = 0;
+          vid.play().catch(e => console.log('Autoplay prevented', e));
+        } else {
+          vid.pause();
+        }
+      }
+    });
+  }, [currentVideoIndex]);
 
   useEffect(() => {
     setCurrentVideoIndex(Math.floor(Math.random() * backgroundVideos.length));
@@ -1048,33 +1089,56 @@ export default function App() {
 
       {/* Hero Section */}
       <header className="relative pt-32 pb-20 lg:pt-48 lg:pb-32 overflow-hidden h-[80vh] flex items-center">
-        <div className="absolute top-0 left-0 w-full h-full z-0 overflow-hidden">
-          {backgroundVideos.length > 0 && (
-            <video 
-              key={currentVideoIndex} 
-              src={backgroundVideos[currentVideoIndex]}
-              autoPlay
-              muted
-              playsInline
-              controlsList="nodownload noplaybackrate"
-              disablePictureInPicture
-              onContextMenu={(e) => e.preventDefault()}
-              onEnded={() => setCurrentVideoIndex((prev) => (prev + 1) % backgroundVideos.length)} 
-              className="absolute top-0 left-0 w-full h-full object-cover opacity-50 transition-opacity duration-1000 pointer-events-none"
-            />
-          )}
+        <div className="absolute top-0 left-0 w-full h-full z-0 overflow-hidden bg-black">
+          {backgroundVideos.map((vid: any, i: number) => {
+            const isActive = i === currentVideoIndex;
+            return (
+              <video 
+                key={i} 
+                ref={el => videoRefs.current[i] = el}
+                src={vid.url}
+                autoPlay={isActive}
+                muted
+                playsInline
+                controlsList="nodownload noplaybackrate"
+                disablePictureInPicture
+                onContextMenu={(e) => e.preventDefault()}
+                onEnded={() => {
+                  if (!vid.duration && isActive) {
+                    setCurrentVideoIndex((prev) => (prev + 1) % backgroundVideos.length);
+                  }
+                }} 
+                className={`absolute top-0 left-0 w-full h-full object-cover pointer-events-none transition-opacity duration-1000 ${isActive ? 'opacity-50' : 'opacity-0'} ${vid.transition === 'none' ? 'duration-0' : 'duration-1000'}`}
+                style={{ objectPosition: vid.position || 'center' }}
+              />
+            );
+          })}
           <div className="absolute inset-0 bg-gradient-to-b from-[#0a0a0c]/80 via-[#0a0a0c]/40 to-[#0a0a0c]"></div>
         </div>
 
         <div className="container mx-auto px-6 relative z-10 text-center">
-          <h2 className="text-purple-400 font-mono text-xs sm:text-sm tracking-[0.3em] uppercase mb-4 animate-pulse drop-shadow-md">
+          <h2 className="font-mono text-xs sm:text-sm tracking-[0.3em] uppercase mb-4 animate-pulse drop-shadow-md" style={{ color: homeSettings?.primaryColor || '#c084fc' }}>
             {homeSettings?.topSubtitle || 'Invasão do Caos'}
           </h2>
           <div className="relative inline-block mb-6">
-            <h1 className={`text-4xl sm:text-6xl md:text-8xl font-black text-purple-600 tracking-tighter drop-shadow-2xl whitespace-nowrap ${(!homeSettings || homeSettings?.titleEffect === 'glitch') ? 'glitch-text' : homeSettings?.titleEffect === 'pulse' ? 'animate-pulse' : homeSettings?.titleEffect === 'glow' ? 'drop-shadow-[0_0_15px_rgba(168,85,247,0.8)]' : ''}`} data-text={homeSettings?.title || 'LIGHT DARK'}>
+            <h1 
+              className={`text-4xl sm:text-6xl md:text-8xl font-black tracking-tighter whitespace-nowrap ${homeSettings?.titleEffect === 'glitch' ? 'glitch-text' : homeSettings?.titleEffect === 'pulse' ? 'animate-pulse' : ''}`} 
+              data-text={homeSettings?.title || 'LIGHT DARK'}
+              style={{
+                color: homeSettings?.primaryColor || '#9333ea',
+                filter: `drop-shadow(0 0 ${homeSettings?.titleShadowIntensity ?? 15}px ${homeSettings?.titleShadowColor || homeSettings?.primaryColor || '#9333ea'})`
+              }}
+            >
               {homeSettings?.title || 'LIGHT DARK'}
             </h1>
-            <span className="absolute top-1/2 -translate-y-1/2 left-[102%] text-3xl sm:text-5xl md:text-7xl font-mono text-purple-500 animate-flicker-rare opacity-0 tracking-normal drop-shadow-md pointer-events-none">
+            <span 
+              className={`absolute top-1/2 -translate-y-1/2 left-[102%] text-3xl sm:text-5xl md:text-7xl font-mono tracking-normal pointer-events-none ${homeSettings?.sideTextEffect === 'flicker' ? 'animate-flicker-rare' : homeSettings?.sideTextEffect === 'pulse' ? 'animate-pulse' : homeSettings?.sideTextEffect === 'glitch' ? 'glitch-text' : ''}`} 
+              data-text={homeSettings?.sideText || '1/5'}
+              style={{ 
+                color: homeSettings?.sideTextColor || '#a855f7',
+                filter: `drop-shadow(0 0 ${homeSettings?.sideTextShadowIntensity ?? 10}px ${homeSettings?.sideTextShadowColor || homeSettings?.sideTextColor || '#a855f7'})`
+              }}
+            >
               {homeSettings?.sideText || '1/5'}
             </span>
           </div>

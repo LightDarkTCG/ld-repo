@@ -53,8 +53,10 @@ export default function GameBoard({ onClose }: GameBoardProps) {
           ];
           setThemes(dynamicThemes as any);
         }
-      } catch (err) {
-        console.error("Failed to load duel themes from storage:", err);
+      } catch (err: any) {
+        if (err.code !== 'storage/quota-exceeded') {
+          console.error("Failed to load duel themes from storage:", err);
+        }
       }
     };
     fetchThemes();

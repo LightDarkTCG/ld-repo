@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { 
   Info, X, Sword, Shield, Layers, Ban, Skull, 
-  Crown, Droplet, Heart, ArrowDown, ArrowUp, Flame, Gem 
+  Crown, Droplet, Heart, ArrowDown, ArrowUp, Flame, Gem, Brain
 } from 'lucide-react';
 
 type ZoneType = 'combatant' | 'effect' | 'deck' | 'graveyard' | 'banished' | 'hero-deck' | 'stats' | 'modifiers';
@@ -41,12 +41,28 @@ const zones: ZoneInfo[] = [
     icon: Skull
   },
   {
-    id: 'stats',
-    title: 'Vida e Mana',
-    description: 'VIDA: Jogadores iniciam com 20 PV. Se chegar a 0, você perde. MANA: 12 pontos fixos por rodada para pagar o custo (CT) das cartas.',
+    id: 'mana',
+    title: 'Mana',
+    description: '12 pontos fixos que se renovam no começo da rodada, é usada para usar cartas.',
     type: 'stats',
     color: 'bg-cyan-600',
     icon: Droplet
+  },
+  {
+    id: 'vida',
+    title: 'Vida',
+    description: 'Jogadores iniciam com 20 PV. Se chegar a 0, geralmente você perde.',
+    type: 'stats',
+    color: 'bg-red-600',
+    icon: Heart
+  },
+  {
+    id: 'sanidade',
+    title: 'Sanidade',
+    description: 'Em 2027 os horrores de Arkham chegarão ao Macroverso',
+    type: 'stats',
+    color: 'bg-green-600',
+    icon: Brain
   },
   {
     id: 'main-deck',
@@ -188,18 +204,36 @@ export const GameField = () => {
                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Morta</span>
             </div>
 
-            {/* COL 2: Stats (Mana/Life) */}
-            <div 
-              onClick={() => handleZoneClick('stats')}
-              className={`${slotBaseClass} ${activeZone === 'stats' ? slotActiveClass : 'border-slate-700/30 bg-transparent hover:bg-slate-800/20'} flex-col justify-center gap-6`}
-            >
-               <div className="flex flex-col items-center gap-1 text-cyan-500">
-                  <Droplet size={28} fill="currentColor" className="opacity-80" />
-                  <span className="text-xs font-mono font-bold">MANA</span>
+            {/* COL 2: Stats (Mana/Life/Sanity) */}
+            <div className="flex flex-col gap-2 h-full">
+               <div 
+                 onClick={() => handleZoneClick('mana')}
+                 className={`flex-1 rounded border border-slate-700/50 hover:border-cyan-500 hover:bg-cyan-500/10 cursor-pointer flex items-center justify-center transition ${activeZone === 'mana' ? 'bg-cyan-500/20 border-cyan-400' : ''}`}
+               >
+                  <div className="flex items-center gap-1.5 text-cyan-500">
+                    <Droplet size={14} fill="currentColor" className="opacity-80" />
+                    <span className="text-[10px] font-mono font-bold tracking-widest mt-[1px]">MANA</span>
+                  </div>
                </div>
-               <div className="flex flex-col items-center gap-1 text-red-500">
-                  <Heart size={28} fill="currentColor" className="opacity-80" />
-                  <span className="text-xs font-mono font-bold">VIDA</span>
+               
+               <div 
+                 onClick={() => handleZoneClick('vida')}
+                 className={`flex-1 rounded border border-slate-700/50 hover:border-red-500 hover:bg-red-500/10 cursor-pointer flex items-center justify-center transition ${activeZone === 'vida' ? 'bg-red-500/20 border-red-400' : ''}`}
+               >
+                  <div className="flex items-center gap-1.5 text-red-500">
+                    <Heart size={14} fill="currentColor" className="opacity-80" />
+                    <span className="text-[10px] font-mono font-bold tracking-widest mt-[1px]">VIDA</span>
+                  </div>
+               </div>
+
+               <div 
+                 onClick={() => handleZoneClick('sanidade')}
+                 className={`flex-1 rounded border border-slate-700/50 hover:border-green-500 hover:bg-green-500/10 flex items-center justify-center transition cursor-pointer ${activeZone === 'sanidade' ? 'bg-green-500/20 border-green-400' : ''}`}
+               >
+                  <div className="flex items-center gap-1.5 text-green-500">
+                    <Brain size={14} className="opacity-80" />
+                    <span className="text-[10px] font-mono font-bold tracking-widest mt-[1px]">SANIDADE</span>
+                  </div>
                </div>
             </div>
 
