@@ -379,8 +379,12 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card: initialC
             </div>
             
             {isEditing && (
-              <div className="mt-4">
+              <div className="mt-4 flex flex-col gap-3">
                 <input type="text" value={card.imageUrl || ''} onChange={(e) => setCard({...card, imageUrl: e.target.value})} className="w-full px-3 py-2 bg-slate-900 rounded text-slate-300 border border-slate-700 outline-none text-sm" placeholder="URL da Imagem (https://...)" />
+                <div className="flex items-center gap-2">
+                  <input type="checkbox" id="publicVisibility" checked={!card.isHidden} onChange={(e) => setCard({...card, isHidden: !e.target.checked})} className="w-4 h-4 accent-green-500 cursor-pointer" />
+                  <label htmlFor="publicVisibility" className="text-sm font-bold text-green-400 cursor-pointer">Visível para o público (Desmarque para manter como Rascunho/Draft)</label>
+                </div>
               </div>
             )}
           </div>

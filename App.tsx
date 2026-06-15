@@ -908,10 +908,7 @@ export default function App() {
 
   useEffect(() => {
     const handleContext = (e: MouseEvent) => {
-      const target = e.target as HTMLElement;
-      if (target.tagName.toLowerCase() === 'img' || target.tagName.toLowerCase() === 'video') {
-        e.preventDefault();
-      }
+      e.preventDefault();
     };
     
     document.addEventListener('contextmenu', handleContext);

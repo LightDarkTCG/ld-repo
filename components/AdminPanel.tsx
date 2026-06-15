@@ -74,7 +74,7 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
   const [cardEditIsHidden, setCardEditIsHidden] = useState(false);
 
   const [batchCardsInput, setBatchCardsInput] = useState('');
-  const [batchCardsDraft, setBatchCardsDraft] = useState(true);
+  const [batchCardsDraft, setBatchCardsDraft] = useState(false);
   const [batchStep, setBatchStep] = useState<1 | 2>(1);
   const [parsedBatchCards, setParsedBatchCards] = useState<any[]>([]);
   const [batchImages, setBatchImages] = useState<{ [code: string]: File }>({});
@@ -1200,9 +1200,9 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
                         <textarea value={formDescription} onChange={e => setFormDescription(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded p-3 text-white h-24 resize-none mb-4" />
                       </div>
 
-                      <div className="flex items-center gap-2 mb-4">
-                        <input type="checkbox" id="cardEditIsHidden" checked={cardEditIsHidden} onChange={e => setCardEditIsHidden(e.target.checked)} className="w-5 h-5 accent-purple-600 cursor-pointer" />
-                        <label htmlFor="cardEditIsHidden" className="text-sm font-bold text-slate-300 cursor-pointer">Ocultar Carta do Público (Draft)</label>
+                      <div className="flex items-center gap-2 mb-4 bg-slate-800/50 border border-slate-700 p-3 rounded">
+                        <input type="checkbox" id="cardEditPublic" checked={!cardEditIsHidden} onChange={e => setCardEditIsHidden(!e.target.checked)} className="w-5 h-5 accent-green-600 cursor-pointer" />
+                        <label htmlFor="cardEditPublic" className="text-sm font-bold text-green-400 cursor-pointer">Visível para o Público (Habilitar para todos verem)</label>
                       </div>
                       
                       <div>
@@ -1326,9 +1326,9 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
                           Cole aqui a lista de cartas no formato objeto JavaScript bruto. As propriedades exigidas são name, type, archetype, collection, ct, attack, defense, description, imageUrl, code, lore.
                         </p>
 
-                        <div className="flex items-center gap-2 mb-4">
-                          <input type="checkbox" id="batchCardsDraft" checked={batchCardsDraft} onChange={e => setBatchCardsDraft(e.target.checked)} className="w-5 h-5 accent-purple-600 cursor-pointer" />
-                          <label htmlFor="batchCardsDraft" className="text-sm font-bold text-slate-300 cursor-pointer">Ocultar Cartas do Público (Draft/Não reveladas)</label>
+                        <div className="flex items-center gap-2 mb-4 bg-slate-800/50 border border-slate-700 p-3 rounded">
+                          <input type="checkbox" id="batchCardsPublic" checked={!batchCardsDraft} onChange={e => setBatchCardsDraft(!e.target.checked)} className="w-5 h-5 accent-green-600 cursor-pointer" />
+                          <label htmlFor="batchCardsPublic" className="text-sm font-bold text-green-400 cursor-pointer">Visível para o Público (Habilitar para todos verem)</label>
                         </div>
 
                         <textarea
