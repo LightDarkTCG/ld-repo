@@ -48,6 +48,38 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
 
   // --- Logic ---
 
+  const isHeroGroupValid = (heroes: CardData[]): boolean => {
+    if (heroes.length <= 1) return true;
+
+    const identities = new Set(heroes.map(h => getIdentity(h.name)));
+    if (identities.size === 1) return true;
+
+    const names = heroes.map(h => h.name);
+    const hasVonEvolucao = names.includes("Von Linden - O Conceito Evolução");
+    const hasSelenaMacroverso = names.includes("Selena - Macroverso Inverso");
+    const hasConceitoCaos = names.includes("Conceito Caos");
+    const hasSalazarCaos = names.includes("Salazar - Sucumbido pelo Caos");
+
+    if (hasVonEvolucao && hasSelenaMacroverso) {
+      // You can have this combo, but no other Selena.
+      // So every hero must be either identity "Von" or exactly "Selena - Macroverso Inverso"
+      // Wait, could it be the other way? What if the deck is mainly "Conceito Evolução", could it just be these two?
+      // Yes, if we just check that every hero is valid under this rule:
+      const vonIdentity = getIdentity("Von Linden - O Conceito Evolução");
+      const valid = heroes.every(h => getIdentity(h.name) === vonIdentity || h.name === "Selena - Macroverso Inverso");
+      if (valid) return true;
+    }
+
+    if (hasConceitoCaos && hasSalazarCaos) {
+      // You can have this combo, but no other Salazar.
+      const conceitoIdentity = getIdentity("Conceito Caos");
+      const valid = heroes.every(h => getIdentity(h.name) === conceitoIdentity || h.name === "Salazar - Sucumbido pelo Caos");
+      if (valid) return true;
+    }
+
+    return false;
+  };
+
   const addToDeck = (card: CardData, isSide: boolean = false) => {
     // 1 Copy Limit Rule (by name)
     if (deck.some(c => c.name === card.name) || sideDeck.some(c => c.name === card.name)) {
@@ -58,14 +90,11 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
     // Hero Restriction Logic
     if (card.type === 'Herói' && !isSide) {
       const existingHeroes = deck.filter(c => c.type === 'Herói');
-      if (existingHeroes.length > 0) {
-        const currentIdentity = getIdentity(existingHeroes[0].name);
-        const newIdentity = getIdentity(card.name);
-        
-        if (currentIdentity !== newIdentity) {
-          alert(`Você só pode ter Heróis do tipo "${currentIdentity}" no deck principal.`);
-          return;
-        }
+      const testHeroes = [...existingHeroes, card];
+      
+      if (!isHeroGroupValid(testHeroes)) {
+        alert(`O herói "${card.name}" não pôde ser adicionado. Verifique as restrições de identidade para Heróis no deck principal.`);
+        return;
       }
     }
 
@@ -100,11 +129,7 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
     const hasValidSize = deck.length >= 30 && deck.length <= 35 && sideDeck.length <= 5;
     const mainHeroes = deck.filter(c => c.type === 'Herói');
     
-    let hasSingleHeroIdentity = true;
-    if (mainHeroes.length > 1) {
-      const firstIdentity = getIdentity(mainHeroes[0].name);
-      hasSingleHeroIdentity = mainHeroes.every(h => getIdentity(h.name) === firstIdentity);
-    }
+    const hasSingleHeroIdentity = isHeroGroupValid(mainHeroes);
 
     const allCards = [...deck, ...sideDeck];
     const uniqueNames = new Set(allCards.map(c => c.name));

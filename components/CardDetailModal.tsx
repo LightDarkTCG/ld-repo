@@ -345,12 +345,22 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card: initialC
               )}
 
               {isEditing ? (
-                <>
-                  <input list="archetypes-list" type="text" value={card.archetype} onChange={(e) => setCard({...card, archetype: e.target.value})} className="px-3 py-1.5 bg-purple-900/10 rounded text-purple-300 border border-purple-800/50 outline-none w-48 focus:border-purple-500" placeholder="Arquétipo" />
-                  <datalist id="archetypes-list">
-                    {archetypes.map(a => <option key={a.name} value={a.name} />)}
-                  </datalist>
-                </>
+                <div className="flex flex-wrap gap-1 max-w-[200px]">
+                  {archetypes.map(a => {
+                    const isSelected = (card.archetype || '').split(' / ').includes(a.name);
+                    return (
+                      <label key={a.name} className={`px-2 py-1 text-[10px] rounded cursor-pointer border transition-colors ${isSelected ? 'bg-purple-900 border-purple-500 text-purple-100' : 'bg-slate-900 border-slate-700 text-slate-400 hover:bg-slate-800'}`}>
+                        <input type="checkbox" className="hidden" checked={isSelected} onChange={(e) => {
+                          let curr = (card.archetype || '').split(' / ').filter(x => x && x !== 'Desconhecido');
+                          if (e.target.checked) curr.push(a.name);
+                          else curr = curr.filter(x => x !== a.name);
+                          setCard({...card, archetype: curr.length > 0 ? curr.join(' / ') : 'Desconhecido'});
+                        }} />
+                        {a.name}
+                      </label>
+                    );
+                  })}
+                </div>
               ) : (
                 <span className="px-3 py-1 bg-purple-900/30 rounded text-purple-300 border border-purple-800/50">{card.archetype}</span>
               )}

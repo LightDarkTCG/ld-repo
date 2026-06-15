@@ -1177,10 +1177,22 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
                         
                         <div>
                           <label className="text-sm font-bold text-slate-400 block mb-1">Arquétipo</label>
-                          <select value={cardEditArchetype} onChange={e => setCardEditArchetype(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded p-2 text-white">
-                            {archetypes.map(a => <option key={a.name} value={a.name}>{a.name}</option>)}
-                            <option value="Desconhecido">Desconhecido (Sem Arq)</option>
-                          </select>
+                          <div className="flex flex-wrap gap-2 bg-slate-950 border border-slate-700 p-2 rounded max-h-32 overflow-y-auto">
+                            {archetypes.map(a => {
+                              const isSelected = cardEditArchetype.split(' / ').includes(a.name);
+                              return (
+                                <label key={a.name} className={`px-2 py-1 text-xs rounded cursor-pointer border transition-colors ${isSelected ? 'bg-purple-900 border-purple-500 text-white' : 'bg-slate-900 border-slate-700 text-slate-400 hover:bg-slate-800'}`}>
+                                  <input type="checkbox" className="hidden" checked={isSelected} onChange={(e) => {
+                                    let curr = cardEditArchetype.split(' / ').filter(x => x && x !== 'Desconhecido');
+                                    if (e.target.checked) curr.push(a.name);
+                                    else curr = curr.filter(x => x !== a.name);
+                                    setCardEditArchetype(curr.length > 0 ? curr.join(' / ') : 'Desconhecido');
+                                  }} />
+                                  {a.name}
+                                </label>
+                              );
+                            })}
+                          </div>
                         </div>
                         <div>
                           <label className="text-sm font-bold text-slate-400 block mb-1">CT (Custo)</label>
