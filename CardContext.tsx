@@ -114,11 +114,6 @@ export const CardProvider = ({ children }: { children: ReactNode }) => {
 
   const saveCard = async (card: CardData) => {
     if (!card.code) return;
-    const existingCard = cards.find(c => c.code === card.code);
-    if (existingCard && (!existingCard.frame || existingCard.frame === 'Legado') && card.frame !== 'Moderno') {
-      alert("Cartas com frame 'Legado' não podem ser substituídas. Mude o frame para 'Moderno' para poder salvar as edições.");
-      throw new Error("Cartas com frame 'Legado' não podem ser substituídas.");
-    }
     await setDoc(doc(db, 'customCards', card.code.replace(/\//g, '_')), card);
   };
 
@@ -139,11 +134,6 @@ export const CardProvider = ({ children }: { children: ReactNode }) => {
 
   const deleteCard = async (code: string) => {
     if (!code) return;
-    const existingCard = cards.find(c => c.code === code);
-    if (existingCard && (!existingCard.frame || existingCard.frame === 'Legado')) {
-      alert("Cartas com frame 'Legado' não podem ser apagadas.");
-      throw new Error("Cartas com frame 'Legado' não podem ser apagadas.");
-    }
     try {
       console.log('deleting', code);
       const isDefault = defaultCards.some(d => d.code === code);

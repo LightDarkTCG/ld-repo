@@ -1,10 +1,11 @@
 import React, { useMemo, useState, useEffect } from 'react';
-import { X, Zap, BookOpen, Box, Hash, Link as LinkIcon, Edit2, Check, Trash } from 'lucide-react';
+import { X, Zap, BookOpen, Box, Hash, Link as LinkIcon, Edit2, Check, Trash, Image as ImageIcon } from 'lucide-react';
 import { CardData } from '../types';
 import { Card } from './Card';
 import { useCards } from '../CardContext';
-import { auth } from '../firebase';
+import { auth, storage } from '../firebase';
 import { onAuthStateChanged } from 'firebase/auth';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 
 interface CardDetailModalProps {
   card: CardData | null;
@@ -19,6 +20,8 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card: initialC
   const [card, setCard] = useState<CardData | null>(initialCard);
   const [originalCode, setOriginalCode] = useState(initialCard?.code);
   const [user, setUser] = useState(auth.currentUser);
+  const [fileToUpload, setFileToUpload] = useState<File | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, setUser);
@@ -46,7 +49,7 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card: initialC
 
     // Helper: Valida restrições de equipamentos baseadas na descrição
     const isEquipmentValid = (equip: CardData, target: CardData): boolean => {
-      const desc = equip.description.toLowerCase();
+      const desc = (equip.description || "").toLowerCase();
       
       // 1. Restrição de Herói
       if (desc.includes('só pode ser equipada em heróis') || desc.includes('only equip to heroes')) {
@@ -58,7 +61,7 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card: initialC
         const restrictions = extractQuotedTerms(desc);
         if (restrictions.length > 0) {
           // O alvo deve ter pelo menos UM dos termos restritos em seu nome
-          const matchesRestriction = restrictions.some(term => target.name.toLowerCase().includes(term));
+          const matchesRestriction = restrictions.some(term => (target.name || "").toLowerCase().includes(term));
           if (!matchesRestriction) return false;
         }
       }
@@ -70,10 +73,10 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card: initialC
       .filter(c => c.code !== card.code) // Exclui a própria carta
       .map(candidate => {
         let score = 0;
-        const cDesc = card.description.toLowerCase();
-        const candDesc = candidate.description.toLowerCase();
-        const cName = card.name.toLowerCase();
-        const candName = candidate.name.toLowerCase();
+        const cDesc = (card.description || "").toLowerCase();
+        const candDesc = (candidate.description || "").toLowerCase();
+        const cName = (card.name || "").toLowerCase();
+        const candName = (candidate.name || "").toLowerCase();
 
         // --- 1. VALIDAÇÃO DE REGRAS DE EQUIPAMENTO ---
         // Se a carta atual é equip, o candidato deve ser válido
@@ -106,14 +109,14 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card: initialC
         // --- 4. SINERGIA DE ARQUÉTIPO (Contextual) ---
         // Só pontua se a descrição mencionar o arquétipo explicitamente.
         // Isso evita que todos os "Lúmen" apareçam como relacionados sem motivo.
-        const candArchetypes = candidate.archetype.toLowerCase().split(' / ');
+        const candArchetypes = (candidate.archetype || "").toLowerCase().split(' / ');
         candArchetypes.forEach(arch => {
            // Verifica se a descrição da carta menciona o arquétipo do candidato
            if (cDesc.includes(arch)) score += 15;
         });
 
         // Vice-versa
-        const cardArchetypes = card.archetype.toLowerCase().split(' / ');
+        const cardArchetypes = (card.archetype || "").toLowerCase().split(' / ');
         cardArchetypes.forEach(arch => {
            if (candDesc.includes(arch)) score += 15;
         });
@@ -157,13 +160,29 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card: initialC
     e.target.value = '';
   };
 
+  const processImageUpload = async (currentCard: CardData): Promise<CardData> => {
+    let updatedCard = { ...currentCard };
+    if (fileToUpload) {
+      setIsUploading(true);
+      const fileRef = ref(storage, `wb_images/${Date.now()}_${fileToUpload.name}`);
+      await uploadBytes(fileRef, fileToUpload);
+      const url = await getDownloadURL(fileRef);
+      updatedCard.imageUrl = url;
+      setIsUploading(false);
+      setFileToUpload(null);
+    }
+    return updatedCard;
+  };
+
   const handleSave = async () => {
     if (card) {
-      if (originalCode && originalCode !== card.code) {
+      const finalCard = await processImageUpload(card);
+      if (originalCode && originalCode !== finalCard.code) {
         await deleteCard(originalCode);
       }
-      await saveCard(card);
-      setOriginalCode(card.code);
+      await saveCard(finalCard);
+      setOriginalCode(finalCard.code);
+      setCard(finalCard);
       setIsEditing(false);
     }
   };
@@ -186,10 +205,11 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card: initialC
 
   const handleSaveAndAddAnother = async () => {
     if (card) {
-      if (originalCode && originalCode !== card.code) {
+      const finalCard = await processImageUpload(card);
+      if (originalCode && originalCode !== finalCard.code) {
         await deleteCard(originalCode);
       }
-      await saveCard(card);
+      await saveCard(finalCard);
       
       const nextCode = `CUSTOM/${Date.now()}`;
       setOriginalCode(nextCode);
@@ -230,23 +250,23 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card: initialC
             </button>
             <button 
               onClick={handleSaveAndAddAnother} 
-              disabled={(() => {
+              disabled={isUploading || (() => {
                 const existingCard = allCards.find(c => c.code === originalCode);
                 return existingCard ? (!existingCard.frame || existingCard.frame === 'Legado') && card.frame !== 'Moderno' : false;
               })()}
               className="p-2 bg-blue-600 rounded-full text-white hover:bg-blue-500 transition flex items-center gap-2 px-4 shadow-lg shadow-blue-900/50 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              <Check size={20} /> Salvar & Lote
+              <Check size={20} /> {isUploading ? 'Salvando...' : 'Salvar & Lote'}
             </button>
             <button 
               onClick={handleSave} 
-              disabled={(() => {
+              disabled={isUploading || (() => {
                 const existingCard = allCards.find(c => c.code === originalCode);
                 return existingCard ? (!existingCard.frame || existingCard.frame === 'Legado') && card.frame !== 'Moderno' : false;
               })()}
               className="p-2 bg-green-600 rounded-full text-white hover:bg-green-500 transition flex items-center gap-2 px-4 shadow-lg shadow-green-900/50 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              <Check size={20} /> Salvar
+              <Check size={20} /> {isUploading ? 'Salvando...' : 'Salvar'}
             </button>
           </>
         ) : user ? (
@@ -386,11 +406,39 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card: initialC
               ) : (
                  <span className="px-3 py-1 bg-indigo-900/30 rounded text-indigo-300 border border-indigo-800/50 hidden"></span>
               )}
+              
+              {isEditing ? (
+                 <select value={card.rarity || 'Comum'} onChange={(e) => setCard({...card, rarity: e.target.value})} className="px-3 py-1.5 bg-yellow-900/10 rounded text-yellow-300 border border-yellow-800/50 outline-none">
+                    <option value="Comum">Comum</option>
+                    <option value="Incomum">Incomum</option>
+                    <option value="Rara">Rara</option>
+                    <option value="Muito Rara">Muito Rara</option>
+                    <option value="Limitadas">Limitadas</option>
+                    <option value="Beta">Beta</option>
+                    <option value="Evento">Evento</option>
+                 </select>
+              ) : (
+                 card.rarity ? <span className="px-3 py-1 bg-yellow-900/30 rounded text-yellow-300 border border-yellow-800/50 text-xs font-bold">{card.rarity}</span> : null
+              )}
             </div>
             
             {isEditing && (
               <div className="mt-4 flex flex-col gap-3">
-                <input type="text" value={card.imageUrl || ''} onChange={(e) => setCard({...card, imageUrl: e.target.value})} className="w-full px-3 py-2 bg-slate-900 rounded text-slate-300 border border-slate-700 outline-none text-sm" placeholder="URL da Imagem (https://...)" />
+                <div className="flex gap-4 items-center mb-1">
+                  <label className="cursor-pointer bg-slate-950 hover:bg-slate-900 border border-slate-700 p-2 rounded flex-1 flex items-center gap-2">
+                    <ImageIcon size={16} className="text-purple-500" />
+                    <span className="text-sm truncate text-slate-300">
+                      {fileToUpload ? fileToUpload.name : (card.imageUrl ? 'Substituir Imagem do PC...' : 'Enviar do PC...')}
+                    </span>
+                    <input type="file" accept="image/*" className="hidden" onChange={e => {
+                      if (e.target.files?.[0]) {
+                        setFileToUpload(e.target.files[0]);
+                      }
+                    }} />
+                  </label>
+                  {fileToUpload && <button onClick={() => setFileToUpload(null)} className="text-red-400 p-2"><X size={16}/></button>}
+                </div>
+                <input type="text" value={card.imageUrl || ''} onChange={(e) => setCard({...card, imageUrl: e.target.value})} className="w-full px-3 py-2 bg-slate-900 rounded text-slate-300 border border-slate-700 outline-none text-sm" placeholder="Ou URL da Imagem (https://...)" />
                 <div className="flex items-center gap-2">
                   <input type="checkbox" id="publicVisibility" checked={!card.isHidden} onChange={(e) => setCard({...card, isHidden: !e.target.checked})} className="w-4 h-4 accent-green-500 cursor-pointer" />
                   <label htmlFor="publicVisibility" className="text-sm font-bold text-green-400 cursor-pointer">Visível para o público (Desmarque para manter como Rascunho/Draft)</label>

@@ -36,7 +36,7 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
 
   // Helper to determine Hero Identity
   const getIdentity = (name: string) => {
-    const n = name.toLowerCase();
+    const n = (name || "").toLowerCase();
     // Regras Específicas
     if (n.includes("mahina")) return "Mahina";
     if (n.includes("otto") || n.includes("asmonious")) return "Asmonious";
@@ -225,8 +225,8 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
   // --- Filtered Pool ---
 
   const filteredPool = allCards.filter(card => {
-    const matchesSearch = card.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                          card.code.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesSearch = (card.name || "").toLowerCase().includes((searchTerm || "").toLowerCase()) || 
+                          (card.code || "").toLowerCase().includes((searchTerm || "").toLowerCase());
     
     const matchesType = filters.type === "Todos" || card.type === filters.type;
     const matchesArch = filters.archetype === "Todos" || card.archetype.includes(filters.archetype);
@@ -237,7 +237,7 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
     // Changed to exact match (===) instead of >=
     const matchesAtk = filters.minAtk === "" || (card.attack !== undefined && card.attack === parseInt(filters.minAtk));
     const matchesDef = filters.minDef === "" || (card.defense !== undefined && card.defense === parseInt(filters.minDef));
-    const matchesEffectWord = filters.effectWord === "" || card.description.toLowerCase().includes(filters.effectWord.toLowerCase());
+    const matchesEffectWord = filters.effectWord === "" || (card.description || "").toLowerCase().includes((filters.effectWord || "").toLowerCase());
     
     return matchesSearch && matchesType && matchesArch && matchesColl && matchesFrame && matchesCt && matchesAtk && matchesDef && matchesEffectWord;
   });

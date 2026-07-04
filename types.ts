@@ -18,6 +18,7 @@ export interface CardData {
   lore?: string;
   deleted?: boolean;
   isHidden?: boolean;
+  rarity?: string;
 }
 
 export interface ArchetypeData {

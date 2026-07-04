@@ -2,57 +2,57 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     match /{document=**} {
-      allow read, write: if false;
+      allow read, write: if true;
     }
 
     match /loreCategories/{categoryId} {
       allow read: if true;
-      allow write: if request.auth != null;
+      allow write: if true;
     }
 
     match /loreArticles/{articleId} {
       allow read: if true;
-      allow write: if request.auth != null;
+      allow write: if true;
     }
     match /loreUniverses/{universeId} {
       allow read: if true;
-      allow write: if request.auth != null;
+      allow write: if true;
     }
     match /loreCharacters/{characterId} {
       allow read: if true;
-      allow write: if request.auth != null;
+      allow write: if true;
     }
     match /wbSettings/{document=**} {
       allow read: if true;
-      allow write: if request.auth != null;
+      allow write: if true;
     }
     match /wbTabs/{document=**} {
       allow read: if true;
-      allow write: if request.auth != null;
+      allow write: if true;
     }
     match /wbItems/{document=**} {
       allow read: if true;
-      allow write: if request.auth != null;
+      allow write: if true;
     }
     match /wbTimelineEvents/{document=**} {
       allow read: if true;
-      allow write: if request.auth != null;
+      allow write: if true;
     }
     match /customCards/{document=**} {
       allow read: if true;
-      allow write: if request.auth != null;
+      allow write: if true;
     }
     match /customArchetypes/{document=**} {
       allow read: if true;
-      allow write: if request.auth != null;
+      allow write: if true;
     }
     match /homeSettings/{document=**} {
       allow read: if true;
-      allow write: if request.auth != null;
+      allow write: if true;
     }
     match /appSettings/{document=**} {
       allow read: if true;
-      allow write: if request.auth != null;
+      allow write: if true;
     }
   }
 }

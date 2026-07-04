@@ -613,6 +613,7 @@ const CatalogModal = ({ isOpen, onClose, onOpenAdmin }: { isOpen: boolean, onClo
     archetype: "Todos",
     collection: "Todos",
     frame: "Todos",
+    rarity: "Todos",
     minCt: "",
     minAtk: "",
     minDef: ""
@@ -639,23 +640,24 @@ const CatalogModal = ({ isOpen, onClose, onOpenAdmin }: { isOpen: boolean, onClo
   };
 
   const filteredCards = allCards.filter(card => {
-    const searchLower = searchTerm.toLowerCase();
+    const searchLower = (searchTerm || "").toLowerCase();
     const matchesSearch = 
-      card.name.toLowerCase().includes(searchLower) || 
-      card.code.toLowerCase().includes(searchLower) ||
-      card.description.toLowerCase().includes(searchLower);
+      (card.name || "").toLowerCase().includes(searchLower) || 
+      (card.code || "").toLowerCase().includes(searchLower) ||
+      (card.description || "").toLowerCase().includes(searchLower);
 
     const matchesType = filters.type === "Todos" || card.type === filters.type;
     const matchesArchetype = filters.archetype === "Todos" || card.archetype.includes(filters.archetype);
     const matchesCollection = filters.collection === "Todos" || (card.collection && card.collection === filters.collection);
     const matchesFrame = filters.frame === "Todos" || (card.frame || "Legado") === filters.frame;
+    const matchesRarity = filters.rarity === "Todos" || (card.rarity || "Comum") === filters.rarity;
     const matchesCt = filters.minCt === "" || card.ct === parseInt(filters.minCt);
     
     // Changed to exact match (===) instead of >=
     const matchesAtk = filters.minAtk === "" || (card.attack !== undefined && card.attack === parseInt(filters.minAtk));
     const matchesDef = filters.minDef === "" || (card.defense !== undefined && card.defense === parseInt(filters.minDef));
 
-    return matchesSearch && matchesType && matchesArchetype && matchesCollection && matchesFrame && matchesCt && matchesAtk && matchesDef;
+    return matchesSearch && matchesType && matchesArchetype && matchesCollection && matchesFrame && matchesRarity && matchesCt && matchesAtk && matchesDef;
   });
 
   if (!isOpen) return null;
@@ -753,6 +755,24 @@ const CatalogModal = ({ isOpen, onClose, onOpenAdmin }: { isOpen: boolean, onClo
                 <option className="bg-purple-950" value="Todos">Todos</option>
                 <option className="bg-purple-950" value="Legado">Legado</option>
                 <option className="bg-purple-950" value="Moderno">Moderno</option>
+              </select>
+            </div>
+
+            <div className="flex items-center gap-2 bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 flex-1 md:flex-none">
+              <span className="text-xs text-slate-500 uppercase font-bold">Raridade</span>
+              <select 
+                className="bg-purple-950 text-sm text-white outline-none cursor-pointer rounded px-2 w-full md:w-32"
+                value={filters.rarity}
+                onChange={(e) => setFilters({...filters, rarity: e.target.value})}
+              >
+                <option className="bg-purple-950" value="Todos">Todas</option>
+                <option className="bg-purple-950" value="Comum">Comum</option>
+                <option className="bg-purple-950" value="Incomum">Incomum</option>
+                <option className="bg-purple-950" value="Rara">Rara</option>
+                <option className="bg-purple-950" value="Muito Rara">Muito Rara</option>
+                <option className="bg-purple-950" value="Limitadas">Limitadas</option>
+                <option className="bg-purple-950" value="Beta">Beta</option>
+                <option className="bg-purple-950" value="Evento">Evento</option>
               </select>
             </div>
 

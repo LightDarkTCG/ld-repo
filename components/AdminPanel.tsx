@@ -63,6 +63,7 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
   // Cards
   const [cardCollection, setCardCollection] = useState('');
   const [cardFrame, setCardFrame] = useState<'Legado' | 'Moderno'>('Legado');
+  const [cardRarity, setCardRarity] = useState('Comum');
 
   const [cardEditCode, setCardEditCode] = useState('');
   const [cardEditAttack, setCardEditAttack] = useState('0');
@@ -246,6 +247,7 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
     setFormImageUrl(c.imageUrl || '');
     setCardCollection(c.collection);
     setCardFrame(c.frame || 'Legado');
+    setCardRarity(c.rarity || 'Comum');
     setCardEditCode(c.code);
     setCardEditAttack(String(c.attack || 0));
     setCardEditDefense(String(c.defense || 0));
@@ -386,6 +388,7 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
         archetype: cardEditArchetype,
         collection: cardCollection,
         frame: cardFrame,
+        rarity: cardRarity,
         description: formDescription,
         ct: Number(cardEditCT),
         attack: Number(cardEditAttack),
@@ -1166,6 +1169,18 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
                           </select>
                         </div>
                         <div>
+                          <label className="text-sm font-bold text-slate-400 block mb-1">Raridade</label>
+                          <select value={cardRarity} onChange={e => setCardRarity(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded p-2 text-white">
+                            <option value="Comum">Comum</option>
+                            <option value="Incomum">Incomum</option>
+                            <option value="Rara">Rara</option>
+                            <option value="Muito Rara">Muito Rara</option>
+                            <option value="Limitadas">Limitadas</option>
+                            <option value="Beta">Beta</option>
+                            <option value="Evento">Evento</option>
+                          </select>
+                        </div>
+                        <div>
                           <label className="text-sm font-bold text-slate-400 block mb-1">Tipo</label>
                           <select value={cardEditType} onChange={e => setCardEditType(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded p-2 text-white">
                             <option value="Herói">Herói</option>
@@ -1222,21 +1237,31 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
                         <textarea value={cardEditLore} onChange={e => setCardEditLore(e.target.value)} className="w-full bg-slate-900 border border-purple-900/50 rounded p-3 text-slate-400 font-serif h-24 resize-none mb-4 focus:border-purple-500" placeholder="Uma história se perde no tempo..." />
                       </div>
 
-                      <div className="flex justify-end gap-2 items-center">
-                        {editingId && (() => {
-                          const existingCard = cards.find(c => c.code === editingId);
-                          if (existingCard && (!existingCard.frame || existingCard.frame === 'Legado') && cardFrame !== 'Moderno') {
-                            return <span className="text-red-400 text-sm font-bold mr-4">⚠️ Cartas do frame Legado não podem ser modificadas (Mude para Moderno para editar).</span>;
-                          }
-                          return null;
-                        })()}
+                      <div>
+                        <label className="text-sm font-bold text-slate-400 block mb-1">Imagem da Carta</label>
+                        <div className="flex gap-4 items-center mb-2">
+                          <label className="cursor-pointer bg-slate-950 hover:bg-slate-900 border border-slate-700 p-2 rounded flex-1 flex items-center gap-2">
+                            <ImageIcon size={16} className="text-purple-500" />
+                            <span className="text-sm truncate text-slate-300">
+                              {fileToUpload ? fileToUpload.name : (formImageUrl ? 'Imagem atual via Link' : 'Enviar uma Imagem...')}
+                            </span>
+                            <input type="file" accept="image/*" className="hidden" onChange={e => {
+                               if (e.target.files?.[0]) {
+                                 setFileToUpload(e.target.files[0]);
+                                 // Optional clear url if file is selected
+                               }
+                            }} />
+                          </label>
+                          {fileToUpload && <button onClick={() => setFileToUpload(null)} className="text-red-400 p-2"><X size={16}/></button>}
+                        </div>
+                        <input type="text" value={formImageUrl} onChange={e => setFormImageUrl(e.target.value)} placeholder="Ou cole a URL da imagem aqui" className="w-full bg-slate-950 border border-slate-700 rounded p-2 text-sm text-slate-300" />
+                      </div>
+
+                      <div className="flex border-t border-slate-700 pt-4 mt-2 justify-end gap-2 items-center">
                         <button onClick={resetForm} className="bg-slate-700 hover:bg-slate-600 px-4 py-2 rounded text-white font-bold">Limpar</button>
                         <button 
                           onClick={async () => { await saveCardData(); if(!error && !loading) { setActiveAdminTab('cards'); resetForm(); } }} 
-                          disabled={loading || (editingId ? (() => {
-                            const existingCard = cards.find(c => c.code === editingId);
-                            return existingCard ? (!existingCard.frame || existingCard.frame === 'Legado') && cardFrame !== 'Moderno' : false;
-                          })() : false)} 
+                          disabled={loading} 
                           className="bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white font-bold py-2 px-6 rounded transition"
                         >
                           {editingId ? 'Salvar Alterações' : 'Criar Carta'}
@@ -1306,10 +1331,6 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
                              </div>
                            </div>
                            <div className="absolute right-2 top-0 bottom-0 flex flex-col justify-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                             {(!c.frame || c.frame === 'Legado') ? (
-                               <span className="text-[10px] text-slate-500 bg-slate-950/80 px-2 py-1 rounded font-bold border border-slate-700 writing-vertical" style={{writingMode: 'vertical-rl'}}>LEGADO PROTEGIDO</span>
-                             ) : (
-                               <>
                                  <button onClick={() => startEditCard(c)} className="bg-blue-600 p-2 rounded text-white"><Edit2 size={14}/></button>
                                  <button onClick={async () => {
                                    if (confirmId !== c.code) {
@@ -1319,8 +1340,6 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
                                    await deleteCard(c.code);
                                    setConfirmId(null);
                                  }} className={`p-2 rounded text-white ${confirmId === c.code ? 'bg-red-800 animate-pulse' : 'bg-red-600'}`}><Trash2 size={14}/></button>
-                               </>
-                             )}
                            </div>
                         </div>
                       ))}
