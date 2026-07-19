@@ -229,7 +229,7 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
                           (card.code || "").toLowerCase().includes((searchTerm || "").toLowerCase());
     
     const matchesType = filters.type === "Todos" || card.type === filters.type;
-    const matchesArch = filters.archetype === "Todos" || card.archetype.includes(filters.archetype);
+    const matchesArch = filters.archetype === "Todos" || (card.archetype || "").includes(filters.archetype);
     const matchesColl = filters.collection === "Todos" || card.collection === filters.collection;
     const matchesFrame = filters.frame === "Todos" || (card.frame || "Legado") === filters.frame;
     const matchesCt = filters.ct === "Todos" || card.ct === parseInt(filters.ct);

@@ -647,7 +647,7 @@ const CatalogModal = ({ isOpen, onClose, onOpenAdmin }: { isOpen: boolean, onClo
       (card.description || "").toLowerCase().includes(searchLower);
 
     const matchesType = filters.type === "Todos" || card.type === filters.type;
-    const matchesArchetype = filters.archetype === "Todos" || card.archetype.includes(filters.archetype);
+    const matchesArchetype = filters.archetype === "Todos" || (card.archetype || "").includes(filters.archetype);
     const matchesCollection = filters.collection === "Todos" || (card.collection && card.collection === filters.collection);
     const matchesFrame = filters.frame === "Todos" || (card.frame || "Legado") === filters.frame;
     const matchesRarity = filters.rarity === "Todos" || (card.rarity || "Comum") === filters.rarity;
