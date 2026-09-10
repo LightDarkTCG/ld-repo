@@ -2,9 +2,9 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from "motion/react";
 import { 
   Zap, Heart, Layers, Hexagon, BookOpen,
-  ShoppingCart, MapPin, ExternalLink, Search, Filter, Box,
+  ShoppingCart, ExternalLink, Search, Filter, Box,
   Menu, X, ChevronRight, ChevronDown, ChevronUp, Scale, Ghost, Instagram, MessageCircle, Mail, Music, Info,
-  Sword, Shield, Clock, AlertTriangle, Users, FileText, CheckCircle, Crown, Youtube, Settings
+  Sword, Shield, Clock, AlertTriangle, Users, FileText, CheckCircle, Crown, Youtube, Settings, Sparkles
 } from 'lucide-react';
 import { Card } from './components/Card';
 import { GameField } from './components/GameField';
@@ -20,30 +20,64 @@ import { ref, listAll, getDownloadURL } from 'firebase/storage';
 import { storage } from './firebase';
 import { archetypesList, collectionsList } from './data';
 import { useCards } from './CardContext';
-import { CardData, ArchetypeData } from './types';
+import { CardData, ArchetypeData, ExclusiveProduct } from './types';
+import { NovidadesSection } from './components/NovidadesSection';
+import { ProductDetailModal } from './components/ProductDetailModal';
 
 // --- SUB-COMPONENTS ---
 
-const ArchetypeCard: React.FC<ArchetypeData> = ({ name, icon: Icon, imageUrl, color, description }) => (
-  <div className="bg-slate-900 border border-slate-800 p-2 md:p-4 rounded-lg hover:border-slate-600 transition group relative overflow-hidden h-full flex flex-col min-h-[100px] md:min-h-[280px]">
-    <div className={`absolute top-0 right-0 p-1 md:p-2 opacity-5 group-hover:opacity-10 transition ${color || ''}`}>
+const ArchetypeCard: React.FC<ArchetypeData> = ({ name, icon: Icon, imageUrl, color, description, patchDate, isNew }) => (
+  <div className={`bg-slate-900/90 border ${isNew ? 'border-emerald-500/40 shadow-[0_0_20px_rgba(16,185,129,0.12)]' : 'border-slate-800'} hover:border-purple-500/50 p-4 md:p-5 rounded-xl transition-all duration-300 flex items-start gap-4 md:gap-5 shadow-lg group relative overflow-hidden`}>
+    {/* Ícone à esquerda */}
+    <div className="shrink-0 flex items-center justify-center pt-0.5">
       {imageUrl ? (
-        <img src={imageUrl} alt="" className="w-6 h-6 md:w-12 md:h-12 object-contain grayscale" />
+        <img src={imageUrl} alt={name} className="w-10 h-10 md:w-12 md:h-12 object-contain drop-shadow-lg" />
       ) : Icon ? (
-        <Icon size={24} className="md:w-12 md:h-12" />
-      ) : null}
+        <Icon className={`${color || 'text-purple-400'} w-10 h-10 md:w-12 md:h-12`} />
+      ) : (
+        <div className="w-10 h-10 md:w-12 md:h-12 rounded-full bg-purple-950/60 flex items-center justify-center text-purple-400 font-bold text-base md:text-lg">
+          {name.charAt(0)}
+        </div>
+      )}
     </div>
-    <div className="flex items-center gap-2 md:gap-4 mb-1 md:mb-4">
-      {imageUrl ? (
-        <img src={imageUrl} alt={name} className="w-8 h-8 md:w-14 md:h-14 object-contain drop-shadow-lg" />
-      ) : Icon ? (
-        <Icon className={`${color} w-6 h-6 md:w-[42px] md:h-[42px]`} />
-      ) : null}
-      <h4 className="text-slate-200 font-bold text-xs md:text-3xl tracking-wide leading-tight break-words">{name}</h4>
+
+    {/* Nome em negrito e em baixo a descrição */}
+    <div className="flex-1 min-w-0">
+      <div className="flex items-center justify-between gap-2 mb-1.5 flex-wrap">
+        <h4 className="font-bold text-base md:text-xl text-white group-hover:text-purple-300 transition-colors tracking-wide flex items-center gap-2.5">
+          <span>{name}</span>
+          {isNew && (
+            <span className="relative inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-black uppercase tracking-wider bg-emerald-500/20 text-emerald-300 border border-emerald-500/50 shadow-[0_0_15px_rgba(16,185,129,0.35)] animate-pulse">
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-400"></span>
+              </span>
+              Novo
+            </span>
+          )}
+        </h4>
+      </div>
+
+      <p className="text-slate-300 text-xs md:text-sm leading-relaxed break-words">
+        {description}
+      </p>
+
+      {/* Em baixo (pequeno): data do patch */}
+      <div className="mt-3 pt-2.5 border-t border-slate-800/80 flex items-center justify-between text-xs text-slate-400 flex-wrap gap-2">
+        <span className="text-[11px] font-mono tracking-tight text-slate-400 flex items-center gap-1.5">
+          <span className="text-slate-500">Data do Patch:</span>
+          <span className="text-purple-300/90 font-medium bg-purple-950/40 px-1.5 py-0.5 rounded border border-purple-800/30">
+            {patchDate || '10/09/2026'}
+          </span>
+        </span>
+        {isNew && (
+          <span className="text-[11px] font-semibold text-emerald-400/90 flex items-center gap-1.5 animate-pulse">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+            Atualizado no patch
+          </span>
+        )}
+      </div>
     </div>
-    <p className="text-slate-400 text-[9px] md:text-sm leading-relaxed z-10 border-t border-slate-800 pt-1 md:pt-3 mt-auto">
-      {description}
-    </p>
   </div>
 );
 
@@ -486,88 +520,32 @@ const BuyModal = ({ isOpen, onClose }: { isOpen: boolean, onClose: () => void })
           <h2 className="text-2xl font-bold text-white mb-6 flex items-center gap-2">
             <ShoppingCart className="text-green-500" /> Onde Comprar
           </h2>
-          <div className="space-y-6">
-            <div>
-              <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-4 border-b border-slate-800 pb-2">Lojas Físicas</h3>
-              <div className="space-y-3">
-                <a href="https://www.instagram.com/fantasystoreudia/" target="_blank" rel="noopener noreferrer" className="bg-slate-800/50 p-4 rounded border border-slate-700 flex gap-4 items-start hover:bg-slate-800 transition block cursor-pointer">
-                  <div className="bg-slate-900 p-2 rounded-full text-purple-400 mt-1">
-                    <MapPin size={18} />
-                  </div>
-                  <div>
-                    <h4 className="font-bold text-white text-lg">Fantasy Store</h4>
-                    <p className="text-slate-400 text-sm mt-1 leading-relaxed">
-                      Av. África, 510 - Tibery<br/>
-                      Uberlândia - MG
-                    </p>
-                  </div>
-                </a>
-                <a href="https://www.instagram.com/resetnerdstore/" target="_blank" rel="noopener noreferrer" className="bg-slate-800/50 p-4 rounded border border-slate-700 flex gap-4 items-start hover:bg-slate-800 transition block cursor-pointer">
-                  <div className="bg-slate-900 p-2 rounded-full text-green-400 mt-1">
-                    <MapPin size={18} />
-                  </div>
-                  <div>
-                    <h4 className="font-bold text-white text-lg">Reset Nerd Store</h4>
-                    <p className="text-slate-400 text-sm mt-1 leading-relaxed">
-                      R. Buriti Alegre, 1014 - Aparecida<br/>
-                      Uberlândia - MG
-                    </p>
-                  </div>
-                </a>
-                <a href="https://www.instagram.com/mr.marlontcg/" target="_blank" rel="noopener noreferrer" className="bg-slate-800/50 p-4 rounded border border-slate-700 flex gap-4 items-start hover:bg-slate-800 transition block cursor-pointer">
-                  <div className="bg-slate-900 p-2 rounded-full text-red-400 mt-1">
-                    <MapPin size={18} />
-                  </div>
-                  <div>
-                    <h4 className="font-bold text-white text-lg">Mr. TCG</h4>
-                    <p className="text-slate-400 text-sm mt-1 leading-relaxed">
-                      Av. Fernando Costa, 387 - São Benedito<br/>
-                      Uberaba - MG
-                    </p>
-                  </div>
-                </a>
-                <a href="https://www.instagram.com/zebugeekstore/" target="_blank" rel="noopener noreferrer" className="bg-slate-800/50 p-4 rounded border border-slate-700 flex gap-4 items-start hover:bg-slate-800 transition block cursor-pointer">
-                  <div className="bg-slate-900 p-2 rounded-full text-blue-400 mt-1">
-                    <MapPin size={18} />
-                  </div>
-                  <div>
-                    <h4 className="font-bold text-white text-lg">Zebu Geek Store</h4>
-                    <p className="text-slate-400 text-sm mt-1 leading-relaxed">
-                      R. Rodolfo Lírio, 458 - Nossa Sra. da Abadia<br/>
-                      Uberaba - MG
-                    </p>
-                  </div>
-                </a>
+          <div className="space-y-4">
+            <a 
+              href="https://mypcards.com/LightDarkCardGame" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="flex items-center justify-between bg-gradient-to-r from-purple-700 to-indigo-700 hover:from-purple-600 hover:to-indigo-600 p-5 rounded-xl transition group shadow-lg shadow-purple-900/30 border border-purple-500/30 hover:scale-[1.02]"
+            >
+              <div className="flex flex-col">
+                 <span className="font-bold text-white text-lg tracking-wide">MYP Cards</span>
+                 <span className="text-purple-200 text-xs">Loja Oficial Online</span>
               </div>
-            </div>
-            <div>
-              <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-4 border-b border-slate-800 pb-2">Compre Online</h3>
-              <a 
-                href="https://mypcards.com/LightDarkCardGame" 
-                target="_blank" 
-                rel="noopener noreferrer"
-                className="flex items-center justify-between bg-gradient-to-r from-purple-700 to-indigo-700 hover:from-purple-600 hover:to-indigo-600 p-4 rounded-lg transition group shadow-lg shadow-purple-900/20 mb-3"
-              >
-                <div className="flex flex-col">
-                   <span className="font-bold text-white text-lg">MypCards</span>
-                   <span className="text-purple-200 text-xs">Loja Oficial Online</span>
-                </div>
-                <ExternalLink size={20} className="text-white/80 group-hover:text-white group-hover:translate-x-1 transition-transform" />
-              </a>
+              <ExternalLink size={20} className="text-white/80 group-hover:text-white group-hover:translate-x-1 transition-transform" />
+            </a>
 
-              <a 
-                href="https://lista.mercadolivre.com.br/_CustId_3408665465?item_id=MLB6798439252&category_id=MLB432989&seller_id=3408665465&client=recoview-selleritems&recos_listing=true#origin=vip&component=sellerData&typeSeller=classic" 
-                target="_blank" 
-                rel="noopener noreferrer"
-                className="flex items-center justify-between bg-gradient-to-r from-yellow-600 to-yellow-500 hover:from-yellow-500 hover:to-yellow-400 p-4 rounded-lg transition group shadow-lg shadow-yellow-900/20"
-              >
-                <div className="flex flex-col">
-                   <span className="font-bold text-black text-lg">Mercado Livre</span>
-                   <span className="text-black/70 text-xs font-medium">Produtos Selecionados</span>
-                </div>
-                <ExternalLink size={20} className="text-black group-hover:scale-110 transition-transform" />
-              </a>
-            </div>
+            <a 
+              href="https://lista.mercadolivre.com.br/_CustId_3408665465?item_id=MLB6798439252&category_id=MLB432989&seller_id=3408665465&client=recoview-selleritems&recos_listing=true#origin=vip&component=sellerData&typeSeller=classic" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="flex items-center justify-between bg-gradient-to-r from-yellow-500 to-amber-500 hover:from-yellow-400 hover:to-amber-400 p-5 rounded-xl transition group shadow-lg shadow-yellow-900/30 border border-yellow-400/40 hover:scale-[1.02]"
+            >
+              <div className="flex flex-col">
+                 <span className="font-bold text-slate-950 text-lg tracking-wide">Mercado Livre</span>
+                 <span className="text-slate-900 font-semibold text-xs">Produtos Selecionados</span>
+              </div>
+              <ExternalLink size={20} className="text-slate-950 group-hover:scale-110 transition-transform" />
+            </a>
           </div>
         </div>
       </div>
@@ -619,6 +597,18 @@ const CatalogModal = ({ isOpen, onClose, onOpenAdmin }: { isOpen: boolean, onClo
     minDef: ""
   });
 
+  const [visibleCount, setVisibleCount] = useState(24);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const sentinelRef = useRef<HTMLDivElement>(null);
+
+  // Reset pagination when search or filters change or when modal opens
+  useEffect(() => {
+    setVisibleCount(24);
+    if (scrollContainerRef.current) {
+      scrollContainerRef.current.scrollTop = 0;
+    }
+  }, [searchTerm, filters, isOpen]);
+
   const handleCardClick = (card: CardData) => {
     setSelectedCard(card);
     
@@ -659,6 +649,31 @@ const CatalogModal = ({ isOpen, onClose, onOpenAdmin }: { isOpen: boolean, onClo
 
     return matchesSearch && matchesType && matchesArchetype && matchesCollection && matchesFrame && matchesRarity && matchesCt && matchesAtk && matchesDef;
   });
+
+  // Infinite scroll intersection observer for ultra-fast progressive card loading
+  useEffect(() => {
+    if (!isOpen) return;
+    const sentinel = sentinelRef.current;
+    if (!sentinel) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) {
+          setVisibleCount((prev) => Math.min(prev + 20, filteredCards.length));
+        }
+      },
+      {
+        root: scrollContainerRef.current,
+        rootMargin: '400px',
+        threshold: 0.01,
+      }
+    );
+
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [isOpen, filteredCards.length]);
+
+  const displayedCards = filteredCards.slice(0, visibleCount);
 
   if (!isOpen) return null;
 
@@ -843,15 +858,26 @@ const CatalogModal = ({ isOpen, onClose, onOpenAdmin }: { isOpen: boolean, onClo
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 md:p-8 bg-[#0a0a0c]">
+      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-4 md:p-8 bg-[#0a0a0c]">
         {filteredCards.length > 0 ? (
-          <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-2 md:gap-8 justify-items-center">
-            {filteredCards.map((card, idx) => (
-              <div key={idx} className="scale-[0.65] md:scale-90 origin-top w-full flex justify-center -mb-24 md:mb-0" onClick={() => handleCardClick(card)}>
-                 <Card {...card} />
+          <>
+            <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-2 md:gap-8 justify-items-center">
+              {displayedCards.map((card, idx) => (
+                <div key={card.code || `${card.name}-${idx}`} className="scale-[0.65] md:scale-90 origin-top w-full flex justify-center -mb-24 md:mb-0" onClick={() => handleCardClick(card)}>
+                   <Card {...card} priority={idx < 12} />
+                </div>
+              ))}
+            </div>
+
+            {visibleCount < filteredCards.length && (
+              <div ref={sentinelRef} className="h-20 w-full flex items-center justify-center pt-8 pb-4">
+                <div className="flex items-center gap-2 text-xs font-mono text-purple-400/80 bg-slate-900/80 px-4 py-1.5 rounded-full border border-purple-900/30">
+                  <div className="w-2 h-2 rounded-full bg-purple-500 animate-ping" />
+                  Carregando mais cartas ({displayedCards.length} de {filteredCards.length})...
+                </div>
               </div>
-            ))}
-          </div>
+            )}
+          </>
         ) : (
           <div className="h-full flex flex-col items-center justify-center text-slate-500">
             <Ghost size={64} className="mb-4 opacity-50" />
@@ -865,6 +891,86 @@ const CatalogModal = ({ isOpen, onClose, onOpenAdmin }: { isOpen: boolean, onClo
 };
 
 
+
+const defaultModernShowcase: CardData[] = [
+  {
+    name: "Mahina - O Arauto do Véu",
+    type: "Herói",
+    archetype: "Véu / Caos",
+    collection: "Invasão do Caos",
+    ct: 11,
+    attack: 12,
+    defense: 12,
+    description: "Arauto Supremo do Véu. Enquanto estiver em campo, manipula o fluxo do espaço e do tempo.",
+    imageUrl: "https://firebasestorage.googleapis.com/v0/b/gen-lang-client-0120804533.firebasestorage.app/o/wb_images%2F1788736620932_Prancheta%2014.png?alt=media&token=efac4eed-1323-40d1-a15c-9687c910a9b2",
+    code: "2026/0001/00301",
+    frame: "Moderno"
+  },
+  {
+    name: "Arthemiel do Véu",
+    type: "Combatente",
+    archetype: "Véu",
+    collection: "Invasão do Caos",
+    ct: 9,
+    attack: 10,
+    defense: 9,
+    description: "Combatente das sombras do Véu que dissipa magias de combate dos adversários.",
+    imageUrl: "https://firebasestorage.googleapis.com/v0/b/gen-lang-client-0120804533.firebasestorage.app/o/wb_images%2F1788736640296_Prancheta%2024.png?alt=media&token=aadd5a29-3fe7-4782-a975-03b4600fe18c",
+    code: "2026/0001/00302",
+    frame: "Moderno"
+  },
+  {
+    name: "ESCUDO DA PALADINA",
+    type: "Efeito",
+    archetype: "Solador",
+    collection: "Invasão do Caos",
+    ct: 4,
+    attack: 0,
+    defense: 0,
+    description: "Uma vez por rodada, anula o dano total direcionado a um combatente aliado.",
+    imageUrl: "https://firebasestorage.googleapis.com/v0/b/gen-lang-client-0120804533.firebasestorage.app/o/wb_images%2F1781635147380_Prancheta%20322.webp?alt=media&token=19ad976b-5699-48b7-8146-7854d11f0975",
+    code: "2026_0001_00395",
+    frame: "Moderno"
+  },
+  {
+    name: "Canhão Macroversal",
+    type: "Equipamento",
+    archetype: "Macroversal",
+    collection: "Invasão do Caos",
+    ct: 6,
+    attack: 0,
+    defense: 0,
+    description: "O combatente equipado recebe +8 de ataque em ataques frontais e dispara contra a zona de reserva.",
+    imageUrl: "https://firebasestorage.googleapis.com/v0/b/gen-lang-client-0120804533.firebasestorage.app/o/wb_images%2F1781635874862_Prancheta%20542.webp?alt=media&token=a10de265-f51e-4ad5-8e78-a028d38c0da4",
+    code: "2026_0001_00417",
+    frame: "Moderno"
+  }
+];
+
+const defaultExclusiveProducts: ExclusiveProduct[] = [
+  {
+    title: "Deck Pré-Montado - Especial",
+    badge: "Deck Pré-Montado",
+    description: "Adquira decks temáticos prontos para jogar, boosters especiais e colecionáveis oficiais de Light Dark TCG com envio direto.",
+    mediaType: "video",
+    mediaUrl: "https://firebasestorage.googleapis.com/v0/b/gen-lang-client-0120804533.firebasestorage.app/o/home_videos%2FSeamless_looping_video_from_image_202606031804%20(1).mp4?alt=media&token=efbb7217-ad2c-466f-bb35-55903af9b685",
+    mediaList: [
+      {
+        type: "video",
+        url: "https://firebasestorage.googleapis.com/v0/b/gen-lang-client-0120804533.firebasestorage.app/o/home_videos%2FSeamless_looping_video_from_image_202606031804%20(1).mp4?alt=media&token=efbb7217-ad2c-466f-bb35-55903af9b685"
+      },
+      {
+        type: "image",
+        url: "https://firebasestorage.googleapis.com/v0/b/gen-lang-client-0120804533.firebasestorage.app/o/wb_images%2F1788736620932_Prancheta%2014.png?alt=media&token=efac4eed-1323-40d1-a15c-9687c910a9b2"
+      }
+    ],
+    cardCodes: "eyJtYWluIjpbIjIwMjUvMDAwMS8wMDAwMSIsIjIwMjUvMDAwMS8wMDAwMiIsIjIwMjUvMDAwMS8wMDAwMiIsIjIwMjUvMDAwMS8wMDAwMyIsIjIwMjUvMDAwMS8wMDAwNCIsIjIwMjUvMDAwMS8wMDAwNSJdLCJzaWRlIjpbIjIwMjUvMDAwMS8wMDAwNiJdfQ==",
+    buttonText: "Comprar Agora",
+    buttonLink: "https://mpago.la/1FZ3Mip",
+    isButtonActive: true,
+    isActive: true
+  }
+];
 
 export default function App() {
   const { cards: allCards, collections, archetypes } = useCards();
@@ -880,7 +986,9 @@ export default function App() {
   const [selectedType, setSelectedType] = useState<string | null>(null);
   const [scrolled, setScrolled] = useState(false);
   const [currentVideoIndex, setCurrentVideoIndex] = useState(0);
-  const [showcaseCards, setShowcaseCards] = useState<CardData[]>([]);
+  const [showcaseCards, setShowcaseCards] = useState<CardData[]>(defaultModernShowcase);
+  const [selectedProduct, setSelectedProduct] = useState<ExclusiveProduct | null>(null);
+  const [inspectedDeckCard, setInspectedDeckCard] = useState<CardData | null>(null);
 
   // Check for game mode in URL
   const [isGameMode, setIsGameMode] = useState(false);
@@ -896,7 +1004,8 @@ export default function App() {
     sideTextShadowColor: '#a855f7',
     sideTextShadowIntensity: 10,
     videos: [],
-    videoTransition: 'fade' // 'fade' | 'none'
+    videoTransition: 'fade', // 'fade' | 'none'
+    exclusiveProducts: defaultExclusiveProducts
   });
 
   useEffect(() => {
@@ -917,7 +1026,14 @@ export default function App() {
       try {
         const snap = await getDoc(doc(db, 'homeSettings', 'global'));
         if (snap.exists()) {
-          setHomeSettings((prev: any) => ({ ...prev, ...snap.data() }));
+          const data = snap.data();
+          setHomeSettings((prev: any) => ({
+            ...prev,
+            ...data,
+            exclusiveProducts: (data.exclusiveProducts && data.exclusiveProducts.length > 0)
+              ? data.exclusiveProducts
+              : prev.exclusiveProducts || defaultExclusiveProducts
+          }));
         }
       } catch(e) {
         console.error(e);
@@ -992,28 +1108,36 @@ export default function App() {
   }, [backgroundVideos.length]);
 
   useEffect(() => {
-    // Dynamic Showcase Rotation
+    // Dynamic Showcase Rotation - EXCLUSIVELY Modern Frame Cards
     const rotateShowcase = () => {
-      const heroes = allCards.filter(c => c.type === 'Herói');
-      const combatants = allCards.filter(c => c.type === 'Combatente');
-      const effects = allCards.filter(c => c.type === 'Efeito');
-      const equipments = allCards.filter(c => c.type === 'Equipamento');
+      const modernCards = allCards.filter(c => c.frame === 'Moderno');
+      if (modernCards.length === 0) return;
 
-      const getRandom = (arr: CardData[]) => arr.length > 0 ? arr[Math.floor(Math.random() * arr.length)] : allCards[0];
+      const getModernByType = (cardType: CardType) => {
+        const matching = modernCards.filter(c => c.type === cardType);
+        // Prefer cards with images
+        const withImg = matching.filter(c => !!c.imageUrl);
+        const pool = withImg.length > 0 ? withImg : matching;
+        return pool.length > 0 ? pool[Math.floor(Math.random() * pool.length)] : null;
+      };
 
-      setShowcaseCards([
-        getRandom(heroes),
-        getRandom(combatants),
-        getRandom(effects),
-        getRandom(equipments)
-      ]);
+      const hero = getModernByType('Herói');
+      const combatant = getModernByType('Combatente');
+      const effect = getModernByType('Efeito');
+      const equipment = getModernByType('Equipamento');
+
+      if (hero && combatant && effect && equipment) {
+        setShowcaseCards([hero, combatant, effect, equipment]);
+      }
     };
 
-    rotateShowcase(); // Initial load
-    const interval = setInterval(rotateShowcase, 15000); // Rotate every 15 seconds
+    if (allCards.some(c => c.frame === 'Moderno')) {
+      rotateShowcase();
+    }
+    const interval = setInterval(rotateShowcase, 12000); // Rotate every 12 seconds
 
     return () => clearInterval(interval);
-  }, []);
+  }, [allCards]);
 
   if (isGameMode) {
     return <GameBoard onClose={() => window.close()} />;
@@ -1048,27 +1172,48 @@ export default function App() {
             />
           </div>
 
-          <div className="hidden md:flex items-center gap-8 text-sm font-medium uppercase tracking-wide">
+          <div className="hidden md:flex items-center gap-1.5 lg:gap-2.5">
             <button 
               onClick={() => setIsGameOpen(true)}
-              className="text-purple-400 hover:text-purple-300 transition flex items-center gap-2 font-bold animate-pulse"
+              className="bg-slate-100 hover:bg-white text-slate-950 px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 flex items-center gap-1.5 shadow-sm active:scale-95 whitespace-nowrap"
             >
-              <Zap size={16} /> APP DUELO
+              <Zap size={14} className="text-purple-600 fill-purple-600/30" /> App Duelo
             </button>
             <button 
               onClick={() => setIsTournamentOpen(true)}
-              className="text-yellow-500 hover:text-yellow-400 transition flex items-center gap-2 font-bold"
+              className="bg-slate-100 hover:bg-white text-slate-950 px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 flex items-center gap-1.5 shadow-sm active:scale-95 whitespace-nowrap"
             >
-              <Crown size={16} /> CRIAR TORNEIO
+              <Crown size={14} className="text-amber-500 fill-amber-500/30" /> Criar Torneio
             </button>
-            <button onClick={() => setIsDeckBuilderOpen(true)} className="hover:text-purple-400 transition">MONTE SEU DECK</button>
-            <a href="#arquetipos" className="hover:text-purple-400 transition">Arquétipos</a>
-            <a href="#estrutura" className="hover:text-purple-400 transition">Campo</a>
+            <button 
+              onClick={() => setIsDeckBuilderOpen(true)} 
+              className="bg-slate-100 hover:bg-white text-slate-950 px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 flex items-center gap-1.5 shadow-sm active:scale-95 whitespace-nowrap"
+            >
+              <Layers size={14} className="text-purple-600" /> Monte seu Deck
+            </button>
+            <a 
+              href="#novidades" 
+              className="bg-slate-100 hover:bg-white text-slate-950 px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 flex items-center gap-1.5 shadow-sm active:scale-95 whitespace-nowrap"
+            >
+              <Sparkles size={14} className="text-purple-600" /> Novidades
+            </a>
+            <a 
+              href="#arquetipos" 
+              className="bg-slate-100 hover:bg-white text-slate-950 px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 flex items-center gap-1.5 shadow-sm active:scale-95 whitespace-nowrap"
+            >
+              <BookOpen size={14} className="text-indigo-600" /> Arquétipos
+            </a>
+            <a 
+              href="#estrutura" 
+              className="bg-slate-100 hover:bg-white text-slate-950 px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 flex items-center gap-1.5 shadow-sm active:scale-95 whitespace-nowrap"
+            >
+              <Sword size={14} className="text-slate-700" /> Campo
+            </a>
             <button 
               onClick={() => setIsBuyModalOpen(true)}
-              className="bg-slate-100 hover:bg-slate-200 text-black px-6 py-2 rounded font-bold transition flex items-center gap-2"
+              className="bg-slate-100 hover:bg-white text-slate-950 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 flex items-center gap-1.5 shadow-sm active:scale-95 whitespace-nowrap"
             >
-              <ShoppingCart size={16} /> Comprar
+              <ShoppingCart size={14} className="text-slate-900" /> Comprar
             </button>
           </div>
 
@@ -1078,31 +1223,62 @@ export default function App() {
         </div>
         {/* Mobile Menu */}
         {isMenuOpen && (
-             <div className="md:hidden absolute top-full left-0 w-full bg-[#0a0a0c] border-b border-slate-800 p-4 flex flex-col gap-4 shadow-2xl animate-in slide-in-from-top-2">
+             <div className="md:hidden absolute top-full left-0 w-full bg-[#0a0a0c] border-b border-slate-800 p-4 flex flex-col gap-2.5 shadow-2xl animate-in slide-in-from-top-2">
                 <button 
                   onClick={() => { setIsGameOpen(true); setIsMenuOpen(false); }}
-                  className="text-purple-400 hover:text-purple-300 font-bold flex items-center gap-2"
+                  className="bg-slate-100 hover:bg-white text-slate-950 px-3.5 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 shadow-sm"
                 >
-                  <Zap size={16} /> APP DUELO
+                  <Zap size={15} className="text-purple-600 fill-purple-600/30" /> App Duelo
                 </button>
                 <button 
                   onClick={() => { setIsTournamentOpen(true); setIsMenuOpen(false); }}
-                  className="text-yellow-500 hover:text-yellow-400 font-bold flex items-center gap-2"
+                  className="bg-slate-100 hover:bg-white text-slate-950 px-3.5 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 shadow-sm"
                 >
-                  <Crown size={16} /> CRIAR TORNEIO
+                  <Crown size={15} className="text-amber-500 fill-amber-500/30" /> Criar Torneio
                 </button>
-                <button onClick={() => { setIsDeckBuilderOpen(true); setIsMenuOpen(false); }} className="text-white hover:text-purple-400 text-left">MONTE SEU DECK</button>
-                <a href="#arquetipos" className="text-white hover:text-purple-400" onClick={()=>setIsMenuOpen(false)}>Arquétipos</a>
-                <a href="#estrutura" className="text-white hover:text-purple-400" onClick={()=>setIsMenuOpen(false)}>Campo</a>
+                <button 
+                  onClick={() => { setIsDeckBuilderOpen(true); setIsMenuOpen(false); }} 
+                  className="bg-slate-100 hover:bg-white text-slate-950 px-3.5 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 shadow-sm text-left"
+                >
+                  <Layers size={15} className="text-purple-600" /> Monte seu Deck
+                </button>
+                <a 
+                  href="#novidades" 
+                  className="bg-slate-100 hover:bg-white text-slate-950 px-3.5 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 shadow-sm" 
+                  onClick={()=>setIsMenuOpen(false)}
+                >
+                  <Sparkles size={15} className="text-purple-600" /> Novidades
+                </a>
+                <a 
+                  href="#arquetipos" 
+                  className="bg-slate-100 hover:bg-white text-slate-950 px-3.5 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 shadow-sm" 
+                  onClick={()=>setIsMenuOpen(false)}
+                >
+                  <BookOpen size={15} className="text-indigo-600" /> Arquétipos
+                </a>
+                <a 
+                  href="#estrutura" 
+                  className="bg-slate-100 hover:bg-white text-slate-950 px-3.5 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 shadow-sm" 
+                  onClick={()=>setIsMenuOpen(false)}
+                >
+                  <Sword size={15} className="text-slate-700" /> Campo
+                </a>
                 <button 
                   onClick={() => { setIsBuyModalOpen(true); setIsMenuOpen(false); }}
-                  className="bg-purple-600 text-white px-4 py-2 rounded font-bold"
+                  className="bg-slate-100 hover:bg-white text-slate-950 px-3.5 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 shadow-sm"
                 >
-                  Comprar
+                  <ShoppingCart size={15} className="text-slate-900" /> Comprar
                 </button>
              </div>
         )}
       </nav>
+
+      {/* Novidades Section */}
+      <NovidadesSection 
+        products={homeSettings?.exclusiveProducts || defaultExclusiveProducts} 
+        onOpenProductModal={(product) => setSelectedProduct(product)}
+        allCards={allCards}
+      />
 
       {/* Hero Section */}
       <header className="relative pt-32 pb-20 lg:pt-48 lg:pb-32 overflow-hidden h-[80vh] flex items-center">
@@ -1130,7 +1306,9 @@ export default function App() {
               />
             );
           })}
-          <div className="absolute inset-0 bg-gradient-to-b from-[#0a0a0c]/80 via-[#0a0a0c]/40 to-[#0a0a0c]"></div>
+          <div className="absolute inset-0 bg-gradient-to-b from-[#0a0a0c] via-[#0a0a0c]/40 to-[#0a0a0c]"></div>
+          {/* Top smooth gradient blend from Novidades into Hero */}
+          <div className="absolute top-0 left-0 right-0 h-48 bg-gradient-to-b from-[#0a0a0c] via-[#0a0a0c]/80 to-transparent pointer-events-none z-10"></div>
         </div>
 
         <div className="container mx-auto px-6 relative z-10 text-center">
@@ -1221,11 +1399,15 @@ export default function App() {
         </div>
       </section>
 
-      {/* Archetypes Grid */}
-      <section id="arquetipos" className="py-20 bg-slate-950">
-        <div className="container mx-auto px-6">
-          <h3 className="text-3xl font-bold mb-12 text-center text-white">Arquétipos</h3>
-          <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* Archetypes List */}
+      <section id="arquetipos" className="py-20 bg-slate-950 border-t border-purple-900/20">
+        <div className="container mx-auto px-6 max-w-4xl">
+          <div className="text-center mb-12">
+            <h3 className="text-3xl sm:text-4xl font-black text-white uppercase tracking-wider">Arquétipos</h3>
+            <div className="w-16 h-1 bg-purple-600 mx-auto mt-3 rounded-full"></div>
+            <p className="text-slate-400 text-sm md:text-base mt-3">Conheça os arquétipos e mecânicas fundamentais do jogo.</p>
+          </div>
+          <div className="flex flex-col gap-3 md:gap-4">
             {archetypes.map((arch, idx) => (
               <ArchetypeCard key={idx} {...arch} />
             ))}
@@ -1234,17 +1416,19 @@ export default function App() {
       </section>
 
       {/* Field Structure Section - Updated to GameField */}
-      <section id="estrutura" className="py-24 relative overflow-hidden bg-slate-900/20">
+      <section id="estrutura" className="py-16 md:py-24 relative overflow-hidden bg-slate-900/20">
         <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-5 pointer-events-none"></div>
-        <div className="container mx-auto px-6 relative z-10">
+        <div className="container mx-auto px-4 sm:px-6 relative z-10">
           <div className="max-w-6xl mx-auto">
-            <div className="text-center mb-12">
-              <h2 className="text-4xl font-bold text-white mb-4">Estrutura do Campo</h2>
-              <p className="text-slate-400">Interaja com as zonas abaixo para entender as regras.</p>
+            <div className="text-center mb-8 md:mb-10">
+              <h2 className="text-3xl sm:text-4xl font-bold text-white mb-3">Estrutura do Campo</h2>
+              <p className="text-slate-400 text-sm sm:text-base">Clique em qualquer área do campo para visualizar a explicação interativa no próprio local.</p>
             </div>
 
-            <div className="transform scale-[0.6] origin-top w-[166%] -ml-[33%] md:w-full md:scale-100 md:ml-0 md:origin-center -mb-48 md:mb-0">
-              <GameField />
+            <div className="w-full overflow-x-auto pb-4 -mx-4 px-4 sm:mx-0 sm:px-0">
+              <div className="min-w-[650px] md:min-w-0 w-full">
+                <GameField />
+              </div>
             </div>
           </div>
         </div>
@@ -1292,6 +1476,20 @@ export default function App() {
           </div>
         </div>
       </footer>
+
+      {/* Product Detail Modal (Multiple Media Gallery & Decklist) */}
+      <ProductDetailModal 
+        product={selectedProduct}
+        onClose={() => setSelectedProduct(null)}
+        allCards={allCards}
+        onSelectCard={(c) => setInspectedDeckCard(c)}
+      />
+
+      {/* Modal to inspect cards from the pre-built deck list */}
+      <CardDetailModal 
+        card={inspectedDeckCard}
+        onClose={() => setInspectedDeckCard(null)}
+      />
     </div>
   );
 }

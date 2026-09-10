@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { X, Search, Save, Download, Trash2, Plus, Minus, AlertTriangle, CheckCircle, BarChart3, Copy, Eye, ChevronDown, ChevronUp, ChevronRight, ChevronLeft, Layers } from 'lucide-react';
 import { CardData } from '../types';
 import { collectionsList, archetypesList } from '../data';
@@ -43,7 +43,7 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
     if (n.includes("vellret")) return "Vellret";
     
     // Padrão: Primeira palavra
-    return name.split(/[\s-]/)[0];
+    return (name || "").split(/[\s-]/)[0];
   };
 
   // --- Logic ---
@@ -242,6 +242,43 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
     return matchesSearch && matchesType && matchesArch && matchesColl && matchesFrame && matchesCt && matchesAtk && matchesDef && matchesEffectWord;
   });
 
+  const [visibleCount, setVisibleCount] = useState(24);
+  const poolScrollContainerRef = useRef<HTMLDivElement>(null);
+  const sentinelRef = useRef<HTMLDivElement>(null);
+
+  // Reset pagination when search or filters change or when modal opens
+  useEffect(() => {
+    setVisibleCount(24);
+    if (poolScrollContainerRef.current) {
+      poolScrollContainerRef.current.scrollTop = 0;
+    }
+  }, [searchTerm, filters, isOpen]);
+
+  // Infinite scroll intersection observer for pool library
+  useEffect(() => {
+    if (!isOpen || activeTab !== 'build') return;
+    const sentinel = sentinelRef.current;
+    if (!sentinel) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) {
+          setVisibleCount((prev) => Math.min(prev + 20, filteredPool.length));
+        }
+      },
+      {
+        root: poolScrollContainerRef.current,
+        rootMargin: '350px',
+        threshold: 0.01,
+      }
+    );
+
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [isOpen, activeTab, filteredPool.length]);
+
+  const displayedPool = filteredPool.slice(0, visibleCount);
+
   if (!isOpen) return null;
 
   return (
@@ -425,15 +462,15 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
             </div>
 
             {/* List */}
-            <div className="flex-1 overflow-y-auto p-2 md:p-4">
+            <div ref={poolScrollContainerRef} className="flex-1 overflow-y-auto p-2 md:p-4">
               <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-2 md:gap-3">
-                {filteredPool.map((card, idx) => {
+                {displayedPool.map((card, idx) => {
                   const isInMain = deck.some(c => c.name === card.name);
                   const isInSide = sideDeck.some(c => c.name === card.name);
                   const isInDeck = isInMain || isInSide;
                   return (
                     <div 
-                      key={idx} 
+                      key={card.code || `${card.name}-${idx}`} 
                       className={`cursor-pointer group relative ${isInDeck ? 'opacity-50' : ''}`}
                     >
                       <div className="absolute top-1 right-1 z-10 opacity-0 group-hover:opacity-100 transition flex flex-col gap-1">
@@ -470,7 +507,7 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
                         onClick={() => !isInDeck && addToDeck(card, false)}
                         className={`pointer-events-none scale-[0.6] origin-top-left w-[170%] h-[170%] mb-[-70%] mr-[-70%] ${isInDeck ? 'grayscale' : ''}`}
                       >
-                         <Card {...card} />
+                         <Card {...card} priority={idx < 8} />
                       </div>
                       
                       {isInDeck && (
@@ -482,6 +519,15 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
                   );
                 })}
               </div>
+
+              {visibleCount < filteredPool.length && (
+                <div ref={sentinelRef} className="h-16 w-full flex items-center justify-center pt-4 pb-2">
+                  <div className="flex items-center gap-2 text-xs font-mono text-purple-400/80 bg-slate-900/80 px-3 py-1 rounded-full border border-purple-900/30">
+                    <div className="w-1.5 h-1.5 rounded-full bg-purple-500 animate-ping" />
+                    Carregando mais ({displayedPool.length} de {filteredPool.length})...
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -557,7 +603,7 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
                                   'bg-purple-950/50 border-purple-800'
                                 }`}>
                                   {card.imageUrl && (
-                                    <img src={card.imageUrl} className="absolute inset-0 w-full h-full object-cover opacity-30" alt="" />
+                                    <img src={card.imageUrl} className="absolute inset-0 w-full h-full object-cover opacity-30 pointer-events-none select-none" alt="" loading="lazy" decoding="async" />
                                   )}
                                   <div className="relative z-10">
                                     <div className="text-[8px] md:text-[10px] uppercase font-bold tracking-wider opacity-70 truncate">{card.type}</div>
@@ -590,7 +636,7 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
                                      onClick={(e) => { e.stopPropagation(); setInspectCard(card); }}
                                      className="bg-blue-600 text-white rounded-full p-1 shadow-lg hover:scale-110 transition"
                                      title="Ver Detalhes"
-                                   >
+                                  >
                                       <Eye size={12} />
                                    </button>
                                   <button 
@@ -610,7 +656,7 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
                                   'bg-purple-950/50 border-purple-800'
                                 }`}>
                                   {card.imageUrl && (
-                                    <img src={card.imageUrl} className="absolute inset-0 w-full h-full object-cover opacity-30" alt="" />
+                                    <img src={card.imageUrl} className="absolute inset-0 w-full h-full object-cover opacity-30 pointer-events-none select-none" alt="" loading="lazy" decoding="async" />
                                   )}
                                   <div className="relative z-10">
                                     <div className="text-[8px] md:text-[10px] uppercase font-bold tracking-wider opacity-70 truncate">{card.type}</div>

@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { Settings, Lock, Plus, Trash2, X, Image as ImageIcon, Edit2, Check, Layout, Clock, Grid, Palette, ChevronRight, Layers, BookOpen, Database, Box } from 'lucide-react';
+import { Settings, Lock, Plus, Trash2, X, Image as ImageIcon, Edit2, Check, Layout, Clock, Grid, Palette, ChevronRight, Layers, BookOpen, Database, Box, Upload, Film, Sparkles, Calendar } from 'lucide-react';
 import { signInWithEmailAndPassword, onAuthStateChanged, signOut } from 'firebase/auth';
 import { collection, getDocs, addDoc, deleteDoc, updateDoc, doc, setDoc, getDoc } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { auth, db, storage } from '../firebase';
 import { useCards } from '../CardContext';
 import { ArchetypeData } from '../types';
+import { parseDeckFromCode } from '../deckUtils';
 
 export type AdminType = 'home' | 'catalog' | 'master';
 
@@ -43,7 +44,8 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
     sideTextShadowColor: '#a855f7',
     sideTextShadowIntensity: 10,
     videos: [],
-    videoTransition: 'fade'
+    videoTransition: 'fade',
+    exclusiveProducts: []
   });
   const [wbTabs, setWbTabs] = useState<any[]>([]);
   const [wbItems, setWbItems] = useState<any[]>([]);
@@ -84,6 +86,10 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
 
   // Collections
   const [collectionEditName, setCollectionEditName] = useState('');
+
+  // Archetypes
+  const [archPatchDate, setArchPatchDate] = useState('');
+  const [archIsNew, setArchIsNew] = useState(false);
 
   // Specifics
   const [tabHasItems, setTabHasItems] = useState(true);
@@ -276,6 +282,8 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
     setParsedBatchCards([]);
     setBatchImages({});
     setBatchCollection('');
+    setArchPatchDate('');
+    setArchIsNew(false);
     setError('');
   };
 
@@ -290,6 +298,42 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
       finalImageUrl = await getDownloadURL(gsRef);
     }
     return finalImageUrl;
+  };
+
+  const handleUploadProductMedia = async (productIndex: number, file: File) => {
+    setLoading(true);
+    try {
+      const isVideo = file.type.startsWith('video');
+      const folder = isVideo ? 'home_videos' : 'home_images';
+      const fileRef = ref(storage, `${folder}/${Date.now()}_${file.name}`);
+      await uploadBytes(fileRef, file);
+      const url = await getDownloadURL(fileRef);
+
+      const np = [...(homeSettings.exclusiveProducts || [])];
+      const prod = { ...np[productIndex] };
+      const currentMediaList = (prod.mediaList && prod.mediaList.length > 0)
+        ? [...prod.mediaList]
+        : (prod.mediaUrl ? [{ type: prod.mediaType || 'image', url: prod.mediaUrl }] : []);
+
+      currentMediaList.push({
+        type: isVideo ? 'video' : 'image',
+        url
+      });
+
+      prod.mediaList = currentMediaList;
+      if (!prod.mediaUrl) {
+        prod.mediaUrl = url;
+        prod.mediaType = isVideo ? 'video' : 'image';
+      }
+
+      np[productIndex] = prod;
+      setHomeSettings({ ...homeSettings, exclusiveProducts: np });
+    } catch (err: any) {
+      console.error(err);
+      alert('Erro ao enviar arquivo de mídia: ' + (err.message || err));
+    } finally {
+      setLoading(false);
+    }
   };
 
   const saveSettings = async () => {
@@ -762,6 +806,350 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
                           </div>
                         </div>
 
+                        <div className="mt-8 border-t border-slate-700 pt-6">
+                          <h4 className="font-bold text-white mb-2">Gerenciar Produtos em NOVIDADES</h4>
+                          <p className="text-xs text-slate-400 mb-6">
+                            Configure os produtos que aparecem na vitrine NOVIDADES. Se houver 1 produto, ele fica centralizado de fora a fora. Se houver 2 ou mais, vira um carrossel que passa a cada 10 segundos com setas de navegação.
+                          </p>
+
+                          {(homeSettings.exclusiveProducts || []).map((prod: any, i: number) => {
+                            const currentMediaList = (prod.mediaList && Array.isArray(prod.mediaList))
+                              ? prod.mediaList
+                              : (prod.mediaUrl ? [{ type: prod.mediaType || 'image', url: prod.mediaUrl }] : []);
+
+                            return (
+                              <div key={i} className="flex flex-col gap-4 mb-8 p-5 bg-slate-900 rounded-xl border border-slate-700 shadow-lg">
+                                <div className="w-full flex items-center justify-between border-b border-slate-800 pb-3">
+                                  <div className="flex items-center gap-3">
+                                    <span className="text-purple-400 font-bold text-sm bg-purple-950/80 border border-purple-800/60 px-3 py-1 rounded-full">
+                                      Produto #{i + 1}
+                                    </span>
+                                    <span className="text-slate-300 text-sm font-semibold truncate max-w-[200px] sm:max-w-xs">
+                                      {prod.title || 'Sem título'}
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center gap-4">
+                                    <label className="flex items-center gap-2 text-sm text-slate-300 cursor-pointer">
+                                      <input 
+                                        type="checkbox" 
+                                        checked={prod.isActive !== false && prod.isButtonActive !== false} 
+                                        onChange={e => {
+                                          const np = [...(homeSettings.exclusiveProducts || [])];
+                                          np[i].isActive = e.target.checked;
+                                          np[i].isButtonActive = e.target.checked;
+                                          setHomeSettings({...homeSettings, exclusiveProducts: np});
+                                        }}
+                                        className="accent-purple-600 w-4 h-4 rounded"
+                                      />
+                                      <span>Botão Ativado</span>
+                                    </label>
+                                    <button 
+                                      onClick={() => {
+                                        const np = homeSettings.exclusiveProducts.filter((_:any, idx:number) => idx !== i);
+                                        setHomeSettings({...homeSettings, exclusiveProducts: np});
+                                      }} 
+                                      className="text-red-400 hover:text-red-300 p-1 rounded hover:bg-red-950/40 transition"
+                                      title="Remover Produto"
+                                    >
+                                      <Trash2 size={18} />
+                                    </button>
+                                  </div>
+                                </div>
+
+                                {/* Title & Badge */}
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 w-full">
+                                  <div className="md:col-span-2">
+                                    <label className="text-xs text-slate-400 block mb-1">Título do Produto</label>
+                                    <input 
+                                      type="text" 
+                                      value={prod.title || ''} 
+                                      onChange={e => {
+                                        const np = [...(homeSettings.exclusiveProducts || [])]; 
+                                        np[i].title = e.target.value; 
+                                        setHomeSettings({...homeSettings, exclusiveProducts: np});
+                                      }} 
+                                      className="w-full bg-slate-950 border border-slate-700 rounded p-2.5 text-white text-sm" 
+                                      placeholder="Ex: Deck Halloween - Invasão das Sombras" 
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="text-xs text-slate-400 block mb-1">Etiqueta / Badge</label>
+                                    <input 
+                                      type="text" 
+                                      value={prod.badge || ''} 
+                                      onChange={e => {
+                                        const np = [...(homeSettings.exclusiveProducts || [])]; 
+                                        np[i].badge = e.target.value; 
+                                        setHomeSettings({...homeSettings, exclusiveProducts: np});
+                                      }} 
+                                      className="w-full bg-slate-950 border border-slate-700 rounded p-2.5 text-white text-sm" 
+                                      placeholder="Ex: Deck Pré-Montado" 
+                                    />
+                                  </div>
+                                </div>
+
+                                {/* Description */}
+                                <div className="w-full">
+                                  <label className="text-xs text-slate-400 block mb-1">Descrição do Produto</label>
+                                  <textarea 
+                                    value={prod.description || ''} 
+                                    onChange={e => {
+                                      const np = [...(homeSettings.exclusiveProducts || [])]; 
+                                      np[i].description = e.target.value; 
+                                      setHomeSettings({...homeSettings, exclusiveProducts: np});
+                                    }} 
+                                    className="w-full bg-slate-950 border border-slate-700 rounded p-2.5 text-white text-sm h-24 resize-none" 
+                                    placeholder="Detalhes sobre o produto, benefícios, conteúdo..." 
+                                  />
+                                </div>
+
+                                {/* Multiple Photos and Videos Section */}
+                                <div className="w-full bg-slate-950/70 p-4 rounded-lg border border-slate-800">
+                                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
+                                    <label className="text-xs font-bold text-purple-400 uppercase tracking-wider flex items-center gap-1.5">
+                                      <Film size={14} /> Mídias do Produto (Fotos e Vídeos)
+                                    </label>
+                                    <div className="flex items-center gap-2">
+                                      <label className="bg-purple-900/60 hover:bg-purple-800 text-purple-200 text-xs px-3 py-1.5 rounded cursor-pointer transition flex items-center gap-1.5 border border-purple-700/50">
+                                        <Upload size={13} />
+                                        <span>Upload do PC</span>
+                                        <input 
+                                          type="file" 
+                                          accept="image/*,video/*" 
+                                          className="hidden" 
+                                          onChange={e => {
+                                            if (e.target.files?.[0]) {
+                                              handleUploadProductMedia(i, e.target.files[0]);
+                                            }
+                                          }} 
+                                        />
+                                      </label>
+                                      <button 
+                                        type="button"
+                                        onClick={() => {
+                                          const np = [...(homeSettings.exclusiveProducts || [])];
+                                          const list = (prod.mediaList && Array.isArray(prod.mediaList)) 
+                                            ? [...prod.mediaList] 
+                                            : (prod.mediaUrl ? [{ type: prod.mediaType || 'image', url: prod.mediaUrl }] : []);
+                                          list.push({ type: 'image', url: '' });
+                                          np[i].mediaList = list;
+                                          if (!np[i].mediaUrl) {
+                                            np[i].mediaUrl = '';
+                                            np[i].mediaType = 'image';
+                                          }
+                                          setHomeSettings({...homeSettings, exclusiveProducts: np});
+                                        }}
+                                        className="bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs px-3 py-1.5 rounded transition flex items-center gap-1 border border-slate-700"
+                                      >
+                                        <Plus size={13} /> Add URL
+                                      </button>
+                                    </div>
+                                  </div>
+
+                                  {currentMediaList.length === 0 ? (
+                                    <p className="text-xs text-slate-500 italic py-2">
+                                      Nenhuma foto ou vídeo adicionado ainda. Clique em "Upload do PC" ou "Add URL".
+                                    </p>
+                                  ) : (
+                                    <div className="space-y-3">
+                                      {currentMediaList.map((m: any, mIdx: number) => (
+                                        <div key={mIdx} className="flex flex-col sm:flex-row items-center gap-3 bg-slate-900 p-2.5 rounded border border-slate-800">
+                                          {/* Mini Preview */}
+                                          <div className="w-16 h-12 rounded overflow-hidden bg-black shrink-0 border border-slate-700 flex items-center justify-center">
+                                            {m.type === 'video' ? (
+                                              <Film size={18} className="text-purple-400" />
+                                            ) : m.url ? (
+                                              <img src={m.url} alt="" className="w-full h-full object-cover" />
+                                            ) : (
+                                              <ImageIcon size={18} className="text-slate-600" />
+                                            )}
+                                          </div>
+
+                                          {/* Type Selector */}
+                                          <select 
+                                            value={m.type || 'image'}
+                                            onChange={e => {
+                                              const np = [...(homeSettings.exclusiveProducts || [])];
+                                              const list = [...(np[i].mediaList || currentMediaList)];
+                                              list[mIdx] = { ...list[mIdx], type: e.target.value as 'image' | 'video' };
+                                              np[i].mediaList = list;
+                                              if (mIdx === 0) {
+                                                np[i].mediaType = e.target.value;
+                                              }
+                                              setHomeSettings({...homeSettings, exclusiveProducts: np});
+                                            }}
+                                            className="bg-slate-950 border border-slate-700 rounded p-1.5 text-xs text-white shrink-0"
+                                          >
+                                            <option value="image">Imagem</option>
+                                            <option value="video">Vídeo</option>
+                                          </select>
+
+                                          {/* URL Input */}
+                                          <input 
+                                            type="text" 
+                                            value={m.url || ''} 
+                                            onChange={e => {
+                                              const np = [...(homeSettings.exclusiveProducts || [])];
+                                              const list = [...(np[i].mediaList || currentMediaList)];
+                                              list[mIdx] = { ...list[mIdx], url: e.target.value };
+                                              np[i].mediaList = list;
+                                              if (mIdx === 0) {
+                                                np[i].mediaUrl = e.target.value;
+                                              }
+                                              setHomeSettings({...homeSettings, exclusiveProducts: np});
+                                            }}
+                                            placeholder="URL da mídia (https://...)" 
+                                            className="w-full bg-slate-950 border border-slate-700 rounded p-1.5 text-xs text-white"
+                                          />
+
+                                          {/* Delete media */}
+                                          <button 
+                                            type="button"
+                                            onClick={() => {
+                                              const np = [...(homeSettings.exclusiveProducts || [])];
+                                              const list = (np[i].mediaList || currentMediaList).filter((_: any, idx: number) => idx !== mIdx);
+                                              np[i].mediaList = list;
+                                              np[i].mediaUrl = list[0]?.url || '';
+                                              np[i].mediaType = list[0]?.type || 'image';
+                                              setHomeSettings({...homeSettings, exclusiveProducts: np});
+                                            }}
+                                            className="text-red-400 hover:text-red-300 p-1.5 rounded hover:bg-red-950/40 transition shrink-0"
+                                            title="Remover mídia"
+                                          >
+                                            <Trash2 size={16} />
+                                          </button>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+
+                                 {/* Deck List / Cartas do Criador de Deck */}
+                                {(() => {
+                                  const deckPreview = parseDeckFromCode(prod.cardCodes, cards);
+                                  return (
+                                    <div className="w-full bg-slate-950/70 p-4 rounded-lg border border-slate-800 space-y-2.5">
+                                      <div className="flex items-center justify-between">
+                                        <label className="text-xs font-bold text-purple-400 uppercase tracking-wider flex items-center gap-1.5">
+                                          <Layers size={14} /> Código do Deck (Gerado no Criador de Deck)
+                                        </label>
+                                        {deckPreview.isValid && (
+                                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                                            deckPreview.isDeckBuilderCode 
+                                              ? 'bg-emerald-950 text-emerald-300 border border-emerald-700/50' 
+                                              : 'bg-purple-950 text-purple-300 border border-purple-700/50'
+                                          }`}>
+                                            {deckPreview.isDeckBuilderCode ? '✓ Formato Criador de Deck' : 'Lista Manual'}
+                                          </span>
+                                        )}
+                                      </div>
+
+                                      <p className="text-[11px] text-slate-300 leading-relaxed">
+                                        Cole aqui o <strong>código gerado no Criador de Deck</strong> (menu principal &gt; Criador de Deck &gt; aba <em>Salvar / Exportar</em> &gt; <em>Copiar Código</em>). O sistema decodifica o deck principal e side deck automaticamente!
+                                      </p>
+
+                                      <textarea 
+                                        value={prod.cardCodes || ''} 
+                                        onChange={e => {
+                                          const np = [...(homeSettings.exclusiveProducts || [])]; 
+                                          np[i].cardCodes = e.target.value; 
+                                          setHomeSettings({...homeSettings, exclusiveProducts: np});
+                                        }} 
+                                        className="w-full bg-slate-950 border border-slate-700 rounded p-2.5 text-white font-mono text-xs h-24 resize-y focus:border-purple-500 outline-none" 
+                                        placeholder="Cole o código do Criador de Deck aqui (ex: eyJtYWluIjpb...)..." 
+                                      />
+
+                                      {/* Real-time Deck Validation Feedback */}
+                                      {prod.cardCodes && prod.cardCodes.trim() && (
+                                        <div className="text-xs p-2.5 rounded bg-slate-900 border border-slate-800">
+                                          {deckPreview.isValid ? (
+                                            <div className="space-y-1">
+                                              <div className="text-emerald-400 font-bold flex items-center gap-1.5">
+                                                <Check size={14} /> Deck identificado com sucesso!
+                                              </div>
+                                              <div className="text-slate-300 text-[11px]">
+                                                Total: <strong>{deckPreview.totalCount} cartas</strong>
+                                                {deckPreview.totalSideCount > 0 ? ` (${deckPreview.totalMainCount} Principal + ${deckPreview.totalSideCount} Side Deck)` : ''}
+                                                {` • ${deckPreview.mainDeck.length + deckPreview.sideDeck.length} tipos de cartas`}
+                                              </div>
+                                              {deckPreview.missingCodes.length > 0 && (
+                                                <div className="text-amber-400 text-[11px] pt-1">
+                                                  ⚠️ {deckPreview.missingCodes.length} código(s) não constam no banco atual: {deckPreview.missingCodes.slice(0, 3).join(', ')}...
+                                                </div>
+                                              )}
+                                            </div>
+                                          ) : (
+                                            <div className="text-amber-400 text-[11px]">
+                                              Nenhuma carta identificada com este código. Certifique-se de copiar o código completo do Criador de Deck.
+                                            </div>
+                                          )}
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
+                                })()}
+
+                                {/* Button Info */}
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 w-full">
+                                  <div>
+                                    <label className="text-xs text-slate-400 block mb-1">Texto do Botão de Compra</label>
+                                    <input 
+                                      type="text" 
+                                      value={prod.buttonText || 'Comprar Agora'} 
+                                      onChange={e => {
+                                        const np = [...(homeSettings.exclusiveProducts || [])]; 
+                                        np[i].buttonText = e.target.value; 
+                                        setHomeSettings({...homeSettings, exclusiveProducts: np});
+                                      }} 
+                                      className="w-full bg-slate-950 border border-slate-700 rounded p-2 text-white text-sm" 
+                                      placeholder="Comprar Agora" 
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="text-xs text-slate-400 block mb-1">Link de Venda (Mercado Pago, Loja, etc.)</label>
+                                    <input 
+                                      type="text" 
+                                      value={prod.buttonLink || 'https://mpago.la/1FZ3Mip'} 
+                                      onChange={e => {
+                                        const np = [...(homeSettings.exclusiveProducts || [])]; 
+                                        np[i].buttonLink = e.target.value; 
+                                        setHomeSettings({...homeSettings, exclusiveProducts: np});
+                                      }} 
+                                      className="w-full bg-slate-950 border border-slate-700 rounded p-2 text-white text-sm" 
+                                      placeholder="https://mpago.la/..." 
+                                    />
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+
+                          <button 
+                            onClick={() => {
+                              const np = [
+                                ...(homeSettings.exclusiveProducts || []), 
+                                { 
+                                  title: '', 
+                                  badge: 'Deck Pré-Montado',
+                                  description: '', 
+                                  mediaType: 'image', 
+                                  mediaUrl: '', 
+                                  mediaList: [],
+                                  cardCodes: '',
+                                  buttonText: 'Comprar Agora', 
+                                  buttonLink: 'https://mpago.la/1FZ3Mip', 
+                                  isActive: true, 
+                                  isButtonActive: true 
+                                }
+                              ];
+                              setHomeSettings({...homeSettings, exclusiveProducts: np});
+                            }} 
+                            className="bg-purple-600 hover:bg-purple-500 text-white text-sm px-5 py-2.5 rounded-lg flex items-center gap-2 transition font-bold shadow-md shadow-purple-900/30"
+                          >
+                            <Plus size={16} /> Adicionar Novo Produto em NOVIDADES
+                          </button>
+                        </div>
+
                         <div className="flex justify-end pt-4 border-t border-slate-700 mt-6">
                           <button onClick={saveSettings} disabled={loading} className="bg-purple-600 hover:bg-purple-500 text-white font-bold py-2 px-6 rounded transition">
                             Salvar Configurações da Home
@@ -1020,9 +1408,23 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
                 {/* ARCHETYPES TAB */}
                 {activeAdminTab === 'archetypes' && (
                   <>
-                    <h3 className="text-xl font-bold text-white mb-6 border-b border-slate-700 pb-2">Gerenciar Arquétipos</h3>
+                    <div className="flex justify-between items-center mb-6 border-b border-slate-700 pb-2">
+                      <h3 className="text-xl font-bold text-white">Gerenciar Arquétipos</h3>
+                      {!editingId && (
+                        <button
+                          onClick={() => {
+                            resetForm();
+                            setArchPatchDate(new Date().toLocaleDateString('pt-BR'));
+                            setArchIsNew(true);
+                          }}
+                          className="text-xs bg-purple-600 hover:bg-purple-500 text-white font-bold py-1.5 px-3 rounded flex items-center gap-1.5 transition"
+                        >
+                          <Plus size={14} /> Novo Arquétipo
+                        </button>
+                      )}
+                    </div>
                     <div className="bg-slate-800 p-6 rounded-lg border border-slate-700 mb-8 shadow-inner">
-                      <h4 className="font-bold text-slate-300 mb-4">{editingId ? 'Editar Arquétipo' : 'Novo Arquétipo'}</h4>
+                      <h4 className="font-bold text-slate-300 mb-4">{editingId ? `Editar Arquétipo: ${formName}` : 'Novo Arquétipo'}</h4>
                       <div className="space-y-4">
                         <div>
                           <label className="text-sm font-bold text-slate-400 block mb-1">Nome do Arquétipo</label>
@@ -1036,15 +1438,57 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
                           <label className="text-sm font-bold text-slate-400 block mb-1">Descrição</label>
                           <textarea value={formDescription} onChange={e => setFormDescription(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded p-3 text-white h-24 resize-none" />
                         </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-slate-900/60 p-4 rounded-lg border border-slate-800">
+                          <div>
+                            <label className="text-sm font-bold text-slate-300 flex items-center gap-1.5 mb-1">
+                              <Calendar size={15} className="text-purple-400" />
+                              Data do Patch
+                            </label>
+                            <input
+                              type="text"
+                              value={archPatchDate}
+                              onChange={e => setArchPatchDate(e.target.value)}
+                              placeholder="Ex: 10/09/2026"
+                              className="w-full bg-slate-950 border border-slate-700 rounded p-2 text-white font-mono text-sm"
+                            />
+                            <p className="text-[11px] text-slate-500 mt-1">Exibido na parte inferior do card do arquétipo.</p>
+                          </div>
+                          <div className="flex flex-col justify-center">
+                            <label className="text-sm font-bold text-slate-300 block mb-1">Status de Destaque</label>
+                            <label className="flex items-center gap-2.5 p-2 rounded bg-slate-950/80 border border-slate-800 cursor-pointer select-none hover:border-slate-700 transition">
+                              <input
+                                type="checkbox"
+                                checked={archIsNew}
+                                onChange={e => setArchIsNew(e.target.checked)}
+                                className="w-4 h-4 rounded text-emerald-500 focus:ring-emerald-500 bg-slate-900 border-slate-700"
+                              />
+                              <span className="text-xs sm:text-sm font-medium text-slate-200 flex items-center gap-2">
+                                Exibir selo
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 animate-pulse">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+                                  Novo
+                                </span>
+                                piscando
+                              </span>
+                            </label>
+                            <p className="text-[11px] text-slate-500 mt-1">Marcado automaticamente ao alterar o arquétipo.</p>
+                          </div>
+                        </div>
+
                         <div className="flex justify-end pt-4 gap-2">
                           {editingId && <button onClick={resetForm} className="bg-slate-700 hover:bg-slate-600 px-4 py-2 rounded text-white font-bold">Cancelar</button>}
                           <button onClick={async () => {
                             if (!formName) return;
                             setLoading(true);
+                            const todayStr = new Date().toLocaleDateString('pt-BR');
                             await saveArchetype({
                               name: formName,
                               imageUrl: formImageUrl,
-                              description: formDescription
+                              description: formDescription,
+                              patchDate: archPatchDate.trim() || todayStr,
+                              isNew: archIsNew,
+                              updatedAt: new Date().toISOString()
                             });
                             resetForm();
                             setLoading(false);
@@ -1057,26 +1501,59 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
 
                     <div className="space-y-3">
                        {archetypes.map(a => (
-                         <div key={a.name} className="bg-slate-900 border border-slate-700 p-3 rounded flex justify-between items-center group">
-                            <div className="flex items-center gap-3">
+                         <div key={a.name} className={`bg-slate-900 border ${a.isNew ? 'border-emerald-500/50 shadow-[0_0_15px_rgba(16,185,129,0.15)]' : 'border-slate-700'} p-3 rounded-lg flex justify-between items-center group transition`}>
+                            <div className="flex items-center gap-3 min-w-0 flex-1 pr-3">
                                {a.imageUrl ? (
-                                 <img src={a.imageUrl} className="w-10 h-10 object-cover rounded" alt="" />
+                                 <img src={a.imageUrl} className="w-11 h-11 object-contain shrink-0 rounded bg-slate-950 p-1 border border-slate-800" alt="" />
                                ) : (
-                                 <div className="w-10 h-10 bg-slate-800 rounded flex items-center justify-center"><ImageIcon size={16} className="text-slate-500" /></div>
+                                 <div className="w-11 h-11 bg-slate-800 rounded flex items-center justify-center shrink-0"><ImageIcon size={18} className="text-slate-500" /></div>
                                )}
-                               <div>
-                                 <h4 className="font-bold text-white leading-tight">{a.name}</h4>
-                                 <p className="text-xs text-slate-500 line-clamp-1">{a.description}</p>
+                               <div className="min-w-0 flex-1">
+                                 <div className="flex items-center gap-2 flex-wrap">
+                                   <h4 className="font-bold text-white leading-tight">{a.name}</h4>
+                                   {a.isNew && (
+                                     <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 animate-pulse">
+                                       <span className="w-1 h-1 rounded-full bg-emerald-400 animate-ping" />
+                                       Novo
+                                     </span>
+                                   )}
+                                 </div>
+                                 <p className="text-xs text-slate-400 line-clamp-1 mt-0.5">{a.description}</p>
+                                 <div className="flex items-center gap-3 mt-1 text-[11px] text-slate-500 font-mono">
+                                   <span>Patch: <strong className="text-purple-300 font-medium">{a.patchDate || '10/09/2026'}</strong></span>
+                                 </div>
                                </div>
                             </div>
-                            <div className="flex gap-2">
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={async () => {
+                                  const todayStr = new Date().toLocaleDateString('pt-BR');
+                                  await saveArchetype({
+                                    ...a,
+                                    isNew: !a.isNew,
+                                    patchDate: a.patchDate || todayStr,
+                                    updatedAt: new Date().toISOString()
+                                  });
+                                }}
+                                title={a.isNew ? "Desativar selo 'Novo'" : "Ativar selo 'Novo' piscando"}
+                                className={`px-2.5 py-1.5 rounded text-xs font-semibold transition flex items-center gap-1.5 border ${
+                                  a.isNew
+                                    ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40 hover:bg-emerald-500/30'
+                                    : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-white hover:bg-slate-700'
+                                }`}
+                              >
+                                <Sparkles size={13} className={a.isNew ? "text-emerald-400 animate-spin" : "text-slate-400"} />
+                                <span className="hidden sm:inline">{a.isNew ? 'Novo' : 'Marcar Novo'}</span>
+                              </button>
                               <button onClick={() => {
                                 resetForm();
                                 setEditingId(a.name);
                                 setFormName(a.name);
                                 setFormImageUrl(a.imageUrl || '');
                                 setFormDescription(a.description || '');
-                              }} className="bg-slate-800 hover:bg-purple-600 p-2 rounded text-slate-300 hover:text-white transition"><Edit2 size={16}/></button>
+                                setArchPatchDate(a.patchDate || new Date().toLocaleDateString('pt-BR'));
+                                setArchIsNew(true);
+                              }} title="Editar arquétipo" className="bg-slate-800 hover:bg-purple-600 p-2 rounded text-slate-300 hover:text-white transition"><Edit2 size={16}/></button>
                             </div>
                          </div>
                        ))}

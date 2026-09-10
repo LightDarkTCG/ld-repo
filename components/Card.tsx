@@ -1,8 +1,11 @@
 import React from 'react';
 import { Sword, Shield, Scale, Sparkles, Hash } from 'lucide-react';
 import { CardData, CardType } from '../types';
+import { LazyCardImage } from './LazyCardImage';
 
-interface CardProps extends CardData {}
+interface CardProps extends CardData {
+  priority?: boolean;
+}
 
 const getCardStyle = (type: CardType) => {
   switch (type) {
@@ -43,27 +46,31 @@ const getCardStyle = (type: CardType) => {
   }
 };
 
-export const Card: React.FC<CardProps> = ({ name, type, archetype, ct, attack, defense, description, imageGradient, imageUrl, code }) => {
+export const Card: React.FC<CardProps> = ({ name, type, archetype, ct, attack, defense, description, imageGradient, imageUrl, code, priority }) => {
   const styles = getCardStyle(type);
 
   // MODO CARTA COMPLETA COM IMAGEM
   if (imageUrl) {
     return (
-      <div className={`group relative w-full max-w-[18rem] aspect-[1/1.45] transition-all duration-500 hover:scale-105 cursor-pointer perspective-1000 ${styles.glow}`}>
-        <img 
+      <div 
+        className={`group relative w-full max-w-[18rem] aspect-[704/987] rounded-xl overflow-hidden shadow-2xl border border-white/10 transition-all duration-500 hover:scale-105 cursor-pointer perspective-1000 transform-gpu ${styles.glow}`}
+        style={{ WebkitMaskImage: '-webkit-radial-gradient(white, black)' }}
+      >
+        <LazyCardImage 
           src={imageUrl} 
           alt={name} 
-          className="w-full h-full object-contain rounded-xl shadow-2xl border border-white/10 bg-slate-900"
-          loading="lazy"
+          type={type}
+          priority={priority}
+          className="w-full h-full object-cover block select-none pointer-events-none"
         />
-        <div className="absolute inset-0 rounded-xl bg-white/0 group-hover:bg-white/10 transition duration-300 pointer-events-none"></div>
+        <div className="absolute inset-0 bg-white/0 group-hover:bg-white/10 transition duration-300 pointer-events-none"></div>
       </div>
     );
   }
 
   // MODO GERADOR (Placeholder visual se não houver imagem)
   return (
-    <div className={`group relative w-full max-w-[18rem] h-auto aspect-[1/1.45] transition-all duration-500 hover:scale-105 cursor-pointer perspective-1000 ${styles.glow}`}>
+    <div className={`group relative w-full max-w-[18rem] h-auto aspect-[704/987] transition-all duration-500 hover:scale-105 cursor-pointer perspective-1000 ${styles.glow}`}>
       <div className={`relative h-full w-full bg-slate-900 border-2 ${styles.border} rounded-xl p-3 flex flex-col shadow-2xl overflow-hidden`}>
         <div className="w-full flex justify-between items-start mb-2">
           <div className="flex flex-col max-w-[80%]">
@@ -105,7 +112,7 @@ export const Card: React.FC<CardProps> = ({ name, type, archetype, ct, attack, d
             )}
             {(type === 'Herói' || type === 'Combatente') && (
               <div className="text-[10px] font-mono text-slate-600 flex items-center gap-1">
-                  <Hash size={10}/> {code.split('/').pop()}
+                  <Hash size={10}/> {(code || "???").split('/').pop()}
               </div>
             )}
         </div>

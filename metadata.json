@@ -1,5 +1,6 @@
 {
   "name": "Light Dark TCG Landing Page",
   "description": "Official landing page and card catalog for the Light Dark Trading Card Game.",
-  "requestFramePermissions": []
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

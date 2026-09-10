@@ -70,13 +70,13 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card: initialC
     };
 
     const scoredCards = allCards
-      .filter(c => c.code !== card.code) // Exclui a própria carta
+      .filter(c => c && c.code && card && c.code !== card.code) // Exclui a própria carta
       .map(candidate => {
         let score = 0;
         const cDesc = (card.description || "").toLowerCase();
         const candDesc = (candidate.description || "").toLowerCase();
-        const cName = (card.name || "").toLowerCase();
-        const candName = (candidate.name || "").toLowerCase();
+        const cName = (card.name || "").toLowerCase().trim();
+        const candName = (candidate.name || "").toLowerCase().trim();
 
         // --- 1. VALIDAÇÃO DE REGRAS DE EQUIPAMENTO ---
         // Se a carta atual é equip, o candidato deve ser válido
@@ -90,9 +90,9 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card: initialC
 
         // --- 2. MENÇÃO DIRETA DE NOME (Sinergia Forte) ---
         // A carta menciona o nome exato do candidato?
-        if (cDesc.includes(candName)) score += 50;
+        if (candName.length > 2 && cDesc.includes(candName)) score += 50;
         // O candidato menciona o nome exato da carta?
-        if (candDesc.includes(cName)) score += 50;
+        if (cName.length > 2 && candDesc.includes(cName)) score += 50;
 
         // --- 3. MENÇÃO DE GRUPO/FAMÍLIA (via « ») ---
         // Ex: Carta diz "Buffa cartas «Spear»". Candidato tem "Spear" no nome.
@@ -111,14 +111,16 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card: initialC
         // Isso evita que todos os "Lúmen" apareçam como relacionados sem motivo.
         const candArchetypes = (candidate.archetype || "").toLowerCase().split(' / ');
         candArchetypes.forEach(arch => {
+           const aTrim = arch.trim();
            // Verifica se a descrição da carta menciona o arquétipo do candidato
-           if (cDesc.includes(arch)) score += 15;
+           if (aTrim.length > 2 && cDesc.includes(aTrim)) score += 15;
         });
 
         // Vice-versa
         const cardArchetypes = (card.archetype || "").toLowerCase().split(' / ');
         cardArchetypes.forEach(arch => {
-           if (candDesc.includes(arch)) score += 15;
+           const aTrim = arch.trim();
+           if (aTrim.length > 2 && candDesc.includes(aTrim)) score += 15;
         });
 
         return { card: candidate, score };
@@ -230,40 +232,22 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card: initialC
       <div className="absolute top-4 right-4 flex gap-2 z-50">
         {isEditing ? (
           <>
-            {(() => {
-              const existingCard = allCards.find(c => c.code === originalCode);
-              return existingCard && (!existingCard.frame || existingCard.frame === 'Legado') && card.frame !== 'Moderno' ? (
-                <span className="text-red-400 font-bold text-xs flex items-center bg-black/50 px-3 py-1 rounded mt-1 sm:mt-0 max-w-[200px] text-right">
-                  ⚠️ Crie uma cópia ou mude o Frame para 'Moderno' para editar.
-                </span>
-              ) : null;
-            })()}
             <button 
               onClick={handleDelete} 
-              disabled={(() => {
-                const existingCard = allCards.find(c => c.code === originalCode);
-                return existingCard ? (!existingCard.frame || existingCard.frame === 'Legado') : false;
-              })()}
-              className={`p-2 rounded-full text-white transition flex items-center gap-2 px-4 shadow-lg disabled:opacity-50 disabled:cursor-not-allowed ${confirmDelete ? 'bg-red-700 hover:bg-red-600 shadow-red-900/80 animate-pulse' : 'bg-red-600 hover:bg-red-500 shadow-red-900/50'}`}
+              className={`p-2 rounded-full text-white transition flex items-center gap-2 px-4 shadow-lg ${confirmDelete ? 'bg-red-700 hover:bg-red-600 shadow-red-900/80 animate-pulse' : 'bg-red-600 hover:bg-red-500 shadow-red-900/50'}`}
             >
               <Trash size={20} /> {confirmDelete ? "Tem certeza?" : "Apagar"}
             </button>
             <button 
               onClick={handleSaveAndAddAnother} 
-              disabled={isUploading || (() => {
-                const existingCard = allCards.find(c => c.code === originalCode);
-                return existingCard ? (!existingCard.frame || existingCard.frame === 'Legado') && card.frame !== 'Moderno' : false;
-              })()}
+              disabled={isUploading}
               className="p-2 bg-blue-600 rounded-full text-white hover:bg-blue-500 transition flex items-center gap-2 px-4 shadow-lg shadow-blue-900/50 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Check size={20} /> {isUploading ? 'Salvando...' : 'Salvar & Lote'}
             </button>
             <button 
               onClick={handleSave} 
-              disabled={isUploading || (() => {
-                const existingCard = allCards.find(c => c.code === originalCode);
-                return existingCard ? (!existingCard.frame || existingCard.frame === 'Legado') && card.frame !== 'Moderno' : false;
-              })()}
+              disabled={isUploading}
               className="p-2 bg-green-600 rounded-full text-white hover:bg-green-500 transition flex items-center gap-2 px-4 shadow-lg shadow-green-900/50 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Check size={20} /> {isUploading ? 'Salvando...' : 'Salvar'}
@@ -291,7 +275,7 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card: initialC
         {/* Left Column: Image */}
         <div className="flex flex-col items-center gap-6">
              <div className="scale-110 origin-center">
-                 <Card {...card} />
+                 <Card {...card} priority={true} />
              </div>
         </div>
 

@@ -27,4 +27,27 @@ export interface ArchetypeData {
   icon?: LucideIcon;
   color?: string;
   description: string;
+  patchDate?: string;
+  isNew?: boolean;
+  updatedAt?: string;
+}
+
+export interface ProductMediaItem {
+  type: 'image' | 'video';
+  url: string;
+}
+
+export interface ExclusiveProduct {
+  title: string;
+  description: string;
+  mediaType?: 'image' | 'video';
+  mediaUrl?: string;
+  mediaList?: ProductMediaItem[];
+  cardCodes?: string;
+  badge?: string;
+  price?: string;
+  buttonText?: string;
+  buttonLink?: string;
+  isActive?: boolean;
+  isButtonActive?: boolean;
 }
