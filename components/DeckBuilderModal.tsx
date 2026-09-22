@@ -705,6 +705,10 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
                 onInspectCard={(card) => setInspectCard(card)}
                 onAddToDeck={(card) => addToDeck(card, false)}
                 onRemoveFromDeck={(index) => removeFromDeck(index, false)}
+                onClearDeck={() => {
+                  setDeck([]);
+                  setSideDeck([]);
+                }}
                 onLoadSampleDeck={(sampleName) => {
                   if (sampleName === 'jim') {
                     const jimCodes = [

@@ -63,6 +63,7 @@ interface CardNeuralMapProps {
   onAddToDeck: (card: CardData) => void;
   onRemoveFromDeck: (index: number) => void;
   onLoadSampleDeck?: (name: string) => void;
+  onClearDeck?: () => void;
 }
 
 // Colors for card types:
@@ -108,14 +109,14 @@ const LINK_COLORS: Record<InteractionType, { color: string; glow: string; label:
 };
 
 export const STRUCTURAL_DECKS = [
-  { id: 'jim', name: 'Insanis (Jim & Macroverso)', desc: 'Sinergia de herói Jim, duplicatas e armas macroversais' },
-  { id: 'jenos', name: 'Príncipe do Macroverso (Jenos)', desc: 'Combos de Destinados e controle macroversal' },
-  { id: 'Herdeiro do Caos', name: 'Herdeiro do Caos', desc: 'Sinergias de Caos, Salazar e efeitos destrutivos' },
-  { id: 'Mechs e Mangas', name: 'Mechs e Mangas', desc: 'Combatentes mecânicos, equipamentos e cibernética' },
-  { id: 'Mundo em Chamas', name: 'Mundo em Chamas', desc: 'Chamas, ignição e alto poder ofensivo' },
-  { id: 'Corruptor Profano', name: 'Corruptor Profano', desc: 'Efeitos corruptores, dreno e arquétipo sombrio' },
-  { id: 'O Escolhido', name: 'O Escolhido', desc: 'Heróis lendários com acúmulo de atributos' },
-  { id: 'Deusa da Lua', name: 'Deusa da Lua (Mahina)', desc: 'Magias divinas, cura e sustentação estelar' },
+  { id: 'jim', name: 'Insanis' },
+  { id: 'jenos', name: 'Príncipe do Macroverso' },
+  { id: 'Herdeiro do Caos', name: 'Herdeiro do Caos' },
+  { id: 'Mechs e Mangas', name: 'Mechs e Mangas' },
+  { id: 'Mundo em Chamas', name: 'Mundo em Chamas' },
+  { id: 'Corruptor Profano', name: 'Corruptor Profano' },
+  { id: 'O Escolhido', name: 'O Escolhido' },
+  { id: 'Deusa da Lua', name: 'Deusa da Lua' },
 ];
 
 // Palavras-chave principais exigidas pelo usuário:
@@ -389,10 +390,27 @@ export const CardNeuralMap: React.FC<CardNeuralMapProps> = ({
   onInspectCard,
   onAddToDeck,
   onRemoveFromDeck,
-  onLoadSampleDeck
+  onLoadSampleDeck,
+  onClearDeck
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  // Clear confirmation state
+  const [confirmClear, setConfirmClear] = useState<boolean>(false);
+
+  const handleClearMap = () => {
+    if (onClearDeck) {
+      onClearDeck();
+    } else {
+      for (let i = deck.length - 1; i >= 0; i--) {
+        onRemoveFromDeck(i);
+      }
+    }
+    setSelectedNodeId(null);
+    setLinkingSourceNodeId(null);
+    setConfirmClear(false);
+  };
 
   // Viewport / Camera state
   const [camera, setCamera] = useState({ x: 0, y: 0, zoom: 1 });
@@ -2016,6 +2034,29 @@ export const CardNeuralMap: React.FC<CardNeuralMapProps> = ({
               </span>
             )}
           </button>
+
+          {/* Botão Limpar Deck */}
+          {deck.length > 0 && (
+            <button
+              onClick={() => {
+                if (confirmClear) {
+                  handleClearMap();
+                } else {
+                  setConfirmClear(true);
+                }
+              }}
+              onMouseLeave={() => setConfirmClear(false)}
+              className={`px-3 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1.5 shadow-md ${
+                confirmClear 
+                  ? 'bg-red-600 text-white animate-pulse' 
+                  : 'text-red-400 hover:text-white bg-red-950/70 hover:bg-red-900/80 border border-red-800/60'
+              }`}
+              title={confirmClear ? "Clique novamente para confirmar a limpeza do mapa" : "Limpar todas as cartas do mapa neural"}
+            >
+              <Trash2 size={13} className={confirmClear ? "text-white" : "text-red-400"} />
+              <span>{confirmClear ? "Confirmar Limpeza?" : "Limpar"}</span>
+            </button>
+          )}
         </div>
 
         {/* LINHA 2: Filtros */}
@@ -2175,18 +2216,13 @@ export const CardNeuralMap: React.FC<CardNeuralMapProps> = ({
                 <button
                   key={stDeck.id}
                   onClick={() => onLoadSampleDeck && onLoadSampleDeck(stDeck.id)}
-                  className="w-full text-left bg-slate-800/70 hover:bg-slate-700/80 border border-slate-700 hover:border-purple-500/50 p-2.5 rounded-xl transition flex items-center justify-between group"
+                  className="w-full text-left bg-slate-800/70 hover:bg-slate-700/80 border border-slate-700 hover:border-purple-500/50 px-3 py-2.5 rounded-xl transition flex items-center justify-between group"
                 >
-                  <div className="min-w-0 pr-2">
-                    <div className="font-bold text-xs sm:text-sm text-white group-hover:text-purple-300 transition flex items-center gap-2">
-                      <Layers size={14} className="text-purple-400 shrink-0" />
-                      <span className="truncate">{stDeck.name}</span>
-                    </div>
-                    <div className="text-[11px] text-slate-400 truncate mt-0.5">
-                      {stDeck.desc}
-                    </div>
+                  <div className="font-bold text-xs sm:text-sm text-white group-hover:text-purple-300 transition flex items-center gap-2">
+                    <Layers size={14} className="text-purple-400 shrink-0" />
+                    <span>{stDeck.name}</span>
                   </div>
-                  <span className="shrink-0 text-xs bg-purple-900/60 text-purple-200 border border-purple-500/40 px-2.5 py-1 rounded-lg group-hover:bg-purple-600 group-hover:text-white transition font-medium">
+                  <span className="shrink-0 text-xs bg-purple-900/60 text-purple-200 border border-purple-500/40 px-3 py-1.5 rounded-lg group-hover:bg-purple-600 group-hover:text-white transition font-medium">
                     Carregar
                   </span>
                 </button>
