@@ -908,7 +908,7 @@ const CatalogModal = ({ isOpen, onClose, onOpenAdmin }: { isOpen: boolean, onClo
             <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-2 md:gap-8 justify-items-center">
               {displayedCards.map((card, idx) => (
                 <div key={card.code || `${card.name}-${idx}`} className="scale-[0.65] md:scale-90 origin-top w-full flex justify-center -mb-24 md:mb-0" onClick={() => handleCardClick(card)}>
-                   <Card {...card} priority={idx < 12} />
+                   <Card {...card} priority={idx < 28} />
                 </div>
               ))}
             </div>

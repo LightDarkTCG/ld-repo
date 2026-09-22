@@ -109,8 +109,8 @@ const LINK_COLORS: Record<InteractionType, { color: string; glow: string; label:
 };
 
 export const STRUCTURAL_DECKS = [
-  { id: 'jim', name: 'Insanis' },
-  { id: 'jenos', name: 'Príncipe do Macroverso' },
+  { id: 'Insanis', name: 'Insanis' },
+  { id: 'Príncipe do Macroverso', name: 'Príncipe do Macroverso' },
   { id: 'Herdeiro do Caos', name: 'Herdeiro do Caos' },
   { id: 'Mechs e Mangas', name: 'Mechs e Mangas' },
   { id: 'Mundo em Chamas', name: 'Mundo em Chamas' },
@@ -127,6 +127,7 @@ export const PRINCIPAL_KEYWORDS = [
   'Selena', 'Salazar', 'Donnie', 'Blair', 'Kiara', 'Hyummeng',
   'Till Von Linden', 'Von Linden', 'Criven', 'Kevin', 'Argor', 'Ikari', 
   'Dalvo', 'Solus', 'Arqcuia', 'Goor', 'Talenia',
+  'Karn', 'Viorie', 'Sábio', 'Errante',
   'Destinado', 'Destinada', 'Gema Macroversal', 'Crueldade', 'Conceito Caos',
   'Valquíria', 'Lorde', 'Corrompido', 'Corrompida', 'Sanguinário', 'Sanguinária',
   'Caótico', 'Caótica'
@@ -161,6 +162,12 @@ export function normalizeText(text: string): string {
     .trim();
 }
 
+export function cleanForMatching(str: string): string {
+  if (!str) return '';
+  const norm = normalizeText(str);
+  return (' ' + norm.replace(/[^a-z0-9]/g, ' ') + ' ').replace(/\s+/g, ' ');
+}
+
 export function getBaseCardName(name: string): string {
   return normalizeText(name)
     .replace(/\s*\((alt|skin|promo|evento|variante|moderno|legado|beta)[^)]*\)/gi, '')
@@ -170,12 +177,11 @@ export function getBaseCardName(name: string): string {
 export function extractPrincipalIdentities(name?: string): string[] {
   if (!name || typeof name !== 'string') return [];
   const result = new Set<string>();
-  const norm = normalizeText(name);
+  const cleanedName = cleanForMatching(name);
 
   for (const kw of PRINCIPAL_KEYWORDS) {
-    const kwNorm = normalizeText(kw);
-    const regex = new RegExp(`(?:^|[\\s«"'\`(\\[,.;/\\-])${kwNorm}(?:$|[\\s»"'\`)\],.;/\\-])`, 'i');
-    if (regex.test(norm)) {
+    const cleanedKw = cleanForMatching(kw).trim();
+    if (cleanedKw && cleanedName.includes(` ${cleanedKw} `)) {
       const canon = CANONICAL_KEYWORD_MAP[kw.toLowerCase()] || kw;
       result.add(canon);
     }
@@ -183,8 +189,8 @@ export function extractPrincipalIdentities(name?: string): string[] {
 
   if (name.includes(' - ')) {
     const prefix = name.split(' - ')[0].trim();
-    const prefixNorm = normalizeText(prefix);
-    const matched = PRINCIPAL_KEYWORDS.find(k => normalizeText(k) === prefixNorm);
+    const cleanedPrefix = cleanForMatching(prefix).trim();
+    const matched = PRINCIPAL_KEYWORDS.find(k => cleanForMatching(k).trim() === cleanedPrefix);
     if (matched) {
       const canon = CANONICAL_KEYWORD_MAP[matched.toLowerCase()] || matched;
       result.add(canon);
@@ -196,11 +202,27 @@ export function extractPrincipalIdentities(name?: string): string[] {
 
 export function textMentionsTarget(text: string, target: string): boolean {
   if (!text || !target) return false;
-  const tNorm = ` ${normalizeText(text)} `;
-  const targetNorm = normalizeText(target);
-  if (targetNorm.length < 3) return false;
-  const regex = new RegExp(`(?:^|[\\s«"'\`(\\[,.;/\\-])${targetNorm}(?:$|[\\s»"'\`)\],.;/\\-])`, 'i');
-  return regex.test(tNorm);
+  const cleanedText = cleanForMatching(text);
+  const cleanedTarget = cleanForMatching(target).trim();
+  if (cleanedTarget.length < 2) return false;
+
+  // Exact word boundary match
+  if (cleanedText.includes(` ${cleanedTarget} `)) return true;
+
+  // Minor Portuguese inflection, plural, and gender variants (e.g. Mahina / Mahinas, Lúmen / Lúmeni)
+  if (cleanedTarget.length >= 4) {
+    if (
+      cleanedText.includes(` ${cleanedTarget}s `) ||
+      cleanedText.includes(` ${cleanedTarget}es `) ||
+      cleanedText.includes(` ${cleanedTarget}i `) ||
+      (cleanedTarget.endsWith('s') && cleanedText.includes(` ${cleanedTarget.slice(0, -1)} `)) ||
+      (cleanedTarget.endsWith('i') && cleanedText.includes(` ${cleanedTarget.slice(0, -1)} `))
+    ) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 // Calculate deterministic, beautifully spaced non-overlapping positions for cards
@@ -253,6 +275,7 @@ function calculateLayoutPositions(
         'Herói': [],
         'Combatente': [],
         'Equipamento': [],
+        'Efeito': [],
         'Magia': [],
         'Intervenção': [],
         'Outros': []
@@ -297,7 +320,7 @@ function calculateLayoutPositions(
     if (heroes.length === 1) {
       positions.set(heroes[0].id, { x: 0, y: centerY });
     } else if (heroes.length > 1) {
-      const heroRadius = 45;
+      const heroRadius = Math.max(60, Math.min(95, heroes.length * 16));
       heroes.forEach((h, i) => {
         const angle = (i / heroes.length) * Math.PI * 2 - Math.PI / 2;
         positions.set(h.id, {
@@ -309,10 +332,10 @@ function calculateLayoutPositions(
 
     const remaining = [...nonHeroes];
     const ringConfigs = [
-      { radius: 130, capacity: 10 },
-      { radius: 230, capacity: 18 },
-      { radius: 330, capacity: 26 },
-      { radius: 420, capacity: 34 }
+      { radius: heroes.length > 2 ? 175 : 135, capacity: 10 },
+      { radius: heroes.length > 2 ? 275 : 235, capacity: 18 },
+      { radius: heroes.length > 2 ? 375 : 335, capacity: 26 },
+      { radius: heroes.length > 2 ? 465 : 425, capacity: 34 }
     ];
 
     let currentRingIdx = 0;
@@ -381,6 +404,34 @@ function calculateLayoutPositions(
   }
 
   return positions;
+}
+
+// Global Image Cache across renders and mounts for instantaneous rendering
+export const GLOBAL_NEURAL_IMAGE_CACHE = new Map<string, HTMLImageElement>();
+
+export function getOrCreateNeuralImage(url?: string, onLoadCallback?: () => void): HTMLImageElement | null {
+  if (!url) return null;
+  const existing = GLOBAL_NEURAL_IMAGE_CACHE.get(url);
+  if (existing) {
+    if (existing.complete && existing.naturalWidth > 0) return existing;
+    if (onLoadCallback) {
+      const prevOnload = existing.onload;
+      existing.onload = (e) => {
+        if (typeof prevOnload === 'function') (prevOnload as any)(e);
+        onLoadCallback();
+      };
+    }
+    return null;
+  }
+  const img = new Image();
+  img.referrerPolicy = 'no-referrer';
+  img.decoding = 'async';
+  if (onLoadCallback) {
+    img.onload = onLoadCallback;
+  }
+  img.src = url;
+  GLOBAL_NEURAL_IMAGE_CACHE.set(url, img);
+  return null;
 }
 
 export const CardNeuralMap: React.FC<CardNeuralMapProps> = ({
@@ -452,7 +503,7 @@ export const CardNeuralMap: React.FC<CardNeuralMapProps> = ({
   // Archetype connection filter (REQUISITO: "adicione o filtro de arquetipo na ligação de arquétipos")
   const [selectedArchetypeLinkFilter, setSelectedArchetypeLinkFilter] = useState<string>('Todos');
 
-  // Image cache
+  // Global Image Cache across renders and mounts
   const imageCacheRef = useRef<Map<string, HTMLImageElement>>(new Map());
 
   // Nodes and simulation ref
@@ -486,16 +537,32 @@ export const CardNeuralMap: React.FC<CardNeuralMapProps> = ({
   useEffect(() => {
     const cardsToPreload = [...deck, ...sideDeck];
     cardsToPreload.forEach(card => {
-      if (card.imageUrl && !imageCacheRef.current.has(card.imageUrl)) {
-        const img = new Image();
-        img.referrerPolicy = 'no-referrer';
-        img.src = card.imageUrl;
-        img.onload = () => {
-          imageCacheRef.current.set(card.imageUrl!, img);
-          if (simAlphaRef.current <= 0.01) {
-            simAlphaRef.current = 0.02;
-          }
-        };
+      if (card.imageUrl) {
+        let img = GLOBAL_NEURAL_IMAGE_CACHE.get(card.imageUrl);
+        if (!img) {
+          img = new Image();
+          img.referrerPolicy = 'no-referrer';
+          img.decoding = 'async';
+          img.onload = () => {
+            imageCacheRef.current.set(card.imageUrl!, img!);
+            if (simAlphaRef.current <= 0.01) {
+              simAlphaRef.current = 0.02;
+            }
+          };
+          img.src = card.imageUrl;
+          GLOBAL_NEURAL_IMAGE_CACHE.set(card.imageUrl, img);
+        } else if (img.complete && img.naturalWidth > 0) {
+          imageCacheRef.current.set(card.imageUrl, img);
+        } else {
+          const prevOnload = img.onload;
+          img.onload = (e) => {
+            if (typeof prevOnload === 'function') (prevOnload as any)(e);
+            imageCacheRef.current.set(card.imageUrl!, img!);
+            if (simAlphaRef.current <= 0.01) {
+              simAlphaRef.current = 0.02;
+            }
+          };
+        }
       }
     });
   }, [deck, sideDeck]);
@@ -1168,9 +1235,9 @@ export const CardNeuralMap: React.FC<CardNeuralMapProps> = ({
     const cssWidth = canvas.clientWidth;
     const cssHeight = canvas.clientHeight;
 
-    ctx.save();
-    // Clear whole buffer
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.save();
 
     // Apply DPR scale first
     ctx.scale(dpr, dpr);
@@ -1382,7 +1449,15 @@ export const CardNeuralMap: React.FC<CardNeuralMapProps> = ({
       ctx.fill();
 
       // Card Image (in correct card aspect ratio)
-      const cachedImg = node.card.imageUrl ? imageCacheRef.current.get(node.card.imageUrl) : null;
+      let cachedImg = node.card.imageUrl ? (imageCacheRef.current.get(node.card.imageUrl) || GLOBAL_NEURAL_IMAGE_CACHE.get(node.card.imageUrl)) : null;
+      if (!cachedImg && node.card.imageUrl) {
+        cachedImg = getOrCreateNeuralImage(node.card.imageUrl, () => {
+          if (simAlphaRef.current <= 0.01) simAlphaRef.current = 0.02;
+        });
+        if (cachedImg) {
+          imageCacheRef.current.set(node.card.imageUrl, cachedImg);
+        }
+      }
       ctx.save();
       ctx.beginPath();
       ctx.roundRect(cardX + 1.5, cardY + 1.5, cardW - 3, cardH - 3, cornerR - 1);

@@ -517,7 +517,7 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
                         onClick={() => !isInDeck && addToDeck(card, false)}
                         className={`pointer-events-none scale-[0.6] origin-top-left w-[170%] h-[170%] mb-[-70%] mr-[-70%] ${isInDeck ? 'grayscale' : ''}`}
                       >
-                         <Card {...card} priority={idx < 8} />
+                         <Card {...card} priority={idx < 24} />
                       </div>
                       
                       {isInDeck && (
@@ -543,7 +543,7 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
         )}
 
         {/* RIGHT SIDE: Current Deck (or Stats/Save view) */}
-        <div className={`${activeTab === 'build' ? (isDeckCollapsed ? 'h-0 md:h-full md:w-12 overflow-hidden' : 'h-1/2 md:h-full md:w-1/2') : 'w-full h-full'} flex flex-col bg-[#0a0a0c] border-t md:border-t-0 md:border-l border-slate-800 transition-all duration-300 relative min-h-0`}>
+        <div className={`${activeTab === 'build' ? (isDeckCollapsed ? 'h-0 md:h-full md:w-12 overflow-hidden transition-all duration-300 border-t md:border-t-0 md:border-l border-slate-800' : 'h-1/2 md:h-full md:w-1/2 transition-all duration-300 border-t md:border-t-0 md:border-l border-slate-800') : 'w-full h-full border-none transition-none'} flex flex-col bg-[#0a0a0c] relative min-h-0`}>
           
           {activeTab === 'build' && (
             <>
@@ -710,45 +710,17 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
                   setSideDeck([]);
                 }}
                 onLoadSampleDeck={(sampleName) => {
-                  if (sampleName === 'jim') {
-                    const jimCodes = [
-                      "2025/0001/00001", "2025/0001/00002", "2025/0001/00003", "2025/0001/00004",
-                      "2025/0001/00005", "2025/0001/00006", "2025/0001/00007", "2025/0001/00008",
-                      "2025/0001/00009", "2025/0001/00010", "2025/0001/0011", "2025/0001/00036",
-                      "2025/0001/00012", "2025/0001/00013", "2025/0001/00014", "2025/0001/00015",
-                      "2025/0001/00016", "2025/0001/00017", "2025/0001/00018", "2025/0001/00019",
-                      "2025/0001/00020", "2025/0001/00021", "2025/0001/00022", "2025/0001/00023",
-                      "2025/0001/00024", "2025/0001/00025", "2025/0001/00026", "2025/0001/00027",
-                      "2025/0001/00028", "2025/0001/00030"
-                    ];
-                    const matchedCards: CardData[] = [];
-                    jimCodes.forEach(code => {
-                      const found = allCards.find(c => c.code === code);
-                      if (found) matchedCards.push(found);
-                    });
+                  let targetCollection = sampleName;
+                  if (sampleName === 'jim' || sampleName === 'Insanis') {
+                    targetCollection = 'Insanis';
+                  } else if (sampleName === 'jenos' || sampleName === 'Príncipe do Macroverso') {
+                    targetCollection = 'Príncipe do Macroverso';
+                  }
+
+                  const matchedCards = allCards.filter(c => c.collection === targetCollection);
+                  if (matchedCards.length > 0) {
                     setDeck(matchedCards);
-                  } else if (sampleName === 'jenos') {
-                    const jenosCodes = [
-                      "2025/0001/00031", "2025/0001/00038", "2025/0001/00039", "2025/0001/00040",
-                      "2025/0001/00041", "2025/0001/00042", "2025/0001/00043", "2025/0001/00044",
-                      "2025/0001/00045", "2025/0001/00046", "2025/0001/00037", "2025/0001/00047",
-                      "2025/0001/00048", "2025/0001/00049", "2025/0001/00050", "2025/0001/0051",
-                      "2025/0001/00052", "2025/0001/00053", "2025/0001/00054", "2025/0001/00055",
-                      "2025/0001/00056", "2025/0001/00057", "2025/0001/00058", "2025/0001/00059",
-                      "2025/0001/00060"
-                    ];
-                    const matchedCards: CardData[] = [];
-                    jenosCodes.forEach(code => {
-                      const found = allCards.find(c => c.code === code);
-                      if (found) matchedCards.push(found);
-                    });
-                    setDeck(matchedCards);
-                  } else {
-                    // Match structural deck by collection name or code
-                    const matchedCollectionCards = allCards.filter(c => c.collection === sampleName);
-                    if (matchedCollectionCards.length > 0) {
-                      setDeck(matchedCollectionCards);
-                    }
+                    setSideDeck([]);
                   }
                 }}
               />
