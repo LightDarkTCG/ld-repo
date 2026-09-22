@@ -211,3 +211,71 @@ export function parseDeckFromCode(rawInput: string | undefined | null, allCards?
     missingCodes: missing
   };
 }
+
+/**
+ * Helper to parse a code segment into prefix and numeric value for natural sorting.
+ * Handles standard numbers ("00001" -> 1), booster/promo variants ("B0001" -> prefix "B", num 1, "0B188" -> prefix "B", num 188),
+ * and general alphanumeric formats ("BIC-01" -> prefix "BIC", num 1).
+ */
+function parseCodeSegment(seg: string): { prefix: string; num: number | null; raw: string } {
+  const s = seg.trim();
+  if (/^\d+$/.test(s)) {
+    return { prefix: "", num: parseInt(s, 10), raw: s };
+  }
+  const matchB = s.match(/^0?([a-zA-Z]+)(\d+)$/);
+  if (matchB) {
+    return { prefix: matchB[1].toUpperCase(), num: parseInt(matchB[2], 10), raw: s };
+  }
+  const matchGen = s.match(/^([a-zA-Z\-_]*?)(\d+)$/);
+  if (matchGen) {
+    return { prefix: matchGen[1].toUpperCase(), num: parseInt(matchGen[2], 10), raw: s };
+  }
+  return { prefix: s.toUpperCase(), num: null, raw: s };
+}
+
+function compareSegments(segA: string, segB: string): number {
+  const pA = parseCodeSegment(segA);
+  const pB = parseCodeSegment(segB);
+
+  // Standard pure numbers (empty prefix) come before letter-prefixed cards
+  if (pA.prefix !== pB.prefix) {
+    if (pA.prefix === "") return -1;
+    if (pB.prefix === "") return 1;
+    const prefCmp = pA.prefix.localeCompare(pB.prefix, undefined, { sensitivity: 'base' });
+    if (prefCmp !== 0) return prefCmp;
+  }
+
+  if (pA.num !== null && pB.num !== null) {
+    if (pA.num !== pB.num) return pA.num - pB.num;
+  }
+
+  return segA.localeCompare(segB, undefined, { numeric: true, sensitivity: 'base' });
+}
+
+/**
+ * Robust natural/numerical sorting comparison for card codes.
+ * Ensures cards are ordered by set and numeric index (e.g. 00001, 00002, 00010, 0011, 00100).
+ */
+export function compareCardCodes(codeA?: string | null, codeB?: string | null): number {
+  if (!codeA && !codeB) return 0;
+  if (!codeA) return 1;
+  if (!codeB) return -1;
+
+  const trimA = String(codeA).trim();
+  const trimB = String(codeB).trim();
+
+  if (trimA === trimB) return 0;
+
+  const partsA = trimA.split('/');
+  const partsB = trimB.split('/');
+
+  if (partsA.length === partsB.length && partsA.length > 1) {
+    for (let i = 0; i < partsA.length; i++) {
+      const cmp = compareSegments(partsA[i], partsB[i]);
+      if (cmp !== 0) return cmp;
+    }
+    return 0;
+  }
+
+  return compareSegments(trimA, trimB);
+}

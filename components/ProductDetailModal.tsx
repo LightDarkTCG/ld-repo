@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { X, ShoppingCart, Play, Image as ImageIcon, ChevronLeft, ChevronRight, Layers, Sword, Shield, Sparkles, ExternalLink, Copy, Check, Info } from 'lucide-react';
+import { X, ShoppingCart, Play, Image as ImageIcon, ChevronLeft, ChevronRight, Layers, Sword, Shield, Sparkles, ExternalLink, Copy, Check, Info, Calendar } from 'lucide-react';
 import { ExclusiveProduct, ProductMediaItem, CardData } from '../types';
 import { parseDeckFromCode, ParsedDeckData, DeckCardEntry } from '../deckUtils';
 
@@ -32,6 +32,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
 
   const [activeMediaIndex, setActiveMediaIndex] = useState(0);
   const [copiedCode, setCopiedCode] = useState(false);
+  const [showNotice, setShowNotice] = useState(false);
   const currentMedia = mediaList[activeMediaIndex] || mediaList[0];
 
   // Parse card codes from Deck Builder code or code list
@@ -47,8 +48,9 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
   };
 
   const isButtonEnabled = product.isButtonActive !== false && product.isActive !== false;
-  const buttonLink = product.buttonLink || 'https://mpago.la/1FZ3Mip';
-  const buttonText = product.buttonText || 'Comprar Agora';
+  const buttonLink = product.buttonLink;
+  const hasLink = Boolean(buttonLink && buttonLink.trim() !== '');
+  const buttonText = product.buttonText || (hasLink ? 'Comprar Agora' : 'Consultar Pré-Venda');
 
   const renderCardGrid = (entries: DeckCardEntry[]) => {
     return (
@@ -226,17 +228,49 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
 
               {/* Buy Action */}
               <div className="pt-4 border-t border-slate-800/80">
+                {/* Preço só aparece se o link estiver disponível */}
+                {hasLink && product.price && product.price.trim() !== '' && (
+                  <div className="flex items-center justify-between bg-slate-900/90 border border-emerald-500/40 px-4 py-3 rounded-xl mb-3 shadow-inner">
+                    <span className="text-xs text-slate-300 font-bold uppercase tracking-wider">Valor do Produto</span>
+                    <span className="text-2xl font-black text-emerald-400 font-mono">
+                      {product.price.startsWith('R$') ? product.price : `R$ ${product.price}`}
+                    </span>
+                  </div>
+                )}
+
+                {/* Se não houver link de venda, mostra o status de lançamento */}
+                {!hasLink && (
+                  <div className="p-3.5 rounded-xl bg-purple-950/60 border border-purple-800/60 flex items-center gap-3 text-left mb-3">
+                    <Calendar size={22} className="text-amber-400 shrink-0" />
+                    <div>
+                      <div className="text-[11px] font-bold uppercase tracking-wider text-purple-300">Status de Lançamento</div>
+                      <div className="text-sm font-black text-amber-400">{product.noLinkMessage || 'PRÉ VENDA ABRE EM 15/10'}</div>
+                    </div>
+                  </div>
+                )}
+
                 {isButtonEnabled ? (
-                  <a 
-                    href={buttonLink}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="w-full bg-gradient-to-r from-purple-600 via-indigo-600 to-purple-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold py-4 px-6 rounded-xl transition-all duration-300 flex items-center justify-center gap-2.5 shadow-lg shadow-purple-900/50 hover:scale-[1.02] active:scale-[0.98] text-base"
-                  >
-                    <ShoppingCart size={20} />
-                    <span>{buttonText}</span>
-                    <ExternalLink size={16} className="opacity-70 ml-1" />
-                  </a>
+                  hasLink ? (
+                    <a 
+                      href={buttonLink}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="w-full bg-gradient-to-r from-purple-600 via-indigo-600 to-purple-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold py-4 px-6 rounded-xl transition-all duration-300 flex items-center justify-center gap-2.5 shadow-lg shadow-purple-900/50 hover:scale-[1.02] active:scale-[0.98] text-base"
+                    >
+                      <ShoppingCart size={20} />
+                      <span>{buttonText}</span>
+                      <ExternalLink size={16} className="opacity-70 ml-1" />
+                    </a>
+                  ) : (
+                    <button 
+                      type="button"
+                      onClick={() => setShowNotice(true)}
+                      className="w-full bg-gradient-to-r from-amber-600 via-purple-600 to-indigo-600 hover:from-amber-500 hover:via-purple-500 hover:to-indigo-500 text-white font-bold py-4 px-6 rounded-xl transition-all duration-300 flex items-center justify-center gap-2.5 shadow-lg shadow-purple-900/50 hover:scale-[1.02] active:scale-[0.98] text-base cursor-pointer"
+                    >
+                      <Calendar size={20} className="text-amber-300" />
+                      <span>{buttonText}</span>
+                    </button>
+                  )
                 ) : (
                   <div className="w-full py-3.5 px-4 rounded-xl bg-slate-800/60 border border-slate-700/50 text-slate-400 text-xs text-center font-medium">
                     Vendas temporariamente indisponíveis
@@ -341,6 +375,57 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
           )}
         </div>
       </div>
+
+      {/* On-screen Notice Modal when there's no link */}
+      {showNotice && (
+        <div 
+          className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-in fade-in duration-200"
+          onClick={() => setShowNotice(false)}
+        >
+          <div 
+            className="bg-slate-900 border-2 border-purple-500/70 rounded-2xl max-w-md w-full p-6 sm:p-7 shadow-[0_0_50px_rgba(168,85,247,0.5)] text-center relative overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-amber-500 via-purple-500 to-indigo-500"></div>
+            
+            <button 
+              onClick={() => setShowNotice(false)}
+              className="absolute top-4 right-4 p-2 text-slate-400 hover:text-white rounded-full bg-slate-800/80 hover:bg-slate-700 transition"
+            >
+              <X size={18} />
+            </button>
+
+            <div className="w-16 h-16 rounded-2xl bg-purple-950/80 border border-purple-500/40 text-purple-300 flex items-center justify-center mx-auto mb-4 shadow-lg shadow-purple-950">
+              <Calendar size={32} className="text-amber-400 animate-pulse" />
+            </div>
+
+            <div className="inline-block bg-purple-950/90 text-purple-300 text-xs font-bold uppercase tracking-wider px-3 py-1 rounded-full border border-purple-700/50 mb-2">
+              Aviso de Lançamento
+            </div>
+
+            <h4 className="text-xl sm:text-2xl font-black text-white mb-2">
+              {product.title || 'Produto Oficial'}
+            </h4>
+
+            <div className="my-5 p-4 rounded-xl bg-slate-950 border border-purple-500/40 shadow-inner">
+              <p className="text-lg sm:text-xl font-black text-amber-400 tracking-wide uppercase">
+                {product.noLinkMessage || 'PRÉ VENDA ABRE EM 15/10'}
+              </p>
+            </div>
+
+            <p className="text-xs sm:text-sm text-slate-300 mb-6 leading-relaxed">
+              Este item ainda não possui link de compra direta. Fique atento às nossas novidades para não perder a data de abertura!
+            </p>
+
+            <button
+              onClick={() => setShowNotice(false)}
+              className="w-full py-3 px-6 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold transition shadow-lg shadow-purple-900/40"
+            >
+              Entendido
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -1,10 +1,12 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { X, Search, Save, Download, Trash2, Plus, Minus, AlertTriangle, CheckCircle, BarChart3, Copy, Eye, ChevronDown, ChevronUp, ChevronRight, ChevronLeft, Layers } from 'lucide-react';
+import { X, Search, Save, Download, Trash2, Plus, Minus, AlertTriangle, CheckCircle, BarChart3, Copy, Eye, ChevronDown, ChevronUp, ChevronRight, ChevronLeft, Layers, Network } from 'lucide-react';
 import { CardData } from '../types';
 import { collectionsList, archetypesList } from '../data';
 import { useCards } from '../CardContext';
+import { compareCardCodes } from '../deckUtils';
 import { Card } from './Card';
 import { CardDetailModal } from './CardDetailModal';
+import { CardNeuralMap } from './CardNeuralMap';
 
 interface DeckBuilderModalProps {
   isOpen: boolean;
@@ -18,7 +20,7 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
   const [confirmClear, setConfirmClear] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [importCode, setImportCode] = useState("");
-  const [activeTab, setActiveTab] = useState<'build' | 'stats' | 'save'>('build');
+  const [activeTab, setActiveTab] = useState<'build' | 'neural' | 'stats' | 'save'>('build');
   const [inspectCard, setInspectCard] = useState<CardData | null>(null);
   const [filters, setFilters] = useState({
     type: "Todos",
@@ -240,7 +242,7 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
     const matchesEffectWord = filters.effectWord === "" || (card.description || "").toLowerCase().includes((filters.effectWord || "").toLowerCase());
     
     return matchesSearch && matchesType && matchesArch && matchesColl && matchesFrame && matchesCt && matchesAtk && matchesDef && matchesEffectWord;
-  });
+  }).sort((a, b) => compareCardCodes(a.code, b.code));
 
   const [visibleCount, setVisibleCount] = useState(24);
   const poolScrollContainerRef = useRef<HTMLDivElement>(null);
@@ -303,6 +305,14 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
               className={`flex-1 md:flex-none px-2 md:px-4 py-1.5 rounded-md text-[10px] md:text-sm font-bold transition whitespace-nowrap ${activeTab === 'build' ? 'bg-purple-600 text-white' : 'text-slate-400 hover:text-white'}`}
             >
               Montar
+            </button>
+            <button 
+              onClick={() => setActiveTab('neural')}
+              className={`flex-1 md:flex-none px-2 md:px-4 py-1.5 rounded-md text-[10px] md:text-sm font-bold transition whitespace-nowrap flex items-center justify-center gap-1.5 ${activeTab === 'neural' ? 'bg-gradient-to-r from-purple-700 to-indigo-700 text-white shadow-lg shadow-purple-900/50 border border-purple-500/40' : 'text-slate-400 hover:text-white'}`}
+              title="Visualizar Mapa Neural interativo de sinergias do Deck"
+            >
+              <Network size={15} className={activeTab === 'neural' ? 'text-cyan-300 animate-pulse' : 'text-cyan-400'} />
+              <span>Mapa Neural</span>
             </button>
             <button 
               onClick={() => setActiveTab('stats')}
@@ -546,6 +556,14 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
                       {isDeckCollapsed ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
                    </button>
                    <h3 className="font-bold text-white text-sm md:text-base whitespace-nowrap">Seu Deck ({deck.length + sideDeck.length})</h3>
+                   <button
+                     onClick={(e) => { e.stopPropagation(); setActiveTab('neural'); }}
+                     className="ml-1 text-[11px] bg-cyan-950/70 hover:bg-cyan-900/80 text-cyan-300 border border-cyan-700/50 px-2 py-0.5 rounded-md flex items-center gap-1 transition shadow-sm"
+                     title="Ver conexões e sinergias no Mapa Neural"
+                   >
+                     <Network size={12} className="text-cyan-400" />
+                     <span className="hidden sm:inline">Mapa Neural</span>
+                   </button>
                 </div>
                 
                 {!isDeckCollapsed && (
@@ -676,6 +694,61 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
                 </div>
               )}
             </>
+          )}
+
+          {activeTab === 'neural' && (
+            <div className="w-full h-full min-h-0 flex-1 flex flex-col">
+              <CardNeuralMap
+                deck={deck}
+                sideDeck={sideDeck}
+                allCards={allCards}
+                onInspectCard={(card) => setInspectCard(card)}
+                onAddToDeck={(card) => addToDeck(card, false)}
+                onRemoveFromDeck={(index) => removeFromDeck(index, false)}
+                onLoadSampleDeck={(sampleName) => {
+                  if (sampleName === 'jim') {
+                    const jimCodes = [
+                      "2025/0001/00001", "2025/0001/00002", "2025/0001/00003", "2025/0001/00004",
+                      "2025/0001/00005", "2025/0001/00006", "2025/0001/00007", "2025/0001/00008",
+                      "2025/0001/00009", "2025/0001/00010", "2025/0001/0011", "2025/0001/00036",
+                      "2025/0001/00012", "2025/0001/00013", "2025/0001/00014", "2025/0001/00015",
+                      "2025/0001/00016", "2025/0001/00017", "2025/0001/00018", "2025/0001/00019",
+                      "2025/0001/00020", "2025/0001/00021", "2025/0001/00022", "2025/0001/00023",
+                      "2025/0001/00024", "2025/0001/00025", "2025/0001/00026", "2025/0001/00027",
+                      "2025/0001/00028", "2025/0001/00030"
+                    ];
+                    const matchedCards: CardData[] = [];
+                    jimCodes.forEach(code => {
+                      const found = allCards.find(c => c.code === code);
+                      if (found) matchedCards.push(found);
+                    });
+                    setDeck(matchedCards);
+                  } else if (sampleName === 'jenos') {
+                    const jenosCodes = [
+                      "2025/0001/00031", "2025/0001/00038", "2025/0001/00039", "2025/0001/00040",
+                      "2025/0001/00041", "2025/0001/00042", "2025/0001/00043", "2025/0001/00044",
+                      "2025/0001/00045", "2025/0001/00046", "2025/0001/00037", "2025/0001/00047",
+                      "2025/0001/00048", "2025/0001/00049", "2025/0001/00050", "2025/0001/0051",
+                      "2025/0001/00052", "2025/0001/00053", "2025/0001/00054", "2025/0001/00055",
+                      "2025/0001/00056", "2025/0001/00057", "2025/0001/00058", "2025/0001/00059",
+                      "2025/0001/00060"
+                    ];
+                    const matchedCards: CardData[] = [];
+                    jenosCodes.forEach(code => {
+                      const found = allCards.find(c => c.code === code);
+                      if (found) matchedCards.push(found);
+                    });
+                    setDeck(matchedCards);
+                  } else {
+                    // Match structural deck by collection name or code
+                    const matchedCollectionCards = allCards.filter(c => c.collection === sampleName);
+                    if (matchedCollectionCards.length > 0) {
+                      setDeck(matchedCollectionCards);
+                    }
+                  }
+                }}
+              />
+            </div>
           )}
 
           {activeTab === 'stats' && (

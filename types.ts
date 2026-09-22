@@ -50,4 +50,5 @@ export interface ExclusiveProduct {
   buttonLink?: string;
   isActive?: boolean;
   isButtonActive?: boolean;
+  noLinkMessage?: string;
 }

@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from "motion/react";
 import { 
   Zap, Heart, Layers, Hexagon, BookOpen,
-  ShoppingCart, ExternalLink, Search, Filter, Box,
+  ShoppingCart, ExternalLink, Search, Filter, Box, ArrowDownAZ,
   Menu, X, ChevronRight, ChevronDown, ChevronUp, Scale, Ghost, Instagram, MessageCircle, Mail, Music, Info,
   Sword, Shield, Clock, AlertTriangle, Users, FileText, CheckCircle, Crown, Youtube, Settings, Sparkles
 } from 'lucide-react';
@@ -14,13 +14,14 @@ import GameBoard from './components/GameBoard';
 import { TournamentManager } from './components/TournamentManager';
 import { AdminPanel } from './components/AdminPanel';
 import { LoreView } from './components/LoreView';
+import { compareCardCodes } from './deckUtils';
 import { db } from './firebase';
 import { collection, getDocs, doc, getDoc } from 'firebase/firestore';
 import { ref, listAll, getDownloadURL } from 'firebase/storage';
 import { storage } from './firebase';
 import { archetypesList, collectionsList } from './data';
 import { useCards } from './CardContext';
-import { CardData, ArchetypeData, ExclusiveProduct } from './types';
+import { CardData, CardType, ArchetypeData, ExclusiveProduct } from './types';
 import { NovidadesSection } from './components/NovidadesSection';
 import { ProductDetailModal } from './components/ProductDetailModal';
 
@@ -594,7 +595,8 @@ const CatalogModal = ({ isOpen, onClose, onOpenAdmin }: { isOpen: boolean, onClo
     rarity: "Todos",
     minCt: "",
     minAtk: "",
-    minDef: ""
+    minDef: "",
+    sortBy: "code-asc"
   });
 
   const [visibleCount, setVisibleCount] = useState(24);
@@ -629,26 +631,49 @@ const CatalogModal = ({ isOpen, onClose, onOpenAdmin }: { isOpen: boolean, onClo
     }
   };
 
-  const filteredCards = allCards.filter(card => {
-    const searchLower = (searchTerm || "").toLowerCase();
-    const matchesSearch = 
-      (card.name || "").toLowerCase().includes(searchLower) || 
-      (card.code || "").toLowerCase().includes(searchLower) ||
-      (card.description || "").toLowerCase().includes(searchLower);
+  const filteredCards = useMemo(() => {
+    return allCards.filter(card => {
+      const searchLower = (searchTerm || "").toLowerCase();
+      const matchesSearch = 
+        (card.name || "").toLowerCase().includes(searchLower) || 
+        (card.code || "").toLowerCase().includes(searchLower) ||
+        (card.description || "").toLowerCase().includes(searchLower) ||
+        (card.collection || "").toLowerCase().includes(searchLower);
 
-    const matchesType = filters.type === "Todos" || card.type === filters.type;
-    const matchesArchetype = filters.archetype === "Todos" || (card.archetype || "").includes(filters.archetype);
-    const matchesCollection = filters.collection === "Todos" || (card.collection && card.collection === filters.collection);
-    const matchesFrame = filters.frame === "Todos" || (card.frame || "Legado") === filters.frame;
-    const matchesRarity = filters.rarity === "Todos" || (card.rarity || "Comum") === filters.rarity;
-    const matchesCt = filters.minCt === "" || card.ct === parseInt(filters.minCt);
-    
-    // Changed to exact match (===) instead of >=
-    const matchesAtk = filters.minAtk === "" || (card.attack !== undefined && card.attack === parseInt(filters.minAtk));
-    const matchesDef = filters.minDef === "" || (card.defense !== undefined && card.defense === parseInt(filters.minDef));
+      const matchesType = filters.type === "Todos" || card.type === filters.type;
+      const matchesArchetype = filters.archetype === "Todos" || (card.archetype || "").includes(filters.archetype);
+      const matchesCollection = filters.collection === "Todos" || (card.collection && card.collection === filters.collection);
+      const matchesFrame = filters.frame === "Todos" || (card.frame || "Legado") === filters.frame;
+      const matchesRarity = filters.rarity === "Todos" || (card.rarity || "Comum") === filters.rarity;
+      const matchesCt = filters.minCt === "" || card.ct === parseInt(filters.minCt);
+      
+      // Exact match for ATK and DEF
+      const matchesAtk = filters.minAtk === "" || (card.attack !== undefined && card.attack === parseInt(filters.minAtk));
+      const matchesDef = filters.minDef === "" || (card.defense !== undefined && card.defense === parseInt(filters.minDef));
 
-    return matchesSearch && matchesType && matchesArchetype && matchesCollection && matchesFrame && matchesRarity && matchesCt && matchesAtk && matchesDef;
-  });
+      return matchesSearch && matchesType && matchesArchetype && matchesCollection && matchesFrame && matchesRarity && matchesCt && matchesAtk && matchesDef;
+    }).sort((a, b) => {
+      switch (filters.sortBy) {
+        case 'code-desc':
+          return compareCardCodes(b.code, a.code) || (b.name || '').localeCompare(a.name || '');
+        case 'name-asc':
+          return (a.name || '').localeCompare(b.name || '') || compareCardCodes(a.code, b.code);
+        case 'name-desc':
+          return (b.name || '').localeCompare(a.name || '') || compareCardCodes(a.code, b.code);
+        case 'ct-asc':
+          return (a.ct || 0) - (b.ct || 0) || compareCardCodes(a.code, b.code);
+        case 'ct-desc':
+          return (b.ct || 0) - (a.ct || 0) || compareCardCodes(a.code, b.code);
+        case 'atk-desc':
+          return (b.attack || 0) - (a.attack || 0) || compareCardCodes(a.code, b.code);
+        case 'def-desc':
+          return (b.defense || 0) - (a.defense || 0) || compareCardCodes(a.code, b.code);
+        case 'code-asc':
+        default:
+          return compareCardCodes(a.code, b.code) || (a.name || '').localeCompare(b.name || '');
+      }
+    });
+  }, [allCards, searchTerm, filters]);
 
   // Infinite scroll intersection observer for ultra-fast progressive card loading
   useEffect(() => {
@@ -845,9 +870,28 @@ const CatalogModal = ({ isOpen, onClose, onOpenAdmin }: { isOpen: boolean, onClo
               />
             </div>
           
+            <div className="flex items-center gap-2 bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 flex-1 md:flex-none">
+              <ArrowDownAZ size={14} className="text-purple-400 shrink-0" />
+              <span className="text-xs text-slate-500 uppercase font-bold shrink-0">Ordem</span>
+              <select 
+                className="bg-purple-950 text-sm text-white outline-none cursor-pointer rounded px-2 w-full md:w-44"
+                value={filters.sortBy}
+                onChange={(e) => setFilters({...filters, sortBy: e.target.value})}
+              >
+                <option className="bg-purple-950" value="code-asc">Código (Crescente)</option>
+                <option className="bg-purple-950" value="code-desc">Código (Decrescente)</option>
+                <option className="bg-purple-950" value="name-asc">Nome (A - Z)</option>
+                <option className="bg-purple-950" value="name-desc">Nome (Z - A)</option>
+                <option className="bg-purple-950" value="ct-asc">CT (Menor &gt; Maior)</option>
+                <option className="bg-purple-950" value="ct-desc">CT (Maior &gt; Menor)</option>
+                <option className="bg-purple-950" value="atk-desc">ATK (Maior)</option>
+                <option className="bg-purple-950" value="def-desc">VIDA (Maior)</option>
+              </select>
+            </div>
+          
             <button 
               onClick={() => {
-                setFilters({ type: "Todos", archetype: "Todos", collection: "Todos", frame: "Todos", minCt: "", minAtk: "", minDef: "" });
+                setFilters({ type: "Todos", archetype: "Todos", collection: "Todos", frame: "Todos", rarity: "Todos", minCt: "", minAtk: "", minDef: "", sortBy: "code-asc" });
                 setSearchTerm("");
               }}
               className="text-xs text-slate-400 hover:text-white underline ml-auto md:ml-2 whitespace-nowrap"

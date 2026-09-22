@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { ChevronLeft, ChevronRight, ShoppingCart, Sparkles, Layers, Image as ImageIcon, Play, Eye } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ShoppingCart, Sparkles, Layers, Image as ImageIcon, Play, Eye, Calendar, X } from 'lucide-react';
 import { ExclusiveProduct, CardData, ProductMediaItem } from '../types';
 import { parseDeckFromCode } from '../deckUtils';
 
@@ -20,6 +20,7 @@ export const NovidadesSection: React.FC<NovidadesSectionProps> = ({
 
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
+  const [noticeProduct, setNoticeProduct] = useState<ExclusiveProduct | null>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
   // If active products change and currentIndex is out of bounds
@@ -92,8 +93,9 @@ export const NovidadesSection: React.FC<NovidadesSectionProps> = ({
     const mainMedia = medias[0];
     const deckCount = getDeckCount(product);
     const isButtonEnabled = product.isButtonActive !== false && product.isActive !== false;
-    const buttonLink = product.buttonLink || 'https://mpago.la/1FZ3Mip';
-    const buttonText = product.buttonText || 'Comprar Agora';
+    const buttonLink = product.buttonLink;
+    const hasLink = Boolean(buttonLink && buttonLink.trim() !== '');
+    const buttonText = product.buttonText || (hasLink ? 'Comprar Agora' : 'PRÉ-VENDA');
 
     return (
       <section id="novidades" className="pt-24 pb-20 bg-[#0c0c10] relative z-20 overflow-hidden">
@@ -164,34 +166,58 @@ export const NovidadesSection: React.FC<NovidadesSectionProps> = ({
                     {product.description}
                   </p>
 
-                  {deckCount > 0 && (
-                    <div className="inline-flex items-center gap-2 bg-purple-950/70 border border-purple-800/60 px-3 py-1.5 rounded-lg text-purple-300 text-xs font-bold font-mono">
-                      <Layers size={14} />
-                      <span>DECK PRÉ-MONTADO COM {deckCount} CARTAS</span>
-                    </div>
-                  )}
+                  <div className="flex flex-wrap items-center gap-2">
+                    {deckCount > 0 && (
+                      <div className="inline-flex items-center gap-2 bg-purple-950/70 border border-purple-800/60 px-3 py-1.5 rounded-lg text-purple-300 text-xs font-bold font-mono">
+                        <Layers size={14} />
+                        <span>DECK PRÉ-MONTADO COM {deckCount} CARTAS</span>
+                      </div>
+                    )}
+
+                    {/* Preço só aparece se o link estiver disponível */}
+                    {hasLink && product.price && product.price.trim() !== '' && (
+                      <div className="inline-flex items-center gap-1.5 bg-emerald-950/80 border border-emerald-500/50 px-3 py-1.5 rounded-lg text-emerald-300 font-mono font-black text-sm shadow-md">
+                        <span className="text-[10px] text-emerald-400 font-bold uppercase tracking-wider">Preço:</span>
+                        <span>{product.price.startsWith('R$') ? product.price : `R$ ${product.price}`}</span>
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 <div className="flex flex-col sm:flex-row items-center gap-3 pt-4 border-t border-slate-800">
                   <button
                     onClick={() => onOpenProductModal(product)}
-                    className="w-full sm:w-auto px-5 py-3 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-200 text-sm font-bold transition flex items-center justify-center gap-2 border border-slate-700"
+                    className="w-full sm:w-auto px-5 py-3.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-200 text-sm font-bold transition flex items-center justify-center gap-2 border border-slate-700"
                   >
                     <Eye size={16} />
                     <span>Ver Detalhes</span>
                   </button>
 
                   {isButtonEnabled && (
-                    <a 
-                      href={buttonLink} 
-                      target="_blank" 
-                      rel="noopener noreferrer"
-                      onClick={(e) => e.stopPropagation()}
-                      className="w-full sm:flex-1 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold py-3.5 px-6 rounded-xl transition-all duration-300 flex items-center justify-center gap-2 shadow-lg shadow-purple-900/40 hover:scale-[1.02] active:scale-[0.98] text-sm md:text-base"
-                    >
-                      <ShoppingCart size={18} />
-                      <span>{buttonText}</span>
-                    </a>
+                    hasLink ? (
+                      <a 
+                        href={buttonLink} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        onClick={(e) => e.stopPropagation()}
+                        className="w-full sm:flex-1 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold py-3.5 px-6 rounded-xl transition-all duration-300 flex items-center justify-center gap-2 shadow-lg shadow-purple-900/40 hover:scale-[1.02] active:scale-[0.98] text-sm md:text-base"
+                      >
+                        <ShoppingCart size={18} />
+                        <span>{buttonText}</span>
+                      </a>
+                    ) : (
+                      <button 
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setNoticeProduct(product);
+                        }}
+                        className="w-full sm:flex-1 bg-gradient-to-r from-amber-600 via-purple-600 to-indigo-600 hover:from-amber-500 hover:via-purple-500 hover:to-indigo-500 text-white font-bold py-3.5 px-6 rounded-xl transition-all duration-300 flex items-center justify-center gap-2 shadow-lg shadow-purple-900/40 hover:scale-[1.02] active:scale-[0.98] text-sm md:text-base cursor-pointer"
+                      >
+                        <Calendar size={18} className="text-amber-300" />
+                        <span>{buttonText}</span>
+                      </button>
+                    )
                   )}
                 </div>
               </div>
@@ -204,6 +230,57 @@ export const NovidadesSection: React.FC<NovidadesSectionProps> = ({
           <div className="h-28 bg-gradient-to-b from-transparent via-[#0a0a0c]/70 to-[#0a0a0c]"></div>
           <div className="h-[1px] w-full bg-gradient-to-r from-transparent via-purple-500/40 to-transparent"></div>
         </div>
+
+        {/* Notice modal if open */}
+        {noticeProduct && (
+          <div 
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-in fade-in duration-200"
+            onClick={() => setNoticeProduct(null)}
+          >
+            <div 
+              className="bg-slate-900 border-2 border-purple-500/70 rounded-2xl max-w-md w-full p-6 sm:p-7 shadow-[0_0_50px_rgba(168,85,247,0.4)] text-center relative overflow-hidden"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-amber-500 via-purple-500 to-indigo-500"></div>
+              
+              <button 
+                onClick={() => setNoticeProduct(null)}
+                className="absolute top-4 right-4 p-2 text-slate-400 hover:text-white rounded-full bg-slate-800/80 hover:bg-slate-700 transition"
+              >
+                <X size={18} />
+              </button>
+
+              <div className="w-16 h-16 rounded-2xl bg-purple-950/80 border border-purple-500/40 text-purple-300 flex items-center justify-center mx-auto mb-4 shadow-lg shadow-purple-950">
+                <Calendar size={32} className="text-amber-400 animate-pulse" />
+              </div>
+
+              <div className="inline-block bg-purple-950/90 text-purple-300 text-xs font-bold uppercase tracking-wider px-3 py-1 rounded-full border border-purple-700/50 mb-2">
+                Aviso de Lançamento
+              </div>
+
+              <h4 className="text-xl sm:text-2xl font-black text-white mb-2">
+                {noticeProduct.title || 'Produto Oficial'}
+              </h4>
+
+              <div className="my-5 p-4 rounded-xl bg-slate-950 border border-purple-500/40 shadow-inner">
+                <p className="text-lg sm:text-xl font-black text-amber-400 tracking-wide uppercase">
+                  {noticeProduct.noLinkMessage || 'PRÉ VENDA ABRE EM 15/10'}
+                </p>
+              </div>
+
+              <p className="text-xs sm:text-sm text-slate-300 mb-6 leading-relaxed">
+                Este item ainda não possui link de compra direta. Fique atento às nossas novidades para não perder a data de abertura!
+              </p>
+
+              <button
+                onClick={() => setNoticeProduct(null)}
+                className="w-full py-3 px-6 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold transition shadow-lg shadow-purple-900/40"
+              >
+                Entendido
+              </button>
+            </div>
+          </div>
+        )}
       </section>
     );
   }
@@ -214,8 +291,9 @@ export const NovidadesSection: React.FC<NovidadesSectionProps> = ({
   const mainMedia = medias[0];
   const deckCount = getDeckCount(currentProduct);
   const isButtonEnabled = currentProduct.isButtonActive !== false && currentProduct.isActive !== false;
-  const buttonLink = currentProduct.buttonLink || 'https://mpago.la/1FZ3Mip';
-  const buttonText = currentProduct.buttonText || 'Comprar Agora';
+  const buttonLink = currentProduct.buttonLink;
+  const hasLink = Boolean(buttonLink && buttonLink.trim() !== '');
+  const buttonText = currentProduct.buttonText || (hasLink ? 'Comprar Agora' : 'PRÉ-VENDA');
 
   return (
     <section id="novidades" className="pt-24 pb-20 bg-[#0c0c10] relative z-20 overflow-hidden">
@@ -316,34 +394,58 @@ export const NovidadesSection: React.FC<NovidadesSectionProps> = ({
                   {currentProduct.description}
                 </p>
 
-                {deckCount > 0 && (
-                  <div className="inline-flex items-center gap-2 bg-purple-950/70 border border-purple-800/60 px-3 py-1.5 rounded-lg text-purple-300 text-xs font-bold font-mono">
-                    <Layers size={14} />
-                    <span>DECK PRÉ-MONTADO COM {deckCount} CARTAS</span>
-                  </div>
-                )}
+                <div className="flex flex-wrap items-center gap-2">
+                  {deckCount > 0 && (
+                    <div className="inline-flex items-center gap-2 bg-purple-950/70 border border-purple-800/60 px-3 py-1.5 rounded-lg text-purple-300 text-xs font-bold font-mono">
+                      <Layers size={14} />
+                      <span>DECK PRÉ-MONTADO COM {deckCount} CARTAS</span>
+                    </div>
+                  )}
+
+                  {/* Preço só aparece se o link estiver disponível */}
+                  {hasLink && currentProduct.price && currentProduct.price.trim() !== '' && (
+                    <div className="inline-flex items-center gap-1.5 bg-emerald-950/80 border border-emerald-500/50 px-3 py-1.5 rounded-lg text-emerald-300 font-mono font-black text-sm shadow-md">
+                      <span className="text-[10px] text-emerald-400 font-bold uppercase tracking-wider">Preço:</span>
+                      <span>{currentProduct.price.startsWith('R$') ? currentProduct.price : `R$ ${currentProduct.price}`}</span>
+                    </div>
+                  )}
+                </div>
               </div>
 
               <div className="flex flex-col sm:flex-row items-center gap-3 pt-4 border-t border-slate-800">
                 <button
                   onClick={() => onOpenProductModal(currentProduct)}
-                  className="w-full sm:w-auto px-5 py-3 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-200 text-sm font-bold transition flex items-center justify-center gap-2 border border-slate-700"
+                  className="w-full sm:w-auto px-5 py-3.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-200 text-sm font-bold transition flex items-center justify-center gap-2 border border-slate-700"
                 >
                   <Eye size={16} />
                   <span>Ver Detalhes</span>
                 </button>
 
                 {isButtonEnabled && (
-                  <a 
-                    href={buttonLink} 
-                    target="_blank" 
-                    rel="noopener noreferrer"
-                    onClick={(e) => e.stopPropagation()}
-                    className="w-full sm:flex-1 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold py-3.5 px-6 rounded-xl transition-all duration-300 flex items-center justify-center gap-2 shadow-lg shadow-purple-900/40 hover:scale-[1.02] active:scale-[0.98] text-sm md:text-base"
-                  >
-                    <ShoppingCart size={18} />
-                    <span>{buttonText}</span>
-                  </a>
+                  hasLink ? (
+                    <a 
+                      href={buttonLink} 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      onClick={(e) => e.stopPropagation()}
+                      className="w-full sm:flex-1 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold py-3.5 px-6 rounded-xl transition-all duration-300 flex items-center justify-center gap-2 shadow-lg shadow-purple-900/40 hover:scale-[1.02] active:scale-[0.98] text-sm md:text-base"
+                    >
+                      <ShoppingCart size={18} />
+                      <span>{buttonText}</span>
+                    </a>
+                  ) : (
+                    <button 
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setNoticeProduct(currentProduct);
+                      }}
+                      className="w-full sm:flex-1 bg-gradient-to-r from-amber-600 via-purple-600 to-indigo-600 hover:from-amber-500 hover:via-purple-500 hover:to-indigo-500 text-white font-bold py-3.5 px-6 rounded-xl transition-all duration-300 flex items-center justify-center gap-2 shadow-lg shadow-purple-900/40 hover:scale-[1.02] active:scale-[0.98] text-sm md:text-base cursor-pointer"
+                    >
+                      <Calendar size={18} className="text-amber-300" />
+                      <span>{buttonText}</span>
+                    </button>
+                  )
                 )}
               </div>
             </div>
@@ -372,6 +474,57 @@ export const NovidadesSection: React.FC<NovidadesSectionProps> = ({
         <div className="h-28 bg-gradient-to-b from-transparent via-[#0a0a0c]/70 to-[#0a0a0c]"></div>
         <div className="h-[1px] w-full bg-gradient-to-r from-transparent via-purple-500/40 to-transparent"></div>
       </div>
+
+      {/* Notice modal if open */}
+      {noticeProduct && (
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-in fade-in duration-200"
+          onClick={() => setNoticeProduct(null)}
+        >
+          <div 
+            className="bg-slate-900 border-2 border-purple-500/70 rounded-2xl max-w-md w-full p-6 sm:p-7 shadow-[0_0_50px_rgba(168,85,247,0.4)] text-center relative overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-amber-500 via-purple-500 to-indigo-500"></div>
+            
+            <button 
+              onClick={() => setNoticeProduct(null)}
+              className="absolute top-4 right-4 p-2 text-slate-400 hover:text-white rounded-full bg-slate-800/80 hover:bg-slate-700 transition"
+            >
+              <X size={18} />
+            </button>
+
+            <div className="w-16 h-16 rounded-2xl bg-purple-950/80 border border-purple-500/40 text-purple-300 flex items-center justify-center mx-auto mb-4 shadow-lg shadow-purple-950">
+              <Calendar size={32} className="text-amber-400 animate-pulse" />
+            </div>
+
+            <div className="inline-block bg-purple-950/90 text-purple-300 text-xs font-bold uppercase tracking-wider px-3 py-1 rounded-full border border-purple-700/50 mb-2">
+              Aviso de Lançamento
+            </div>
+
+            <h4 className="text-xl sm:text-2xl font-black text-white mb-2">
+              {noticeProduct.title || 'Produto Oficial'}
+            </h4>
+
+            <div className="my-5 p-4 rounded-xl bg-slate-950 border border-purple-500/40 shadow-inner">
+              <p className="text-lg sm:text-xl font-black text-amber-400 tracking-wide uppercase">
+                {noticeProduct.noLinkMessage || 'PRÉ VENDA ABRE EM 15/10'}
+              </p>
+            </div>
+
+            <p className="text-xs sm:text-sm text-slate-300 mb-6 leading-relaxed">
+              Este item ainda não possui link de compra direta. Fique atento às nossas novidades para não perder a data de abertura!
+            </p>
+
+            <button
+              onClick={() => setNoticeProduct(null)}
+              className="w-full py-3 px-6 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold transition shadow-lg shadow-purple-900/40"
+            >
+              Entendido
+            </button>
+          </div>
+        </div>
+      )}
     </section>
   );
 };

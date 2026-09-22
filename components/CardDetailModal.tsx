@@ -41,7 +41,8 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card: initialC
     if (!card) return [];
 
     // Helper: Extrai termos entre « » que são muito usados no jogo para referenciar grupos
-    const extractQuotedTerms = (text: string): string[] => {
+    const extractQuotedTerms = (text?: string): string[] => {
+      if (!text) return [];
       const matches = text.match(/«(.*?)»/g);
       if (!matches) return [];
       return matches.map(m => m.replace(/[«»]/g, '').toLowerCase().trim());
@@ -176,9 +177,19 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card: initialC
     return updatedCard;
   };
 
+  const sanitizeCardStats = (c: CardData): CardData => {
+    if (c.type === 'Efeito' || c.type === 'Equipamento') {
+      const sanitized = { ...c };
+      delete sanitized.attack;
+      delete sanitized.defense;
+      return sanitized;
+    }
+    return c;
+  };
+
   const handleSave = async () => {
     if (card) {
-      const finalCard = await processImageUpload(card);
+      const finalCard = sanitizeCardStats(await processImageUpload(card));
       if (originalCode && originalCode !== finalCard.code) {
         await deleteCard(originalCode);
       }
@@ -207,7 +218,7 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card: initialC
 
   const handleSaveAndAddAnother = async () => {
     if (card) {
-      const finalCard = await processImageUpload(card);
+      const finalCard = sanitizeCardStats(await processImageUpload(card));
       if (originalCode && originalCode !== finalCard.code) {
         await deleteCard(originalCode);
       }
@@ -323,7 +334,7 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card: initialC
               )}
             </div>
             
-            {isEditing && (
+            {isEditing && (card.type === 'Herói' || card.type === 'Combatente') && (
               <div className="grid grid-cols-2 gap-4 mb-4 mt-2">
                 <div>
                   <label className="text-xs text-slate-400 font-bold uppercase mb-1 block">Ataque (ATK)</label>
@@ -338,7 +349,21 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card: initialC
 
             <div className="flex flex-wrap gap-3 text-sm font-medium">
               {isEditing ? (
-                 <select value={card.type} onChange={(e) => setCard({...card, type: e.target.value as CardData['type']})} className="px-3 py-1.5 bg-slate-800 rounded text-slate-300 border border-slate-700 outline-none">
+                 <select 
+                   value={card.type} 
+                   onChange={(e) => {
+                     const newType = e.target.value as CardData['type'];
+                     if (newType === 'Efeito' || newType === 'Equipamento') {
+                       const next = { ...card, type: newType };
+                       delete next.attack;
+                       delete next.defense;
+                       setCard(next);
+                     } else {
+                       setCard({ ...card, type: newType });
+                     }
+                   }} 
+                   className="px-3 py-1.5 bg-slate-800 rounded text-slate-300 border border-slate-700 outline-none"
+                 >
                     <option value="Herói">Herói</option>
                     <option value="Combatente">Combatente</option>
                     <option value="Equipamento">Equipamento</option>

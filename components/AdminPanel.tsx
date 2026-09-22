@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Settings, Lock, Plus, Trash2, X, Image as ImageIcon, Edit2, Check, Layout, Clock, Grid, Palette, ChevronRight, Layers, BookOpen, Database, Box, Upload, Film, Sparkles, Calendar } from 'lucide-react';
+import { Settings, Lock, Plus, Trash2, X, Image as ImageIcon, Edit2, Check, Layout, Clock, Grid, Palette, ChevronRight, Layers, BookOpen, Database, Box, Upload, Film, Sparkles, Calendar, Loader2 } from 'lucide-react';
 import { signInWithEmailAndPassword, onAuthStateChanged, signOut } from 'firebase/auth';
 import { collection, getDocs, addDoc, deleteDoc, updateDoc, doc, setDoc, getDoc } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
@@ -7,6 +7,7 @@ import { auth, db, storage } from '../firebase';
 import { useCards } from '../CardContext';
 import { ArchetypeData } from '../types';
 import { parseDeckFromCode } from '../deckUtils';
+import { BatchImageMatcher } from './BatchImageMatcher';
 
 export type AdminType = 'home' | 'catalog' | 'master';
 
@@ -17,8 +18,9 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [uploadingProductMedia, setUploadingProductMedia] = useState<string | null>(null);
 
-  const [activeAdminTab, setActiveAdminTab] = useState<'settings' | 'tabs' | 'items' | 'timeline' | 'archetypes' | 'collections' | 'cards' | 'batch_cards' | 'apendices' | 'add_card'>(() => {
+  const [activeAdminTab, setActiveAdminTab] = useState<'settings' | 'tabs' | 'items' | 'timeline' | 'archetypes' | 'collections' | 'cards' | 'batch_cards' | 'batch_images' | 'apendices' | 'add_card'>(() => {
     if (adminType === 'home') return 'settings';
     if (adminType === 'catalog') return 'add_card';
     return 'settings'; // Default for master
@@ -300,7 +302,9 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
     return finalImageUrl;
   };
 
-  const handleUploadProductMedia = async (productIndex: number, file: File) => {
+  const handleUploadProductMedia = async (productIndex: number, file: File, mediaIndex?: number) => {
+    const uploadKey = `${productIndex}-${mediaIndex !== undefined ? mediaIndex : 'new'}`;
+    setUploadingProductMedia(uploadKey);
     setLoading(true);
     try {
       const isVideo = file.type.startsWith('video');
@@ -315,15 +319,22 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
         ? [...prod.mediaList]
         : (prod.mediaUrl ? [{ type: prod.mediaType || 'image', url: prod.mediaUrl }] : []);
 
-      currentMediaList.push({
-        type: isVideo ? 'video' : 'image',
-        url
-      });
+      if (mediaIndex !== undefined && mediaIndex >= 0 && mediaIndex < currentMediaList.length) {
+        currentMediaList[mediaIndex] = {
+          type: isVideo ? 'video' : 'image',
+          url
+        };
+      } else {
+        currentMediaList.push({
+          type: isVideo ? 'video' : 'image',
+          url
+        });
+      }
 
       prod.mediaList = currentMediaList;
-      if (!prod.mediaUrl) {
-        prod.mediaUrl = url;
-        prod.mediaType = isVideo ? 'video' : 'image';
+      if (mediaIndex === 0 || !prod.mediaUrl || currentMediaList.length === 1) {
+        prod.mediaUrl = currentMediaList[0]?.url || url;
+        prod.mediaType = currentMediaList[0]?.type || (isVideo ? 'video' : 'image');
       }
 
       np[productIndex] = prod;
@@ -332,6 +343,7 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
       console.error(err);
       alert('Erro ao enviar arquivo de mídia: ' + (err.message || err));
     } finally {
+      setUploadingProductMedia(null);
       setLoading(false);
     }
   };
@@ -435,8 +447,8 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
         rarity: cardRarity,
         description: formDescription,
         ct: Number(cardEditCT),
-        attack: Number(cardEditAttack),
-        defense: Number(cardEditDefense),
+        attack: (cardEditType === 'Herói' || cardEditType === 'Combatente') ? Number(cardEditAttack) : undefined,
+        defense: (cardEditType === 'Herói' || cardEditType === 'Combatente') ? Number(cardEditDefense) : undefined,
         lore: cardEditLore,
         imageUrl: finalImg,
         isHidden: cardEditIsHidden
@@ -505,8 +517,8 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
           frame: c.frame || batchFrame,
           description: c.description || '',
           ct: Number(c.ct || 0),
-          attack: Number(c.attack || 0),
-          defense: Number(c.defense || 0),
+          attack: (c.type === 'Herói' || c.type === 'Combatente') ? Number(c.attack || 0) : undefined,
+          defense: (c.type === 'Herói' || c.type === 'Combatente') ? Number(c.defense || 0) : undefined,
           lore: c.lore || '',
           imageUrl: finalImageUrl,
           isHidden: batchCardsDraft
@@ -606,6 +618,9 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
                   <>
                     <button onClick={() => { setActiveAdminTab('add_card'); resetForm(); }} className={`text-left p-3 rounded font-bold transition flex items-center gap-2 ${activeAdminTab === 'add_card' ? 'bg-purple-600 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}>
                       <Plus size={18}/> Adicionar Cartas
+                    </button>
+                    <button onClick={() => { setActiveAdminTab('batch_images'); resetForm(); }} className={`text-left p-3 rounded font-bold transition flex items-center gap-2 ${activeAdminTab === 'batch_images' ? 'bg-purple-600 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}>
+                      <Upload size={18}/> Vincular Imagens (Arrastar)
                     </button>
                     <button onClick={() => { setActiveAdminTab('batch_cards'); resetForm(); }} className={`text-left p-3 rounded font-bold transition flex items-center gap-2 ${activeAdminTab === 'batch_cards' ? 'bg-purple-600 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}>
                       <Layers size={18}/> Adicionar Cartas em Lote
@@ -910,9 +925,9 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
                                       <Film size={14} /> Mídias do Produto (Fotos e Vídeos)
                                     </label>
                                     <div className="flex items-center gap-2">
-                                      <label className="bg-purple-900/60 hover:bg-purple-800 text-purple-200 text-xs px-3 py-1.5 rounded cursor-pointer transition flex items-center gap-1.5 border border-purple-700/50">
+                                      <label className="bg-purple-600 hover:bg-purple-500 text-white text-xs px-3.5 py-1.5 rounded cursor-pointer transition flex items-center gap-1.5 font-bold shadow-md shadow-purple-950/40">
                                         <Upload size={13} />
-                                        <span>Upload do PC</span>
+                                        <span>Subir Imagem do PC</span>
                                         <input 
                                           type="file" 
                                           accept="image/*,video/*" 
@@ -938,7 +953,7 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
                                             np[i].mediaType = 'image';
                                           }
                                           setHomeSettings({...homeSettings, exclusiveProducts: np});
-                                        }}
+                                        }} 
                                         className="bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs px-3 py-1.5 rounded transition flex items-center gap-1 border border-slate-700"
                                       >
                                         <Plus size={13} /> Add URL
@@ -946,10 +961,35 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
                                     </div>
                                   </div>
 
+                                  {uploadingProductMedia && uploadingProductMedia.startsWith(`${i}-`) && (
+                                    <div className="mb-3 text-xs text-purple-200 font-bold flex items-center gap-2 p-2.5 bg-purple-950/70 border border-purple-700/60 rounded-lg animate-pulse">
+                                      <Loader2 size={15} className="animate-spin text-purple-400 shrink-0" />
+                                      <span>Enviando arquivo de imagem... Por favor aguarde o processamento.</span>
+                                    </div>
+                                  )}
+
                                   {currentMediaList.length === 0 ? (
-                                    <p className="text-xs text-slate-500 italic py-2">
-                                      Nenhuma foto ou vídeo adicionado ainda. Clique em "Upload do PC" ou "Add URL".
-                                    </p>
+                                    <div className="border border-dashed border-slate-700 rounded-lg p-5 text-center bg-slate-900/60">
+                                      <p className="text-xs text-slate-400 mb-3">
+                                        Nenhuma imagem ou vídeo adicionado ainda para este produto.
+                                      </p>
+                                      <div className="flex items-center justify-center gap-3">
+                                        <label className="bg-purple-600 hover:bg-purple-500 text-white text-xs px-4 py-2 rounded-lg cursor-pointer transition flex items-center gap-2 font-bold shadow-md shadow-purple-950/40">
+                                          <Upload size={14} />
+                                          <span>Subir Imagem do Computador</span>
+                                          <input 
+                                            type="file" 
+                                            accept="image/*,video/*" 
+                                            className="hidden" 
+                                            onChange={e => {
+                                              if (e.target.files?.[0]) {
+                                                handleUploadProductMedia(i, e.target.files[0]);
+                                              }
+                                            }} 
+                                          />
+                                        </label>
+                                      </div>
+                                    </div>
                                   ) : (
                                     <div className="space-y-3">
                                       {currentMediaList.map((m: any, mIdx: number) => (
@@ -977,7 +1017,7 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
                                                 np[i].mediaType = e.target.value;
                                               }
                                               setHomeSettings({...homeSettings, exclusiveProducts: np});
-                                            }}
+                                            }} 
                                             className="bg-slate-950 border border-slate-700 rounded p-1.5 text-xs text-white shrink-0"
                                           >
                                             <option value="image">Imagem</option>
@@ -997,10 +1037,26 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
                                                 np[i].mediaUrl = e.target.value;
                                               }
                                               setHomeSettings({...homeSettings, exclusiveProducts: np});
-                                            }}
+                                            }} 
                                             placeholder="URL da mídia (https://...)" 
                                             className="w-full bg-slate-950 border border-slate-700 rounded p-1.5 text-xs text-white"
                                           />
+
+                                          {/* Direct File Upload for this slot */}
+                                          <label className="bg-purple-950/80 hover:bg-purple-900 text-purple-200 text-xs px-2.5 py-1.5 rounded cursor-pointer transition flex items-center gap-1 border border-purple-700/60 shrink-0 font-medium" title="Subir imagem do computador para este item">
+                                            <Upload size={13} />
+                                            <span>Subir Foto</span>
+                                            <input 
+                                              type="file" 
+                                              accept="image/*,video/*" 
+                                              className="hidden" 
+                                              onChange={e => {
+                                                if (e.target.files?.[0]) {
+                                                  handleUploadProductMedia(i, e.target.files[0], mIdx);
+                                                }
+                                              }} 
+                                            />
+                                          </label>
 
                                           {/* Delete media */}
                                           <button 
@@ -1012,7 +1068,7 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
                                               np[i].mediaUrl = list[0]?.url || '';
                                               np[i].mediaType = list[0]?.type || 'image';
                                               setHomeSettings({...homeSettings, exclusiveProducts: np});
-                                            }}
+                                            }} 
                                             className="text-red-400 hover:text-red-300 p-1.5 rounded hover:bg-red-950/40 transition shrink-0"
                                             title="Remover mídia"
                                           >
@@ -1109,17 +1165,73 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
                                     <label className="text-xs text-slate-400 block mb-1">Link de Venda (Mercado Pago, Loja, etc.)</label>
                                     <input 
                                       type="text" 
-                                      value={prod.buttonLink || 'https://mpago.la/1FZ3Mip'} 
+                                      value={prod.buttonLink !== undefined ? prod.buttonLink : ''} 
                                       onChange={e => {
                                         const np = [...(homeSettings.exclusiveProducts || [])]; 
                                         np[i].buttonLink = e.target.value; 
                                         setHomeSettings({...homeSettings, exclusiveProducts: np});
                                       }} 
                                       className="w-full bg-slate-950 border border-slate-700 rounded p-2 text-white text-sm" 
-                                      placeholder="https://mpago.la/..." 
+                                      placeholder="Deixe em branco caso não tenha link" 
                                     />
+                                    <span className="text-[10px] text-slate-500 mt-1 block">
+                                      {prod.buttonLink && prod.buttonLink.trim() !== '' 
+                                        ? '✓ Link configurado para compra direta.' 
+                                        : 'ℹ️ Sem link: o botão ativará mensagem de pré-venda na tela.'}
+                                    </span>
                                   </div>
                                 </div>
+
+                                {/* Conditional Price OR No-Link Message */}
+                                {prod.buttonLink && prod.buttonLink.trim() !== '' ? (
+                                  <div className="w-full bg-emerald-950/40 border border-emerald-700/50 rounded-lg p-3.5 mt-1">
+                                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                      <div>
+                                        <label className="text-xs font-bold text-emerald-400 uppercase tracking-wider block mb-0.5">
+                                          Preço do Produto (Visível com Link Disponível)
+                                        </label>
+                                        <p className="text-[11px] text-slate-300">
+                                          Como há um link de venda configurado, informe o preço para ser exibido na vitrine e nos detalhes.
+                                        </p>
+                                      </div>
+                                      <div className="w-full sm:w-52 shrink-0">
+                                        <input 
+                                          type="text" 
+                                          value={prod.price || ''} 
+                                          onChange={e => {
+                                            const np = [...(homeSettings.exclusiveProducts || [])]; 
+                                            np[i].price = e.target.value; 
+                                            setHomeSettings({...homeSettings, exclusiveProducts: np});
+                                          }} 
+                                          className="w-full bg-slate-950 border border-emerald-500/70 focus:border-emerald-400 rounded p-2 text-emerald-300 font-mono font-bold text-sm outline-none" 
+                                          placeholder="Ex: R$ 89,90" 
+                                        />
+                                      </div>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div className="w-full bg-purple-950/40 border border-purple-700/50 rounded-lg p-3.5 mt-1 space-y-2">
+                                    <div>
+                                      <label className="text-xs font-bold text-purple-300 uppercase tracking-wider flex items-center gap-1.5">
+                                        <Sparkles size={14} className="text-amber-400" /> Mensagem ao Clicar (Sem Link de Venda)
+                                      </label>
+                                      <p className="text-[11px] text-slate-300 mt-0.5">
+                                        Como você não colocou link de venda, ao clicar no botão na vitrine ou nos detalhes, uma janela de aviso exibirá esta mensagem na tela.
+                                      </p>
+                                    </div>
+                                    <input 
+                                      type="text" 
+                                      value={prod.noLinkMessage !== undefined ? prod.noLinkMessage : 'PRÉ VENDA ABRE EM 15/10'} 
+                                      onChange={e => {
+                                        const np = [...(homeSettings.exclusiveProducts || [])]; 
+                                        np[i].noLinkMessage = e.target.value; 
+                                        setHomeSettings({...homeSettings, exclusiveProducts: np});
+                                      }} 
+                                      className="w-full bg-slate-950 border border-purple-500/60 focus:border-purple-400 rounded p-2 text-purple-200 font-bold text-sm outline-none" 
+                                      placeholder="Ex: PRÉ VENDA ABRE EM 15/10" 
+                                    />
+                                  </div>
+                                )}
                               </div>
                             );
                           })}
@@ -1137,7 +1249,9 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
                                   mediaList: [],
                                   cardCodes: '',
                                   buttonText: 'Comprar Agora', 
-                                  buttonLink: 'https://mpago.la/1FZ3Mip', 
+                                  buttonLink: '', 
+                                  price: '',
+                                  noLinkMessage: 'PRÉ VENDA ABRE EM 15/10',
                                   isActive: true, 
                                   isButtonActive: true 
                                 }
@@ -1690,13 +1804,15 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
                           <label className="text-sm font-bold text-slate-400 block mb-1">CT (Custo)</label>
                           <input type="number" value={cardEditCT} onChange={e => setCardEditCT(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded p-2 text-white" />
                         </div>
-                        <div>
-                          <label className="text-sm font-bold text-slate-500 block mb-1">Ataque / Defesa</label>
-                          <div className="flex gap-2">
-                            <input type="number" value={cardEditAttack} onChange={e => setCardEditAttack(e.target.value)} className="w-1/2 bg-slate-950 border border-slate-700 rounded p-2 text-white" placeholder="ATK" />
-                            <input type="number" value={cardEditDefense} onChange={e => setCardEditDefense(e.target.value)} className="w-1/2 bg-slate-950 border border-slate-700 rounded p-2 text-white" placeholder="DEF" />
+                        {(cardEditType === 'Herói' || cardEditType === 'Combatente') && (
+                          <div>
+                            <label className="text-sm font-bold text-slate-500 block mb-1">Ataque / Defesa</label>
+                            <div className="flex gap-2">
+                              <input type="number" value={cardEditAttack} onChange={e => setCardEditAttack(e.target.value)} className="w-1/2 bg-slate-950 border border-slate-700 rounded p-2 text-white" placeholder="ATK" />
+                              <input type="number" value={cardEditDefense} onChange={e => setCardEditDefense(e.target.value)} className="w-1/2 bg-slate-950 border border-slate-700 rounded p-2 text-white" placeholder="DEF" />
+                            </div>
                           </div>
-                        </div>
+                        )}
                       </div>
 
                       <div>
@@ -1715,7 +1831,16 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
                       </div>
 
                       <div>
-                        <label className="text-sm font-bold text-slate-400 block mb-1">Imagem da Carta</label>
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="text-sm font-bold text-slate-400 block">Imagem da Carta</label>
+                          <button
+                            type="button"
+                            onClick={() => { setActiveAdminTab('batch_images'); }}
+                            className="text-xs text-purple-400 hover:text-purple-300 flex items-center gap-1 font-semibold hover:underline"
+                          >
+                            <Upload size={13} /> Subir várias imagens & arrastar (Lote)
+                          </button>
+                        </div>
                         <div className="flex gap-4 items-center mb-2">
                           <label className="cursor-pointer bg-slate-950 hover:bg-slate-900 border border-slate-700 p-2 rounded flex-1 flex items-center gap-2">
                             <ImageIcon size={16} className="text-purple-500" />
@@ -1770,7 +1895,7 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
                       <p className="text-sm text-slate-400 mb-4">Caso alguma das cartas padrão (como as de Legado ou Booster Pack) tenha sumido por uma exclusão acidental ou sobrescrita, você pode limpá-las da lixeira interna e restaurá-las para que fiquem visíveis de novo.</p>
                       <button onClick={async () => {
                         if(confirm('Tem certeza? Isso fará com que qualquer carta padrão que foi oculta ou sobrescrita volte ao normal.')) {
-                          import('firebase/firestore').then(async ({ collection, getDocs, deleteDoc, db }) => {
+                          import('firebase/firestore').then(async ({ collection, getDocs, deleteDoc }) => {
                             const snap = await getDocs(collection(db, 'customCards'));
                             let c = 0;
                             const deletePromises: any[] = [];
@@ -1958,6 +2083,16 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
                         </div>
                       </>
                     )}
+                  </div>
+                )}
+
+                {activeAdminTab === 'batch_images' && (
+                  <div className="mt-2">
+                    <BatchImageMatcher
+                      cards={cards}
+                      collections={collections}
+                      saveCard={saveCard}
+                    />
                   </div>
                 )}
                 

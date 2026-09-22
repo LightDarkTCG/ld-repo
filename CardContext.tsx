@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { CardData, ArchetypeData } from './types';
 import { allCards as defaultCards, archetypesList as defaultArchetypes, collectionsList as defaultCollections } from './data';
+import { compareCardCodes } from './deckUtils';
 import { db, auth } from './firebase';
 import { collection, getDocs, doc, setDoc, onSnapshot, deleteDoc } from 'firebase/firestore';
 import { onAuthStateChanged } from 'firebase/auth';
@@ -19,9 +20,11 @@ interface CardContextType {
 
 const CardContext = createContext<CardContextType | undefined>(undefined);
 
+const initialSortedCards = [...defaultCards].sort((a, b) => compareCardCodes(a.code, b.code));
+
 export const CardProvider = ({ children }: { children: ReactNode }) => {
-  const [allMergedCards, setAllMergedCards] = useState<CardData[]>(defaultCards);
-  const [cards, setCards] = useState<CardData[]>(defaultCards);
+  const [allMergedCards, setAllMergedCards] = useState<CardData[]>(initialSortedCards);
+  const [cards, setCards] = useState<CardData[]>(initialSortedCards);
   const [archetypes, setArchetypes] = useState<ArchetypeData[]>(defaultArchetypes);
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
@@ -68,6 +71,7 @@ export const CardProvider = ({ children }: { children: ReactNode }) => {
           mergedCards.push(v);
         }
       });
+      mergedCards.sort((a, b) => compareCardCodes(a.code, b.code));
       setAllMergedCards(mergedCards);
     }, (err: any) => {
       if (err.code !== 'unavailable') console.error(err);
