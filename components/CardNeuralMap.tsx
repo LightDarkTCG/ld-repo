@@ -470,10 +470,13 @@ export const CardNeuralMap: React.FC<CardNeuralMapProps> = ({
     cardsToPreload.forEach(card => {
       if (card.imageUrl && !imageCacheRef.current.has(card.imageUrl)) {
         const img = new Image();
-        img.crossOrigin = 'anonymous';
+        img.referrerPolicy = 'no-referrer';
         img.src = card.imageUrl;
         img.onload = () => {
           imageCacheRef.current.set(card.imageUrl!, img);
+          if (simAlphaRef.current <= 0.01) {
+            simAlphaRef.current = 0.02;
+          }
         };
       }
     });
@@ -1550,57 +1553,6 @@ export const CardNeuralMap: React.FC<CardNeuralMapProps> = ({
     ctx.restore();
   };
 
-  // Resize canvas with ResizeObserver and devicePixelRatio for maximum sharpness
-  useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
-
-    let resizeTimeout: any = null;
-
-    const handleResize = () => {
-      const canvas = canvasRef.current;
-      const cont = containerRef.current;
-      if (!canvas || !cont) return;
-
-      const rect = cont.getBoundingClientRect();
-      if (rect.width <= 0 || rect.height <= 0) return;
-
-      const dpr = window.devicePixelRatio || 1;
-      const targetW = Math.round(rect.width * dpr);
-      const targetH = Math.round(rect.height * dpr);
-
-      let dimsChanged = false;
-      if (canvas.width !== targetW || canvas.height !== targetH) {
-        canvas.width = targetW;
-        canvas.height = targetH;
-        canvas.style.width = `${rect.width}px`;
-        canvas.style.height = `${rect.height}px`;
-        dimsChanged = true;
-      }
-
-      if (dimsChanged) {
-        if (resizeTimeout) clearTimeout(resizeTimeout);
-        resizeTimeout = setTimeout(() => {
-          handleFitToScreen();
-        }, 120);
-      }
-    };
-
-    handleResize();
-
-    const ro = new ResizeObserver(() => {
-      handleResize();
-    });
-    ro.observe(container);
-
-    window.addEventListener('resize', handleResize);
-    return () => {
-      ro.disconnect();
-      window.removeEventListener('resize', handleResize);
-      if (resizeTimeout) clearTimeout(resizeTimeout);
-    };
-  }, [handleFitToScreen]);
-
   // Convert client coordinates to simulation coordinates
   const getCanvasCoords = useCallback((clientX: number, clientY: number) => {
     const canvas = canvasRef.current;
@@ -1782,6 +1734,57 @@ export const CardNeuralMap: React.FC<CardNeuralMapProps> = ({
       zoom: fitZoom
     });
   }, []);
+
+  // Resize canvas with ResizeObserver and devicePixelRatio for maximum sharpness
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    let resizeTimeout: any = null;
+
+    const handleResize = () => {
+      const canvas = canvasRef.current;
+      const cont = containerRef.current;
+      if (!canvas || !cont) return;
+
+      const rect = cont.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) return;
+
+      const dpr = window.devicePixelRatio || 1;
+      const targetW = Math.round(rect.width * dpr);
+      const targetH = Math.round(rect.height * dpr);
+
+      let dimsChanged = false;
+      if (canvas.width !== targetW || canvas.height !== targetH) {
+        canvas.width = targetW;
+        canvas.height = targetH;
+        canvas.style.width = `${rect.width}px`;
+        canvas.style.height = `${rect.height}px`;
+        dimsChanged = true;
+      }
+
+      if (dimsChanged) {
+        if (resizeTimeout) clearTimeout(resizeTimeout);
+        resizeTimeout = setTimeout(() => {
+          handleFitToScreen();
+        }, 120);
+      }
+    };
+
+    handleResize();
+
+    const ro = new ResizeObserver(() => {
+      handleResize();
+    });
+    ro.observe(container);
+
+    window.addEventListener('resize', handleResize);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener('resize', handleResize);
+      if (resizeTimeout) clearTimeout(resizeTimeout);
+    };
+  }, [handleFitToScreen]);
 
   // Reorganize and reset positions according to layoutMode
   const handleReorganize = useCallback(() => {

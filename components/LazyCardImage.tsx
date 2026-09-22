@@ -2,8 +2,19 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Sword, Shield, Scale, Sparkles, Layers } from 'lucide-react';
 import { CardType } from '../types';
 
-// Global cache to remember images loaded in this session
-const loadedImagesCache = new Set<string>();
+// Global cache to remember images loaded in this session across all components
+export const loadedImagesCache = new Set<string>();
+
+// Predictive image preloader
+export const preloadCardImage = (url?: string) => {
+  if (!url || loadedImagesCache.has(url)) return;
+  const img = new Image();
+  img.referrerPolicy = 'no-referrer';
+  img.src = url;
+  img.onload = () => {
+    loadedImagesCache.add(url);
+  };
+};
 
 interface LazyCardImageProps {
   src: string;
@@ -14,7 +25,7 @@ interface LazyCardImageProps {
   containerClassName?: string;
 }
 
-export const LazyCardImage: React.FC<LazyCardImageProps> = ({
+export const LazyCardImage: React.FC<LazyCardImageProps> = React.memo(({
   src,
   alt,
   type,
@@ -23,43 +34,30 @@ export const LazyCardImage: React.FC<LazyCardImageProps> = ({
   containerClassName = "w-full h-full relative overflow-hidden"
 }) => {
   const isAlreadyLoaded = loadedImagesCache.has(src);
-  const [isInView, setIsInView] = useState<boolean>(priority || isAlreadyLoaded);
   const [isLoaded, setIsLoaded] = useState<boolean>(isAlreadyLoaded);
   const [hasError, setHasError] = useState<boolean>(false);
-  const containerRef = useRef<HTMLDivElement>(null);
+  const imgRef = useRef<HTMLImageElement | null>(null);
 
+  // Sync state when src prop changes
   useEffect(() => {
-    // If priority or already loaded, no need for observer
-    if (priority || isAlreadyLoaded || isInView) return;
-
-    const target = containerRef.current;
-    if (!target) return;
-
-    // IntersectionObserver with 250px margin: starts loading slightly before entering viewport
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const [entry] = entries;
-        if (entry.isIntersecting) {
-          setIsInView(true);
-          observer.disconnect();
-        }
-      },
-      {
-        rootMargin: '250px 0px',
-        threshold: 0.01,
+    if (loadedImagesCache.has(src)) {
+      setIsLoaded(true);
+      setHasError(false);
+    } else {
+      setIsLoaded(false);
+      setHasError(false);
+      // Immediately check if browser has this image already decoded in memory/cache
+      if (imgRef.current && imgRef.current.complete && imgRef.current.naturalWidth > 0) {
+        loadedImagesCache.add(src);
+        setIsLoaded(true);
       }
-    );
-
-    observer.observe(target);
-
-    return () => {
-      observer.disconnect();
-    };
-  }, [priority, isAlreadyLoaded, isInView]);
+    }
+  }, [src]);
 
   const handleLoad = () => {
     loadedImagesCache.add(src);
     setIsLoaded(true);
+    setHasError(false);
   };
 
   const handleError = () => {
@@ -86,10 +84,10 @@ export const LazyCardImage: React.FC<LazyCardImageProps> = ({
   const skeleton = getSkeletonTheme();
 
   return (
-    <div ref={containerRef} className={containerClassName}>
-      {/* Lightweight skeleton placeholder when not loaded or not in view */}
+    <div className={containerClassName}>
+      {/* Lightweight skeleton placeholder when not loaded or on error */}
       {(!isLoaded || hasError) && (
-        <div className={`absolute inset-0 bg-gradient-to-b ${skeleton.bg} border ${skeleton.border} flex flex-col items-center justify-center p-3 animate-pulse`}>
+        <div className={`absolute inset-0 bg-gradient-to-b ${skeleton.bg} border ${skeleton.border} flex flex-col items-center justify-center p-3 z-0 ${!isLoaded ? 'animate-pulse' : ''}`}>
           <div className="scale-110 mb-2 opacity-60">
             {skeleton.icon}
           </div>
@@ -98,21 +96,29 @@ export const LazyCardImage: React.FC<LazyCardImageProps> = ({
         </div>
       )}
 
-      {/* Only attach src when entering viewport (or priority/cached) */}
-      {isInView && !hasError && (
+      {/* Native browser image rendering with native lazy loading and no-referrer */}
+      {!hasError && src && (
         <img
+          ref={(el) => {
+            imgRef.current = el;
+            if (el && el.complete && el.naturalWidth > 0 && !isLoaded) {
+              loadedImagesCache.add(src);
+              setIsLoaded(true);
+            }
+          }}
           src={src}
           alt={alt}
+          referrerPolicy="no-referrer"
           onLoad={handleLoad}
           onError={handleError}
           loading={priority ? "eager" : "lazy"}
           decoding="async"
-          {...(priority ? { fetchPriority: "high" as any } : { fetchPriority: "low" as any })}
-          className={`${className} transition-opacity duration-300 ${
+          {...(priority ? { fetchPriority: "high" as any } : { fetchPriority: "auto" as any })}
+          className={`${className} relative z-10 transition-opacity duration-150 ${
             isLoaded ? 'opacity-100' : 'opacity-0'
           }`}
         />
       )}
     </div>
   );
-};
+});

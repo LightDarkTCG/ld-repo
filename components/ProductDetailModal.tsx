@@ -75,7 +75,14 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
               {/* Card art or placeholder */}
               <div className="w-11 h-14 rounded overflow-hidden shrink-0 bg-slate-900 border border-slate-800 flex items-center justify-center">
                 {card?.imageUrl ? (
-                  <img src={card.imageUrl} alt="" className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
+                  <img 
+                    src={card.imageUrl} 
+                    alt={card.name || ""} 
+                    referrerPolicy="no-referrer"
+                    loading="lazy"
+                    decoding="async"
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform" 
+                  />
                 ) : (
                   <Layers size={18} className="text-slate-600" />
                 )}

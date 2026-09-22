@@ -46,7 +46,7 @@ const getCardStyle = (type: CardType) => {
   }
 };
 
-export const Card: React.FC<CardProps> = ({ name, type, archetype, ct, attack, defense, description, imageGradient, imageUrl, code, priority }) => {
+export const Card: React.FC<CardProps> = React.memo(({ name, type, archetype, ct, attack, defense, description, imageGradient, imageUrl, code, priority }) => {
   const styles = getCardStyle(type);
 
   // MODO CARTA COMPLETA COM IMAGEM
@@ -119,4 +119,4 @@ export const Card: React.FC<CardProps> = ({ name, type, archetype, ct, attack, d
       </div>
     </div>
   );
-};
+});
