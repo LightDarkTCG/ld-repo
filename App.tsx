@@ -20,7 +20,7 @@ import { collection, getDocs, doc, getDoc } from 'firebase/firestore';
 import { ref, listAll, getDownloadURL } from 'firebase/storage';
 import { storage } from './firebase';
 import { archetypesList, collectionsList } from './data';
-import { useCards } from './CardContext';
+import { useCards, cleanCardCode, getCardDisplayPriority } from './CardContext';
 import { CardData, CardType, ArchetypeData, ExclusiveProduct } from './types';
 import { NovidadesSection } from './components/NovidadesSection';
 import { ProductDetailModal } from './components/ProductDetailModal';
@@ -632,7 +632,75 @@ const CatalogModal = ({ isOpen, onClose, onOpenAdmin }: { isOpen: boolean, onClo
   };
 
   const filteredCards = useMemo(() => {
-    return allCards.filter(card => {
+    // Group allCards by collection and base card code so variations of the same card are grouped,
+    // but distinct cards across collections/packs (like Booster Pack reprints or different card codes) remain distinct.
+    const groupedByCard = new Map<string, CardData[]>();
+    for (const card of allCards) {
+      const baseCode = cleanCardCode(card.parentCode || card.code);
+      const key = `${card.collection || ''}_${baseCode}`;
+      if (!groupedByCard.has(key)) {
+        groupedByCard.set(key, []);
+      }
+      groupedByCard.get(key)!.push(card);
+    }
+
+    // For each unique card group, pick the primary card based on filter and priority:
+    // Moderno > AA / Skin > Legado
+    const catalogCards: CardData[] = [];
+    groupedByCard.forEach((group) => {
+      let chosenCard: CardData;
+
+      if (filters.frame === 'Moderno') {
+        const modernOptions = group.filter(c => c.frame === 'Moderno' || (c.code && c.code.endsWith('-M')));
+        chosenCard = modernOptions.length > 0 ? modernOptions[0] : group[0];
+      } else if (filters.frame === 'Legado') {
+        const legacyOptions = group.filter(c => (c.frame || 'Legado') === 'Legado' && !c.code?.endsWith('-M'));
+        chosenCard = legacyOptions.length > 0 ? legacyOptions[0] : group[0];
+      } else {
+        // Frame: "Todos" -> Apply Priority: Moderno > AA / Skin > Legado
+        const sorted = [...group].sort((a, b) => getCardDisplayPriority(b) - getCardDisplayPriority(a));
+        chosenCard = sorted[0];
+      }
+
+      // Consolidate all variations from the group into chosenCard.variants
+      const allVariants: any[] = [];
+      const baseGroupCode = cleanCardCode(chosenCard.parentCode || chosenCard.code);
+      group.forEach(item => {
+        if (item.variants && item.variants.length > 0) {
+          item.variants.forEach(v => {
+            const vBase = cleanCardCode(v.code || item.code);
+            if (vBase === baseGroupCode && !allVariants.some(existing => existing.imageUrl === v.imageUrl)) {
+              allVariants.push({
+                ...v,
+                code: cleanCardCode(v.code)
+              });
+            }
+          });
+        }
+        if (item.imageUrl && item.imageUrl !== chosenCard.imageUrl) {
+          if (!allVariants.some(existing => existing.imageUrl === item.imageUrl)) {
+            allVariants.push({
+              id: item.id || `var_${item.code}`,
+              name: item.variationType || (item.frame === 'Moderno' ? 'Novo Frame' : 'Legado'),
+              imageUrl: item.imageUrl,
+              frame: item.frame || 'Legado',
+              code: cleanCardCode(item.code),
+              rarity: item.rarity
+            });
+          }
+        }
+      });
+
+      const cardWithVariants: CardData = {
+        ...chosenCard,
+        code: cleanCardCode(chosenCard.code),
+        variants: allVariants.length > 0 ? allVariants : chosenCard.variants
+      };
+
+      catalogCards.push(cardWithVariants);
+    });
+
+    return catalogCards.filter(card => {
       const searchLower = (searchTerm || "").toLowerCase();
       const matchesSearch = 
         (card.name || "").toLowerCase().includes(searchLower) || 

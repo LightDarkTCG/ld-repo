@@ -2,7 +2,7 @@ import React, { useMemo, useState, useEffect } from 'react';
 import { X, Zap, BookOpen, Box, Hash, Link as LinkIcon, Edit2, Check, Trash, Image as ImageIcon, Sparkles, Layers } from 'lucide-react';
 import { CardData } from '../types';
 import { Card } from './Card';
-import { useCards } from '../CardContext';
+import { useCards, cleanCardCode, getCardDisplayPriority } from '../CardContext';
 import { auth, storage } from '../firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
@@ -34,12 +34,75 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card: initialC
     setIsEditing(false);
   }, [initialCard]);
 
-  // Find all cards with the same name (alternate arts, skins, frames)
+  // Find all variations (alternate arts, skins, frames) for this card
   const cardVariations = useMemo(() => {
     if (!card) return [];
-    const normalizedName = (card.name || '').trim().toLowerCase();
-    return allCards.filter(c => (c.name || '').trim().toLowerCase() === normalizedName);
-  }, [card?.name, allCards]);
+    const baseCode = cleanCardCode(card.parentCode || card.code);
+    
+    // Find matching cards in allCards that belong to this card
+    const matches = allCards.filter(c => {
+      const cBase = cleanCardCode(c.parentCode || c.code);
+      if (cBase !== baseCode) return false;
+      // Do not group cards from different collections unless explicitly a variation
+      if (c.collection && card.collection && c.collection !== card.collection && !c.isVariation && !card.isVariation) {
+        return false;
+      }
+      return true;
+    });
+
+    const list: CardData[] = [];
+    const seenImages = new Set<string>();
+
+    // 1. Current card
+    if (card.imageUrl) {
+      seenImages.add(card.imageUrl);
+      list.push({
+        ...card,
+        code: cleanCardCode(card.code),
+        frame: card.frame || 'Legado',
+        variationType: card.variationType || (card.frame === 'Moderno' ? 'Novo Frame' : 'Legado')
+      });
+    }
+
+    // 2. Matches from allCards
+    for (const c of matches) {
+      if (c.imageUrl && !seenImages.has(c.imageUrl)) {
+        seenImages.add(c.imageUrl);
+        list.push({
+          ...c,
+          code: cleanCardCode(c.code),
+          frame: c.frame || 'Legado',
+          variationType: c.variationType || (c.frame === 'Moderno' ? 'Novo Frame' : 'Legado')
+        });
+      }
+    }
+
+    // 3. Candidate variants from card.variants or matches variants
+    const allCandidateVariants: CardVariationItem[] = [];
+    if (card.variants) allCandidateVariants.push(...card.variants);
+    matches.forEach(m => {
+      if (m.variants) allCandidateVariants.push(...m.variants);
+    });
+
+    allCandidateVariants.forEach(v => {
+      const vBase = cleanCardCode(v.code || card.code);
+      if (vBase === baseCode && v.imageUrl && !seenImages.has(v.imageUrl)) {
+        seenImages.add(v.imageUrl);
+        list.push({
+          ...card,
+          id: v.id || `var_${v.code}`,
+          code: cleanCardCode(v.code) || cleanCardCode(card.code),
+          imageUrl: v.imageUrl,
+          frame: v.frame || 'Moderno',
+          variationType: v.name || (v.frame === 'Moderno' ? 'Novo Frame' : 'Legado'),
+          isVariation: true
+        });
+      }
+    });
+
+    // Sort order: Moderno > AA / Skin > Legado
+    return list.sort((a, b) => getCardDisplayPriority(b) - getCardDisplayPriority(a));
+  }, [card, allCards]);
 
 
 
@@ -307,11 +370,11 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card: initialC
                 <span className="text-[10px] text-slate-500">Alternar visual</span>
               </div>
               <div className="grid grid-cols-2 gap-1.5">
-                {cardVariations.map((v) => {
-                  const isCurrent = v.code === card.code;
+                {cardVariations.map((v, idx) => {
+                  const isCurrent = v.imageUrl === card.imageUrl && (v.frame || 'Legado') === (card.frame || 'Legado');
                   return (
                     <button
-                      key={v.code}
+                      key={`${v.code}-${v.imageUrl || idx}`}
                       type="button"
                       onClick={() => {
                         setCard(v);
@@ -324,12 +387,15 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card: initialC
                       }`}
                     >
                       <span className="truncate w-full font-bold flex items-center justify-between">
-                        <span>{v.frame || (v.code.endsWith('-M') ? 'Moderno' : 'Legado')}</span>
+                        <span>{v.variationType || (v.frame === 'Moderno' ? 'Moderno' : 'Legado')}</span>
                         {isCurrent && <span className="text-[9px] bg-purple-700 px-1 rounded">Ativo</span>}
                       </span>
-                      <span className="text-[10px] opacity-70 font-mono truncate w-full">
-                        {v.code}
-                      </span>
+                      <div className="flex items-center gap-1.5 w-full">
+                        <span className="text-[9px] px-1 py-0.2 rounded bg-slate-900/60 text-slate-400">{v.frame || 'Legado'}</span>
+                        <span className="text-[10px] opacity-70 font-mono truncate">
+                          {cleanCardCode(v.code)}
+                        </span>
+                      </div>
                     </button>
                   );
                 })}
@@ -547,11 +613,11 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card: initialC
                 <input 
                   type="text" 
                   value={card.code} 
-                  onChange={(e) => setCard({...card, code: e.target.value})}
+                  onChange={(e) => setCard({...card, code: cleanCardCode(e.target.value)})}
                   className="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-slate-300 outline-none focus:border-purple-500 w-full ml-2"
                 />
               ) : (
-                card.code
+                cleanCardCode(card.code)
               )}
             </div>
           </div>

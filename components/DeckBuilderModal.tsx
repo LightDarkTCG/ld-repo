@@ -2,7 +2,7 @@ import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { X, Search, Save, Download, Trash2, Plus, Minus, AlertTriangle, CheckCircle, BarChart3, Copy, Eye, ChevronDown, ChevronUp, ChevronRight, ChevronLeft, Layers, Network } from 'lucide-react';
 import { CardData } from '../types';
 import { collectionsList, archetypesList } from '../data';
-import { useCards } from '../CardContext';
+import { useCards, cleanCardCode, getCardDisplayPriority } from '../CardContext';
 import { compareCardCodes } from '../deckUtils';
 import { Card } from './Card';
 import { CardDetailModal } from './CardDetailModal';
@@ -225,24 +225,56 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
   const isValidDeckSize = deck.length >= 30 && deck.length <= 35 && sideDeck.length <= 5;
 
   // --- Filtered Pool ---
+  const filteredPool = useMemo(() => {
+    // Group allCards by collection and base card code to consolidate variations of the same card
+    const groupedByCard = new Map<string, CardData[]>();
+    for (const card of allCards) {
+      const baseCode = cleanCardCode(card.parentCode || card.code);
+      const key = `${card.collection || ''}_${baseCode}`;
+      if (!groupedByCard.has(key)) {
+        groupedByCard.set(key, []);
+      }
+      groupedByCard.get(key)!.push(card);
+    }
 
-  const filteredPool = allCards.filter(card => {
-    const matchesSearch = (card.name || "").toLowerCase().includes((searchTerm || "").toLowerCase()) || 
-                          (card.code || "").toLowerCase().includes((searchTerm || "").toLowerCase());
-    
-    const matchesType = filters.type === "Todos" || card.type === filters.type;
-    const matchesArch = filters.archetype === "Todos" || (card.archetype || "").includes(filters.archetype);
-    const matchesColl = filters.collection === "Todos" || card.collection === filters.collection;
-    const matchesFrame = filters.frame === "Todos" || (card.frame || "Legado") === filters.frame;
-    const matchesCt = filters.ct === "Todos" || card.ct === parseInt(filters.ct);
-    
-    // Changed to exact match (===) instead of >=
-    const matchesAtk = filters.minAtk === "" || (card.attack !== undefined && card.attack === parseInt(filters.minAtk));
-    const matchesDef = filters.minDef === "" || (card.defense !== undefined && card.defense === parseInt(filters.minDef));
-    const matchesEffectWord = filters.effectWord === "" || (card.description || "").toLowerCase().includes((filters.effectWord || "").toLowerCase());
-    
-    return matchesSearch && matchesType && matchesArch && matchesColl && matchesFrame && matchesCt && matchesAtk && matchesDef && matchesEffectWord;
-  }).sort((a, b) => compareCardCodes(a.code, b.code));
+    const poolCards: CardData[] = [];
+    groupedByCard.forEach((group) => {
+      let chosenCard: CardData;
+      if (filters.frame === 'Moderno') {
+        const modernOptions = group.filter(c => c.frame === 'Moderno' || (c.code && c.code.endsWith('-M')));
+        chosenCard = modernOptions.length > 0 ? modernOptions[0] : group[0];
+      } else if (filters.frame === 'Legado') {
+        const legacyOptions = group.filter(c => (c.frame || 'Legado') === 'Legado' && !c.code?.endsWith('-M'));
+        chosenCard = legacyOptions.length > 0 ? legacyOptions[0] : group[0];
+      } else {
+        // Frame: "Todos" -> Apply Priority: Moderno > AA / Skin > Legado
+        const sorted = [...group].sort((a, b) => getCardDisplayPriority(b) - getCardDisplayPriority(a));
+        chosenCard = sorted[0];
+      }
+
+      poolCards.push({
+        ...chosenCard,
+        code: cleanCardCode(chosenCard.code)
+      });
+    });
+
+    return poolCards.filter(card => {
+      const matchesSearch = (card.name || "").toLowerCase().includes((searchTerm || "").toLowerCase()) || 
+                            (card.code || "").toLowerCase().includes((searchTerm || "").toLowerCase());
+      
+      const matchesType = filters.type === "Todos" || card.type === filters.type;
+      const matchesArch = filters.archetype === "Todos" || (card.archetype || "").includes(filters.archetype);
+      const matchesColl = filters.collection === "Todos" || card.collection === filters.collection;
+      const matchesFrame = filters.frame === "Todos" || (card.frame || "Legado") === filters.frame;
+      const matchesCt = filters.ct === "Todos" || card.ct === parseInt(filters.ct);
+      
+      const matchesAtk = filters.minAtk === "" || (card.attack !== undefined && card.attack === parseInt(filters.minAtk));
+      const matchesDef = filters.minDef === "" || (card.defense !== undefined && card.defense === parseInt(filters.minDef));
+      const matchesEffectWord = filters.effectWord === "" || (card.description || "").toLowerCase().includes((filters.effectWord || "").toLowerCase());
+      
+      return matchesSearch && matchesType && matchesArch && matchesColl && matchesFrame && matchesCt && matchesAtk && matchesDef && matchesEffectWord;
+    }).sort((a, b) => compareCardCodes(a.code, b.code));
+  }, [allCards, searchTerm, filters]);
 
   const [visibleCount, setVisibleCount] = useState(24);
   const poolScrollContainerRef = useRef<HTMLDivElement>(null);

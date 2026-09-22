@@ -4,7 +4,7 @@ import { signInWithEmailAndPassword, onAuthStateChanged, signOut } from 'firebas
 import { collection, getDocs, addDoc, deleteDoc, updateDoc, doc, setDoc, getDoc } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { auth, db, storage } from '../firebase';
-import { useCards } from '../CardContext';
+import { useCards, sanitizeForFirestore } from '../CardContext';
 import { ArchetypeData } from '../types';
 import { parseDeckFromCode } from '../deckUtils';
 import { BatchImageMatcher } from './BatchImageMatcher';
@@ -352,9 +352,9 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
     setLoading(true);
     try {
       if (adminType === 'home') {
-        await setDoc(doc(db, 'homeSettings', 'global'), homeSettings);
+        await setDoc(doc(db, 'homeSettings', 'global'), sanitizeForFirestore(homeSettings));
       } else {
-        await setDoc(doc(db, 'wbSettings', 'global'), wbSettings);
+        await setDoc(doc(db, 'wbSettings', 'global'), sanitizeForFirestore(wbSettings));
       }
       alert('Configurações salvas!');
     } catch(e:any) {
