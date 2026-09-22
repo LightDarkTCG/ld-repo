@@ -2,6 +2,15 @@ import { LucideIcon } from 'lucide-react';
 
 export type CardType = 'Herói' | 'Combatente' | 'Equipamento' | 'Efeito';
 
+export interface CardVariationItem {
+  id: string;
+  name: string;
+  imageUrl: string;
+  frame?: 'Legado' | 'Moderno';
+  code?: string;
+  rarity?: string;
+}
+
 export interface CardData {
   name: string;
   type: CardType;
@@ -19,6 +28,10 @@ export interface CardData {
   deleted?: boolean;
   isHidden?: boolean;
   rarity?: string;
+  variants?: CardVariationItem[];
+  parentCode?: string;
+  isVariation?: boolean;
+  variationType?: string;
 }
 
 export interface ArchetypeData {

@@ -1550,28 +1550,56 @@ export const CardNeuralMap: React.FC<CardNeuralMapProps> = ({
     ctx.restore();
   };
 
-  // Resize canvas with devicePixelRatio for maximum sharpness
+  // Resize canvas with ResizeObserver and devicePixelRatio for maximum sharpness
   useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    let resizeTimeout: any = null;
+
     const handleResize = () => {
       const canvas = canvasRef.current;
-      const container = containerRef.current;
-      if (!canvas || !container) return;
+      const cont = containerRef.current;
+      if (!canvas || !cont) return;
 
-      const rect = container.getBoundingClientRect();
+      const rect = cont.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) return;
+
       const dpr = window.devicePixelRatio || 1;
+      const targetW = Math.round(rect.width * dpr);
+      const targetH = Math.round(rect.height * dpr);
 
-      canvas.width = Math.round(rect.width * dpr);
-      canvas.height = Math.round(rect.height * dpr);
-      canvas.style.width = `${rect.width}px`;
-      canvas.style.height = `${rect.height}px`;
+      let dimsChanged = false;
+      if (canvas.width !== targetW || canvas.height !== targetH) {
+        canvas.width = targetW;
+        canvas.height = targetH;
+        canvas.style.width = `${rect.width}px`;
+        canvas.style.height = `${rect.height}px`;
+        dimsChanged = true;
+      }
 
-      renderCanvas();
+      if (dimsChanged) {
+        if (resizeTimeout) clearTimeout(resizeTimeout);
+        resizeTimeout = setTimeout(() => {
+          handleFitToScreen();
+        }, 120);
+      }
     };
 
     handleResize();
+
+    const ro = new ResizeObserver(() => {
+      handleResize();
+    });
+    ro.observe(container);
+
     window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener('resize', handleResize);
+      if (resizeTimeout) clearTimeout(resizeTimeout);
+    };
+  }, [handleFitToScreen]);
 
   // Convert client coordinates to simulation coordinates
   const getCanvasCoords = useCallback((clientX: number, clientY: number) => {
@@ -1724,8 +1752,8 @@ export const CardNeuralMap: React.FC<CardNeuralMapProps> = ({
     }
 
     const canvas = canvasRef.current;
-    const width = canvas ? canvas.clientWidth : 800;
-    const height = canvas ? canvas.clientHeight : 600;
+    const width = canvas?.clientWidth || 800;
+    const height = canvas?.clientHeight || 600;
 
     let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
     nodes.forEach(n => {
@@ -1735,18 +1763,22 @@ export const CardNeuralMap: React.FC<CardNeuralMapProps> = ({
       maxY = Math.max(maxY, n.y + n.height / 2);
     });
 
-    const graphWidth = Math.max(120, maxX - minX + 160);
-    const graphHeight = Math.max(120, maxY - minY + 160);
+    const padding = 90;
+    const graphWidth = Math.max(120, maxX - minX + padding * 2);
+    const graphHeight = Math.max(120, maxY - minY + padding * 2);
     const centerX = (minX + maxX) / 2;
     const centerY = (minY + maxY) / 2;
 
     const scaleX = width / graphWidth;
     const scaleY = height / graphHeight;
-    const fitZoom = Math.min(1.6, Math.max(0.35, Math.min(scaleX, scaleY)));
+    const fitZoom = Math.min(1.15, Math.max(0.35, Math.min(scaleX, scaleY)));
 
+    // Since renderCanvas centers at (cssWidth / 2, cssHeight / 2),
+    // the target camera offset from center is strictly -centerX * fitZoom and -centerY * fitZoom.
+    // +20px on Y leaves breathing space below the top metrics & filter bar.
     setCamera({
-      x: width / 2 - centerX * fitZoom,
-      y: height / 2 - centerY * fitZoom,
+      x: -centerX * fitZoom,
+      y: -centerY * fitZoom + 20,
       zoom: fitZoom
     });
   }, []);

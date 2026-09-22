@@ -14,7 +14,14 @@ import {
   Filter, 
   GripVertical,
   HelpCircle,
-  Loader2
+  Loader2,
+  Sparkles,
+  Shield,
+  Tag,
+  Palette,
+  SlidersHorizontal,
+  ChevronRight,
+  Plus
 } from 'lucide-react';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { storage } from '../firebase';
@@ -51,6 +58,18 @@ export const BatchImageMatcher: React.FC<BatchImageMatcherProps> = ({
   const [selectedImageId, setSelectedImageId] = useState<string | null>(null);
   const [draggingImageId, setDraggingImageId] = useState<string | null>(null);
   const [hoveredCardCode, setHoveredCardCode] = useState<string | null>(null);
+
+  // --- Variation Settings ---
+  // Mode: 'add_variation' (Non-destructive: keeps old card, creates variation) vs 'replace_original' (Overwrites old card's image)
+  const [operationMode, setOperationMode] = useState<'add_variation' | 'replace_original'>('add_variation');
+  
+  // Variation Type preset
+  const [variationPreset, setVariationPreset] = useState<'novo_frame' | 'arte_alternativa' | 'skin' | 'custom'>('novo_frame');
+  const [codeSuffix, setCodeSuffix] = useState<string>('-M');
+  const [variationFrame, setVariationFrame] = useState<'Moderno' | 'Legado'>('Moderno');
+  const [customVariationTitle, setCustomVariationTitle] = useState<string>('Novo Frame');
+  const [targetCollectionMode, setTargetCollectionMode] = useState<'same' | 'custom'>('same');
+  const [customCollectionName, setCustomCollectionName] = useState<string>('');
 
   // Filters
   const [selectedCollection, setSelectedCollection] = useState<string>(() => {
@@ -108,7 +127,6 @@ export const BatchImageMatcher: React.FC<BatchImageMatcherProps> = ({
 
   // Clear single staged image
   const handleRemoveStagedImage = (imageId: string) => {
-    // Remove any assignment pointing to this image
     setAssignments(prev => {
       const next = { ...prev };
       for (const [cCode, imgId] of Object.entries(next)) {
@@ -143,20 +161,47 @@ export const BatchImageMatcher: React.FC<BatchImageMatcherProps> = ({
     setSelectedImageId(null);
   };
 
-  // Assign image to a card
+  // Handle Preset Change
+  const handlePresetChange = (preset: 'novo_frame' | 'arte_alternativa' | 'skin' | 'custom') => {
+    setVariationPreset(preset);
+    if (preset === 'novo_frame') {
+      setCodeSuffix('-M');
+      setVariationFrame('Moderno');
+      setCustomVariationTitle('Novo Frame (Moderno)');
+    } else if (preset === 'arte_alternativa') {
+      setCodeSuffix('-ALT');
+      setVariationFrame('Moderno');
+      setCustomVariationTitle('Arte Alternativa');
+    } else if (preset === 'skin') {
+      setCodeSuffix('-SKIN');
+      setVariationFrame('Moderno');
+      setCustomVariationTitle('Skin');
+    } else {
+      setCodeSuffix('-V2');
+      setCustomVariationTitle('Variação');
+    }
+  };
+
+  // Calculate generated code for a card in variation mode
+  const getGeneratedCode = (baseCode: string) => {
+    if (operationMode === 'replace_original') return baseCode;
+    const cleanSuffix = codeSuffix.trim();
+    if (!cleanSuffix) return `${baseCode}-VAR`;
+    return `${baseCode}${cleanSuffix}`;
+  };
+
+  // Assign image to card
   const assignImageToCard = (cardCode: string, imageId: string) => {
     setAssignments(prev => ({
       ...prev,
       [cardCode]: imageId
     }));
-    // If it was selected via click-mode, deselect it after assigning
     if (selectedImageId === imageId) {
       setSelectedImageId(null);
     }
-    setSaveSuccessMsg(null);
   };
 
-  // Remove assignment from card
+  // Unassign card
   const unassignCard = (cardCode: string) => {
     setAssignments(prev => {
       const next = { ...prev };
@@ -173,29 +218,27 @@ export const BatchImageMatcher: React.FC<BatchImageMatcherProps> = ({
     });
   }, [stagedImages, imageSearchTerm]);
 
-  // Which cards to display
+  // Filtered cards list
   const displayCards = useMemo(() => {
-    let list = [...cards];
+    return cards
+      .filter(card => {
+        // Exclude variations themselves from being base cards if needed, but allow all
+        if (selectedCollection && card.collection !== selectedCollection) return false;
+        
+        if (cardSearchTerm.trim()) {
+          const s = cardSearchTerm.toLowerCase();
+          const matchName = (card.name || '').toLowerCase().includes(s);
+          const matchCode = (card.code || '').toLowerCase().includes(s);
+          if (!matchName && !matchCode) return false;
+        }
 
-    if (selectedCollection) {
-      list = list.filter(c => c.collection === selectedCollection);
-    }
+        const isAssigned = !!assignments[card.code];
+        if (cardStatusFilter === 'assigned' && !isAssigned) return false;
+        if (cardStatusFilter === 'pending' && isAssigned) return false;
 
-    if (cardSearchTerm.trim()) {
-      const q = cardSearchTerm.toLowerCase();
-      list = list.filter(c => 
-        c.name.toLowerCase().includes(q) || 
-        c.code.toLowerCase().includes(q)
-      );
-    }
-
-    if (cardStatusFilter === 'pending') {
-      list = list.filter(c => !assignments[c.code]);
-    } else if (cardStatusFilter === 'assigned') {
-      list = list.filter(c => !!assignments[c.code]);
-    }
-
-    return list.sort((a, b) => compareCardCodes(a.code, b.code));
+        return true;
+      })
+      .sort((a, b) => compareCardCodes(a.code, b.code));
   }, [cards, selectedCollection, cardSearchTerm, cardStatusFilter, assignments]);
 
   // Count assigned
@@ -228,17 +271,59 @@ export const BatchImageMatcher: React.FC<BatchImageMatcherProps> = ({
 
         // Upload to Firebase Storage
         const cleanExt = staged.file.name.split('.').pop() || 'png';
-        const storagePath = `cards_updated/${Date.now()}_${card.code.replace(/\//g, '_')}.${cleanExt}`;
+        const folder = operationMode === 'add_variation' ? 'cards_variations' : 'cards_updated';
+        const storagePath = `${folder}/${Date.now()}_${card.code.replace(/\//g, '_')}_${i}.${cleanExt}`;
         const fileRef = ref(storage, storagePath);
         
         await uploadBytes(fileRef, staged.file);
         const newDownloadUrl = await getDownloadURL(fileRef);
 
-        // Update card in Firestore
-        await saveCard({
-          ...card,
-          imageUrl: newDownloadUrl
-        });
+        if (operationMode === 'add_variation') {
+          // 1. Calculate new variation code and attributes
+          const newCode = getGeneratedCode(card.code);
+          const title = customVariationTitle.trim() || 'Variação';
+          const targetCollection = (targetCollectionMode === 'custom' && customCollectionName.trim()) 
+            ? customCollectionName.trim() 
+            : card.collection;
+
+          // 2. Save NEW variation card (preserves the original card untouched!)
+          const newCard: CardData = {
+            ...card,
+            code: newCode,
+            imageUrl: newDownloadUrl,
+            frame: variationFrame,
+            collection: targetCollection,
+            isVariation: true,
+            parentCode: card.code,
+            variationType: title
+          };
+          await saveCard(newCard);
+
+          // 3. Update the original card's variants list WITHOUT modifying its imageUrl or frame
+          const currentVariants = card.variants || [];
+          const updatedVariants = [
+            ...currentVariants.filter(v => v.code !== newCode),
+            {
+              id: `var_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+              name: title,
+              imageUrl: newDownloadUrl,
+              frame: variationFrame,
+              code: newCode,
+              rarity: card.rarity
+            }
+          ];
+          await saveCard({
+            ...card,
+            variants: updatedVariants
+          });
+
+        } else {
+          // Replace original card's image
+          await saveCard({
+            ...card,
+            imageUrl: newDownloadUrl
+          });
+        }
 
         successCount++;
       }
@@ -257,7 +342,12 @@ export const BatchImageMatcher: React.FC<BatchImageMatcherProps> = ({
       // Clear assignments
       setAssignments({});
       setSelectedImageId(null);
-      setSaveSuccessMsg(`🎉 Sucesso! ${successCount} carta(s) foram atualizadas com suas novas imagens no banco de dados!`);
+
+      if (operationMode === 'add_variation') {
+        setSaveSuccessMsg(`🎉 Sucesso! ${successCount} nova(s) variação(ões) adicionada(s) com sucesso (com código sufixado "${codeSuffix}" e Frame ${variationFrame}) sem alterar as cartas originais!`);
+      } else {
+        setSaveSuccessMsg(`🎉 Sucesso! ${successCount} carta(s) tiveram sua imagem original atualizada!`);
+      }
       if (onSuccess) onSuccess();
 
     } catch (err: any) {
@@ -273,18 +363,18 @@ export const BatchImageMatcher: React.FC<BatchImageMatcherProps> = ({
     <div className="flex flex-col gap-6 text-slate-200">
       
       {/* Top Banner / Explainer */}
-      <div className="bg-gradient-to-r from-purple-950/80 via-slate-900 to-indigo-950/80 border border-purple-500/40 p-5 rounded-2xl shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="bg-gradient-to-r from-purple-950/90 via-slate-900 to-indigo-950/90 border border-purple-500/40 p-5 rounded-2xl shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2 mb-1">
             <span className="p-1.5 rounded-lg bg-purple-600/30 text-purple-300 border border-purple-500/40">
-              <Upload size={18} />
+              <Sparkles size={18} className="text-amber-400" />
             </span>
             <h3 className="text-xl font-black text-white tracking-wide">
-              Vincular Novas Imagens de Cartas em Lote
+              Adicionar Variações, Novos Frames & Skins (Arrastar & Soltar)
             </h3>
           </div>
           <p className="text-xs sm:text-sm text-slate-300 max-w-2xl leading-relaxed">
-            Suba todas as imagens da sua pasta de uma só vez (ex: coleção <strong>Legado</strong> ou atualizações). Depois, <strong>arraste cada imagem para a respectiva carta</strong> que ela representa para atualizar.
+            Faça upload das imagens atualizadas e <strong>arraste cada imagem para a carta correspondente</strong>. As cartas antigas <strong>NÃO</strong> são substituídas — uma nova variação (com novo frame e código próprio) é criada preservando a original.
           </p>
         </div>
 
@@ -307,11 +397,216 @@ export const BatchImageMatcher: React.FC<BatchImageMatcherProps> = ({
             ) : (
               <>
                 <Check size={18} />
-                <span>Salvar {assignedCount} Imagens Vinculadas</span>
+                <span>
+                  {operationMode === 'add_variation' 
+                    ? `Criar ${assignedCount} Variações` 
+                    : `Atualizar ${assignedCount} Cartas`}
+                </span>
               </>
             )}
           </button>
         </div>
+      </div>
+
+      {/* Variation Configuration Card */}
+      <div className="bg-slate-900/90 border border-purple-500/30 p-4 sm:p-5 rounded-2xl shadow-lg flex flex-col gap-4">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-3">
+          <div className="flex items-center gap-2">
+            <SlidersHorizontal size={18} className="text-purple-400" />
+            <h4 className="font-bold text-white text-sm sm:text-base">
+              Configurações da Nova Variação
+            </h4>
+          </div>
+
+          {/* Operation Mode Toggle */}
+          <div className="flex items-center gap-2 bg-slate-950 p-1 rounded-xl border border-slate-800 text-xs">
+            <button
+              type="button"
+              onClick={() => setOperationMode('add_variation')}
+              className={`px-3 py-1.5 rounded-lg font-bold transition flex items-center gap-1.5 ${
+                operationMode === 'add_variation'
+                  ? 'bg-purple-600 text-white shadow-sm'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <Shield size={13} className="text-emerald-400" />
+              <span>Adicionar Variação (Não substitui antiga)</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setOperationMode('replace_original')}
+              className={`px-3 py-1.5 rounded-lg font-bold transition flex items-center gap-1.5 ${
+                operationMode === 'replace_original'
+                  ? 'bg-amber-600 text-white shadow-sm'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <RefreshCw size={12} />
+              <span>Substituir Original</span>
+            </button>
+          </div>
+        </div>
+
+        {operationMode === 'add_variation' ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 text-xs">
+            {/* Preset Selector */}
+            <div className="space-y-1.5">
+              <label className="font-bold text-slate-300 block flex items-center gap-1">
+                <Palette size={13} className="text-purple-400" />
+                Tipo de Variação
+              </label>
+              <div className="grid grid-cols-2 gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => handlePresetChange('novo_frame')}
+                  className={`p-2 rounded-lg border text-left font-bold transition ${
+                    variationPreset === 'novo_frame'
+                      ? 'bg-purple-950 border-purple-500 text-purple-200'
+                      : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700'
+                  }`}
+                >
+                  <span className="block text-[11px]">🖼️ Novo Frame</span>
+                  <span className="text-[9px] text-slate-500 font-mono">Frame Moderno (-M)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handlePresetChange('arte_alternativa')}
+                  className={`p-2 rounded-lg border text-left font-bold transition ${
+                    variationPreset === 'arte_alternativa'
+                      ? 'bg-purple-950 border-purple-500 text-purple-200'
+                      : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700'
+                  }`}
+                >
+                  <span className="block text-[11px]">🎨 Arte Alternativa</span>
+                  <span className="text-[9px] text-slate-500 font-mono">Arte Alt (-ALT)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handlePresetChange('skin')}
+                  className={`p-2 rounded-lg border text-left font-bold transition ${
+                    variationPreset === 'skin'
+                      ? 'bg-purple-950 border-purple-500 text-purple-200'
+                      : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700'
+                  }`}
+                >
+                  <span className="block text-[11px]">✨ Skin</span>
+                  <span className="text-[9px] text-slate-500 font-mono">Skin visual (-SKIN)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handlePresetChange('custom')}
+                  className={`p-2 rounded-lg border text-left font-bold transition ${
+                    variationPreset === 'custom'
+                      ? 'bg-purple-950 border-purple-500 text-purple-200'
+                      : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700'
+                  }`}
+                >
+                  <span className="block text-[11px]">⚙️ Personalizado</span>
+                  <span className="text-[9px] text-slate-500 font-mono">Outro formato</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Frame & Code Suffix */}
+            <div className="space-y-1.5">
+              <label className="font-bold text-slate-300 block flex items-center gap-1">
+                <Tag size={13} className="text-purple-400" />
+                Sufixo do Código da Variação
+              </label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={codeSuffix}
+                  onChange={(e) => setCodeSuffix(e.target.value)}
+                  placeholder="-M"
+                  className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-white font-mono text-xs focus:border-purple-500 outline-none"
+                />
+              </div>
+              <div className="flex items-center gap-1 pt-1 flex-wrap">
+                <span className="text-[10px] text-slate-500">Sugestões:</span>
+                {['-M', '-MOD', '-ALT', '-SKIN', '-V2'].map(s => (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => setCodeSuffix(s)}
+                    className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 transition"
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Frame Selector */}
+            <div className="space-y-1.5">
+              <label className="font-bold text-slate-300 block flex items-center gap-1">
+                <Layers size={13} className="text-purple-400" />
+                Frame da Variação
+              </label>
+              <select
+                value={variationFrame}
+                onChange={(e) => setVariationFrame(e.target.value as any)}
+                className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-2 text-white font-bold text-xs focus:border-purple-500 outline-none"
+              >
+                <option value="Moderno">Moderno (Novo Estilo)</option>
+                <option value="Legado">Legado (Estilo Clássico)</option>
+              </select>
+              <p className="text-[10px] text-slate-500">
+                Permite filtrar por Frame no Catálogo e Deck Builder.
+              </p>
+            </div>
+
+            {/* Collection Target */}
+            <div className="space-y-1.5">
+              <label className="font-bold text-slate-300 block flex items-center gap-1">
+                <Filter size={13} className="text-purple-400" />
+                Coleção de Destino
+              </label>
+              <div className="flex gap-2">
+                <select
+                  value={targetCollectionMode}
+                  onChange={(e) => setTargetCollectionMode(e.target.value as any)}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2 py-1.5 text-white text-xs focus:border-purple-500 outline-none"
+                >
+                  <option value="same">Mesma Coleção da Carta Base</option>
+                  <option value="custom">Outra Coleção Específica...</option>
+                </select>
+              </div>
+              {targetCollectionMode === 'custom' && (
+                <input
+                  type="text"
+                  placeholder="Nome da coleção (ex: Legado Moderno)"
+                  value={customCollectionName}
+                  onChange={(e) => setCustomCollectionName(e.target.value)}
+                  className="w-full mt-1 bg-slate-950 border border-purple-500/50 rounded-lg px-2.5 py-1.5 text-white text-xs focus:border-purple-500 outline-none"
+                />
+              )}
+            </div>
+          </div>
+        ) : (
+          <div className="bg-amber-950/30 border border-amber-500/30 p-3 rounded-xl text-xs text-amber-200">
+            ⚠️ <strong>Modo de Substituição:</strong> A imagem existente da carta selecionada será substituída pela nova imagem. Use este modo apenas se quiser corrigir a arte original da carta.
+          </div>
+        )}
+
+        {/* Live Code Preview Banner */}
+        {operationMode === 'add_variation' && (
+          <div className="bg-slate-950/80 border border-slate-800 px-3.5 py-2 rounded-xl text-xs flex items-center justify-between flex-wrap gap-2">
+            <div className="flex items-center gap-2">
+              <span className="text-slate-400">Exemplo de código gerado:</span>
+              <span className="font-mono text-slate-300 bg-slate-900 px-2 py-0.5 rounded border border-slate-800">
+                2025/0001/00001
+              </span>
+              <ChevronRight size={14} className="text-purple-400" />
+              <span className="font-mono font-bold text-emerald-400 bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-800/40">
+                {getGeneratedCode('2025/0001/00001')}
+              </span>
+            </div>
+            <div className="text-[11px] text-emerald-400/90 font-medium flex items-center gap-1">
+              <Shield size={12} /> Carta original mantida intacta
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Progress & Alert Messages */}
@@ -370,232 +665,214 @@ export const BatchImageMatcher: React.FC<BatchImageMatcherProps> = ({
             </div>
 
             {stagedImages.length > 0 && (
-              <button 
+              <button
                 onClick={handleClearAllImages}
-                className="text-xs text-red-400 hover:text-red-300 flex items-center gap-1 hover:underline cursor-pointer"
-                title="Limpar imagens carregadas"
+                className="text-xs text-red-400 hover:text-red-300 flex items-center gap-1 hover:underline"
               >
-                <Trash2 size={13} />
-                <span>Limpar Todas</span>
+                <Trash2 size={13} /> Limpar tudo
               </button>
             )}
           </div>
 
-          {/* Upload Dropzone */}
+          {/* Upload Drop Area */}
           <div
-            onDragOver={(e) => e.preventDefault()}
+            onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; }}
             onDrop={handleDropFiles}
             onClick={() => fileInputRef.current?.click()}
-            className="border-2 border-dashed border-purple-500/40 hover:border-purple-400 hover:bg-purple-950/20 bg-slate-900/60 rounded-xl p-6 text-center cursor-pointer transition flex flex-col items-center justify-center gap-2 group"
+            className="border-2 border-dashed border-purple-500/40 hover:border-purple-400 bg-purple-950/20 hover:bg-purple-950/30 p-6 rounded-2xl text-center cursor-pointer transition flex flex-col items-center justify-center gap-2 group"
           >
-            <input 
+            <input
+              type="file"
               ref={fileInputRef}
-              type="file" 
-              multiple 
-              accept="image/*" 
-              className="hidden" 
-              onChange={(e) => e.target.files && handleAddFiles(e.target.files)}
+              multiple
+              accept="image/*"
+              className="hidden"
+              onChange={(e) => {
+                if (e.target.files) handleAddFiles(e.target.files);
+              }}
             />
-            <div className="w-12 h-12 rounded-xl bg-purple-950/70 border border-purple-700/40 text-purple-300 flex items-center justify-center group-hover:scale-110 transition shadow-md">
-              <Upload size={24} className="text-purple-400" />
+            <div className="w-12 h-12 rounded-full bg-purple-900/40 flex items-center justify-center text-purple-400 group-hover:scale-110 group-hover:bg-purple-800/50 transition">
+              <Upload size={22} />
             </div>
-            <div>
-              <p className="text-sm font-bold text-white">
-                Clique para selecionar várias imagens
-              </p>
-              <p className="text-xs text-slate-400 mt-0.5">
-                ou arraste e solte arquivos aqui (PNG, JPG, WEBP)
-              </p>
-            </div>
+            <p className="text-sm font-bold text-white">
+              Arraste imagens aqui ou clique para selecionar
+            </p>
+            <p className="text-xs text-slate-400">
+              Suporta múltiplos arquivos PNG, JPG, WEBP (todas as versões novas)
+            </p>
           </div>
 
-          {/* Tray Controls & Search */}
+          {/* Search Tray Images */}
           {stagedImages.length > 0 && (
-            <div className="space-y-3">
-              <div className="relative">
-                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                <input 
-                  type="text"
-                  placeholder="Filtrar imagem por nome de arquivo..."
-                  value={imageSearchTerm}
-                  onChange={(e) => setImageSearchTerm(e.target.value)}
-                  className="w-full bg-slate-900 border border-slate-700 rounded-lg pl-9 pr-3 py-2 text-xs text-white placeholder-slate-500 outline-none focus:border-purple-500"
-                />
-                {imageSearchTerm && (
-                  <button 
-                    onClick={() => setImageSearchTerm('')} 
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
-                  >
-                    <X size={12} />
-                  </button>
-                )}
-              </div>
-
-              <div className="flex items-center justify-between text-xs text-slate-400 px-1">
-                <span>
-                  {filteredStagedImages.length} de {stagedImages.length} exibidas
-                </span>
-                <span className="text-purple-400 font-medium">
-                  {assignedCount} vinculadas
-                </span>
-              </div>
+            <div className="relative">
+              <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                type="text"
+                value={imageSearchTerm}
+                onChange={(e) => setImageSearchTerm(e.target.value)}
+                placeholder="Filtrar imagens da bandeja por nome..."
+                className="w-full bg-slate-900 border border-slate-800 rounded-xl pl-9 pr-3 py-2 text-xs text-white placeholder-slate-500 focus:border-purple-500 outline-none"
+              />
             </div>
           )}
 
-          {/* Staged Images List (Draggable Grid) */}
-          <div className="max-h-[550px] overflow-y-auto custom-scrollbar pr-1 space-y-2.5">
-            {filteredStagedImages.map((img) => {
-              // Check which card is assigned to this image
-              const assignedCardCode = Object.keys(assignments).find(k => assignments[k] === img.id);
-              const assignedCard = assignedCardCode ? cards.find(c => c.code === assignedCardCode) : null;
-              const isSelected = selectedImageId === img.id;
+          {/* Images Grid Tray */}
+          <div className="max-h-[520px] overflow-y-auto custom-scrollbar pr-1">
+            {filteredStagedImages.length === 0 ? (
+              <div className="py-12 text-center text-slate-500 text-xs">
+                {stagedImages.length === 0 
+                  ? 'Nenhuma imagem carregada na bandeja ainda.' 
+                  : 'Nenhuma imagem corresponde à busca.'}
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+                {filteredStagedImages.map((img) => {
+                  const isAssigned = Object.values(assignments).includes(img.id);
+                  const isSelected = selectedImageId === img.id;
 
-              return (
-                <div
-                  key={img.id}
-                  draggable={true}
-                  onDragStart={(e) => {
-                    e.dataTransfer.setData('text/plain', img.id);
-                    e.dataTransfer.effectAllowed = 'copyMove';
-                    setDraggingImageId(img.id);
-                  }}
-                  onDragEnd={() => setDraggingImageId(null)}
-                  onClick={() => {
-                    // Toggle selection for click-to-assign mode
-                    setSelectedImageId(isSelected ? null : img.id);
-                  }}
-                  className={`p-2.5 rounded-xl border transition-all cursor-grab active:cursor-grabbing flex items-center gap-3 relative select-none ${
-                    assignedCard
-                      ? 'bg-purple-950/30 border-purple-500/40 opacity-90'
-                      : isSelected
-                        ? 'bg-purple-900/50 border-purple-400 shadow-[0_0_15px_rgba(168,85,247,0.3)] ring-2 ring-purple-500'
-                        : 'bg-slate-900/90 border-slate-800 hover:border-slate-700 hover:bg-slate-900'
-                  }`}
-                >
-                  <GripVertical size={16} className="text-slate-600 shrink-0 cursor-grab" />
-
-                  {/* Thumbnail */}
-                  <div className="w-14 h-14 rounded-lg bg-black overflow-hidden shrink-0 border border-slate-800 relative group/thumb">
-                    <img 
-                      src={img.previewUrl} 
-                      alt={img.name} 
-                      className="w-full h-full object-contain"
-                    />
-                  </div>
-
-                  {/* Info */}
-                  <div className="min-w-0 flex-1">
-                    <p className="text-xs font-bold text-white truncate" title={img.name}>
-                      {img.name}
-                    </p>
-                    <p className="text-[11px] text-slate-400 font-mono">
-                      {img.sizeFormatted}
-                    </p>
-
-                    {/* Assignment Status */}
-                    {assignedCard ? (
-                      <div className="inline-flex items-center gap-1.5 mt-1 bg-emerald-950/80 border border-emerald-500/40 px-2 py-0.5 rounded text-[10px] text-emerald-300 font-bold max-w-full truncate">
-                        <Check size={11} className="shrink-0" />
-                        <span className="truncate">Vinculada a: {assignedCard.name} ({assignedCard.code})</span>
-                      </div>
-                    ) : (
-                      <span className="text-[10px] text-purple-400/80 italic block mt-0.5">
-                        {isSelected ? '👉 Selecionada! Clique em uma carta ao lado' : 'Arraste para uma carta'}
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Actions */}
-                  <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
-                    {assignedCardCode && (
-                      <button
-                        onClick={() => unassignCard(assignedCardCode)}
-                        className="p-1.5 text-amber-400 hover:text-amber-200 hover:bg-slate-800 rounded text-xs transition"
-                        title="Desvincular desta carta"
-                      >
-                        <X size={14} />
-                      </button>
-                    )}
-                    <button
-                      onClick={() => handleRemoveStagedImage(img.id)}
-                      className="p-1.5 text-slate-500 hover:text-red-400 hover:bg-slate-800 rounded transition"
-                      title="Excluir imagem da bandeja"
+                  return (
+                    <div
+                      key={img.id}
+                      draggable
+                      onDragStart={(e) => {
+                        setDraggingImageId(img.id);
+                        e.dataTransfer.setData('text/plain', img.id);
+                      }}
+                      onDragEnd={() => setDraggingImageId(null)}
+                      onClick={() => {
+                        setSelectedImageId(isSelected ? null : img.id);
+                      }}
+                      className={`group relative rounded-xl overflow-hidden border p-1.5 transition-all cursor-grab active:cursor-grabbing flex flex-col ${
+                        isSelected 
+                          ? 'ring-2 ring-purple-500 bg-purple-950/60 border-purple-400 shadow-lg scale-[1.02]' 
+                          : isAssigned
+                            ? 'border-emerald-500/50 bg-emerald-950/20'
+                            : 'border-slate-800 bg-slate-900/60 hover:border-slate-700 hover:bg-slate-900'
+                      }`}
                     >
-                      <Trash2 size={14} />
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
+                      {/* Thumbnail */}
+                      <div className="relative w-full aspect-[704/987] rounded-lg overflow-hidden bg-black/50 mb-1.5 border border-black/40">
+                        <img
+                          src={img.previewUrl}
+                          alt={img.name}
+                          className="w-full h-full object-cover select-none pointer-events-none"
+                          loading="lazy"
+                        />
+                        
+                        {/* Status Badges */}
+                        {isAssigned && (
+                          <div className="absolute top-1 right-1 bg-emerald-600 text-white rounded-full p-0.5 shadow-md" title="Vinculada a uma carta">
+                            <Check size={12} />
+                          </div>
+                        )}
+                        
+                        {isSelected && (
+                          <div className="absolute inset-0 bg-purple-600/20 border-2 border-purple-400 rounded-lg flex items-center justify-center pointer-events-none">
+                            <span className="bg-purple-900/90 text-white text-[10px] font-bold px-2 py-0.5 rounded shadow">
+                              Selecionada
+                            </span>
+                          </div>
+                        )}
 
-            {stagedImages.length === 0 && (
-              <div className="py-12 text-center text-slate-500 text-xs italic">
-                Nenhuma imagem carregada ainda. Use a área de upload acima para adicionar suas fotos.
+                        <div className="absolute bottom-1 left-1 bg-black/70 text-white text-[9px] px-1.5 py-0.5 rounded font-mono">
+                          {img.sizeFormatted}
+                        </div>
+                      </div>
+
+                      {/* File Name */}
+                      <div className="px-1 text-[11px] text-slate-300 font-medium truncate" title={img.name}>
+                        {img.name}
+                      </div>
+
+                      {/* Remove single image button */}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleRemoveStagedImage(img.id);
+                        }}
+                        className="absolute top-1 left-1 opacity-0 group-hover:opacity-100 bg-black/80 hover:bg-red-600 text-white p-1 rounded-md transition shadow-md"
+                        title="Remover da bandeja"
+                      >
+                        <X size={12} />
+                      </button>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>
+
+          <div className="text-[11px] text-slate-400 bg-slate-900/60 p-3 rounded-xl border border-slate-800/80 flex items-start gap-2">
+            <HelpCircle size={15} className="text-purple-400 shrink-0 mt-0.5" />
+            <p>
+              <strong>Como usar:</strong> Arraste a foto da bandeja e solte sobre a carta desejada à direita. Ou clique na foto para selecioná-la e depois clique na carta.
+            </p>
+          </div>
+
         </div>
 
         {/* ================= RIGHT COLUMN: CARDS DROP TARGETS (7 Cols) ================= */}
         <div className="lg:col-span-7 flex flex-col gap-4 bg-slate-950/70 border border-slate-800 p-4 sm:p-5 rounded-2xl">
           
-          {/* Header & Controls */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          {/* Header & Filters */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800/80 pb-4">
             <div>
-              <h4 className="font-bold text-white text-base flex items-center gap-2">
-                <Layers size={18} className="text-purple-400" />
-                <span>Cartas da Coleção</span>
+              <h4 className="font-bold text-white text-base">
+                Cartas Base do Catálogo ({displayCards.length})
               </h4>
               <p className="text-xs text-slate-400">
-                Solte a imagem na carta correspondente para atualizar
+                {operationMode === 'add_variation' 
+                  ? 'Solte a imagem na carta para criar a nova variação' 
+                  : 'Solte a imagem na carta para atualizar sua arte'}
               </p>
             </div>
           </div>
 
           {/* Filters Bar */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-slate-900/90 p-3 rounded-xl border border-slate-800">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
             {/* Collection Filter */}
             <div>
-              <label className="text-[11px] font-bold text-slate-400 block mb-1">Coleção</label>
+              <label className="text-[10px] text-slate-400 font-bold uppercase block mb-1">Coleção</label>
               <select
                 value={selectedCollection}
                 onChange={(e) => setSelectedCollection(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-xs text-white outline-none focus:border-purple-500"
+                className="w-full bg-slate-900 border border-slate-800 rounded-xl px-2.5 py-2 text-white outline-none focus:border-purple-500"
               >
                 <option value="">Todas as Coleções</option>
-                {collections.map(col => (
-                  <option key={col} value={col}>{col}</option>
+                {collections.map(c => (
+                  <option key={c} value={c}>{c}</option>
                 ))}
               </select>
             </div>
 
-            {/* Search Filter */}
-            <div>
-              <label className="text-[11px] font-bold text-slate-400 block mb-1">Buscar Carta</label>
-              <div className="relative">
-                <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500" />
-                <input
-                  type="text"
-                  placeholder="Nome ou código..."
-                  value={cardSearchTerm}
-                  onChange={(e) => setCardSearchTerm(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-700 rounded-lg pl-8 pr-2 py-2 text-xs text-white placeholder-slate-500 outline-none focus:border-purple-500"
-                />
-              </div>
-            </div>
-
             {/* Status Filter */}
             <div>
-              <label className="text-[11px] font-bold text-slate-400 block mb-1">Status</label>
+              <label className="text-[10px] text-slate-400 font-bold uppercase block mb-1">Status</label>
               <select
                 value={cardStatusFilter}
                 onChange={(e) => setCardStatusFilter(e.target.value as any)}
-                className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-xs text-white outline-none focus:border-purple-500"
+                className="w-full bg-slate-900 border border-slate-800 rounded-xl px-2.5 py-2 text-white outline-none focus:border-purple-500"
               >
-                <option value="all">Todas as Cartas ({cards.length})</option>
-                <option value="pending">Apenas Sem Nova Imagem</option>
-                <option value="assigned">Apenas Vinculadas ({assignedCount})</option>
+                <option value="all">Todas ({cards.length})</option>
+                <option value="pending">Sem imagem vinculada</option>
+                <option value="assigned">Vinculadas ({assignedCount})</option>
               </select>
+            </div>
+
+            {/* Search Input */}
+            <div>
+              <label className="text-[10px] text-slate-400 font-bold uppercase block mb-1">Busca</label>
+              <div className="relative">
+                <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  value={cardSearchTerm}
+                  onChange={(e) => setCardSearchTerm(e.target.value)}
+                  placeholder="Nome ou código..."
+                  className="w-full bg-slate-900 border border-slate-800 rounded-xl pl-8 pr-2.5 py-2 text-white placeholder-slate-500 outline-none focus:border-purple-500"
+                />
+              </div>
             </div>
           </div>
 
@@ -617,6 +894,7 @@ export const BatchImageMatcher: React.FC<BatchImageMatcherProps> = ({
                 ? stagedImages.find(img => img.id === assignedImageId) 
                 : null;
               const isHovered = hoveredCardCode === card.code;
+              const generatedCode = getGeneratedCode(card.code);
 
               return (
                 <div
@@ -668,7 +946,7 @@ export const BatchImageMatcher: React.FC<BatchImageMatcherProps> = ({
                         </div>
                       )}
                       <span className="absolute bottom-0 inset-x-0 bg-black/80 text-[8px] text-center text-slate-400 uppercase font-mono py-0.5">
-                        Atual
+                        {card.frame || 'Legado'}
                       </span>
                     </div>
 
@@ -684,6 +962,11 @@ export const BatchImageMatcher: React.FC<BatchImageMatcherProps> = ({
                         <span className="text-[10px] font-bold text-slate-500">
                           {card.collection}
                         </span>
+                        {card.variants && card.variants.length > 0 && (
+                          <span className="text-[9px] font-bold text-amber-400 bg-amber-950/60 border border-amber-800/40 px-1.5 py-0.5 rounded">
+                            {card.variants.length} variação(ões)
+                          </span>
+                        )}
                       </div>
 
                       <h5 className="font-bold text-white text-sm sm:text-base leading-tight truncate">
@@ -707,7 +990,7 @@ export const BatchImageMatcher: React.FC<BatchImageMatcherProps> = ({
                   {/* Right: Drop Area / New Image Preview */}
                   <div className="w-full sm:w-auto flex items-center justify-end gap-3 shrink-0">
                     {assignedImage ? (
-                      <div className="flex items-center gap-3 bg-slate-950 p-2 rounded-xl border border-emerald-500/50 shadow-md">
+                      <div className="flex items-center gap-3 bg-slate-950 p-2.5 rounded-xl border border-emerald-500/50 shadow-md">
                         <ArrowRight size={16} className="text-emerald-400 shrink-0" />
                         
                         {/* New Staged Image Thumbnail */}
@@ -718,32 +1001,40 @@ export const BatchImageMatcher: React.FC<BatchImageMatcherProps> = ({
                             className="w-full h-full object-cover" 
                           />
                           <span className="absolute bottom-0 inset-x-0 bg-emerald-600 text-white text-[8px] font-bold text-center uppercase tracking-wider py-0.5">
-                            Nova
+                            {operationMode === 'add_variation' ? variationFrame : 'Nova'}
                           </span>
                         </div>
 
-                        <div className="max-w-[140px] truncate text-left">
+                        <div className="max-w-[170px] text-left">
                           <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider block">
-                            Pronta p/ salvar
+                            {operationMode === 'add_variation' ? '✨ Nova Variação' : '🔄 Substituir Imagem'}
                           </span>
-                          <span className="text-xs text-slate-200 truncate block font-mono" title={assignedImage.name}>
+                          {operationMode === 'add_variation' && (
+                            <span className="text-[11px] font-mono text-purple-300 font-bold block truncate">
+                              {generatedCode}
+                            </span>
+                          )}
+                          <span className="text-[10px] text-slate-300 truncate block font-mono" title={assignedImage.name}>
                             {assignedImage.name}
                           </span>
                           <button
+                            type="button"
                             onClick={() => unassignCard(card.code)}
-                            className="text-[11px] text-red-400 hover:text-red-300 hover:underline mt-1 flex items-center gap-1 cursor-pointer"
+                            className="text-[11px] text-red-400 hover:text-red-300 hover:underline mt-1.5 flex items-center gap-1 cursor-pointer"
                           >
-                            <X size={12} /> Remover
+                            <X size={12} /> Desvincular
                           </button>
                         </div>
                       </div>
                     ) : (
-                      <div className="w-full sm:w-44 py-3 px-3 rounded-xl border-2 border-dashed border-slate-700 hover:border-purple-500/70 bg-slate-950/60 text-center flex flex-col items-center justify-center transition">
-                        <span className="text-xs text-slate-400 font-medium">
-                          {isHovered ? 'Solte para vincular' : 'Solte a imagem aqui'}
+                      <div className="w-full sm:w-48 py-3 px-3 rounded-xl border-2 border-dashed border-slate-700 hover:border-purple-500/70 bg-slate-950/60 text-center flex flex-col items-center justify-center transition">
+                        <span className="text-xs text-slate-300 font-medium">
+                          {isHovered ? 'Solte para vincular variação' : 'Solte a imagem aqui'}
                         </span>
-                        <span className="text-[10px] text-purple-400/80 mt-0.5">
-                          ou clique com uma selecionada
+                        <span className="text-[10px] text-purple-400/90 mt-0.5">
+                          {operationMode === 'add_variation' 
+                            ? `Gera variação (${codeSuffix})` 
+                            : 'ou clique c/ imagem selecionada'}
                         </span>
                       </div>
                     )}

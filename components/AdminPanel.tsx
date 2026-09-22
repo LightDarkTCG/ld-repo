@@ -620,7 +620,7 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
                       <Plus size={18}/> Adicionar Cartas
                     </button>
                     <button onClick={() => { setActiveAdminTab('batch_images'); resetForm(); }} className={`text-left p-3 rounded font-bold transition flex items-center gap-2 ${activeAdminTab === 'batch_images' ? 'bg-purple-600 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}>
-                      <Upload size={18}/> Vincular Imagens (Arrastar)
+                      <Sparkles size={18} className="text-amber-400"/> Variações & Frames (Lote)
                     </button>
                     <button onClick={() => { setActiveAdminTab('batch_cards'); resetForm(); }} className={`text-left p-3 rounded font-bold transition flex items-center gap-2 ${activeAdminTab === 'batch_cards' ? 'bg-purple-600 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}>
                       <Layers size={18}/> Adicionar Cartas em Lote
@@ -1724,7 +1724,17 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
                 {/* ADD CARD TAB */}
                 {activeAdminTab === 'add_card' && (
                   <>
-                    <h3 className="text-xl font-bold text-white mb-6 border-b border-slate-700 pb-2">{editingId ? 'Editar Carta' : 'Adicionar Carta'}</h3>
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6 border-b border-slate-700 pb-3">
+                      <h3 className="text-xl font-bold text-white">{editingId ? 'Editar Carta' : 'Adicionar Carta'}</h3>
+                      <button
+                        type="button"
+                        onClick={() => { setActiveAdminTab('batch_images'); resetForm(); }}
+                        className="bg-purple-950/80 hover:bg-purple-900 border border-purple-500/50 text-purple-200 px-3.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-2 shadow-sm"
+                      >
+                        <Sparkles size={14} className="text-amber-400" />
+                        <span>Adicionar Variações / Skins em Lote (Arrastar)</span>
+                      </button>
+                    </div>
                     <div className="bg-slate-800 p-6 rounded-lg border border-slate-700 mb-8 shadow-inner">
                       <h4 className="font-bold text-slate-300 mb-4 text-purple-400">{editingId ? `Editando Carta: ${formName}` : 'Criar Nova Carta'}</h4>
                       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">

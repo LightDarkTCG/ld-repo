@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useEffect } from 'react';
-import { X, Zap, BookOpen, Box, Hash, Link as LinkIcon, Edit2, Check, Trash, Image as ImageIcon } from 'lucide-react';
+import { X, Zap, BookOpen, Box, Hash, Link as LinkIcon, Edit2, Check, Trash, Image as ImageIcon, Sparkles, Layers } from 'lucide-react';
 import { CardData } from '../types';
 import { Card } from './Card';
 import { useCards } from '../CardContext';
@@ -33,6 +33,13 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card: initialC
     setOriginalCode(initialCard?.code);
     setIsEditing(false);
   }, [initialCard]);
+
+  // Find all cards with the same name (alternate arts, skins, frames)
+  const cardVariations = useMemo(() => {
+    if (!card) return [];
+    const normalizedName = (card.name || '').trim().toLowerCase();
+    return allCards.filter(c => (c.name || '').trim().toLowerCase() === normalizedName);
+  }, [card?.name, allCards]);
 
 
 
@@ -283,11 +290,52 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card: initialC
 
       <div className="w-full max-w-6xl max-h-[90vh] overflow-y-auto grid grid-cols-1 lg:grid-cols-2 gap-8 p-4 lg:p-8 custom-scrollbar">
         
-        {/* Left Column: Image */}
-        <div className="flex flex-col items-center gap-6">
-             <div className="scale-110 origin-center">
-                 <Card {...card} priority={true} />
-             </div>
+        {/* Left Column: Image & Variations */}
+        <div className="flex flex-col items-center gap-4">
+          <div className="scale-110 origin-center">
+            <Card {...card} priority={true} />
+          </div>
+
+          {/* Variations / Skins Selector */}
+          {cardVariations.length > 1 && (
+            <div className="w-full max-w-sm bg-slate-900/90 border border-purple-500/30 rounded-2xl p-3 shadow-lg flex flex-col gap-2 mt-2">
+              <div className="flex items-center justify-between text-xs">
+                <span className="flex items-center gap-1.5 text-purple-300 font-bold">
+                  <Sparkles size={14} className="text-amber-400" />
+                  Variações, Frames & Skins ({cardVariations.length})
+                </span>
+                <span className="text-[10px] text-slate-500">Alternar visual</span>
+              </div>
+              <div className="grid grid-cols-2 gap-1.5">
+                {cardVariations.map((v) => {
+                  const isCurrent = v.code === card.code;
+                  return (
+                    <button
+                      key={v.code}
+                      type="button"
+                      onClick={() => {
+                        setCard(v);
+                        setOriginalCode(v.code);
+                      }}
+                      className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition flex flex-col items-start gap-0.5 text-left border ${
+                        isCurrent
+                          ? 'bg-purple-600 text-white border-purple-400 shadow-md shadow-purple-950/60 ring-1 ring-purple-300'
+                          : 'bg-slate-950 text-slate-300 border-slate-800 hover:border-slate-700 hover:text-white'
+                      }`}
+                    >
+                      <span className="truncate w-full font-bold flex items-center justify-between">
+                        <span>{v.frame || (v.code.endsWith('-M') ? 'Moderno' : 'Legado')}</span>
+                        {isCurrent && <span className="text-[9px] bg-purple-700 px-1 rounded">Ativo</span>}
+                      </span>
+                      <span className="text-[10px] opacity-70 font-mono truncate w-full">
+                        {v.code}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Right Column: Info */}
