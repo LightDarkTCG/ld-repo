@@ -3,7 +3,7 @@ import { CardData, ArchetypeData, CardVariationItem } from './types';
 import { allCards as defaultCards, archetypesList as defaultArchetypes, collectionsList as defaultCollections } from './data';
 import { compareCardCodes } from './deckUtils';
 import { db, auth } from './firebase';
-import { collection, getDocs, doc, setDoc, onSnapshot, deleteDoc } from 'firebase/firestore';
+import { collection, getDocs, doc, setDoc, onSnapshot, deleteDoc, getDoc, updateDoc } from 'firebase/firestore';
 import { onAuthStateChanged } from 'firebase/auth';
 
 /**
@@ -134,18 +134,32 @@ export const CardProvider = ({ children }: { children: ReactNode }) => {
               }
             }
 
+            // As requested by user: cards of Modern frame are Comum, not Beta
+            let vRarity = v.rarity;
+            if (v.frame === 'Moderno' && (!vRarity || vRarity === 'Beta')) {
+              vRarity = 'Comum';
+            }
+
             cleanedVariants.push({
               ...v,
-              code: vCode
+              code: vCode,
+              rarity: vRarity || 'Comum'
             });
           }
           if (cleanedVariants.length === 0) cleanedVariants = undefined;
+        }
+
+        // As requested by user: cards of Modern frame (modern versions of legacy cards) are Comum, not Beta
+        let effectiveRarity = rawData.rarity;
+        if (rawData.frame === 'Moderno' && (!effectiveRarity || effectiveRarity === 'Beta')) {
+          effectiveRarity = 'Comum';
         }
 
         const card: CardData = {
           ...rawData,
           id: docSnap.id,
           code: cleanedCode,
+          rarity: effectiveRarity || 'Comum',
           ...(rawData.parentCode ? { parentCode: cleanCardCode(rawData.parentCode) } : {}),
           ...(cleanedVariants ? { variants: cleanedVariants } : {})
         };
@@ -222,18 +236,59 @@ export const CardProvider = ({ children }: { children: ReactNode }) => {
   const saveCard = async (card: CardData) => {
     if (!card.code) return;
     const cleanCode = cleanCardCode(card.code);
+
+    // If card frame is Moderno and rarity is Beta, convert to Comum
+    let effectiveRarity = card.rarity || 'Comum';
+    if (card.frame === 'Moderno' && effectiveRarity === 'Beta') {
+      effectiveRarity = 'Comum';
+    }
+
+    const cleanedVariants = card.variants && card.variants.length > 0
+      ? card.variants.map(v => ({
+          ...v,
+          code: cleanCardCode(v.code),
+          rarity: v.frame === 'Moderno' && v.rarity === 'Beta' ? 'Comum' : (v.rarity || 'Comum')
+        }))
+      : undefined;
+
     const cleanedCard: CardData = {
       ...card,
       code: cleanCode,
+      rarity: effectiveRarity,
       ...(card.parentCode ? { parentCode: cleanCardCode(card.parentCode) } : {}),
-      ...(card.variants && card.variants.length > 0
-        ? { variants: card.variants.map(v => ({ ...v, code: cleanCardCode(v.code) })) }
-        : {})
+      ...(cleanedVariants ? { variants: cleanedVariants } : {})
     };
 
     // Determine target docId: if card has an explicit id, use it; otherwise use sanitized cleanCode
     const docId = card.id ? card.id.replace(/\//g, '_') : cleanCode.replace(/\//g, '_');
     await setDoc(doc(db, 'customCards', docId), sanitizeForFirestore({ ...cleanedCard, id: docId }));
+
+    // If saving a variation that has a parentCode, also keep parent's variants array up-to-date
+    if (cleanedCard.isVariation && cleanedCard.parentCode) {
+      try {
+        const parentCleanCode = cleanCardCode(cleanedCard.parentCode);
+        const parentDocId = parentCleanCode.replace(/\//g, '_');
+        const parentRef = doc(db, 'customCards', parentDocId);
+        const parentSnap = await getDoc(parentRef);
+        if (parentSnap.exists()) {
+          const parentData = parentSnap.data() as CardData;
+          const variants = parentData.variants || [];
+          const vIdx = variants.findIndex(v => v.imageUrl === cleanedCard.imageUrl || v.id === docId);
+          if (vIdx >= 0) {
+            variants[vIdx] = {
+              ...variants[vIdx],
+              code: cleanedCard.code,
+              frame: cleanedCard.frame || 'Moderno',
+              name: cleanedCard.variationType || variants[vIdx].name,
+              rarity: cleanedCard.rarity || 'Comum'
+            };
+            await updateDoc(parentRef, { variants: sanitizeForFirestore(variants) });
+          }
+        }
+      } catch (err) {
+        console.warn('Could not sync parent variant:', err);
+      }
+    }
   };
 
   const cleanAllCardSuffixes = async (): Promise<{ updatedCount: number }> => {

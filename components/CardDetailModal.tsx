@@ -1,8 +1,9 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { X, Zap, BookOpen, Box, Hash, Link as LinkIcon, Edit2, Check, Trash, Image as ImageIcon, Sparkles, Layers } from 'lucide-react';
-import { CardData } from '../types';
+import { CardData, CardVariationItem } from '../types';
 import { Card } from './Card';
 import { useCards, cleanCardCode, getCardDisplayPriority } from '../CardContext';
+import { compareCardCodes } from '../deckUtils';
 import { auth, storage } from '../firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
@@ -35,16 +36,18 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card: initialC
   }, [initialCard]);
 
   // Find all variations (alternate arts, skins, frames) for this card
+  // Computed stably based on initialCard so buttons remain fixed in their slots
   const cardVariations = useMemo(() => {
-    if (!card) return [];
-    const baseCode = cleanCardCode(card.parentCode || card.code);
+    if (!initialCard) return [];
+    const baseCode = cleanCardCode(initialCard.parentCode || initialCard.code);
+    const targetCollection = initialCard.collection;
     
     // Find matching cards in allCards that belong to this card
     const matches = allCards.filter(c => {
       const cBase = cleanCardCode(c.parentCode || c.code);
       if (cBase !== baseCode) return false;
       // Do not group cards from different collections unless explicitly a variation
-      if (c.collection && card.collection && c.collection !== card.collection && !c.isVariation && !card.isVariation) {
+      if (c.collection && targetCollection && c.collection !== targetCollection && !c.isVariation && !initialCard.isVariation) {
         return false;
       }
       return true;
@@ -53,56 +56,80 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card: initialC
     const list: CardData[] = [];
     const seenImages = new Set<string>();
 
-    // 1. Current card
-    if (card.imageUrl) {
-      seenImages.add(card.imageUrl);
-      list.push({
-        ...card,
-        code: cleanCardCode(card.code),
-        frame: card.frame || 'Legado',
-        variationType: card.variationType || (card.frame === 'Moderno' ? 'Novo Frame' : 'Legado')
-      });
-    }
-
-    // 2. Matches from allCards
+    // 1. Matches from allCards (stable order)
     for (const c of matches) {
       if (c.imageUrl && !seenImages.has(c.imageUrl)) {
         seenImages.add(c.imageUrl);
+        let cRarity = c.rarity;
+        if (c.frame === 'Moderno' && (!cRarity || cRarity === 'Beta')) {
+          cRarity = 'Comum';
+        }
         list.push({
           ...c,
           code: cleanCardCode(c.code),
           frame: c.frame || 'Legado',
-          variationType: c.variationType || (c.frame === 'Moderno' ? 'Novo Frame' : 'Legado')
+          variationType: c.variationType || (c.frame === 'Moderno' ? 'Novo Frame' : 'Legado'),
+          rarity: cRarity || 'Comum'
         });
       }
     }
 
-    // 3. Candidate variants from card.variants or matches variants
+    // 2. Initial card itself if not already present
+    if (initialCard.imageUrl && !seenImages.has(initialCard.imageUrl)) {
+      seenImages.add(initialCard.imageUrl);
+      let initRarity = initialCard.rarity;
+      if (initialCard.frame === 'Moderno' && (!initRarity || initRarity === 'Beta')) {
+        initRarity = 'Comum';
+      }
+      list.push({
+        ...initialCard,
+        code: cleanCardCode(initialCard.code),
+        frame: initialCard.frame || 'Legado',
+        variationType: initialCard.variationType || (initialCard.frame === 'Moderno' ? 'Novo Frame' : 'Legado'),
+        rarity: initRarity || 'Comum'
+      });
+    }
+
+    // 3. Candidate variants from initialCard.variants, matches variants, or card.variants
     const allCandidateVariants: CardVariationItem[] = [];
-    if (card.variants) allCandidateVariants.push(...card.variants);
+    if (initialCard.variants) allCandidateVariants.push(...initialCard.variants);
     matches.forEach(m => {
       if (m.variants) allCandidateVariants.push(...m.variants);
     });
 
     allCandidateVariants.forEach(v => {
-      const vBase = cleanCardCode(v.code || card.code);
+      const vBase = cleanCardCode(v.code || baseCode);
       if (vBase === baseCode && v.imageUrl && !seenImages.has(v.imageUrl)) {
         seenImages.add(v.imageUrl);
+        let vRarity = v.rarity;
+        if (v.frame === 'Moderno' && (!vRarity || vRarity === 'Beta')) {
+          vRarity = 'Comum';
+        }
         list.push({
-          ...card,
+          ...initialCard,
           id: v.id || `var_${v.code}`,
-          code: cleanCardCode(v.code) || cleanCardCode(card.code),
+          code: cleanCardCode(v.code) || cleanCardCode(baseCode),
           imageUrl: v.imageUrl,
           frame: v.frame || 'Moderno',
           variationType: v.name || (v.frame === 'Moderno' ? 'Novo Frame' : 'Legado'),
-          isVariation: true
+          isVariation: true,
+          rarity: vRarity || 'Comum'
         });
       }
     });
 
-    // Sort order: Moderno > AA / Skin > Legado
-    return list.sort((a, b) => getCardDisplayPriority(b) - getCardDisplayPriority(a));
-  }, [card, allCards]);
+    // Deterministic, 100% stable sort:
+    // 1º Display priority: Moderno > AA / Skin > Legado
+    // 2º Numeric / natural code order (e.g. 00380 < A0380 < B0380)
+    // 3º Image URL fallback to prevent any floating index swap
+    return list.sort((a, b) => {
+      const pDiff = getCardDisplayPriority(b) - getCardDisplayPriority(a);
+      if (pDiff !== 0) return pDiff;
+      const codeDiff = compareCardCodes(a.code, b.code);
+      if (codeDiff !== 0) return codeDiff;
+      return (a.imageUrl || '').localeCompare(b.imageUrl || '');
+    });
+  }, [initialCard, allCards]);
 
 
 
@@ -371,10 +398,14 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card: initialC
               </div>
               <div className="grid grid-cols-2 gap-1.5">
                 {cardVariations.map((v, idx) => {
-                  const isCurrent = v.imageUrl === card.imageUrl && (v.frame || 'Legado') === (card.frame || 'Legado');
+                  const isCurrent = (
+                    (v.id && card.id && v.id === card.id) ||
+                    (v.imageUrl === card.imageUrl && cleanCardCode(v.code) === cleanCardCode(card.code)) ||
+                    (v.imageUrl === card.imageUrl)
+                  );
                   return (
                     <button
-                      key={`${v.code}-${v.imageUrl || idx}`}
+                      key={`${v.id || ''}_${cleanCardCode(v.code)}_${v.imageUrl || idx}`}
                       type="button"
                       onClick={() => {
                         setCard(v);
@@ -390,8 +421,15 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card: initialC
                         <span>{v.variationType || (v.frame === 'Moderno' ? 'Moderno' : 'Legado')}</span>
                         {isCurrent && <span className="text-[9px] bg-purple-700 px-1 rounded">Ativo</span>}
                       </span>
-                      <div className="flex items-center gap-1.5 w-full">
-                        <span className="text-[9px] px-1 py-0.2 rounded bg-slate-900/60 text-slate-400">{v.frame || 'Legado'}</span>
+                      <div className="flex items-center gap-1.5 w-full flex-wrap">
+                        <span className="text-[9px] px-1 py-0.5 rounded bg-slate-900/60 text-slate-400">{v.frame || 'Legado'}</span>
+                        {v.rarity && (
+                          <span className={`text-[9px] px-1 py-0.5 rounded font-bold ${
+                            isCurrent ? 'bg-purple-800 text-yellow-200' : 'bg-yellow-950/70 text-yellow-300 border border-yellow-800/40'
+                          }`}>
+                            {v.rarity}
+                          </span>
+                        )}
                         <span className="text-[10px] opacity-70 font-mono truncate">
                           {cleanCardCode(v.code)}
                         </span>
@@ -522,7 +560,18 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card: initialC
               )}
               
               {isEditing ? (
-                 <select value={card.frame || 'Legado'} onChange={(e) => setCard({...card, frame: e.target.value as 'Legado' | 'Moderno'})} className="px-3 py-1.5 bg-indigo-900/10 rounded text-indigo-300 border border-indigo-800/50 outline-none">
+                 <select 
+                   value={card.frame || 'Legado'} 
+                   onChange={(e) => {
+                     const newFrame = e.target.value as 'Legado' | 'Moderno';
+                     let newRarity = card.rarity;
+                     if (newFrame === 'Moderno' && (!newRarity || newRarity === 'Beta')) {
+                       newRarity = 'Comum';
+                     }
+                     setCard({ ...card, frame: newFrame, rarity: newRarity });
+                   }} 
+                   className="px-3 py-1.5 bg-indigo-900/10 rounded text-indigo-300 border border-indigo-800/50 outline-none"
+                 >
                     <option value="Legado">Frame Legado</option>
                     <option value="Moderno">Frame Moderno</option>
                  </select>

@@ -1,4 +1,5 @@
 import { CardData, ArchetypeData } from './types';
+import { invasaoDoCaosCards } from './invasaoDoCaosCards';
 
 export const collectionsList = [
   "Insanis", 
@@ -379,4 +380,6 @@ export const allCards: CardData[] = [
     { name: "Estrategista Mahina", rarity: "Evento", type: "Herói", archetype: "Ordem / Caos / Macroversal", collection: "Booster Pack 2", ct: 8, attack: 3, defense: 10, description: "Perca 5 de vida do jogador, anule e descarte para a Zona Apagada uma carta usada no jogo.\n\nO primeiro efeito usado contra esse Herói é direcionado a outro combatente do seu lado do campo, uma vez por rodada.\n\nCaso «Grande Sábio», «Cristal do Equilíbrio», «Energia Lúmen», «Energia Darkus», «Viorie» e «Karn» estejam em sua Zona Morta ou Zona Apagada, cause 25 de dano na vida do jogador inimigo.\n\nUma vez por rodada, retorne exatamente 5 cartas da sua mão para o Deck e compre 5 cartas.", imageUrl: "https://i.imgur.com/tkpE2xi.png", code: "2025/0001/B0093", lore: "Em outro universo, todos são seres \"aterrorizantes\"  ou tentam ser." },
     { name: "Asmonious - O Corruptor", rarity: "Evento", type: "Herói", archetype: "Sortudo / Cósmico / Caos / Ordem / Macroversal", collection: "Booster Pack 2", ct: 12, attack: 1, defense: 1, description: "Sempre que esse Herói for enviado para uma de suas Zonas, envie 1 carta do topo do seu Deck para a Zona Apagada e retorne esse Herói para seu campo.\n\nSempre que esse combatente for colocado em campo, receba 1 Runa.\n\nRecebe 3 de ataque para cada Runa que tiver.\n\nNo começo da rodada, coloque em campo, de qualquer lugar, um combatente com «Corrompido(a)» em seu nome.\n\nGaste 5 Runas, negue o efeito de uma carta.\n\nEsse Herói só pode atacar uma vez em seu turno de ataque.", imageUrl: "https://i.imgur.com/sAsieG0.png", code: "2025/0001/B0152", lore: "Nos bastidores de Light Dark o elenco festeja, enche a cara e se diverte, até mesmo Asmonious." },
     { name: "Blair Eternal", rarity: "Evento", type: "Combatente", archetype: "Conceito", collection: "Booster Pack 2", ct: 8, attack: 1, defense: 10, description: "Enquanto esse combatente estiver em campo, seu Herói não perde vida por efeitos de carta.\n\nSempre que seu Herói perder vida por combate, «Blair Eternal» recebe 3 de vida.", imageUrl: "https://i.imgur.com/6lZ63o9.png", code: "2025/0001/B0232", lore: "Esperando na porta de casa, está Blair, ela sorri e diz: Feliz Natal!." },
+    // --- INVASÃO DO CAOS (30) ---
+    ...invasaoDoCaosCards
   ];

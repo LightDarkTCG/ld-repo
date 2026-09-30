@@ -279,3 +279,135 @@ export function compareCardCodes(codeA?: string | null, codeB?: string | null): 
 
   return compareSegments(trimA, trimB);
 }
+
+export const STRUCTURAL_FLAGSHIP_HEROES: Record<string, string> = {
+  'Insanis': 'Jim - O Senhor do Macroverso',
+  'Príncipe do Macroverso': 'Jenos Senhor do Macroverso',
+  'Mechs e Mangas': 'Spear Vellret',
+  'Herdeiro do Caos': 'Mahina - O Herdeiro de Lúmeni',
+  'Mundo em Chamas': 'Donnie - Samurai das Chamas',
+  'Corruptor Profano': 'Otto - Arauto da Corrupção',
+  'O Escolhido': 'Salazar - Guia dos Escolhidos',
+  'Deusa da Lua': 'Selena - Deusa da Lua',
+  'Invasão do Caos': 'Mahina - O Arauto do Véu'
+};
+
+export function isModernCard(card?: CardData | null): boolean {
+  if (!card) return false;
+  return card.frame === 'Moderno' || (typeof card.code === 'string' && (card.code.endsWith('-M') || card.code.endsWith('-MOD')));
+}
+
+export function isHeroGroupValid(heroes: CardData[]): boolean {
+  if (!heroes || heroes.length <= 1) return true;
+
+  // Rule: Somente 1 herói no deck.
+  // Exceções permitidas apenas para heróis específicos que interagem entre si:
+  const names = heroes.map(h => h.name || '');
+
+  // 1. Otto + Asmonious (interação canônica no deck Corruptor Profano)
+  const hasOtto = names.some(n => n.includes('Otto'));
+  const hasAsmonious = names.some(n => n.includes('Asmonious'));
+  if (heroes.length === 2 && hasOtto && hasAsmonious) {
+    return true;
+  }
+
+  // 2. Von Linden - O Conceito Evolução + Selena - Macroverso Inverso
+  const hasVonEvolucao = names.includes("Von Linden - O Conceito Evolução");
+  const hasSelenaMacroverso = names.includes("Selena - Macroverso Inverso");
+  if (heroes.length === 2 && hasVonEvolucao && hasSelenaMacroverso) {
+    return true;
+  }
+
+  // 3. Conceito Caos + Salazar - Sucumbido pelo Caos
+  const hasConceitoCaos = names.includes("Conceito Caos");
+  const hasSalazarCaos = names.includes("Salazar - Sucumbido pelo Caos");
+  if (heroes.length === 2 && hasConceitoCaos && hasSalazarCaos) {
+    return true;
+  }
+
+  return false;
+}
+
+export const STRUCTURAL_COLLECTIONS_ALIASES: Record<string, string> = {
+  'jim': 'Insanis',
+  'insanis': 'Insanis',
+  'jenos': 'Príncipe do Macroverso',
+  'principe do macroverso': 'Príncipe do Macroverso',
+  'príncipe do macroverso': 'Príncipe do Macroverso',
+  'herdeiro do caos': 'Herdeiro do Caos',
+  'mahina': 'Herdeiro do Caos',
+  'mechs e mangas': 'Mechs e Mangas',
+  'vellret': 'Mechs e Mangas',
+  'mundo em chamas': 'Mundo em Chamas',
+  'donnie': 'Mundo em Chamas',
+  'corruptor profano': 'Corruptor Profano',
+  'otto': 'Corruptor Profano',
+  'o escolhido': 'O Escolhido',
+  'salazar': 'O Escolhido',
+  'deusa da lua': 'Deusa da Lua',
+  'selena': 'Deusa da Lua',
+  'invasao do caos': 'Invasão do Caos',
+  'invasão do caos': 'Invasão do Caos',
+  'arauto do veu': 'Invasão do Caos',
+  'arauto do véu': 'Invasão do Caos'
+};
+
+export function getStructuralDeck(collectionName: string, allCards: CardData[]): { mainDeck: CardData[]; sideDeck: CardData[] } {
+  const normKey = (collectionName || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  let targetCollection = STRUCTURAL_COLLECTIONS_ALIASES[normKey] || collectionName;
+
+  // 1. Filter cards of that collection (case and accent insensitive)
+  const targetNorm = targetCollection.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const collectionCards = (allCards || []).filter(c => {
+    if (!c || !c.collection) return false;
+    const cCollNorm = c.collection.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    return cCollNorm === targetNorm;
+  });
+
+  if (collectionCards.length === 0) {
+    return { mainDeck: [], sideDeck: [] };
+  }
+
+  // 2. Map every unique card name to its best modern version ("COLOQUE SOMENTE AS MODERNAS")
+  const uniqueByName = new Map<string, CardData>();
+  for (const card of collectionCards) {
+    const key = (card.name || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    if (!key) continue;
+
+    if (!uniqueByName.has(key)) {
+      let chosen = card;
+      // If legacy, look for modern counterpart in allCards
+      if (!isModernCard(chosen)) {
+        const modernMatch = allCards.find(ac => 
+          isModernCard(ac) && 
+          (ac.name || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '') === key
+        );
+        if (modernMatch) {
+          chosen = modernMatch;
+        }
+      }
+      // Force frame to Moderno
+      if (chosen.frame !== 'Moderno') {
+        chosen = { ...chosen, frame: 'Moderno' as const };
+      }
+      uniqueByName.set(key, chosen);
+    } else {
+      // If existing is not modern but current is modern, upgrade
+      const existing = uniqueByName.get(key)!;
+      if (!isModernCard(existing) && isModernCard(card)) {
+        uniqueByName.set(key, { ...card, frame: 'Moderno' as const });
+      }
+    }
+  }
+
+  // 3. Return all modern cards of the structural deck in mainDeck (exactly 30 cards)
+  const cleanCards: CardData[] = Array.from(uniqueByName.values()).map(c => ({
+    ...c,
+    frame: 'Moderno' as const
+  }));
+
+  const mainDeck = [...cleanCards].sort((a, b) => compareCardCodes(a.code, b.code));
+
+  return { mainDeck, sideDeck: [] };
+}
+

@@ -9,9 +9,11 @@ export interface CardVariationItem {
   frame?: 'Legado' | 'Moderno';
   code?: string;
   rarity?: string;
+  tier?: string;
 }
 
 export interface CardData {
+  id?: string;
   name: string;
   type: CardType;
   archetype: string;
@@ -28,6 +30,7 @@ export interface CardData {
   deleted?: boolean;
   isHidden?: boolean;
   rarity?: string;
+  tier?: string;
   variants?: CardVariationItem[];
   parentCode?: string;
   isVariation?: boolean;

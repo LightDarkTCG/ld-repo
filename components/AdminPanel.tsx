@@ -85,6 +85,7 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
   const [batchImages, setBatchImages] = useState<{ [code: string]: File }>({});
   const [batchCollection, setBatchCollection] = useState('');
   const [batchFrame, setBatchFrame] = useState<'Legado' | 'Moderno'>('Legado');
+  const [batchRarity, setBatchRarity] = useState<string>('Comum');
 
   // Collections
   const [collectionEditName, setCollectionEditName] = useState('');
@@ -242,6 +243,13 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
       setCardEditLore(sourceCard.lore || '');
       setCardCollection(sourceCard.collection);
       setCardEditCode(sourceCard.code);
+      const effFrame = sourceCard.frame || 'Legado';
+      let effRarity = sourceCard.rarity || 'Comum';
+      if (effFrame === 'Moderno' && effRarity === 'Beta') {
+        effRarity = 'Comum';
+      }
+      setCardFrame(effFrame);
+      setCardRarity(effRarity);
     }
     e.target.value = '';
   };
@@ -254,8 +262,13 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
     setFormDescription(c.description || '');
     setFormImageUrl(c.imageUrl || '');
     setCardCollection(c.collection);
-    setCardFrame(c.frame || 'Legado');
-    setCardRarity(c.rarity || 'Comum');
+    const effFrame = c.frame || 'Legado';
+    let effRarity = c.rarity || 'Comum';
+    if (effFrame === 'Moderno' && effRarity === 'Beta') {
+      effRarity = 'Comum';
+    }
+    setCardFrame(effFrame);
+    setCardRarity(effRarity);
     setCardEditCode(c.code);
     setCardEditAttack(String(c.attack || 0));
     setCardEditDefense(String(c.defense || 0));
@@ -280,10 +293,14 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
     setTimelineTabId('');
     setTimelineDate('');
     setCardEditIsHidden(false);
+    setCardFrame('Legado');
+    setCardRarity('Comum');
     setBatchStep(1);
     setParsedBatchCards([]);
     setBatchImages({});
     setBatchCollection('');
+    setBatchFrame('Legado');
+    setBatchRarity('Comum');
     setArchPatchDate('');
     setArchIsNew(false);
     setError('');
@@ -437,6 +454,11 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
         await deleteCard(editingId as string);
       }
       
+      let finalRarity = cardRarity || 'Comum';
+      if (cardFrame === 'Moderno' && finalRarity === 'Beta') {
+        finalRarity = 'Comum';
+      }
+
       await saveCard({
         code: cardEditCode,
         name: formName,
@@ -444,7 +466,7 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
         archetype: cardEditArchetype,
         collection: cardCollection,
         frame: cardFrame,
-        rarity: cardRarity,
+        rarity: finalRarity,
         description: formDescription,
         ct: Number(cardEditCT),
         attack: (cardEditType === 'Herói' || cardEditType === 'Combatente') ? Number(cardEditAttack) : undefined,
@@ -508,13 +530,20 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
           finalImageUrl = await getDownloadURL(gsRef);
         }
         
+        const finalFrame = c.frame || batchFrame;
+        let finalRarity = c.rarity || batchRarity || 'Comum';
+        if (finalFrame === 'Moderno' && finalRarity === 'Beta') {
+          finalRarity = 'Comum';
+        }
+
         await saveCard({
           code: c.code,
           name: c.name,
           type: c.type || 'Combatente',
           archetype: c.archetype || 'Desconhecido',
           collection: batchCollection || c.collection || '',
-          frame: c.frame || batchFrame,
+          frame: finalFrame,
+          rarity: finalRarity,
           description: c.description || '',
           ct: Number(c.ct || 0),
           attack: (c.type === 'Herói' || c.type === 'Combatente') ? Number(c.attack || 0) : undefined,
@@ -1764,7 +1793,17 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
                         </div>
                         <div>
                           <label className="text-sm font-bold text-slate-400 block mb-1">Frame</label>
-                          <select value={cardFrame} onChange={e => setCardFrame(e.target.value as any)} className="w-full bg-slate-950 border border-slate-700 rounded p-2 text-white">
+                          <select 
+                            value={cardFrame} 
+                            onChange={e => {
+                              const newFrame = e.target.value as any;
+                              setCardFrame(newFrame);
+                              if (newFrame === 'Moderno' && cardRarity === 'Beta') {
+                                setCardRarity('Comum');
+                              }
+                            }} 
+                            className="w-full bg-slate-950 border border-slate-700 rounded p-2 text-white"
+                          >
                             <option value="Legado">Legado</option>
                             <option value="Moderno">Moderno</option>
                           </select>
@@ -2011,11 +2050,33 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
                             <label className="text-sm font-bold text-slate-400 block mb-2">Frame Padrão</label>
                             <select 
                               value={batchFrame} 
-                              onChange={e => setBatchFrame(e.target.value as any)} 
+                              onChange={e => {
+                                const newFrame = e.target.value as any;
+                                setBatchFrame(newFrame);
+                                if (newFrame === 'Moderno' && batchRarity === 'Beta') {
+                                  setBatchRarity('Comum');
+                                }
+                              }} 
                               className="w-full bg-slate-950 border border-slate-700 rounded p-2 text-white"
                             >
                               <option value="Legado">Legado</option>
                               <option value="Moderno">Moderno</option>
+                            </select>
+                          </div>
+                          <div className="w-full xl:w-1/4">
+                            <label className="text-sm font-bold text-slate-400 block mb-2">Raridade Padrão</label>
+                            <select 
+                              value={batchRarity} 
+                              onChange={e => setBatchRarity(e.target.value)} 
+                              className="w-full bg-slate-950 border border-slate-700 rounded p-2 text-amber-300 font-bold"
+                            >
+                              <option value="Comum">Comum</option>
+                              <option value="Incomum">Incomum</option>
+                              <option value="Rara">Rara</option>
+                              <option value="Muito Rara">Muito Rara</option>
+                              <option value="Limitadas">Limitadas</option>
+                              <option value="Beta">Beta</option>
+                              <option value="Evento">Evento</option>
                             </select>
                           </div>
                         </div>
@@ -2027,24 +2088,54 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
                               <div className="flex-1 min-w-0">
                                 <h5 className="font-bold text-white text-sm truncate">{c.name}</h5>
                                 <p className="text-xs text-slate-500">{c.code} • {c.type} • {c.collection || 'Sem Coleção'}</p>
-                                <div className="mt-2 text-xs">
-                                  <label className="text-[10px] font-bold text-slate-400 block mb-1 uppercase">Frame Específico (Vazio = Usa o Padrão)</label>
-                                  <select 
-                                    className="bg-slate-900 border border-slate-700 rounded p-1 text-white text-xs w-full max-w-xs"
-                                    value={c.frame || ''}
-                                    onChange={(e) => {
-                                      const newCards = [...parsedBatchCards];
-                                      const idx = newCards.findIndex(card => card.code === c.code);
-                                      if (idx > -1) {
-                                        newCards[idx].frame = e.target.value === '' ? undefined : e.target.value;
-                                        setParsedBatchCards(newCards);
-                                      }
-                                    }}
-                                  >
-                                    <option value="">Usar Frame Padrão da Lote</option>
-                                    <option value="Legado">Legado</option>
-                                    <option value="Moderno">Moderno</option>
-                                  </select>
+                                <div className="mt-2 text-xs flex gap-2 flex-wrap">
+                                  <div>
+                                    <label className="text-[10px] font-bold text-slate-400 block mb-1 uppercase">Frame Específico</label>
+                                    <select 
+                                      className="bg-slate-900 border border-slate-700 rounded p-1 text-white text-xs w-36"
+                                      value={c.frame || ''}
+                                      onChange={(e) => {
+                                        const newCards = [...parsedBatchCards];
+                                        const idx = newCards.findIndex(card => card.code === c.code);
+                                        if (idx > -1) {
+                                          const val = e.target.value === '' ? undefined : e.target.value;
+                                          newCards[idx].frame = val;
+                                          if (val === 'Moderno' && newCards[idx].rarity === 'Beta') {
+                                            newCards[idx].rarity = 'Comum';
+                                          }
+                                          setParsedBatchCards(newCards);
+                                        }
+                                      }}
+                                    >
+                                      <option value="">Padrão ({batchFrame})</option>
+                                      <option value="Legado">Legado</option>
+                                      <option value="Moderno">Moderno</option>
+                                    </select>
+                                  </div>
+                                  <div>
+                                    <label className="text-[10px] font-bold text-slate-400 block mb-1 uppercase">Raridade</label>
+                                    <select 
+                                      className="bg-slate-900 border border-slate-700 rounded p-1 text-amber-300 font-bold text-xs w-36"
+                                      value={c.rarity || ''}
+                                      onChange={(e) => {
+                                        const newCards = [...parsedBatchCards];
+                                        const idx = newCards.findIndex(card => card.code === c.code);
+                                        if (idx > -1) {
+                                          newCards[idx].rarity = e.target.value === '' ? undefined : e.target.value;
+                                          setParsedBatchCards(newCards);
+                                        }
+                                      }}
+                                    >
+                                      <option value="">Padrão ({batchRarity})</option>
+                                      <option value="Comum">Comum</option>
+                                      <option value="Incomum">Incomum</option>
+                                      <option value="Rara">Rara</option>
+                                      <option value="Muito Rara">Muito Rara</option>
+                                      <option value="Limitadas">Limitadas</option>
+                                      <option value="Beta">Beta</option>
+                                      <option value="Evento">Evento</option>
+                                    </select>
+                                  </div>
                                 </div>
                               </div>
                               <div className="w-full xl:w-96 flex flex-col gap-2">

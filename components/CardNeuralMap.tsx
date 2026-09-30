@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { 
   Network, Zap, Sparkles, Filter, ZoomIn, ZoomOut, RotateCcw, 
-  Play, Pause, Eye, Plus, Trash2, X, ChevronRight, Info, 
+  Play, Pause, Eye, Plus, Trash2, X, ChevronRight, ChevronDown, Info, 
   Layers, Shield, Sword, Box, Search, ArrowRight, Check, Sparkle,
   Maximize2, LayoutGrid, Orbit, Columns3, Lock, Unlock, Link2
 } from 'lucide-react';
 import { CardData, CardType } from '../types';
-import { compareCardCodes } from '../deckUtils';
+import { compareCardCodes, isHeroGroupValid, isModernCard } from '../deckUtils';
 
 export type InteractionType = 'same_name' | 'effect_interaction' | 'same_archetype' | 'same_collection' | 'custom';
 export type LayoutMode = 'orbits' | 'grid' | 'types';
@@ -117,6 +117,7 @@ export const STRUCTURAL_DECKS = [
   { id: 'Corruptor Profano', name: 'Corruptor Profano' },
   { id: 'O Escolhido', name: 'O Escolhido' },
   { id: 'Deusa da Lua', name: 'Deusa da Lua' },
+  { id: 'Invasão do Caos', name: 'Invasão do Caos' },
 ];
 
 // Palavras-chave principais exigidas pelo usuário:
@@ -256,15 +257,15 @@ function calculateLayoutPositions(
         return (a.card.name || '').localeCompare(b.card.name || '');
       });
 
-      const cols = Math.min(10, Math.max(4, Math.ceil(Math.sqrt(subTotal * 1.35))));
-      const colSpacing = 84;
-      const rowSpacing = 118;
+      const cols = Math.min(8, Math.max(5, Math.ceil(Math.sqrt(subTotal * 1.2))));
+      const colSpacing = 48;
+      const rowSpacing = 62;
 
       sorted.forEach((item, index) => {
         const col = index % cols;
         const row = Math.floor(index / cols);
         const x = (col - (cols - 1) / 2) * colSpacing;
-        const y = (row - (Math.ceil(subTotal / cols) - 1) / 2) * rowSpacing + 25;
+        const y = (row - (Math.ceil(subTotal / cols) - 1) / 2) * rowSpacing + 20;
         positions.set(item.id, { x, y });
       });
       return;
@@ -291,16 +292,29 @@ function calculateLayoutPositions(
 
       const activeGroups = Object.entries(groups).filter(([_, l]) => l.length > 0);
       const groupCount = activeGroups.length;
-      const colSpacing = 105;
-      const rowSpacing = 98;
+      const colSpacing = 70;
+      const rowSpacing = 44;
 
       activeGroups.forEach(([_, groupItems], colIdx) => {
         const colX = (colIdx - (groupCount - 1) / 2) * colSpacing;
         groupItems.sort((a, b) => (a.card.name || '').localeCompare(b.card.name || ''));
-        groupItems.forEach((item, rowIdx) => {
-          const rowY = (rowIdx - (groupItems.length - 1) / 2) * rowSpacing + 25;
-          positions.set(item.id, { x: colX, y: rowY });
-        });
+
+        // Prevent excessively tall columns by splitting groups > 7 into 2 side-by-side sub-columns
+        if (groupItems.length > 7) {
+          const half = Math.ceil(groupItems.length / 2);
+          groupItems.forEach((item, idx) => {
+            const subCol = idx >= half ? 1 : 0;
+            const subRow = idx >= half ? idx - half : idx;
+            const x = colX + (subCol === 0 ? -18 : 18);
+            const y = (subRow - (half - 1) / 2) * rowSpacing + 20;
+            positions.set(item.id, { x, y });
+          });
+        } else {
+          groupItems.forEach((item, rowIdx) => {
+            const rowY = (rowIdx - (groupItems.length - 1) / 2) * rowSpacing + 20;
+            positions.set(item.id, { x: colX, y: rowY });
+          });
+        }
       });
       return;
     }
@@ -316,11 +330,11 @@ function calculateLayoutPositions(
       return (a.card.name || '').localeCompare(b.card.name || '');
     });
 
-    const centerY = 110;
+    const centerY = 20;
     if (heroes.length === 1) {
       positions.set(heroes[0].id, { x: 0, y: centerY });
     } else if (heroes.length > 1) {
-      const heroRadius = Math.max(60, Math.min(95, heroes.length * 16));
+      const heroRadius = Math.max(24, Math.min(48, heroes.length * 9));
       heroes.forEach((h, i) => {
         const angle = (i / heroes.length) * Math.PI * 2 - Math.PI / 2;
         positions.set(h.id, {
@@ -331,11 +345,12 @@ function calculateLayoutPositions(
     }
 
     const remaining = [...nonHeroes];
+    // Compact, beautifully spaced orbit rings so cards NEVER appear far away
     const ringConfigs = [
-      { radius: heroes.length > 2 ? 175 : 135, capacity: 10 },
-      { radius: heroes.length > 2 ? 275 : 235, capacity: 18 },
-      { radius: heroes.length > 2 ? 375 : 335, capacity: 26 },
-      { radius: heroes.length > 2 ? 465 : 425, capacity: 34 }
+      { radius: heroes.length > 2 ? 95 : 78, capacity: 8 },
+      { radius: heroes.length > 2 ? 155 : 138, capacity: 14 },
+      { radius: heroes.length > 2 ? 215 : 198, capacity: 20 },
+      { radius: heroes.length > 2 ? 265 : 248, capacity: 26 }
     ];
 
     let currentRingIdx = 0;
@@ -357,7 +372,7 @@ function calculateLayoutPositions(
     }
 
     if (remaining.length > 0) {
-      const lastRadius = 490;
+      const lastRadius = heroes.length > 2 ? 260 : 245;
       remaining.forEach((item, i) => {
         const angle = (i / remaining.length) * Math.PI * 2;
         positions.set(item.id, {
@@ -371,20 +386,12 @@ function calculateLayoutPositions(
   // 1. Place connected cards according to mode
   placeConnectedItems(connected);
 
-  // Garantir que as cartas com conexão NUNCA fiquem na área superior das cartas sem conexão
-  connected.forEach(it => {
-    const p = positions.get(it.id);
-    if (p && p.y < -100) {
-      p.y = -100;
-    }
-  });
-
   // 2. REQUISITO: "cartas sem ligação nenhuma, coloque elas sempre alinhadas em cima"
-  // Na linha de cartas sem ligação deve ficar SOMENTE as cartas sem ligação, sem sobreposição com cartas ligadas.
+  // Posicionamento próximo e harmônico logo acima da rede conectada
   if (unconnected.length > 0) {
-    const topBaseY = -280;
-    const colSpacing = 74;
-    const maxPerLine = 12;
+    const topBaseY = -185;
+    const colSpacing = 38;
+    const maxPerLine = 15;
 
     if (unconnected.length <= maxPerLine) {
       unconnected.forEach((item, idx) => {
@@ -397,7 +404,7 @@ function calculateLayoutPositions(
         const col = idx % maxPerLine;
         const countInThisRow = Math.min(maxPerLine, unconnected.length - row * maxPerLine);
         const x = (col - (countInThisRow - 1) / 2) * colSpacing;
-        const y = topBaseY - row * 96;
+        const y = topBaseY - row * 44;
         positions.set(item.id, { x, y });
       });
     }
@@ -473,13 +480,13 @@ export const CardNeuralMap: React.FC<CardNeuralMapProps> = ({
   const [layoutMode, setLayoutMode] = useState<LayoutMode>('orbits');
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
-  const [isPhysicsRunning, setIsPhysicsRunning] = useState(true);
-  const simAlphaRef = useRef<number>(0.35);
+  // Physics is permanently disabled per user requirement: "NAO QUERO AS CARTAS ANDANDO PELO MAPA"
 
   // Suggested Cards Drawer State (User requested: "Sugerir cartas = mostrar lista de cartas em vez de adicionar elas diretamente")
   const [showSuggestionsDrawer, setShowSuggestionsDrawer] = useState(false);
   const [suggestionSearch, setSuggestionSearch] = useState('');
   const [activeFilter, setActiveFilter] = useState<NeuralFilterType>('Todos');
+  const [showStructuralMenu, setShowStructuralMenu] = useState(false);
 
   // Custom Links state (REQUISITO: "fazer ligação customizadas")
   const [customLinks, setCustomLinks] = useState<Array<{ id: string; sourceId: string; targetId: string; label?: string }>>([]);
@@ -545,9 +552,6 @@ export const CardNeuralMap: React.FC<CardNeuralMapProps> = ({
           img.decoding = 'async';
           img.onload = () => {
             imageCacheRef.current.set(card.imageUrl!, img!);
-            if (simAlphaRef.current <= 0.01) {
-              simAlphaRef.current = 0.02;
-            }
           };
           img.src = card.imageUrl;
           GLOBAL_NEURAL_IMAGE_CACHE.set(card.imageUrl, img);
@@ -558,9 +562,6 @@ export const CardNeuralMap: React.FC<CardNeuralMapProps> = ({
           img.onload = (e) => {
             if (typeof prevOnload === 'function') (prevOnload as any)(e);
             imageCacheRef.current.set(card.imageUrl!, img!);
-            if (simAlphaRef.current <= 0.01) {
-              simAlphaRef.current = 0.02;
-            }
           };
         }
       }
@@ -568,13 +569,49 @@ export const CardNeuralMap: React.FC<CardNeuralMapProps> = ({
   }, [deck, sideDeck]);
 
   // Active deck cards representation
+  // REQUISITOS DO USUÁRIO:
+  // - "COLOQUE SOMENTE AS MODERNAS" (se houver versão moderna, exiba estritamente a moderna e descarte legado)
+  // - "nada de carta repetida" (máximo 1 cópia por carta por nome no mapa neural)
+  // - Exibir todas as 30 cartas do deck estrutural
   const activeDeckCards = useMemo(() => {
-    return deck.map((card, index) => ({
+    if (!deck || deck.length === 0) return [];
+
+    // 1. Group deck cards by normalized name
+    const byName = new Map<string, CardData>();
+    deck.forEach(c => {
+      if (!c) return;
+      const key = normalizeText(c.name || '');
+      if (!byName.has(key)) {
+        let chosen = c;
+        // Se a carta for Legado, verificar se existe versão moderna correspondente em allCards
+        if (!isModernCard(chosen)) {
+          const modernMatch = allCards.find(ac => 
+            isModernCard(ac) && 
+            normalizeText(ac.name) === key && 
+            (!ac.collection || !c.collection || ac.collection === c.collection)
+          );
+          if (modernMatch) {
+            chosen = modernMatch;
+          }
+        }
+        byName.set(key, chosen);
+      } else {
+        // Se a já cadastrada for Legado e a atual for Moderno, faz o upgrade para a versão Moderna
+        const existing = byName.get(key)!;
+        if (!isModernCard(existing) && isModernCard(c)) {
+          byName.set(key, c);
+        }
+      }
+    });
+
+    const uniqueCards = Array.from(byName.values()).sort((a, b) => compareCardCodes(a.code, b.code));
+
+    return uniqueCards.map((card, index) => ({
       card,
       id: `deck-${card.code}-${index}`,
       isDeck: true
     }));
-  }, [deck]);
+  }, [deck, allCards]);
 
   // Calculate intelligent suggestions list based on current deck synergies
   // REGRAS DO USUÁRIO:
@@ -614,8 +651,17 @@ export const CardNeuralMap: React.FC<CardNeuralMapProps> = ({
       if (deckExactNames.has(candNormName)) return;
       if (deckBaseNames.has(candBaseName)) return;
 
-      // 3. REGRA: NAO SUGERIR OUTROS HEROIS QUE NAO INTERAGEM COM O HEROI ATUAL DO DECK
+      // REGRA: Somente frame moderno (não sugerir versão legado se houver versão moderna)
+      if (!isModernCard(candidate)) {
+        const hasModern = allCards.some(ac => isModernCard(ac) && normalizeText(ac.name) === candNormName);
+        if (hasModern) return;
+      }
+
+      // 3. REGRA: Somente 1 herói no deck principal (regras de deck build: não sugerir outros heróis que violem isHeroGroupValid)
       if (candidate.type === 'Herói' && deckHeroes.length > 0) {
+        if (!isHeroGroupValid([...deckHeroes, candidate])) {
+          return;
+        }
         const candDesc = candidate.description || '';
         const candIdents = extractPrincipalIdentities(candidate.name);
         const candArchs = (candidate.archetype || '').split('/').map(a => a.trim()).filter(Boolean);
@@ -1015,14 +1061,15 @@ export const CardNeuralMap: React.FC<CardNeuralMapProps> = ({
 
     const layoutPositions = calculateLayoutPositions(combinedCards, layoutMode, connCounts);
 
-    // Card Miniature Proportions: Aspect ratio 1 : 1.4 (TCG standard)
+    // Card Miniature Proportions: Compact TCG ratio (~1 : 1.4)
+    // REQUISITO: "no mapa neural reduza o tamanho das cartas, com todas elas ligadas e proximas, mau dá pra ver as linhas q as interligam"
     const nodes: NeuralNode[] = combinedCards.map((item) => {
       const isHero = item.card.type === 'Herói';
       
-      // Card width & height in exact card ratio (~1:1.4)
-      const width = isHero ? 62 : 54;
-      const height = isHero ? 87 : 76;
-      const radius = Math.hypot(width, height) / 2; // Physics bounding radius
+      // Card width & height reduced for clear visibility of interconnection lines
+      const width = isHero ? 28 : 22;
+      const height = isHero ? 39 : 31;
+      const radius = Math.hypot(width, height) / 2;
 
       const typeStyle = TYPE_COLORS[item.card.type] || TYPE_COLORS['Combatente'];
       const pos = layoutPositions.get(item.id) || { x: 0, y: 0 };
@@ -1054,164 +1101,21 @@ export const CardNeuralMap: React.FC<CardNeuralMapProps> = ({
   useEffect(() => {
     nodesRef.current = nodesData;
     linksRef.current = linksData;
-    simAlphaRef.current = (layoutMode === 'orbits' && isPhysicsRunning) ? 0.35 : 0;
-  }, [nodesData, linksData, layoutMode, isPhysicsRunning]);
+  }, [nodesData, linksData]);
 
-  // Physics Simulation Loop with auto-cooling stabilization (Stops cards from wandering or dancing)
+  // Canvas Animation Loop: strictly static cards, NO physics motion, NO wandering or drifting!
+  // Pulse animation on synapse links is rendered smoothly with high precision.
   useEffect(() => {
     let pulseTime = 0;
 
     const tick = () => {
       pulseTime += 0.035;
+
+      // Cards never move on their own: velocities stay strictly zero
       const nodes = nodesRef.current;
-      const links = linksRef.current;
-      const count = nodes.length;
-
-      // Only calculate physical forces if physics is active, layout is orbits, and alpha has not cooled down to zero
-      if (isPhysicsRunning && layoutMode === 'orbits' && simAlphaRef.current > 0.005) {
-        const alpha = simAlphaRef.current;
-
-        // 1. Soft anti-overlap separation (ONLY if cards actually touch / overlap)
-        const minDist = 80;
-        for (let i = 0; i < count; i++) {
-          for (let j = i + 1; j < count; j++) {
-            const a = nodes[i];
-            const b = nodes[j];
-
-            // Unconnected cards stay aligned at the top, ignore physics separation
-            if (a.connectionsCount === 0 || b.connectionsCount === 0) continue;
-
-            let dx = b.x - a.x;
-            let dy = b.y - a.y;
-
-            if (Math.abs(dx) < 0.1 && Math.abs(dy) < 0.1) {
-              dx = 1;
-              dy = 1;
-            }
-
-            const distSq = dx * dx + dy * dy;
-            if (distSq < minDist * minDist) {
-              const dist = Math.max(1, Math.sqrt(distSq));
-              const overlap = (minDist - dist) / minDist;
-              const push = overlap * 1.8 * alpha;
-              const fx = (dx / dist) * push;
-              const fy = (dy / dist) * push;
-
-              if (Number.isFinite(fx) && Number.isFinite(fy)) {
-                if (a.id !== draggedNodeId && !a.isHero && a.connectionsCount > 0) {
-                  a.vx -= fx;
-                  a.vy -= fy;
-                }
-                if (b.id !== draggedNodeId && !b.isHero && b.connectionsCount > 0) {
-                  b.vx += fx;
-                  b.vy += fy;
-                }
-              }
-            }
-          }
-        }
-
-        // 2. Gentle spring nudge along direct synergy links
-        links.forEach(link => {
-          if (!isLinkActive(link)) return;
-
-          const a = nodes.find(n => n.id === link.sourceId);
-          const b = nodes.find(n => n.id === link.targetId);
-          if (!a || !b) return;
-
-          const dx = b.x - a.x;
-          const dy = b.y - a.y;
-          const dist = Math.max(1, Math.sqrt(dx * dx + dy * dy));
-
-          const idealDist = link.type === 'same_name' ? 120 :
-                            link.type === 'effect_interaction' ? 140 : 180;
-
-          const displacement = dist - idealDist;
-          const springForce = displacement * 0.003 * (link.strength || 1) * alpha;
-
-          const fx = (dx / dist) * springForce;
-          const fy = (dy / dist) * springForce;
-
-          if (Number.isFinite(fx) && Number.isFinite(fy)) {
-            if (a.id !== draggedNodeId && !a.isHero && a.connectionsCount > 0) {
-              a.vx += fx;
-              a.vy += fy;
-            }
-            if (b.id !== draggedNodeId && !b.isHero && b.connectionsCount > 0) {
-              b.vx += fx;
-              b.vy += fy;
-            }
-          }
-        });
-
-        // 3. Boundary containment (keeps cards bounded so they never drift off-screen)
-        const maxBoundRadius = Math.max(380, Math.sqrt(count) * 62);
-
-        // Find the lowest point (max Y) of the unconnected cards zone to ensure a strict barrier
-        let maxUnconnectedBottomY = -Infinity;
-        nodes.forEach(n => {
-          if (n.connectionsCount === 0 && !n.isHero) {
-            const cardBottom = n.y + n.height / 2 + 30;
-            if (cardBottom > maxUnconnectedBottomY) maxUnconnectedBottomY = cardBottom;
-          }
-        });
-
-        nodes.forEach(node => {
-          if (node.id === draggedNodeId || node.isHero) return;
-
-          // Unconnected cards stay firmly aligned at the top
-          if (node.connectionsCount === 0) {
-            node.vx = 0;
-            node.vy = 0;
-            return;
-          }
-
-          // REQUISITO: "Na linha de cartas sem ligação. deve ficar somente as cartas sem ligação"
-          // Impede estritamente que cartas com conexões subam até a linha/zona de cartas sem ligação
-          const barrierY = maxUnconnectedBottomY !== -Infinity ? Math.max(-130, maxUnconnectedBottomY + 50) : -130;
-          if (node.y < barrierY) {
-            node.y = barrierY;
-            if (node.vy < 0) node.vy = 0;
-          }
-
-          const distFromOrigin = Math.hypot(node.x, node.y);
-          if (distFromOrigin > maxBoundRadius) {
-            const pull = (distFromOrigin - maxBoundRadius) * 0.04 * alpha;
-            node.vx -= (node.x / distFromOrigin) * pull;
-            node.vy -= (node.y / distFromOrigin) * pull;
-          }
-
-          // High damping so movement comes to a crisp halt
-          node.vx *= 0.72;
-          node.vy *= 0.72;
-
-          if (Math.abs(node.vx) < 0.02) node.vx = 0;
-          if (Math.abs(node.vy) < 0.02) node.vy = 0;
-
-          if (Number.isFinite(node.vx)) node.x += node.vx;
-          else node.vx = 0;
-
-          if (Number.isFinite(node.vy)) node.y += node.vy;
-          else node.vy = 0;
-
-          if (!Number.isFinite(node.x)) node.x = 0;
-          if (!Number.isFinite(node.y)) node.y = 0;
-
-          // Garantir que após aplicar vy a carta ligada continue estritamente abaixo da zona de cartas sem ligação
-          if (node.y < barrierY) {
-            node.y = barrierY;
-            node.vy = 0;
-          }
-        });
-
-        // Smoothly decay energy to zero
-        simAlphaRef.current *= 0.92;
-      } else {
-        // Simulation cooled or disabled: strictly zero velocities so cards NEVER walk or drift!
-        nodes.forEach(node => {
-          node.vx = 0;
-          node.vy = 0;
-        });
+      for (let i = 0; i < nodes.length; i++) {
+        nodes[i].vx = 0;
+        nodes[i].vy = 0;
       }
 
       renderCanvas(pulseTime);
@@ -1222,7 +1126,7 @@ export const CardNeuralMap: React.FC<CardNeuralMapProps> = ({
     return () => {
       if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
     };
-  }, [isPhysicsRunning, layoutMode, draggedNodeId, activeLinkFilters, camera, hoveredNodeId, selectedNodeId, activeFilter]);
+  }, [layoutMode, draggedNodeId, activeLinkFilters, camera, hoveredNodeId, selectedNodeId, activeFilter]);
 
   // Main Canvas Render with High-DPI (Retina) support for sharp numbers and names
   const renderCanvas = (pulseTime: number = 0) => {
@@ -1303,22 +1207,22 @@ export const CardNeuralMap: React.FC<CardNeuralMapProps> = ({
         if (n.x > maxUnconnectedX) maxUnconnectedX = n.x;
       });
 
-      const headerY = minUnconnectedY - 48;
-      const dividerY = maxUnconnectedY + 46;
-      const lineWidth = Math.max(600, (maxUnconnectedX - minUnconnectedX) + 160);
+      const headerY = minUnconnectedY - 18;
+      const dividerY = maxUnconnectedY + 16;
+      const lineWidth = Math.max(300, (maxUnconnectedX - minUnconnectedX) + 60);
 
       ctx.save();
       // Label
       ctx.fillStyle = 'rgba(148, 163, 184, 0.7)';
-      ctx.font = 'bold 11px monospace, sans-serif';
+      ctx.font = 'bold 9px monospace, sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'bottom';
       ctx.fillText(`— CARTAS SEM LIGAÇÃO (${unconnectedNodes.length}) —`, 0, headerY);
 
       // Subtle horizontal divider line separating unconnected cards from connected cards below
       ctx.beginPath();
-      ctx.setLineDash([4, 4]);
-      ctx.strokeStyle = 'rgba(148, 163, 184, 0.25)';
+      ctx.setLineDash([3, 3]);
+      ctx.strokeStyle = 'rgba(148, 163, 184, 0.2)';
       ctx.lineWidth = 1;
       ctx.moveTo(-lineWidth / 2, dividerY);
       ctx.lineTo(lineWidth / 2, dividerY);
@@ -1351,10 +1255,11 @@ export const CardNeuralMap: React.FC<CardNeuralMapProps> = ({
       }
 
       const alpha = (focusNodeId 
-        ? (isConnectedToFocus ? 0.95 : 0.08)
-        : (link.type === 'same_collection' ? 0.25 : 0.65)) * filterAlpha;
+        ? (isConnectedToFocus ? 0.98 : 0.08)
+        : (link.type === 'same_collection' ? 0.35 : 0.85)) * filterAlpha;
 
-      const lineWidth = isConnectedToFocus && focusNodeId ? 3.0 : 1.5;
+      // REQUISITO: "coloca só 1px"
+      const lineWidth = 1.0;
 
       ctx.save();
       ctx.globalAlpha = alpha;
@@ -1363,7 +1268,7 @@ export const CardNeuralMap: React.FC<CardNeuralMapProps> = ({
 
       if (isConnectedToFocus && focusNodeId) {
         ctx.shadowColor = link.color;
-        ctx.shadowBlur = 12;
+        ctx.shadowBlur = 3;
       }
 
       ctx.beginPath();
@@ -1380,9 +1285,9 @@ export const CardNeuralMap: React.FC<CardNeuralMapProps> = ({
         if (Number.isFinite(px) && Number.isFinite(py)) {
           ctx.fillStyle = '#ffffff';
           ctx.shadowColor = link.color;
-          ctx.shadowBlur = 9;
+          ctx.shadowBlur = 4;
           ctx.beginPath();
-          ctx.arc(px, py, 3, 0, Math.PI * 2);
+          ctx.arc(px, py, 2, 0, Math.PI * 2);
           ctx.fill();
         }
       }
@@ -1390,27 +1295,8 @@ export const CardNeuralMap: React.FC<CardNeuralMapProps> = ({
       ctx.restore();
     });
 
-    // Linha divisória sutil para a zona de cartas sem ligação direta
-    const hasUnconnected = nodes.some(n => n.connectionsCount === 0 && !n.isHero);
-    if (hasUnconnected) {
-      ctx.save();
-      ctx.strokeStyle = 'rgba(148, 163, 184, 0.18)';
-      ctx.lineWidth = 1;
-      ctx.setLineDash([6, 6]);
-      ctx.beginPath();
-      ctx.moveTo(-600, -180);
-      ctx.lineTo(600, -180);
-      ctx.stroke();
-
-      ctx.fillStyle = 'rgba(148, 163, 184, 0.6)';
-      ctx.font = 'bold 9px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'bottom';
-      ctx.fillText('CARTAS SEM LIGAÇÃO DIRETA', 0, -188);
-      ctx.restore();
-    }
-
-    // 2. Draw Nodes as Card Miniatures (Proporção correta de carta TCG)
+    // 2. Draw Nodes as Compact Card Miniatures
+    // REQUISITO: "no mapa neural reduza o tamanho das cartas, com todas elas ligadas e proximas, mau dá pra ver as linhas q as interligam"
     nodes.forEach(node => {
       if (!node || !Number.isFinite(node.x) || !Number.isFinite(node.y)) return;
 
@@ -1419,11 +1305,11 @@ export const CardNeuralMap: React.FC<CardNeuralMapProps> = ({
       const isFilterMatch = doesNodeMatchActiveFilter(node);
       const nodeAlpha = (isConnected ? 1 : 0.25) * (isFilterMatch ? 1 : 0.2);
 
-      const cardW = Number.isFinite(node.width) && node.width > 0 ? node.width : 54;
-      const cardH = Number.isFinite(node.height) && node.height > 0 ? node.height : 76;
+      const cardW = Number.isFinite(node.width) && node.width > 0 ? node.width : 22;
+      const cardH = Number.isFinite(node.height) && node.height > 0 ? node.height : 31;
       const cardX = node.x - cardW / 2;
       const cardY = node.y - cardH / 2;
-      const cornerR = 5;
+      const cornerR = 3;
 
       if (!Number.isFinite(cardX) || !Number.isFinite(cardY)) return;
 
@@ -1434,10 +1320,10 @@ export const CardNeuralMap: React.FC<CardNeuralMapProps> = ({
       if (isFocused || node.isHero) {
         ctx.save();
         ctx.beginPath();
-        ctx.roundRect(cardX - 5, cardY - 5, cardW + 10, cardH + 10, cornerR + 3);
+        ctx.roundRect(cardX - 3, cardY - 3, cardW + 6, cardH + 6, cornerR + 2);
         ctx.fillStyle = node.glowColor;
         ctx.shadowColor = node.color;
-        ctx.shadowBlur = isFocused ? 26 : 14;
+        ctx.shadowBlur = isFocused ? 18 : 10;
         ctx.fill();
         ctx.restore();
       }
@@ -1452,7 +1338,7 @@ export const CardNeuralMap: React.FC<CardNeuralMapProps> = ({
       let cachedImg = node.card.imageUrl ? (imageCacheRef.current.get(node.card.imageUrl) || GLOBAL_NEURAL_IMAGE_CACHE.get(node.card.imageUrl)) : null;
       if (!cachedImg && node.card.imageUrl) {
         cachedImg = getOrCreateNeuralImage(node.card.imageUrl, () => {
-          if (simAlphaRef.current <= 0.01) simAlphaRef.current = 0.02;
+          triggerRepaint();
         });
         if (cachedImg) {
           imageCacheRef.current.set(node.card.imageUrl, cachedImg);
@@ -1460,14 +1346,14 @@ export const CardNeuralMap: React.FC<CardNeuralMapProps> = ({
       }
       ctx.save();
       ctx.beginPath();
-      ctx.roundRect(cardX + 1.5, cardY + 1.5, cardW - 3, cardH - 3, cornerR - 1);
+      ctx.roundRect(cardX + 1, cardY + 1, cardW - 2, cardH - 2, cornerR - 0.5);
       ctx.clip();
 
       if (cachedImg && cachedImg.complete && cachedImg.naturalWidth > 0) {
         ctx.drawImage(cachedImg, cardX, cardY, cardW, cardH);
         
         // Subtle gradient shading at bottom for text contrast
-        const gradTop = cardY + cardH * 0.4;
+        const gradTop = cardY + cardH * 0.45;
         const gradBottom = cardY + cardH;
         if (Number.isFinite(cardX) && Number.isFinite(gradTop) && Number.isFinite(gradBottom)) {
           try {
@@ -1478,7 +1364,7 @@ export const CardNeuralMap: React.FC<CardNeuralMapProps> = ({
             ctx.fillRect(cardX, cardY, cardW, cardH);
           } catch {
             ctx.fillStyle = 'rgba(10,14,23,0.6)';
-            ctx.fillRect(cardX, gradTop, cardW, cardH * 0.6);
+            ctx.fillRect(cardX, gradTop, cardW, cardH * 0.55);
           }
         }
       } else {
@@ -1487,17 +1373,11 @@ export const CardNeuralMap: React.FC<CardNeuralMapProps> = ({
         ctx.fillRect(cardX, cardY, cardW, cardH);
 
         ctx.fillStyle = node.color;
-        ctx.font = `bold 18px sans-serif`;
+        ctx.font = `bold 12px sans-serif`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         const initial = ((node.card?.name || '?').charAt(0) || '?').toUpperCase();
-        ctx.fillText(initial, node.x, node.y - 2);
-
-        if (node.type !== 'Efeito' && node.type !== 'Equipamento') {
-          ctx.font = `9px sans-serif`;
-          ctx.fillStyle = '#94a3b8';
-          ctx.fillText(node.type, node.x, node.y + 14);
-        }
+        ctx.fillText(initial, node.x, node.y);
       }
       ctx.restore();
 
@@ -1505,105 +1385,86 @@ export const CardNeuralMap: React.FC<CardNeuralMapProps> = ({
       // Herói = vermelho (#ef4444), Combatente = azul (#3b82f6), Equipamento = verde (#10b981), Efeito = roxo (#a855f7)
       ctx.beginPath();
       ctx.roundRect(cardX, cardY, cardW, cardH, cornerR);
-      ctx.lineWidth = isFocused ? 3.5 : (node.isHero ? 2.8 : 2.0);
+      ctx.lineWidth = isFocused ? 2.5 : (node.isHero ? 2.0 : 1.4);
       ctx.strokeStyle = isFocused ? '#ffffff' : node.borderColor;
       ctx.stroke();
 
       // Hero Crown Indicator 👑
       if (node.isHero) {
         ctx.fillStyle = '#fbbf24';
-        ctx.font = `bold 13px sans-serif`;
+        ctx.font = `bold 10px sans-serif`;
         ctx.textAlign = 'center';
-        ctx.fillText('👑', node.x, cardY - 7);
+        ctx.fillText('👑', node.x, cardY - 5);
       }
 
-      // 3. STATS OVERLAYS ON CARD MINIATURE:
-      // (a) Custo de Tempo (CT) Badge - Top Left
+      // Custo de Tempo (CT) Badge - Top Left
       const ctVal = node.card.ct ?? 0;
-      const badgeW = 20;
-      const badgeH = 14;
-      const badgeX = cardX + 2.5;
-      const badgeY = cardY + 2.5;
+      const badgeW = 12;
+      const badgeH = 10;
+      const badgeX = cardX + 1.5;
+      const badgeY = cardY + 1.5;
 
-      ctx.fillStyle = 'rgba(15, 23, 42, 0.92)';
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.95)';
       ctx.beginPath();
-      ctx.roundRect(badgeX, badgeY, badgeW, badgeH, 3);
+      ctx.roundRect(badgeX, badgeY, badgeW, badgeH, 2);
       ctx.fill();
-      ctx.lineWidth = 1;
+      ctx.lineWidth = 0.8;
       ctx.strokeStyle = '#eab308';
       ctx.stroke();
 
       // High-resolution CT number
       ctx.fillStyle = '#fef08a';
-      ctx.font = `bold 10px monospace, "Courier New", sans-serif`;
+      ctx.font = `bold 7.5px monospace, "Courier New", sans-serif`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(`${ctVal}`, badgeX + badgeW / 2, badgeY + badgeH / 2);
 
-      // (b) Ataque e Vida (ATK & DEF) Badges at Bottom - only for Herói / Combatente
-      // REQUISITO: "Remova a escrita 'EFEITO' e 'equipamento' das cartas no mapa neural, deixe somente custo nelas"
+      // (b) Ataque e Vida (ATK & DEF) on Focus
       const isCombatType = node.card.type === 'Herói' || node.card.type === 'Combatente';
       const hasCombatStats = isCombatType && node.card.attack !== undefined && node.card.defense !== undefined;
 
-      if (hasCombatStats) {
-        const statH = 13;
-        const statY = cardY + cardH - statH - 2.5;
-
-        // Ataque (Bottom Left - Red Badge)
-        const atkW = 24;
-        const atkX = cardX + 2.5;
-
-        ctx.fillStyle = 'rgba(239, 68, 68, 0.95)';
+      if (isFocused && hasCombatStats) {
+        ctx.save();
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.95)';
+        ctx.strokeStyle = '#64748b';
+        ctx.lineWidth = 0.8;
+        const statW = 34;
+        const statH = 11;
+        const statX = node.x - statW / 2;
+        const statY = cardY + cardH - statH - 1.5;
         ctx.beginPath();
-        ctx.roundRect(atkX, statY, atkW, statH, 3);
+        ctx.roundRect(statX, statY, statW, statH, 2);
         ctx.fill();
-        ctx.lineWidth = 1;
-        ctx.strokeStyle = '#fca5a5';
         ctx.stroke();
-
-        ctx.fillStyle = '#ffffff';
-        ctx.font = `bold 9px monospace, sans-serif`;
+        ctx.fillStyle = '#f87171';
+        ctx.font = `bold 7px sans-serif`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText(`⚔${node.card.attack}`, atkX + atkW / 2, statY + statH / 2);
-
-        // Vida / Defesa (Bottom Right - Blue/Green Badge)
-        const defW = 24;
-        const defX = cardX + cardW - defW - 2.5;
-
-        ctx.fillStyle = 'rgba(16, 185, 129, 0.95)';
-        ctx.beginPath();
-        ctx.roundRect(defX, statY, defW, statH, 3);
-        ctx.fill();
-        ctx.lineWidth = 1;
-        ctx.strokeStyle = '#86efac';
-        ctx.stroke();
-
-        ctx.fillStyle = '#ffffff';
-        ctx.font = `bold 9px monospace, sans-serif`;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(`🛡${node.card.defense}`, defX + defW / 2, statY + statH / 2);
+        ctx.fillText(`⚔${node.card.attack} 🛡${node.card.defense}`, node.x, statY + statH / 2);
+        ctx.restore();
       }
 
       // (c) Card Name Pill Label (Crystal Clear High Resolution)
       const name = node.card?.name || 'Carta';
-      const shortName = name.length > 20 ? name.slice(0, 18) + '…' : name;
+      const isHovered = node.id === hoveredNodeId;
+      const shortName = isFocused || isHovered 
+        ? name 
+        : (name.length > 14 ? name.slice(0, 12) + '…' : name);
       
-      ctx.font = `bold ${isFocused ? '11px' : '10px'} -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
+      ctx.font = `bold ${isFocused || isHovered ? '9.5px' : '8px'} -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
       const textMetrics = ctx.measureText(shortName);
-      const pillWidth = Math.max(cardW + 12, textMetrics.width + 14);
-      const pillHeight = 18;
+      const pillWidth = Math.max(cardW + 6, textMetrics.width + 8);
+      const pillHeight = 14;
       const pillX = node.x - pillWidth / 2;
-      const pillY = cardY + cardH + 5;
+      const pillY = cardY + cardH + 3;
 
       ctx.fillStyle = isFocused ? 'rgba(30, 41, 59, 0.98)' : 'rgba(10, 15, 29, 0.92)';
       ctx.beginPath();
-      ctx.roundRect(pillX, pillY, pillWidth, pillHeight, 9);
+      ctx.roundRect(pillX, pillY, pillWidth, pillHeight, 5);
       ctx.fill();
 
-      ctx.strokeStyle = isFocused ? node.color : 'rgba(255, 255, 255, 0.18)';
-      ctx.lineWidth = 1;
+      ctx.strokeStyle = isFocused ? node.color : 'rgba(255, 255, 255, 0.16)';
+      ctx.lineWidth = 0.8;
       ctx.stroke();
 
       ctx.fillStyle = isFocused ? '#ffffff' : '#f1f5f9';
@@ -1808,7 +1669,7 @@ export const CardNeuralMap: React.FC<CardNeuralMapProps> = ({
       maxY = Math.max(maxY, n.y + n.height / 2);
     });
 
-    const padding = 90;
+    const padding = 55;
     const graphWidth = Math.max(120, maxX - minX + padding * 2);
     const graphHeight = Math.max(120, maxY - minY + padding * 2);
     const centerX = (minX + maxX) / 2;
@@ -1816,14 +1677,14 @@ export const CardNeuralMap: React.FC<CardNeuralMapProps> = ({
 
     const scaleX = width / graphWidth;
     const scaleY = height / graphHeight;
-    const fitZoom = Math.min(1.15, Math.max(0.35, Math.min(scaleX, scaleY)));
+    const fitZoom = Math.min(1.4, Math.max(0.45, Math.min(scaleX, scaleY)));
 
     // Since renderCanvas centers at (cssWidth / 2, cssHeight / 2),
     // the target camera offset from center is strictly -centerX * fitZoom and -centerY * fitZoom.
-    // +20px on Y leaves breathing space below the top metrics & filter bar.
+    // +15px on Y leaves breathing space below the top metrics & filter bar.
     setCamera({
       x: -centerX * fitZoom,
-      y: -centerY * fitZoom + 20,
+      y: -centerY * fitZoom + 15,
       zoom: fitZoom
     });
   }, []);
@@ -1881,10 +1742,7 @@ export const CardNeuralMap: React.FC<CardNeuralMapProps> = ({
 
   // Reorganize and reset positions according to layoutMode
   const handleReorganize = useCallback(() => {
-    const combinedCards = [
-      ...deck.map((card, i) => ({ card, id: `deck-${card.id || card.name}-${i}`, isDeck: true })),
-      ...sideDeck.map((card, i) => ({ card, id: `side-${card.id || card.name}-${i}`, isDeck: false }))
-    ];
+    const combinedCards = activeDeckCards;
     const connCounts: Record<string, number> = {};
     linksRef.current.forEach(l => {
       connCounts[l.sourceId] = (connCounts[l.sourceId] || 0) + 1;
@@ -1900,11 +1758,10 @@ export const CardNeuralMap: React.FC<CardNeuralMapProps> = ({
       n.vx = 0;
       n.vy = 0;
     });
-    simAlphaRef.current = (layoutMode === 'orbits' && isPhysicsRunning) ? 0.35 : 0;
     setTimeout(() => {
       handleFitToScreen();
     }, 50);
-  }, [deck, sideDeck, layoutMode, isPhysicsRunning, handleFitToScreen]);
+  }, [activeDeckCards, layoutMode, handleFitToScreen]);
 
   // Automatically fit cards onto screen when cards change or layout changes
   useEffect(() => {
@@ -1959,10 +1816,26 @@ export const CardNeuralMap: React.FC<CardNeuralMapProps> = ({
     return { totalNodes, totalLinks, sameNameCount, effectCount, archCount, cohesionIndex };
   }, [activeDeckCards, linksData, isLinkActive, selectedArchetypeLinkFilter]);
 
-  // Filtered cards for Quick Add modal
+  // Filtered cards for Quick Add modal - ONLY Modern frame versions!
   const filteredQuickAddCards = useMemo(() => {
     const search = quickAddSearch.toLowerCase().trim();
-    return allCards.filter(c => {
+
+    // Group cards by normalized name to show ONLY the Modern version
+    const grouped = new Map<string, CardData[]>();
+    allCards.forEach(c => {
+      if (!c) return;
+      const key = normalizeText(c.name || '');
+      if (!grouped.has(key)) grouped.set(key, []);
+      grouped.get(key)!.push(c);
+    });
+
+    const modernOnlyPool: CardData[] = [];
+    grouped.forEach(cardsGroup => {
+      const modern = cardsGroup.find(isModernCard);
+      modernOnlyPool.push(modern || cardsGroup[0]);
+    });
+
+    return modernOnlyPool.filter(c => {
       if (quickAddTypeFilter !== 'Todos' && c.type !== quickAddTypeFilter) return false;
       if (search) {
         const matchName = (c.name || '').toLowerCase().includes(search);
@@ -2090,6 +1963,42 @@ export const CardNeuralMap: React.FC<CardNeuralMapProps> = ({
             <span className="w-2 h-2 rounded-full bg-indigo-400" />
             Coleção
           </button>
+
+          {/* Decks Estruturais Dropdown */}
+          <div className="relative">
+            <button
+              onClick={() => setShowStructuralMenu(prev => !prev)}
+              className="px-2.5 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1.5 bg-purple-950/80 hover:bg-purple-900/90 text-purple-200 border border-purple-700/60 shadow-md"
+              title="Carregar um dos Decks Estruturais (30 cartas modernas)"
+            >
+              <Layers size={13} className="text-purple-400" />
+              <span>Decks Estruturais</span>
+              <ChevronDown size={13} className={`text-purple-400 transition-transform ${showStructuralMenu ? 'rotate-180' : ''}`} />
+            </button>
+            {showStructuralMenu && (
+              <div 
+                className="absolute top-full left-0 mt-1.5 w-64 bg-slate-900/95 border border-purple-500/50 rounded-xl shadow-2xl backdrop-blur-xl z-50 p-1.5 space-y-1 animate-in zoom-in-95 duration-100"
+                onMouseLeave={() => setShowStructuralMenu(false)}
+              >
+                <div className="px-2 py-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-800">
+                  Carregar Deck (30 Cartas Modernas)
+                </div>
+                {STRUCTURAL_DECKS.map(st => (
+                  <button
+                    key={st.id}
+                    onClick={() => {
+                      if (onLoadSampleDeck) onLoadSampleDeck(st.id);
+                      setShowStructuralMenu(false);
+                    }}
+                    className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-medium text-slate-200 hover:text-white hover:bg-purple-900/50 transition flex items-center justify-between group"
+                  >
+                    <span className="truncate group-hover:text-purple-300">{st.name}</span>
+                    <span className="text-[10px] bg-purple-950 text-purple-300 border border-purple-700/50 px-1.5 py-0.2 rounded font-mono">30</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
 
           {/* Sugerir Cartas */}
           <button
@@ -2232,24 +2141,13 @@ export const CardNeuralMap: React.FC<CardNeuralMapProps> = ({
             <RotateCcw size={16} />
           </button>
           <div className="w-px h-4 bg-slate-700 mx-0.5"></div>
-          <button
-            onClick={() => {
-              setIsPhysicsRunning(p => {
-                const next = !p;
-                if (next) simAlphaRef.current = 0.35;
-                return next;
-              });
-            }}
-            className={`flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs font-medium transition ${
-              !isPhysicsRunning 
-                ? 'bg-amber-950/70 text-amber-300 border border-amber-800/50' 
-                : 'text-slate-400 hover:text-cyan-300 hover:bg-slate-800'
-            }`}
-            title={isPhysicsRunning ? 'Física ativa (clique para fixar cartas)' : 'Cartas fixadas (clique para ativar física)'}
+          <div
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-slate-800/80 text-emerald-300 border border-emerald-500/30 select-none"
+            title="Posições das cartas fixas (sem movimento automático pelo mapa)"
           >
-            {!isPhysicsRunning ? <Lock size={13} /> : <Unlock size={13} />}
-            <span>{!isPhysicsRunning ? 'Fixas' : 'Física'}</span>
-          </button>
+            <Lock size={13} className="text-emerald-400" />
+            <span>Cartas Fixas</span>
+          </div>
         </div>
       </div>
 
@@ -2394,24 +2292,44 @@ export const CardNeuralMap: React.FC<CardNeuralMapProps> = ({
                             {card.type}
                           </span>
                           <span>•</span>
-                          <span>CT: {card.cost ?? 0}</span>
+                          <span>CT: {card.ct ?? card.cost ?? 0}</span>
                           {countInDeck > 0 && (
-                            <span className="bg-purple-950 text-purple-300 px-1 rounded border border-purple-800">
-                              {countInDeck}x no deck
+                            <span className="bg-amber-950/80 text-amber-300 px-1 rounded border border-amber-800/60 font-semibold">
+                              Já no deck
+                            </span>
+                          )}
+                          {countInDeck === 0 && card.type === 'Herói' && deck.filter(c => c.type === 'Herói').length > 0 && !isHeroGroupValid([...deck.filter(c => c.type === 'Herói'), card]) && (
+                            <span className="bg-red-950/80 text-red-300 px-1 rounded border border-red-800/60 font-semibold">
+                              Herói único
                             </span>
                           )}
                         </div>
                       </div>
                     </div>
 
-                    <button
-                      onClick={() => {
-                        onAddToDeck(card);
-                      }}
-                      className="bg-purple-700 hover:bg-purple-600 text-white font-bold px-3 py-1.5 rounded-lg text-xs transition flex items-center gap-1 shrink-0 shadow"
-                    >
-                      <Plus size={14} /> Adicionar
-                    </button>
+                    {(() => {
+                      const isDup = countInDeck > 0;
+                      const isHeroBlocked = card.type === 'Herói' && deck.filter(c => c.type === 'Herói').length > 0 && !isHeroGroupValid([...deck.filter(c => c.type === 'Herói'), card]);
+                      const isFull = deck.length >= 35;
+                      const blocked = isDup || isHeroBlocked || isFull;
+
+                      return (
+                        <button
+                          disabled={blocked}
+                          onClick={() => {
+                            if (blocked) return;
+                            onAddToDeck(card);
+                          }}
+                          className={`font-bold px-3 py-1.5 rounded-lg text-xs transition flex items-center gap-1 shrink-0 shadow ${
+                            blocked 
+                              ? 'bg-slate-800 text-slate-500 cursor-not-allowed border border-slate-700/50' 
+                              : 'bg-purple-700 hover:bg-purple-600 text-white'
+                          }`}
+                        >
+                          {isDup ? 'No deck' : isHeroBlocked ? 'Herói único' : isFull ? 'Deck Cheio' : <><Plus size={14} /> Adicionar</>}
+                        </button>
+                      );
+                    })()}
                   </div>
                 );
               })}

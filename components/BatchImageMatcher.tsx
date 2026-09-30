@@ -40,6 +40,7 @@ export interface CardVariationAssignment {
   frame: 'Moderno' | 'Legado';
   variationType: string;
   code: string;
+  rarity?: string;
 }
 
 interface BatchImageMatcherProps {
@@ -73,6 +74,7 @@ export const BatchImageMatcher: React.FC<BatchImageMatcherProps> = ({
   const [variationPreset, setVariationPreset] = useState<'arte_alternativa' | 'skin' | 'novo_frame' | 'custom'>('arte_alternativa');
   const [defaultFrame, setDefaultFrame] = useState<'Moderno' | 'Legado'>('Moderno');
   const [defaultVariationTitle, setDefaultVariationTitle] = useState<string>('Arte Alternativa');
+  const [defaultRarity, setDefaultRarity] = useState<string>('Comum');
   const [targetCollectionMode, setTargetCollectionMode] = useState<'same' | 'custom'>('same');
   const [customCollectionName, setCustomCollectionName] = useState<string>('');
 
@@ -135,7 +137,8 @@ export const BatchImageMatcher: React.FC<BatchImageMatcherProps> = ({
   const handleRemoveStagedImage = (imageId: string) => {
     setAssignments(prev => {
       const next: { [cardCode: string]: CardVariationAssignment[] } = {};
-      for (const [cCode, items] of Object.entries(prev)) {
+      for (const [cCode, rawItems] of Object.entries(prev)) {
+        const items = rawItems as CardVariationAssignment[];
         const filtered = items.filter(it => it.imageId !== imageId);
         if (filtered.length > 0) {
           next[cCode] = filtered;
@@ -180,6 +183,7 @@ export const BatchImageMatcher: React.FC<BatchImageMatcherProps> = ({
     } else if (preset === 'novo_frame') {
       setDefaultFrame('Moderno');
       setDefaultVariationTitle('Novo Frame (Moderno)');
+      setDefaultRarity('Comum');
     } else {
       setDefaultVariationTitle('Variação');
     }
@@ -187,8 +191,9 @@ export const BatchImageMatcher: React.FC<BatchImageMatcherProps> = ({
 
   // Assign image to card (supports MULTIPLE variations per card!)
   const assignImageToCard = (cardCode: string, imageId: string) => {
-    const card = cards.find(c => c.code === cardCode);
+    const card = baseTargetCards.find(c => c.code === cardCode) || cards.find(c => c.code === cardCode);
     const cleanBaseCode = cleanCardCode(card ? card.code : cardCode);
+    const chosenRarity = defaultRarity || (defaultFrame === 'Moderno' ? 'Comum' : 'Comum');
 
     setAssignments(prev => {
       const existing = prev[cardCode] || [];
@@ -202,7 +207,8 @@ export const BatchImageMatcher: React.FC<BatchImageMatcherProps> = ({
             imageId,
             frame: defaultFrame,
             variationType: 'Substituição',
-            code: cleanBaseCode
+            code: cleanBaseCode,
+            rarity: chosenRarity
           }]
         };
       }
@@ -214,7 +220,8 @@ export const BatchImageMatcher: React.FC<BatchImageMatcherProps> = ({
         imageId,
         frame: defaultFrame,
         variationType: defaultVariationTitle || 'Arte Alternativa',
-        code: cleanBaseCode
+        code: cleanBaseCode,
+        rarity: chosenRarity
       };
 
       return {
@@ -281,31 +288,87 @@ export const BatchImageMatcher: React.FC<BatchImageMatcherProps> = ({
     });
   }, [stagedImages, imageSearchTerm]);
 
-  // Filtered cards list
+  // Base target cards only: filter out variations and deduplicate by collection + baseCode
+  const baseTargetCards = useMemo(() => {
+    const map = new Map<string, CardData>();
+    for (const card of cards) {
+      if (card.deleted || card.isVariation) continue;
+      const baseCode = cleanCardCode(card.parentCode || card.code);
+      const key = `${card.collection || ''}_${baseCode}`;
+      if (!map.has(key)) {
+        map.set(key, {
+          ...card,
+          code: baseCode
+        });
+      }
+    }
+    return Array.from(map.values());
+  }, [cards]);
+
+  const normalizeText = (str?: string) =>
+    (str || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+
+  // Filtered and relevance-sorted cards list
   const displayCards = useMemo(() => {
-    return cards
-      .filter(card => {
-        if (selectedCollection && card.collection !== selectedCollection) return false;
-        
-        if (cardSearchTerm.trim()) {
-          const s = cardSearchTerm.toLowerCase();
-          const matchName = (card.name || '').toLowerCase().includes(s);
-          const matchCode = (card.code || '').toLowerCase().includes(s);
-          if (!matchName && !matchCode) return false;
-        }
+    const s = normalizeText(cardSearchTerm);
 
-        const isAssigned = (assignments[card.code]?.length || 0) > 0;
-        if (cardStatusFilter === 'assigned' && !isAssigned) return false;
-        if (cardStatusFilter === 'pending' && isAssigned) return false;
+    const filtered = baseTargetCards.filter(card => {
+      if (selectedCollection && card.collection !== selectedCollection) return false;
+      
+      if (s) {
+        const normName = normalizeText(card.name);
+        const normCode = normalizeText(card.code);
+        const matchName = normName.includes(s);
+        const matchCode = normCode.includes(s);
+        if (!matchName && !matchCode) return false;
+      }
 
-        return true;
-      })
-      .sort((a, b) => compareCardCodes(a.code, b.code));
-  }, [cards, selectedCollection, cardSearchTerm, cardStatusFilter, assignments]);
+      const isAssigned = (assignments[card.code]?.length || 0) > 0;
+      if (cardStatusFilter === 'assigned' && !isAssigned) return false;
+      if (cardStatusFilter === 'pending' && isAssigned) return false;
+
+      return true;
+    });
+
+    // If searching, sort by relevance: exact match > starts with > code match > contains
+    // This guarantees the searched card appears immediately at the very top!
+    if (s) {
+      return filtered.sort((a, b) => {
+        const nameA = normalizeText(a.name);
+        const nameB = normalizeText(b.name);
+        const codeA = normalizeText(a.code);
+        const codeB = normalizeText(b.code);
+
+        const exactA = nameA === s;
+        const exactB = nameB === s;
+        if (exactA && !exactB) return -1;
+        if (!exactA && exactB) return 1;
+
+        const startA = nameA.startsWith(s);
+        const startB = nameB.startsWith(s);
+        if (startA && !startB) return -1;
+        if (!startA && startB) return 1;
+
+        const codeExactA = codeA === s;
+        const codeExactB = codeB === s;
+        if (codeExactA && !codeExactB) return -1;
+        if (!codeExactA && codeExactB) return 1;
+
+        const codeStartA = codeA.startsWith(s);
+        const codeStartB = codeB.startsWith(s);
+        if (codeStartA && !codeStartB) return -1;
+        if (!codeStartA && codeStartB) return 1;
+
+        return compareCardCodes(a.code, b.code);
+      });
+    }
+
+    return filtered.sort((a, b) => compareCardCodes(a.code, b.code));
+  }, [baseTargetCards, selectedCollection, cardSearchTerm, cardStatusFilter, assignments]);
 
   // Count total variations to save
   const totalVariationsCount = useMemo(() => {
-    return Object.values(assignments).reduce((acc, list) => acc + list.length, 0);
+    return (Object.values(assignments) as CardVariationAssignment[][]).reduce((acc, list) => acc + list.length, 0);
   }, [assignments]);
 
   const assignedCardCount = Object.keys(assignments).length;
@@ -374,6 +437,7 @@ export const BatchImageMatcher: React.FC<BatchImageMatcherProps> = ({
               : card.collection;
 
             const variationDocId = `${cleanCodeForPath}_var_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+            const chosenRarity = item.rarity || defaultRarity || (item.frame === 'Moderno' ? 'Comum' : 'Comum');
 
             // 1. Save new variation card with clean code
             const newCard: CardData = {
@@ -385,7 +449,8 @@ export const BatchImageMatcher: React.FC<BatchImageMatcherProps> = ({
               collection: targetCollection,
               isVariation: true,
               parentCode: cleanCardCode(card.code),
-              variationType: item.variationType
+              variationType: item.variationType,
+              rarity: chosenRarity
             };
             await saveCard(newCard);
 
@@ -396,7 +461,7 @@ export const BatchImageMatcher: React.FC<BatchImageMatcherProps> = ({
               imageUrl: newDownloadUrl,
               frame: item.frame,
               code: finalCleanCode,
-              rarity: card.rarity
+              rarity: chosenRarity
             });
 
             successVariationCount++;
@@ -422,7 +487,7 @@ export const BatchImageMatcher: React.FC<BatchImageMatcherProps> = ({
       }
 
       // Cleanup saved staged images from memory and tray
-      const allSavedImageIds = Object.values(assignments).flatMap(list => list.map(it => it.imageId));
+      const allSavedImageIds = (Object.values(assignments) as CardVariationAssignment[][]).flatMap(list => list.map(it => it.imageId));
       setStagedImages(prev => {
         prev.forEach(img => {
           if (allSavedImageIds.includes(img.id)) {
@@ -556,7 +621,7 @@ export const BatchImageMatcher: React.FC<BatchImageMatcherProps> = ({
         </div>
 
         {operationMode === 'add_variation' ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 text-xs">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 text-xs">
             {/* Preset Selector */}
             <div className="space-y-1.5">
               <label className="font-bold text-slate-300 block flex items-center gap-1">
@@ -623,7 +688,13 @@ export const BatchImageMatcher: React.FC<BatchImageMatcherProps> = ({
               </label>
               <select
                 value={defaultFrame}
-                onChange={(e) => setDefaultFrame(e.target.value as any)}
+                onChange={(e) => {
+                  const val = e.target.value as any;
+                  setDefaultFrame(val);
+                  if (val === 'Moderno' && defaultRarity === 'Beta') {
+                    setDefaultRarity('Comum');
+                  }
+                }}
                 className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-2 text-white font-bold text-xs focus:border-purple-500 outline-none"
               >
                 <option value="Moderno">Moderno (1ª Prioridade no Catálogo)</option>
@@ -631,6 +702,30 @@ export const BatchImageMatcher: React.FC<BatchImageMatcherProps> = ({
               </select>
               <p className="text-[10px] text-slate-400">
                 O Catálogo exibe automaticamente na ordem: <strong>Moderno &gt; AA / Skin &gt; Legado</strong>.
+              </p>
+            </div>
+
+            {/* Rarity Selector */}
+            <div className="space-y-1.5">
+              <label className="font-bold text-slate-300 block flex items-center gap-1">
+                <Sparkles size={13} className="text-amber-400" />
+                Raridade Padrão da Variação
+              </label>
+              <select
+                value={defaultRarity}
+                onChange={(e) => setDefaultRarity(e.target.value)}
+                className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-2 text-amber-300 font-bold text-xs focus:border-amber-500 outline-none"
+              >
+                <option value="Comum">Comum</option>
+                <option value="Incomum">Incomum</option>
+                <option value="Rara">Rara</option>
+                <option value="Muito Rara">Muito Rara</option>
+                <option value="Limitadas">Limitadas</option>
+                <option value="Beta">Beta</option>
+                <option value="Evento">Evento</option>
+              </select>
+              <p className="text-[10px] text-slate-400">
+                Versões modernas de cartas legado são do tier <strong>Comum</strong> (não Beta).
               </p>
             </div>
 
@@ -804,7 +899,7 @@ export const BatchImageMatcher: React.FC<BatchImageMatcherProps> = ({
                   const isSelected = selectedImageId === img.id;
                   
                   // Count how many times this image has been assigned
-                  const usageCount = Object.values(assignments).reduce((acc, list) => {
+                  const usageCount = (Object.values(assignments) as CardVariationAssignment[][]).reduce((acc, list) => {
                     return acc + list.filter(it => it.imageId === img.id).length;
                   }, 0);
 
@@ -915,7 +1010,7 @@ export const BatchImageMatcher: React.FC<BatchImageMatcherProps> = ({
                 onChange={(e) => setCardStatusFilter(e.target.value as any)}
                 className="w-full bg-slate-900 border border-slate-800 rounded-xl px-2.5 py-2 text-white outline-none focus:border-purple-500"
               >
-                <option value="all">Todas ({cards.length})</option>
+                <option value="all">Todas ({baseTargetCards.length})</option>
                 <option value="pending">Sem variação vinculada</option>
                 <option value="assigned">Com variações vinculadas ({assignedCardCount})</option>
               </select>
@@ -923,7 +1018,14 @@ export const BatchImageMatcher: React.FC<BatchImageMatcherProps> = ({
 
             {/* Search Input */}
             <div>
-              <label className="text-[10px] text-slate-400 font-bold uppercase block mb-1">Busca</label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-[10px] text-slate-400 font-bold uppercase block">Busca</label>
+                {cardSearchTerm && (
+                  <span className="text-[10px] text-purple-300 font-medium">
+                    {displayCards.length} {displayCards.length === 1 ? 'resultado' : 'resultados'}
+                  </span>
+                )}
+              </div>
               <div className="relative">
                 <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
                 <input
@@ -931,8 +1033,18 @@ export const BatchImageMatcher: React.FC<BatchImageMatcherProps> = ({
                   value={cardSearchTerm}
                   onChange={(e) => setCardSearchTerm(e.target.value)}
                   placeholder="Nome ou código..."
-                  className="w-full bg-slate-900 border border-slate-800 rounded-xl pl-8 pr-2.5 py-2 text-white placeholder-slate-500 outline-none focus:border-purple-500"
+                  className="w-full bg-slate-900 border border-slate-800 rounded-xl pl-8 pr-7 py-2 text-white placeholder-slate-500 outline-none focus:border-purple-500"
                 />
+                {cardSearchTerm && (
+                  <button
+                    type="button"
+                    onClick={() => setCardSearchTerm('')}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white p-0.5 rounded transition"
+                    title="Limpar busca"
+                  >
+                    <X size={13} />
+                  </button>
+                )}
               </div>
             </div>
           </div>
@@ -957,7 +1069,7 @@ export const BatchImageMatcher: React.FC<BatchImageMatcherProps> = ({
 
               return (
                 <div
-                  key={card.code}
+                  key={`${card.collection || ''}_${cleanBaseCode}_${card.id || ''}`}
                   onDragOver={(e) => {
                     e.preventDefault();
                     e.dataTransfer.dropEffect = 'copy';
@@ -1145,6 +1257,24 @@ export const BatchImageMatcher: React.FC<BatchImageMatcherProps> = ({
                                         placeholder={cleanBaseCode}
                                         className="bg-slate-950 border border-slate-700 rounded px-2 py-0.5 text-[11px] text-emerald-400 font-mono w-28 outline-none focus:border-emerald-500"
                                       />
+                                    </div>
+
+                                    {/* Rarity selector */}
+                                    <div className="flex items-center gap-1">
+                                      <span className="text-[10px] text-amber-400 font-bold">Raridade:</span>
+                                      <select
+                                        value={item.rarity || defaultRarity || 'Comum'}
+                                        onChange={(e) => updateVariationAssignment(card.code, item.id, { rarity: e.target.value })}
+                                        className="bg-slate-950 border border-amber-800/60 rounded px-2 py-0.5 text-[11px] text-amber-300 font-bold outline-none"
+                                      >
+                                        <option value="Comum">Comum</option>
+                                        <option value="Incomum">Incomum</option>
+                                        <option value="Rara">Rara</option>
+                                        <option value="Muito Rara">Muito Rara</option>
+                                        <option value="Limitadas">Limitadas</option>
+                                        <option value="Beta">Beta</option>
+                                        <option value="Evento">Evento</option>
+                                      </select>
                                     </div>
                                   </div>
                                 </div>

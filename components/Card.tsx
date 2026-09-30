@@ -46,7 +46,7 @@ const getCardStyle = (type: CardType) => {
   }
 };
 
-export const Card: React.FC<CardProps> = React.memo(({ name, type, archetype, ct, attack, defense, description, imageGradient, imageUrl, code, priority }) => {
+export const Card: React.FC<CardProps> = React.memo(({ name, type, archetype, ct, attack, defense, description, imageGradient, imageUrl, code, priority, tier }) => {
   const styles = getCardStyle(type);
 
   // MODO CARTA COMPLETA COM IMAGEM
@@ -63,6 +63,11 @@ export const Card: React.FC<CardProps> = React.memo(({ name, type, archetype, ct
           priority={priority}
           className="w-full h-full object-cover block select-none pointer-events-none"
         />
+        {tier && (
+          <div className="absolute top-2 right-2 z-10 px-2 py-0.5 rounded-full bg-slate-950/85 backdrop-blur-md border border-amber-500/60 text-[10px] font-black text-amber-300 shadow-lg tracking-wider">
+            TIER {tier}
+          </div>
+        )}
         <div className="absolute inset-0 bg-white/0 group-hover:bg-white/10 transition duration-300 pointer-events-none"></div>
       </div>
     );
@@ -74,7 +79,14 @@ export const Card: React.FC<CardProps> = React.memo(({ name, type, archetype, ct
       <div className={`relative h-full w-full bg-slate-900 border-2 ${styles.border} rounded-xl p-3 flex flex-col shadow-2xl overflow-hidden`}>
         <div className="w-full flex justify-between items-start mb-2">
           <div className="flex flex-col max-w-[80%]">
-            <span className="font-bold text-slate-100 text-md uppercase tracking-wider truncate" title={name}>{name}</span>
+            <div className="flex items-center gap-1.5">
+              <span className="font-bold text-slate-100 text-md uppercase tracking-wider truncate" title={name}>{name}</span>
+              {tier && (
+                <span className="px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[9px] font-black">
+                  T{tier}
+                </span>
+              )}
+            </div>
             <span className="text-[10px] text-slate-400 font-mono truncate">{type} • {archetype}</span>
           </div>
           <div className="flex items-center justify-center w-8 h-8 rounded-full border border-slate-600 bg-slate-800 font-bold text-yellow-400 font-mono text-lg shrink-0" title="Custo/Categoria (CT)">

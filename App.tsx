@@ -547,6 +547,19 @@ const BuyModal = ({ isOpen, onClose }: { isOpen: boolean, onClose: () => void })
               </div>
               <ExternalLink size={20} className="text-slate-950 group-hover:scale-110 transition-transform" />
             </a>
+
+            <a 
+              href="https://shopee.com.br/lps_cards_store" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="flex items-center justify-between bg-gradient-to-r from-orange-600 to-red-500 hover:from-orange-500 hover:to-red-400 p-5 rounded-xl transition group shadow-lg shadow-orange-900/30 border border-orange-500/30 hover:scale-[1.02]"
+            >
+              <div className="flex flex-col">
+                 <span className="font-bold text-white text-lg tracking-wide">Shopee</span>
+                 <span className="text-orange-100 text-xs">LPS Cards Store</span>
+              </div>
+              <ExternalLink size={20} className="text-white/80 group-hover:text-white group-hover:translate-x-1 transition-transform" />
+            </a>
           </div>
         </div>
       </div>
@@ -593,6 +606,7 @@ const CatalogModal = ({ isOpen, onClose, onOpenAdmin }: { isOpen: boolean, onClo
     collection: "Todos",
     frame: "Todos",
     rarity: "Todos",
+    tier: "Todos",
     minCt: "",
     minAtk: "",
     minDef: "",
@@ -685,7 +699,8 @@ const CatalogModal = ({ isOpen, onClose, onOpenAdmin }: { isOpen: boolean, onClo
               imageUrl: item.imageUrl,
               frame: item.frame || 'Legado',
               code: cleanCardCode(item.code),
-              rarity: item.rarity
+              rarity: item.rarity,
+              tier: item.tier
             });
           }
         }
@@ -713,13 +728,14 @@ const CatalogModal = ({ isOpen, onClose, onOpenAdmin }: { isOpen: boolean, onClo
       const matchesCollection = filters.collection === "Todos" || (card.collection && card.collection === filters.collection);
       const matchesFrame = filters.frame === "Todos" || (card.frame || "Legado") === filters.frame;
       const matchesRarity = filters.rarity === "Todos" || (card.rarity || "Comum") === filters.rarity;
+      const matchesTier = filters.tier === "Todos" || (card.tier || "") === filters.tier;
       const matchesCt = filters.minCt === "" || card.ct === parseInt(filters.minCt);
       
       // Exact match for ATK and DEF
       const matchesAtk = filters.minAtk === "" || (card.attack !== undefined && card.attack === parseInt(filters.minAtk));
       const matchesDef = filters.minDef === "" || (card.defense !== undefined && card.defense === parseInt(filters.minDef));
 
-      return matchesSearch && matchesType && matchesArchetype && matchesCollection && matchesFrame && matchesRarity && matchesCt && matchesAtk && matchesDef;
+      return matchesSearch && matchesType && matchesArchetype && matchesCollection && matchesFrame && matchesRarity && matchesTier && matchesCt && matchesAtk && matchesDef;
     }).sort((a, b) => {
       switch (filters.sortBy) {
         case 'code-desc':
@@ -885,6 +901,26 @@ const CatalogModal = ({ isOpen, onClose, onOpenAdmin }: { isOpen: boolean, onClo
             </div>
 
             <div className="flex items-center gap-2 bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 flex-1 md:flex-none">
+              <span className="text-xs text-amber-500 uppercase font-bold">Tier</span>
+              <select 
+                className="bg-purple-950 text-sm text-amber-300 font-bold outline-none cursor-pointer rounded px-2 w-full md:w-28"
+                value={filters.tier}
+                onChange={(e) => setFilters({...filters, tier: e.target.value})}
+              >
+                <option className="bg-purple-950 text-white" value="Todos">Todos</option>
+                <option className="bg-purple-950" value="S">Tier S</option>
+                <option className="bg-purple-950" value="A">Tier A</option>
+                <option className="bg-purple-950" value="B">Tier B</option>
+                <option className="bg-purple-950" value="C">Tier C</option>
+                <option className="bg-purple-950" value="D">Tier D</option>
+                <option className="bg-purple-950" value="0">Tier 0</option>
+                <option className="bg-purple-950" value="1">Tier 1</option>
+                <option className="bg-purple-950" value="2">Tier 2</option>
+                <option className="bg-purple-950" value="3">Tier 3</option>
+              </select>
+            </div>
+
+            <div className="flex items-center gap-2 bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 flex-1 md:flex-none">
               <Filter size={14} className="text-slate-500" />
               <select 
                 className="bg-purple-950 text-sm text-white outline-none cursor-pointer rounded px-2 w-full"
@@ -959,7 +995,7 @@ const CatalogModal = ({ isOpen, onClose, onOpenAdmin }: { isOpen: boolean, onClo
           
             <button 
               onClick={() => {
-                setFilters({ type: "Todos", archetype: "Todos", collection: "Todos", frame: "Todos", rarity: "Todos", minCt: "", minAtk: "", minDef: "", sortBy: "code-asc" });
+                setFilters({ type: "Todos", archetype: "Todos", collection: "Todos", frame: "Todos", rarity: "Todos", tier: "Todos", minCt: "", minAtk: "", minDef: "", sortBy: "code-asc" });
                 setSearchTerm("");
               }}
               className="text-xs text-slate-400 hover:text-white underline ml-auto md:ml-2 whitespace-nowrap"
