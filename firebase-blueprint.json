@@ -23,6 +23,46 @@
         "orderIndex": { "type": "number", "description": "Ordering within the category" }
       },
       "required": ["categoryId", "title", "content", "orderIndex"]
+    },
+    "UserProfile": {
+      "title": "User Profile",
+      "description": "Registered player profile authenticated via Google.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Firebase Auth UID" },
+        "displayName": { "type": "string", "description": "Display name from Google" },
+        "email": { "type": "string", "description": "User Google email address" },
+        "photoURL": { "type": "string", "description": "Google avatar URL" },
+        "createdAt": { "type": "string", "description": "Timestamp when user was created" },
+        "lastLoginAt": { "type": "string", "description": "Timestamp when user last logged in" }
+      },
+      "required": ["uid", "email"]
+    },
+    "UserAlbum": {
+      "title": "User Card Album",
+      "description": "Collection tracking containing quantities of owned cards.",
+      "type": "object",
+      "properties": {
+        "cards": { "type": "object", "description": "Map of card codes to quantity and possession details" },
+        "lastUpdated": { "type": "string", "description": "Timestamp of last modification" }
+      }
+    },
+    "UserSavedDeck": {
+      "title": "User Saved Deck",
+      "description": "Custom deck created by a user and saved to the cloud.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique deck identifier" },
+        "name": { "type": "string", "description": "Deck title" },
+        "heroName": { "type": "string", "description": "Flagship hero name" },
+        "mainDeckCodes": { "type": "array", "items": { "type": "string" }, "description": "List of main deck card codes" },
+        "sideDeckCodes": { "type": "array", "items": { "type": "string" }, "description": "List of side deck card codes" },
+        "cardCount": { "type": "number", "description": "Total cards in main deck" },
+        "coverImageUrl": { "type": "string", "description": "Hero or flagship card art URL" },
+        "createdAt": { "type": "string", "description": "Creation timestamp" },
+        "updatedAt": { "type": "string", "description": "Last update timestamp" }
+      },
+      "required": ["id", "name", "mainDeckCodes"]
     }
   },
   "firestore": {
@@ -33,6 +73,18 @@
     "loreArticles": {
       "schema": { "$ref": "#/entities/LoreArticle" },
       "description": "A collection of lore articles."
+    },
+    "users": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "User profiles indexed by UID."
+    },
+    "users/{userId}/album": {
+      "schema": { "$ref": "#/entities/UserAlbum" },
+      "description": "User card possession album."
+    },
+    "users/{userId}/savedDecks": {
+      "schema": { "$ref": "#/entities/UserSavedDeck" },
+      "description": "User saved decks collection."
     }
   }
 }

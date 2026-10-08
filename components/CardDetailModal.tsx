@@ -1,12 +1,13 @@
 import React, { useMemo, useState, useEffect } from 'react';
-import { X, Zap, BookOpen, Box, Hash, Link as LinkIcon, Edit2, Check, Trash, Image as ImageIcon, Sparkles, Layers } from 'lucide-react';
+import { X, Zap, BookOpen, Box, Hash, Link as LinkIcon, Edit2, Check, Trash, Image as ImageIcon, Sparkles, Layers, Plus, Minus, BookmarkCheck, LogIn } from 'lucide-react';
 import { CardData, CardVariationItem } from '../types';
 import { Card } from './Card';
 import { useCards, cleanCardCode, getCardDisplayPriority } from '../CardContext';
 import { compareCardCodes } from '../deckUtils';
 import { auth, storage } from '../firebase';
-import { onAuthStateChanged } from 'firebase/auth';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { useAuth, isUserAdmin } from '../authService';
+import { useUserAlbum } from '../albumService';
 
 interface CardDetailModalProps {
   card: CardData | null;
@@ -16,18 +17,14 @@ interface CardDetailModalProps {
 
 export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card: initialCard, onClose, onSelectRelated }) => {
   const { cards: allCards, archetypes, collections, saveCard, deleteCard } = useCards();
+  const { user, loginWithGoogle } = useAuth();
+  const { getQuantity, incrementCard, decrementCard } = useUserAlbum(user?.uid);
   const [isEditing, setIsEditing] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [card, setCard] = useState<CardData | null>(initialCard);
   const [originalCode, setOriginalCode] = useState(initialCard?.code);
-  const [user, setUser] = useState(auth.currentUser);
   const [fileToUpload, setFileToUpload] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
-
-  useEffect(() => {
-    const unsub = onAuthStateChanged(auth, setUser);
-    return unsub;
-  }, []);
 
   useEffect(() => {
     setCard(initialCard);
@@ -361,7 +358,7 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card: initialC
               <Check size={20} /> {isUploading ? 'Salvando...' : 'Salvar'}
             </button>
           </>
-        ) : user ? (
+        ) : isUserAdmin(user) ? (
           <button 
             onClick={() => setIsEditing(true)} 
             className="p-2 bg-slate-800 rounded-full text-purple-400 hover:text-white hover:bg-slate-700 transition"
@@ -384,6 +381,59 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card: initialC
         <div className="flex flex-col items-center gap-4">
           <div className="scale-110 origin-center">
             <Card {...card} priority={true} />
+          </div>
+
+          {/* Meu Álbum Widget */}
+          <div className="w-full max-w-sm bg-slate-900/90 border border-slate-800 rounded-2xl p-3 shadow-lg flex items-center justify-between gap-3 mt-1">
+            <div className="flex items-center gap-2">
+              <div className="w-7 h-7 rounded-lg bg-purple-950 border border-purple-700/50 flex items-center justify-center text-purple-300">
+                <BookmarkCheck size={16} />
+              </div>
+              <div>
+                <span className="text-xs font-bold text-slate-200 block">No Meu Álbum</span>
+                <span className="text-[10px] text-slate-400">
+                  {getQuantity(card.code) > 0 ? `${getQuantity(card.code)} cópia(s) na coleção` : 'Não possui na coleção'}
+                </span>
+              </div>
+            </div>
+
+            {user ? (
+              <div className="flex items-center gap-1.5 bg-slate-950 border border-slate-800 p-1 rounded-xl">
+                <button
+                  type="button"
+                  onClick={() => decrementCard(card.code)}
+                  disabled={getQuantity(card.code) <= 0}
+                  className={`w-7 h-7 rounded-lg flex items-center justify-center transition text-xs font-bold ${
+                    getQuantity(card.code) > 0 
+                      ? 'bg-slate-800 hover:bg-red-950 hover:text-red-400 text-slate-300' 
+                      : 'text-slate-600 cursor-not-allowed'
+                  }`}
+                  title="Diminuir cópia"
+                >
+                  <Minus size={13} />
+                </button>
+                <span className="font-mono font-bold text-xs text-purple-300 px-2">
+                  {getQuantity(card.code)}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => incrementCard(card.code)}
+                  className="w-7 h-7 rounded-lg bg-purple-900/70 hover:bg-purple-700 text-purple-200 flex items-center justify-center transition text-xs font-bold shadow-sm"
+                  title="Adicionar cópia"
+                >
+                  <Plus size={13} />
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={loginWithGoogle}
+                className="px-3 py-1.5 rounded-xl bg-purple-950 hover:bg-purple-900 text-purple-300 border border-purple-700/50 text-[11px] font-bold transition flex items-center gap-1.5"
+              >
+                <LogIn size={13} />
+                <span>Entrar</span>
+              </button>
+            )}
           </div>
 
           {/* Variations / Skins Selector */}

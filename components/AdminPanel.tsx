@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Settings, Lock, Plus, Trash2, X, Image as ImageIcon, Edit2, Check, Layout, Clock, Grid, Palette, ChevronRight, Layers, BookOpen, Database, Box, Upload, Film, Sparkles, Calendar, Loader2 } from 'lucide-react';
+import { Settings, Lock, Plus, Trash2, X, Image as ImageIcon, Edit2, Check, Layout, Clock, Grid, Palette, ChevronRight, Layers, BookOpen, Database, Box, Upload, Film, Sparkles, Calendar, Loader2, LogIn, ShieldAlert } from 'lucide-react';
 import { signInWithEmailAndPassword, onAuthStateChanged, signOut } from 'firebase/auth';
 import { collection, getDocs, addDoc, deleteDoc, updateDoc, doc, setDoc, getDoc } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
@@ -8,6 +8,7 @@ import { useCards, sanitizeForFirestore } from '../CardContext';
 import { ArchetypeData } from '../types';
 import { parseDeckFromCode } from '../deckUtils';
 import { BatchImageMatcher } from './BatchImageMatcher';
+import { isUserAdmin, loginWithGoogle, logoutGoogle } from '../authService';
 
 export type AdminType = 'home' | 'catalog' | 'master';
 
@@ -599,16 +600,80 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
 
         <div className="flex-1 overflow-y-auto p-4 md:p-6">
           {!user ? (
-            <div className="max-w-sm mx-auto bg-slate-800 p-6 rounded-lg border border-slate-700 mt-10">
-              <h3 className="text-lg font-bold text-white mb-4 text-center">Acesso CMS restrito</h3>
-              <form onSubmit={handleAuth} className="space-y-4">
-                {error && <p className="text-red-400 text-sm">{error}</p>}
-                <input type="email" placeholder="Email..." value={email} onChange={e => setEmail(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded p-2 text-white" required />
-                <input type="password" placeholder="Senha..." value={password} onChange={e => setPassword(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded p-2 text-white" required />
-                <button type="submit" className="w-full bg-purple-600 hover:bg-purple-500 text-white font-bold py-2 rounded transition">
-                  Entrar
+            <div className="max-w-md mx-auto bg-slate-900 p-6 md:p-8 rounded-2xl border border-slate-800 shadow-2xl mt-8">
+              <div className="w-12 h-12 rounded-full bg-purple-950/70 border border-purple-700/60 mx-auto flex items-center justify-center text-purple-400 mb-3">
+                <Lock size={22} />
+              </div>
+              <h3 className="text-xl font-bold text-white mb-2 text-center">Acesso ao Painel Administrativo</h3>
+              <p className="text-xs text-slate-400 text-center mb-6">
+                Faça login com a conta Google de administrador para gerenciar cartas, coleções, vídeos e configurações do site.
+              </p>
+
+              {error && (
+                <div className="mb-4 p-3 bg-red-950/80 border border-red-800 rounded-xl text-red-300 text-xs text-center">
+                  {error}
+                </div>
+              )}
+
+              <button
+                type="button"
+                onClick={() => loginWithGoogle().catch(err => setError(err.message || 'Falha no login com Google'))}
+                className="w-full bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold py-3 rounded-xl transition flex items-center justify-center gap-2 shadow-lg shadow-purple-950/50 active:scale-98"
+              >
+                <LogIn size={18} /> Entrar com Google (Admin)
+              </button>
+
+              <div className="flex items-center gap-3 my-5">
+                <div className="flex-1 h-px bg-slate-800" />
+                <span className="text-[11px] text-slate-500 uppercase tracking-wider font-semibold">ou e-mail e senha</span>
+                <div className="flex-1 h-px bg-slate-800" />
+              </div>
+
+              <form onSubmit={handleAuth} className="space-y-3">
+                <input 
+                  type="email" 
+                  placeholder="Email de administrador..." 
+                  value={email} 
+                  onChange={e => setEmail(e.target.value)} 
+                  className="w-full bg-slate-950 border border-slate-800 focus:border-purple-500 rounded-xl p-3 text-xs text-white outline-none transition" 
+                  required 
+                />
+                <input 
+                  type="password" 
+                  placeholder="Senha..." 
+                  value={password} 
+                  onChange={e => setPassword(e.target.value)} 
+                  className="w-full bg-slate-950 border border-slate-800 focus:border-purple-500 rounded-xl p-3 text-xs text-white outline-none transition" 
+                  required 
+                />
+                <button type="submit" className="w-full bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold py-2.5 rounded-xl transition text-xs">
+                  Entrar com E-mail
                 </button>
               </form>
+            </div>
+          ) : !isUserAdmin(user) ? (
+            <div className="max-w-md mx-auto bg-slate-900 p-8 rounded-2xl border border-red-900/60 shadow-2xl text-center mt-10 space-y-4">
+              <div className="w-14 h-14 rounded-full bg-red-950/80 border border-red-700 mx-auto flex items-center justify-center text-red-400">
+                <ShieldAlert size={28} />
+              </div>
+              <h3 className="text-xl font-bold text-white">Acesso Restrito ao Administrador</h3>
+              <p className="text-xs text-slate-300 leading-relaxed">
+                A conta atualmente conectada <span className="font-mono text-purple-400 font-bold block mt-1">{user.email}</span> não possui permissão de administrador para alterar o conteúdo do site.
+              </p>
+              <div className="pt-3 flex flex-col gap-2">
+                <button 
+                  onClick={() => loginWithGoogle().catch(err => setError(err.message))}
+                  className="w-full bg-purple-600 hover:bg-purple-500 text-white font-bold py-2.5 rounded-xl transition text-xs flex items-center justify-center gap-2 shadow-lg shadow-purple-900/40"
+                >
+                  <LogIn size={15} /> Trocar para Conta de Administrador
+                </button>
+                <button 
+                  onClick={onClose}
+                  className="w-full bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold py-2 rounded-xl transition text-xs"
+                >
+                  Fechar Painel
+                </button>
+              </div>
             </div>
           ) : (
             <div className="flex flex-col md:flex-row gap-6">

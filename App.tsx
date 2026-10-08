@@ -4,12 +4,16 @@ import {
   Zap, Heart, Layers, Hexagon, BookOpen,
   ShoppingCart, ExternalLink, Search, Filter, Box, ArrowDownAZ,
   Menu, X, ChevronRight, ChevronDown, ChevronUp, Scale, Ghost, Instagram, MessageCircle, Mail, Music, Info,
-  Sword, Shield, Clock, AlertTriangle, Users, FileText, CheckCircle, Crown, Youtube, Settings, Sparkles
+  Sword, Shield, Clock, AlertTriangle, Users, FileText, CheckCircle, Crown, Youtube, Settings, Sparkles,
+  LogIn, LogOut, BookmarkCheck, Cloud, User as UserIcon, Edit2, Check
 } from 'lucide-react';
 import { Card } from './components/Card';
 import { GameField } from './components/GameField';
 import { DeckBuilderModal } from './components/DeckBuilderModal';
 import { CardDetailModal } from './components/CardDetailModal';
+import { AlbumModal } from './components/AlbumModal';
+import { SavedDecksModal } from './components/SavedDecksModal';
+import { useAuth } from './authService';
 import GameBoard from './components/GameBoard';
 import { TournamentManager } from './components/TournamentManager';
 import { AdminPanel } from './components/AdminPanel';
@@ -606,7 +610,6 @@ const CatalogModal = ({ isOpen, onClose, onOpenAdmin }: { isOpen: boolean, onClo
     collection: "Todos",
     frame: "Todos",
     rarity: "Todos",
-    tier: "Todos",
     minCt: "",
     minAtk: "",
     minDef: "",
@@ -728,14 +731,13 @@ const CatalogModal = ({ isOpen, onClose, onOpenAdmin }: { isOpen: boolean, onClo
       const matchesCollection = filters.collection === "Todos" || (card.collection && card.collection === filters.collection);
       const matchesFrame = filters.frame === "Todos" || (card.frame || "Legado") === filters.frame;
       const matchesRarity = filters.rarity === "Todos" || (card.rarity || "Comum") === filters.rarity;
-      const matchesTier = filters.tier === "Todos" || (card.tier || "") === filters.tier;
       const matchesCt = filters.minCt === "" || card.ct === parseInt(filters.minCt);
       
       // Exact match for ATK and DEF
       const matchesAtk = filters.minAtk === "" || (card.attack !== undefined && card.attack === parseInt(filters.minAtk));
       const matchesDef = filters.minDef === "" || (card.defense !== undefined && card.defense === parseInt(filters.minDef));
 
-      return matchesSearch && matchesType && matchesArchetype && matchesCollection && matchesFrame && matchesRarity && matchesTier && matchesCt && matchesAtk && matchesDef;
+      return matchesSearch && matchesType && matchesArchetype && matchesCollection && matchesFrame && matchesRarity && matchesCt && matchesAtk && matchesDef;
     }).sort((a, b) => {
       switch (filters.sortBy) {
         case 'code-desc':
@@ -901,26 +903,6 @@ const CatalogModal = ({ isOpen, onClose, onOpenAdmin }: { isOpen: boolean, onClo
             </div>
 
             <div className="flex items-center gap-2 bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 flex-1 md:flex-none">
-              <span className="text-xs text-amber-500 uppercase font-bold">Tier</span>
-              <select 
-                className="bg-purple-950 text-sm text-amber-300 font-bold outline-none cursor-pointer rounded px-2 w-full md:w-28"
-                value={filters.tier}
-                onChange={(e) => setFilters({...filters, tier: e.target.value})}
-              >
-                <option className="bg-purple-950 text-white" value="Todos">Todos</option>
-                <option className="bg-purple-950" value="S">Tier S</option>
-                <option className="bg-purple-950" value="A">Tier A</option>
-                <option className="bg-purple-950" value="B">Tier B</option>
-                <option className="bg-purple-950" value="C">Tier C</option>
-                <option className="bg-purple-950" value="D">Tier D</option>
-                <option className="bg-purple-950" value="0">Tier 0</option>
-                <option className="bg-purple-950" value="1">Tier 1</option>
-                <option className="bg-purple-950" value="2">Tier 2</option>
-                <option className="bg-purple-950" value="3">Tier 3</option>
-              </select>
-            </div>
-
-            <div className="flex items-center gap-2 bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 flex-1 md:flex-none">
               <Filter size={14} className="text-slate-500" />
               <select 
                 className="bg-purple-950 text-sm text-white outline-none cursor-pointer rounded px-2 w-full"
@@ -995,7 +977,7 @@ const CatalogModal = ({ isOpen, onClose, onOpenAdmin }: { isOpen: boolean, onClo
           
             <button 
               onClick={() => {
-                setFilters({ type: "Todos", archetype: "Todos", collection: "Todos", frame: "Todos", rarity: "Todos", tier: "Todos", minCt: "", minAtk: "", minDef: "", sortBy: "code-asc" });
+                setFilters({ type: "Todos", archetype: "Todos", collection: "Todos", frame: "Todos", rarity: "Todos", minCt: "", minAtk: "", minDef: "", sortBy: "code-asc" });
                 setSearchTerm("");
               }}
               className="text-xs text-slate-400 hover:text-white underline ml-auto md:ml-2 whitespace-nowrap"
@@ -1122,12 +1104,16 @@ const defaultExclusiveProducts: ExclusiveProduct[] = [
 
 export default function App() {
   const { cards: allCards, collections, archetypes } = useCards();
+  const { user, isAdmin, loginWithGoogle, logoutGoogle, changeDisplayName } = useAuth();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isManualOpen, setIsManualOpen] = useState(false);
   const [isBuyModalOpen, setIsBuyModalOpen] = useState(false);
   const [isCatalogOpen, setIsCatalogOpen] = useState(false);
   const [isLoreOpen, setIsLoreOpen] = useState(false);
   const [isDeckBuilderOpen, setIsDeckBuilderOpen] = useState(false);
+  const [isAlbumOpen, setIsAlbumOpen] = useState(false);
+  const [isSavedDecksOpen, setIsSavedDecksOpen] = useState(false);
+  const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const [isGameOpen, setIsGameOpen] = useState(false);
   const [isTournamentOpen, setIsTournamentOpen] = useState(false);
   const [adminMode, setAdminMode] = useState<'none' | 'home' | 'catalog' | 'master'>('none');
@@ -1137,6 +1123,25 @@ export default function App() {
   const [showcaseCards, setShowcaseCards] = useState<CardData[]>(defaultModernShowcase);
   const [selectedProduct, setSelectedProduct] = useState<ExclusiveProduct | null>(null);
   const [inspectedDeckCard, setInspectedDeckCard] = useState<CardData | null>(null);
+
+  // Alteração de nome de usuário
+  const [isEditingDisplayName, setIsEditingDisplayName] = useState(false);
+  const [tempDisplayName, setTempDisplayName] = useState('');
+  const [isSavingDisplayName, setIsSavingDisplayName] = useState(false);
+
+  const handleSaveDisplayName = async () => {
+    const clean = tempDisplayName.trim();
+    if (!clean) return;
+    setIsSavingDisplayName(true);
+    try {
+      await changeDisplayName(clean);
+      setIsEditingDisplayName(false);
+    } catch (err: any) {
+      alert(err.message || 'Erro ao alterar o nome de usuário.');
+    } finally {
+      setIsSavingDisplayName(false);
+    }
+  };
 
   // Check for game mode in URL
   const [isGameMode, setIsGameMode] = useState(false);
@@ -1162,13 +1167,6 @@ export default function App() {
       setIsGameMode(true);
       setIsGameOpen(true);
     }
-    
-    // Recovery routine for accidentally deleted standard cards
-    import('firebase/firestore').then(({ doc, deleteDoc }) => {
-      deleteDoc(doc(db, 'customCards', '2025_0001_B0001')).catch(console.error);
-      deleteDoc(doc(db, 'customCards', '2025_0001_00001')).catch(console.error);
-      deleteDoc(doc(db, 'customCards', '2025_0001_00002')).catch(console.error);
-    });
 
     const fetchHomeSettings = async () => {
       try {
@@ -1296,13 +1294,35 @@ export default function App() {
       
       <ManualModal isOpen={isManualOpen} onClose={() => setIsManualOpen(false)} />
       <BuyModal isOpen={isBuyModalOpen} onClose={() => setIsBuyModalOpen(false)} />
-      <CatalogModal isOpen={isCatalogOpen} onClose={() => setIsCatalogOpen(false)} onOpenAdmin={() => { setIsCatalogOpen(false); setAdminMode('catalog'); }} />
+      <CatalogModal isOpen={isCatalogOpen} onClose={() => setIsCatalogOpen(false)} onOpenAdmin={() => { 
+        if (isAdmin) {
+          setIsCatalogOpen(false); 
+          setAdminMode('catalog'); 
+        } else {
+          alert('Acesso restrito ao administrador.');
+        }
+      }} />
       {isLoreOpen && <LoreView onClose={() => setIsLoreOpen(false)} />}
       <DeckBuilderModal isOpen={isDeckBuilderOpen} onClose={() => setIsDeckBuilderOpen(false)} />
+      <AlbumModal 
+        isOpen={isAlbumOpen} 
+        onClose={() => setIsAlbumOpen(false)} 
+        onSelectCard={(c) => {
+          setInspectedDeckCard(c);
+        }} 
+      />
+      <SavedDecksModal
+        isOpen={isSavedDecksOpen}
+        onClose={() => setIsSavedDecksOpen(false)}
+        allCards={allCards}
+        onLoadDeck={(main, side) => {
+          setIsDeckBuilderOpen(true);
+        }}
+      />
       {isTournamentOpen && <TournamentManager onClose={() => setIsTournamentOpen(false)} />}
       <TypeModal type={selectedType} onClose={() => setSelectedType(null)} />
       {isGameOpen && <GameBoard onClose={() => setIsGameOpen(false)} />}
-      {adminMode !== 'none' && <AdminPanel adminType={adminMode} onClose={() => {
+      {adminMode !== 'none' && isAdmin && <AdminPanel adminType={adminMode} onClose={() => {
         if (adminMode === 'catalog') {
           setIsCatalogOpen(true);
         }
@@ -1363,6 +1383,138 @@ export default function App() {
             >
               <ShoppingCart size={14} className="text-slate-900" /> Comprar
             </button>
+            <button 
+              onClick={() => setIsAlbumOpen(true)}
+              className="bg-slate-100 hover:bg-white text-slate-950 px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 flex items-center gap-1.5 shadow-sm active:scale-95 whitespace-nowrap"
+              title="Meu Álbum de Coleção"
+            >
+              <BookmarkCheck size={14} className="text-purple-600" /> Meu Álbum
+            </button>
+
+            {/* Google Auth / Perfil */}
+            {!user ? (
+              <button 
+                onClick={loginWithGoogle}
+                className="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 flex items-center gap-1.5 shadow-md shadow-purple-900/40 active:scale-95 whitespace-nowrap"
+              >
+                <LogIn size={14} /> Entrar
+              </button>
+            ) : (
+              <div className="relative">
+                <button
+                  onClick={() => setIsUserMenuOpen(prev => !prev)}
+                  className="bg-slate-900/90 hover:bg-slate-800 text-white border border-purple-500/40 px-2.5 py-1 rounded-xl text-xs font-bold transition flex items-center gap-2 shadow-sm"
+                >
+                  {user.photoURL ? (
+                    <img src={user.photoURL} alt={user.displayName || 'Jogador'} className="w-5 h-5 rounded-full border border-purple-400" />
+                  ) : (
+                    <div className="w-5 h-5 rounded-full bg-purple-600 flex items-center justify-center text-[10px] text-white font-bold">
+                      {(user.displayName || 'J')[0]}
+                    </div>
+                  )}
+                  <span className="max-w-[100px] truncate hidden lg:inline">{user.displayName || 'Conta'}</span>
+                  <ChevronDown size={13} className="text-slate-400" />
+                </button>
+
+                {isUserMenuOpen && (
+                  <div className="absolute right-0 mt-2 w-64 bg-slate-950 border border-slate-800 rounded-xl shadow-2xl py-2 z-50 flex flex-col gap-1 animate-in fade-in zoom-in-95 duration-150">
+                    <div className="px-3 py-2 border-b border-slate-800/80 mb-1">
+                      {isEditingDisplayName ? (
+                        <div className="flex flex-col gap-1.5 py-1">
+                          <span className="text-[10px] text-purple-400 font-semibold uppercase tracking-wider">Mudar Nome de Exibição</span>
+                          <div className="flex items-center gap-1.5">
+                            <input
+                              type="text"
+                              value={tempDisplayName}
+                              onChange={(e) => setTempDisplayName(e.target.value)}
+                              maxLength={25}
+                              placeholder="Novo apelido..."
+                              className="bg-slate-900 border border-purple-500 rounded-lg px-2.5 py-1 text-xs text-white outline-none w-full font-bold focus:ring-1 focus:ring-purple-400"
+                              autoFocus
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') handleSaveDisplayName();
+                                if (e.key === 'Escape') setIsEditingDisplayName(false);
+                              }}
+                            />
+                            <button
+                              onClick={handleSaveDisplayName}
+                              disabled={isSavingDisplayName || !tempDisplayName.trim()}
+                              className="p-1.5 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white rounded-lg transition shrink-0"
+                              title="Salvar Nome"
+                            >
+                              <Check size={14} />
+                            </button>
+                            <button
+                              onClick={() => setIsEditingDisplayName(false)}
+                              className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-400 rounded-lg transition shrink-0"
+                              title="Cancelar"
+                            >
+                              <X size={14} />
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex items-center justify-between gap-1">
+                          <div className="min-w-0 flex-1">
+                            <div className="text-xs font-bold text-white truncate" title={user.displayName || 'Jogador'}>
+                              {user.displayName || 'Jogador'}
+                            </div>
+                            <div className="text-[10px] text-slate-400 truncate">{user.email}</div>
+                          </div>
+                          <button
+                            onClick={() => {
+                              setTempDisplayName(user.displayName || '');
+                              setIsEditingDisplayName(true);
+                            }}
+                            className="p-1.5 text-slate-400 hover:text-purple-300 hover:bg-purple-950/50 rounded-lg transition shrink-0"
+                            title="Alterar nome de usuário"
+                          >
+                            <Edit2 size={13} />
+                          </button>
+                        </div>
+                      )}
+                    </div>
+
+                    <button
+                      onClick={() => {
+                        setTempDisplayName(user.displayName || '');
+                        setIsEditingDisplayName(true);
+                      }}
+                      className="px-3 py-2 text-left text-xs text-slate-300 hover:text-white hover:bg-purple-900/30 flex items-center gap-2 transition"
+                    >
+                      <Edit2 size={14} className="text-purple-400" />
+                      <span>Mudar Nome de Usuário</span>
+                    </button>
+
+                    <button
+                      onClick={() => { setIsAlbumOpen(true); setIsUserMenuOpen(false); }}
+                      className="px-3 py-2 text-left text-xs text-slate-300 hover:text-white hover:bg-purple-900/30 flex items-center gap-2 transition"
+                    >
+                      <BookmarkCheck size={14} className="text-purple-400" />
+                      <span>Meu Álbum de Coleção</span>
+                    </button>
+
+                    <button
+                      onClick={() => { setIsSavedDecksOpen(true); setIsUserMenuOpen(false); }}
+                      className="px-3 py-2 text-left text-xs text-slate-300 hover:text-white hover:bg-purple-900/30 flex items-center gap-2 transition"
+                    >
+                      <Cloud size={14} className="text-purple-400" />
+                      <span>Meus Decks Salvos</span>
+                    </button>
+
+                    <div className="border-t border-slate-800/80 my-1"></div>
+
+                    <button
+                      onClick={() => { logoutGoogle(); setIsUserMenuOpen(false); }}
+                      className="px-3 py-2 text-left text-xs text-red-400 hover:text-white hover:bg-red-950/50 flex items-center gap-2 transition"
+                    >
+                      <LogOut size={14} />
+                      <span>Sair da Conta</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           <button className="md:hidden text-white" onClick={() => setIsMenuOpen(!isMenuOpen)}>
@@ -1389,6 +1541,18 @@ export default function App() {
                   className="bg-slate-100 hover:bg-white text-slate-950 px-3.5 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 shadow-sm text-left"
                 >
                   <Layers size={15} className="text-purple-600" /> Monte seu Deck
+                </button>
+                <button 
+                  onClick={() => { setIsAlbumOpen(true); setIsMenuOpen(false); }}
+                  className="bg-slate-100 hover:bg-white text-slate-950 px-3.5 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 shadow-sm"
+                >
+                  <BookmarkCheck size={15} className="text-purple-600" /> Meu Álbum
+                </button>
+                <button 
+                  onClick={() => { setIsSavedDecksOpen(true); setIsMenuOpen(false); }}
+                  className="bg-slate-100 hover:bg-white text-slate-950 px-3.5 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 shadow-sm"
+                >
+                  <Cloud size={15} className="text-purple-600" /> Meus Decks Salvos
                 </button>
                 <a 
                   href="#novidades" 
@@ -1417,6 +1581,38 @@ export default function App() {
                 >
                   <ShoppingCart size={15} className="text-slate-900" /> Comprar
                 </button>
+
+                {!user ? (
+                  <button 
+                    onClick={() => { loginWithGoogle(); setIsMenuOpen(false); }}
+                    className="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white px-3.5 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 shadow-sm"
+                  >
+                    <LogIn size={15} /> Entrar com Google
+                  </button>
+                ) : (
+                  <>
+                    <div className="flex items-center justify-between bg-slate-900 border border-slate-800 px-3.5 py-2 rounded-lg text-xs">
+                      <span className="font-bold text-white truncate max-w-[170px]">{user.displayName || 'Jogador'}</span>
+                      <button
+                        onClick={() => {
+                          setTempDisplayName(user.displayName || '');
+                          setIsEditingDisplayName(true);
+                          setIsMenuOpen(false);
+                          setIsUserMenuOpen(true);
+                        }}
+                        className="text-purple-400 hover:text-purple-300 font-bold text-xs flex items-center gap-1"
+                      >
+                        <Edit2 size={12} /> Mudar Nome
+                      </button>
+                    </div>
+                    <button 
+                      onClick={() => { logoutGoogle(); setIsMenuOpen(false); }}
+                      className="bg-red-950/80 border border-red-800 text-red-300 hover:text-white px-3.5 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 shadow-sm"
+                    >
+                      <LogOut size={15} /> Sair
+                    </button>
+                  </>
+                )}
              </div>
         )}
       </nav>
@@ -1591,13 +1787,15 @@ export default function App() {
               &copy; 2024. Todos os direitos reservados.<br/>
               Os personagens, nomes, e jogo são marcas registradas.
             </p>
-            <button 
-              onClick={() => setAdminMode('home')} 
-              className="text-slate-700 hover:text-slate-500 transition"
-              title="Admin da Tela Inicial"
-            >
-              <Settings size={14} />
-            </button>
+            {isAdmin && (
+              <button 
+                onClick={() => setAdminMode('home')} 
+                className="text-slate-700 hover:text-slate-500 transition"
+                title="Admin da Tela Inicial"
+              >
+                <Settings size={14} />
+              </button>
+            )}
           </div>
 
           <div className="flex gap-6">

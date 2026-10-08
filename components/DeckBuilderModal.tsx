@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { X, Search, Save, Download, Trash2, Plus, Minus, AlertTriangle, CheckCircle, BarChart3, Copy, Eye, ChevronDown, ChevronUp, ChevronRight, ChevronLeft, Layers, Network } from 'lucide-react';
+import { X, Search, Save, Download, Trash2, Plus, Minus, AlertTriangle, CheckCircle, BarChart3, Copy, Eye, ChevronDown, ChevronUp, ChevronRight, ChevronLeft, Layers, Network, Cloud } from 'lucide-react';
 import { CardData } from '../types';
 import { collectionsList, archetypesList } from '../data';
 import { useCards, cleanCardCode, getCardDisplayPriority } from '../CardContext';
@@ -7,6 +7,7 @@ import { compareCardCodes, isHeroGroupValid, getStructuralDeck } from '../deckUt
 import { Card } from './Card';
 import { CardDetailModal } from './CardDetailModal';
 import { CardNeuralMap } from './CardNeuralMap';
+import { SavedDecksModal } from './SavedDecksModal';
 
 interface DeckBuilderModalProps {
   isOpen: boolean;
@@ -22,6 +23,7 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
   const [importCode, setImportCode] = useState("");
   const [activeTab, setActiveTab] = useState<'build' | 'neural' | 'stats' | 'save'>('build');
   const [inspectCard, setInspectCard] = useState<CardData | null>(null);
+  const [showCloudDecksModal, setShowCloudDecksModal] = useState(false);
   const [filters, setFilters] = useState({
     type: "Todos",
     archetype: "Todos",
@@ -303,6 +305,19 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
         onSelectRelated={(related) => setInspectCard(related)}
       />
 
+      {/* Cloud Decks Modal */}
+      <SavedDecksModal
+        isOpen={showCloudDecksModal}
+        onClose={() => setShowCloudDecksModal(false)}
+        currentMainDeck={deck}
+        currentSideDeck={sideDeck}
+        onLoadDeck={(m, s) => {
+          setDeck(m);
+          setSideDeck(s);
+        }}
+        allCards={allCards}
+      />
+
       {/* Header */}
       <div className="bg-slate-900 border-b border-slate-800 p-2 md:p-4 flex flex-col md:flex-row justify-between items-center shadow-lg gap-2 md:gap-0 shrink-0">
         <div className="flex flex-col md:flex-row items-center gap-2 md:gap-4 w-full md:w-auto">
@@ -335,6 +350,14 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
               className={`flex-1 md:flex-none px-2 md:px-4 py-1.5 rounded-md text-[10px] md:text-sm font-bold transition whitespace-nowrap ${activeTab === 'save' ? 'bg-purple-600 text-white' : 'text-slate-400 hover:text-white'}`}
             >
               Salvar/Carregar
+            </button>
+            <button 
+              onClick={() => setShowCloudDecksModal(true)}
+              className="flex-1 md:flex-none px-2 md:px-3 py-1.5 rounded-md text-[10px] md:text-sm font-bold transition whitespace-nowrap flex items-center justify-center gap-1.5 bg-gradient-to-r from-purple-800 to-indigo-800 text-purple-200 hover:text-white border border-purple-600/40 shadow-sm active:scale-95"
+              title="Acessar meus decks salvos na nuvem"
+            >
+              <Cloud size={14} className="text-purple-300" />
+              <span>Decks na Nuvem</span>
             </button>
           </div>
         </div>
@@ -834,21 +857,30 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
                   
                   {deck.length > 0 || sideDeck.length > 0 ? (
                     isValidToSave ? (
-                      <div className="flex gap-2">
-                        <input 
-                          readOnly
-                          value={generateDeckCode()}
-                          className="flex-1 bg-black border border-slate-700 rounded p-3 text-xs font-mono text-green-400 overflow-hidden text-ellipsis"
-                        />
+                      <div className="space-y-3">
+                        <div className="flex gap-2">
+                          <input 
+                            readOnly
+                            value={generateDeckCode()}
+                            className="flex-1 bg-black border border-slate-700 rounded p-3 text-xs font-mono text-green-400 overflow-hidden text-ellipsis"
+                          />
+                          <button 
+                            onClick={() => {
+                              navigator.clipboard.writeText(generateDeckCode());
+                              alert("Código copiado!");
+                            }}
+                            className="bg-slate-800 hover:bg-slate-700 text-white p-3 rounded border border-slate-600 transition"
+                            title="Copiar"
+                          >
+                            <Copy size={20} />
+                          </button>
+                        </div>
                         <button 
-                          onClick={() => {
-                            navigator.clipboard.writeText(generateDeckCode());
-                            alert("Código copiado!");
-                          }}
-                          className="bg-slate-800 hover:bg-slate-700 text-white p-3 rounded border border-slate-600 transition"
-                          title="Copiar"
+                          onClick={() => setShowCloudDecksModal(true)}
+                          className="w-full py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg shadow-purple-900/40 transition"
                         >
-                          <Copy size={20} />
+                          <Cloud size={16} />
+                          <span>Salvar / Gerenciar na Nuvem (Conta Google)</span>
                         </button>
                       </div>
                     ) : (

@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, ReactNode } from
 import { CardData, ArchetypeData, CardVariationItem } from './types';
 import { allCards as defaultCards, archetypesList as defaultArchetypes, collectionsList as defaultCollections } from './data';
 import { compareCardCodes } from './deckUtils';
+import { isUserAdmin } from './authService';
 import { db, auth } from './firebase';
 import { collection, getDocs, doc, setDoc, onSnapshot, deleteDoc, getDoc, updateDoc } from 'firebase/firestore';
 import { onAuthStateChanged } from 'firebase/auth';
@@ -96,7 +97,7 @@ export const CardProvider = ({ children }: { children: ReactNode }) => {
 
   useEffect(() => {
     const unsubAuth = onAuthStateChanged(auth, (u) => {
-      setIsAdmin(!!u);
+      setIsAdmin(isUserAdmin(u));
     });
     return unsubAuth;
   }, []);
