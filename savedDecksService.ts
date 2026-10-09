@@ -97,6 +97,9 @@ export const useSavedDecks = (userId?: string | null) => {
         fallbackSnap.forEach(d => list.push(d.data() as UserSavedDeck));
         setDecks(list);
         setLoading(false);
+      }, (fallbackErr) => {
+        console.warn('Erro ao carregar decks sem orderBy:', fallbackErr);
+        setLoading(false);
       });
       return () => fallbackUnsub();
     });

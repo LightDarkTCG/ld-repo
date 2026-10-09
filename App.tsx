@@ -13,6 +13,7 @@ import { DeckBuilderModal } from './components/DeckBuilderModal';
 import { CardDetailModal } from './components/CardDetailModal';
 import { AlbumModal } from './components/AlbumModal';
 import { SavedDecksModal } from './components/SavedDecksModal';
+import { AuthModal } from './components/AuthModal';
 import { useAuth } from './authService';
 import GameBoard from './components/GameBoard';
 import { TournamentManager } from './components/TournamentManager';
@@ -1113,6 +1114,7 @@ export default function App() {
   const [isDeckBuilderOpen, setIsDeckBuilderOpen] = useState(false);
   const [isAlbumOpen, setIsAlbumOpen] = useState(false);
   const [isSavedDecksOpen, setIsSavedDecksOpen] = useState(false);
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const [isGameOpen, setIsGameOpen] = useState(false);
   const [isTournamentOpen, setIsTournamentOpen] = useState(false);
@@ -1319,6 +1321,10 @@ export default function App() {
           setIsDeckBuilderOpen(true);
         }}
       />
+      <AuthModal 
+        isOpen={isAuthModalOpen} 
+        onClose={() => setIsAuthModalOpen(false)} 
+      />
       {isTournamentOpen && <TournamentManager onClose={() => setIsTournamentOpen(false)} />}
       <TypeModal type={selectedType} onClose={() => setSelectedType(null)} />
       {isGameOpen && <GameBoard onClose={() => setIsGameOpen(false)} />}
@@ -1394,7 +1400,7 @@ export default function App() {
             {/* Google Auth / Perfil */}
             {!user ? (
               <button 
-                onClick={loginWithGoogle}
+                onClick={() => setIsAuthModalOpen(true)}
                 className="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 flex items-center gap-1.5 shadow-md shadow-purple-900/40 active:scale-95 whitespace-nowrap"
               >
                 <LogIn size={14} /> Entrar
@@ -1584,10 +1590,10 @@ export default function App() {
 
                 {!user ? (
                   <button 
-                    onClick={() => { loginWithGoogle(); setIsMenuOpen(false); }}
+                    onClick={() => { setIsAuthModalOpen(true); setIsMenuOpen(false); }}
                     className="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white px-3.5 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 shadow-sm"
                   >
-                    <LogIn size={15} /> Entrar com Google
+                    <LogIn size={15} /> Entrar na Conta
                   </button>
                 ) : (
                   <>

@@ -204,10 +204,10 @@ export default function GameBoard({ onClose }: GameBoardProps) {
     // CT: rosa padrão quando 0, rosa claro se negativo, roxo escuro se positivo
     const getCtStyle = (val: number) => {
       if (val > 0) {
-        return 'bg-purple-950 border-purple-700 text-purple-100 shadow-[0_0_12px_rgba(147,51,234,0.4)]';
+        return 'bg-[#3b0764] border-purple-600 text-purple-100 font-black shadow-[0_0_14px_rgba(147,51,234,0.6)]';
       }
       if (val < 0) {
-        return 'bg-pink-300 border-pink-200 text-pink-950 font-black shadow-[0_0_12px_rgba(244,114,182,0.6)]';
+        return 'bg-pink-200 border-pink-100 text-pink-950 font-black shadow-[0_0_12px_rgba(244,114,182,0.7)]';
       }
       return 'bg-pink-600 border-pink-400 text-white shadow-md shadow-pink-950/40';
     };
@@ -215,7 +215,7 @@ export default function GameBoard({ onClose }: GameBoardProps) {
     // Primordial: vermelho quando adicionado (> 0)
     const getPrimordialStyle = (val: number) => {
       if (val > 0) {
-        return 'bg-red-600 border-red-400 text-white shadow-[0_0_14px_rgba(239,68,68,0.6)]';
+        return 'bg-red-600 border-red-400 text-white font-black shadow-[0_0_14px_rgba(239,68,68,0.7)]';
       }
       return 'bg-black/60 border-slate-700/80 text-white';
     };
@@ -223,7 +223,7 @@ export default function GameBoard({ onClose }: GameBoardProps) {
     // Runas: cinza quando adicionadas (> 0)
     const getRunesStyle = (val: number) => {
       if (val > 0) {
-        return 'bg-slate-500 border-slate-300 text-white shadow-[0_0_12px_rgba(148,163,184,0.5)]';
+        return 'bg-slate-400 border-slate-200 text-slate-950 font-black shadow-[0_0_12px_rgba(148,163,184,0.7)]';
       }
       return 'bg-black/60 border-slate-700/80 text-white';
     };
@@ -233,16 +233,19 @@ export default function GameBoard({ onClose }: GameBoardProps) {
       if (val >= 100) {
         return 'bg-black/60 border-slate-700/80 text-white';
       }
-      if (val >= 75) {
-        return 'bg-emerald-950/90 border-emerald-700 text-emerald-200 shadow-sm';
+      if (val >= 80) {
+        return 'bg-emerald-950/90 border-emerald-700 text-emerald-300 shadow-sm';
       }
-      if (val >= 50) {
-        return 'bg-emerald-900 border-emerald-600 text-emerald-100 shadow-[0_0_10px_rgba(16,185,129,0.4)]';
+      if (val >= 60) {
+        return 'bg-emerald-900 border-emerald-600 text-emerald-100 shadow-[0_0_10px_rgba(16,185,129,0.5)]';
       }
-      if (val >= 25) {
-        return 'bg-emerald-700 border-emerald-500 text-white shadow-[0_0_14px_rgba(16,185,129,0.6)]';
+      if (val >= 40) {
+        return 'bg-emerald-700 border-emerald-500 text-white shadow-[0_0_14px_rgba(16,185,129,0.7)]';
       }
-      return 'bg-emerald-500 border-emerald-300 text-slate-950 font-black shadow-[0_0_18px_rgba(16,185,129,0.8)]';
+      if (val >= 20) {
+        return 'bg-emerald-600 border-emerald-400 text-white shadow-[0_0_16px_rgba(16,185,129,0.85)] font-black';
+      }
+      return 'bg-emerald-500 border-emerald-300 text-slate-950 font-black shadow-[0_0_20px_rgba(16,185,129,1)]';
     };
 
     return (
