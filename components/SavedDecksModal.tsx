@@ -26,6 +26,7 @@ interface SavedDecksModalProps {
   currentSideDeck?: CardData[];
   onLoadDeck: (mainDeck: CardData[], sideDeck: CardData[]) => void;
   allCards: CardData[];
+  onOpenAuth?: () => void;
 }
 
 export const SavedDecksModal: React.FC<SavedDecksModalProps> = ({
@@ -34,9 +35,10 @@ export const SavedDecksModal: React.FC<SavedDecksModalProps> = ({
   currentMainDeck = [],
   currentSideDeck = [],
   onLoadDeck,
-  allCards
+  allCards,
+  onOpenAuth
 }) => {
-  const { user, loginWithGoogle } = useAuth();
+  const { user } = useAuth();
   const { decks, loading, saveDeck, deleteDeck } = useSavedDecks(user?.uid);
 
   const [deckNameInput, setDeckNameInput] = useState('');
@@ -51,7 +53,7 @@ export const SavedDecksModal: React.FC<SavedDecksModalProps> = ({
 
   const handleSaveCurrentDeck = async () => {
     if (!user) {
-      await loginWithGoogle();
+      if (onOpenAuth) onOpenAuth();
       return;
     }
 
@@ -193,16 +195,16 @@ export const SavedDecksModal: React.FC<SavedDecksModalProps> = ({
             <div className="flex items-center gap-3">
               <AlertCircle size={20} className="text-purple-400 shrink-0" />
               <div className="text-xs text-slate-300">
-                <span className="font-bold text-white block">Acesse com sua conta Google</span>
-                Conecte-se para manter seus decks salvos para sempre e acessíveis em qualquer dispositivo.
+                <span className="font-bold text-white block">Acesse sua Conta</span>
+                Conecte-se com seu Apelido ou E-mail para salvar e carregar seus decks na nuvem em qualquer dispositivo.
               </div>
             </div>
             <button
-              onClick={loginWithGoogle}
+              onClick={onOpenAuth}
               className="px-4 py-2 rounded-xl text-xs font-bold bg-purple-600 hover:bg-purple-500 text-white transition flex items-center gap-2 shadow-md shadow-purple-950"
             >
               <LogIn size={14} />
-              <span>Entrar com Google</span>
+              <span>Entrar na Conta</span>
             </button>
           </div>
         )}

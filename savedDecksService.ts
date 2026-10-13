@@ -9,7 +9,7 @@ import {
   orderBy, 
   serverTimestamp 
 } from 'firebase/firestore';
-import { db } from './firebase';
+import { db, auth } from './firebase';
 
 export interface UserSavedDeck {
   id: string;
@@ -39,7 +39,15 @@ export const saveUserDeckToFirestore = async (
   const deckId = deckData.id || `deck_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
   const deckRef = doc(db, 'users', userId, 'savedDecks', deckId);
 
-  const payload: UserSavedDeck = {
+  const currentUser = auth.currentUser;
+  const isEmailAccount = Boolean(
+    currentUser && 
+    !currentUser.isAnonymous && 
+    currentUser.email && 
+    currentUser.email.includes('@')
+  );
+
+  const payload: UserSavedDeck & { isEmailAccount?: boolean; userEmail?: string } = {
     id: deckId,
     name: (deckData.name || 'Meu Deck').trim(),
     heroName: deckData.heroName || '',
@@ -47,7 +55,9 @@ export const saveUserDeckToFirestore = async (
     sideDeckCodes: deckData.sideDeckCodes || [],
     cardCount: (deckData.mainDeckCodes || []).length,
     coverImageUrl: deckData.coverImageUrl || '',
-    updatedAt: serverTimestamp()
+    updatedAt: serverTimestamp(),
+    isEmailAccount,
+    userEmail: currentUser?.email || ''
   };
 
   if (!deckData.id) {
@@ -55,6 +65,25 @@ export const saveUserDeckToFirestore = async (
   }
 
   await setDoc(deckRef, payload, { merge: true });
+
+  // Espelha na coleção global da comunidade para contabilização das cartas populares
+  // Somente decks de usuários cadastrados com e-mail e senha
+  try {
+    const communityRef = doc(db, 'communityDecks', deckId);
+    if (isEmailAccount) {
+      await setDoc(communityRef, {
+        ...payload,
+        userId,
+        isEmailAccount: true,
+        userEmail: currentUser?.email || ''
+      }, { merge: true });
+    } else {
+      await deleteDoc(communityRef).catch(() => {});
+    }
+  } catch (err) {
+    console.warn('Não foi possível espelhar na coleção da comunidade:', err);
+  }
+
   return deckId;
 };
 
@@ -65,6 +94,13 @@ export const deleteUserDeckFromFirestore = async (
   if (!userId || !deckId) return;
   const deckRef = doc(db, 'users', userId, 'savedDecks', deckId);
   await deleteDoc(deckRef);
+
+  try {
+    const communityRef = doc(db, 'communityDecks', deckId);
+    await deleteDoc(communityRef);
+  } catch (err) {
+    // Silencioso se não existir
+  }
 };
 
 export const useSavedDecks = (userId?: string | null) => {

@@ -1,7 +1,5 @@
 import { useState, useEffect } from 'react';
 import { 
-  GoogleAuthProvider, 
-  signInWithPopup, 
   signOut, 
   onAuthStateChanged, 
   updateProfile,
@@ -26,16 +24,6 @@ export const getFriendlyAuthErrorMessage = (error: any): string => {
   if (!error) return 'Erro desconhecido ao autenticar.';
   const code = error.code || '';
   switch (code) {
-    case 'auth/unauthorized-domain':
-      return 'O domínio deste site ainda não foi adicionado à lista de domínios autorizados no Firebase Authentication. Você pode entrar com Apelido logo abaixo para continuar salvando seu álbum e decks normalmente!';
-    case 'auth/popup-closed-by-user':
-      return 'A janela de login com Google foi fechada antes de concluir.';
-    case 'auth/popup-blocked':
-      return 'O seu navegador bloqueou a janela pop-up do Google. Por favor, autorize pop-ups para este site ou entre usando Apelido.';
-    case 'auth/cancelled-popup-request':
-      return 'A solicitação de login foi cancelada.';
-    case 'auth/operation-not-allowed':
-      return 'O provedor de login com Google não está ativo no Firebase Console. Utilize a opção de login com Apelido abaixo.';
     case 'auth/wrong-password':
     case 'auth/invalid-credential':
       return 'Senha incorreta ou credenciais inválidas.';
@@ -47,8 +35,10 @@ export const getFriendlyAuthErrorMessage = (error: any): string => {
       return 'A senha deve ter pelo menos 6 caracteres.';
     case 'auth/invalid-email':
       return 'Formato de e-mail inválido.';
+    case 'auth/network-request-failed':
+      return 'Erro de conexão com o servidor. Verifique sua internet.';
     default:
-      return error.message || 'Falha ao autenticar com Google. Tente novamente ou use a opção de Apelido.';
+      return error.message || 'Falha ao autenticar. Tente novamente.';
   }
 };
 
@@ -78,20 +68,9 @@ const syncUserProfile = async (user: User, fallbackName?: string) => {
   }
 };
 
+// Deprecated fallback: se alguma tela antiga chamar, usa login com apelido rápido
 export const loginWithGoogle = async (): Promise<User> => {
-  try {
-    const provider = new GoogleAuthProvider();
-    provider.setCustomParameters({ prompt: 'select_account' });
-    const result = await signInWithPopup(auth, provider);
-    const user = result.user;
-    if (user) {
-      await syncUserProfile(user);
-    }
-    return user;
-  } catch (error: any) {
-    console.error('Erro ao autenticar com Google:', error);
-    throw error;
-  }
+  return loginWithGuest('Jogador');
 };
 
 export const loginWithGuest = async (nickname: string): Promise<User> => {
@@ -140,7 +119,7 @@ export const registerWithEmail = async (email: string, pass: string, name: strin
   }
 };
 
-export const logoutGoogle = async (): Promise<void> => {
+export const logout = async (): Promise<void> => {
   try {
     await signOut(auth);
   } catch (error: any) {
@@ -148,6 +127,7 @@ export const logoutGoogle = async (): Promise<void> => {
     throw error;
   }
 };
+export const logoutGoogle = logout;
 
 export const updateUserDisplayName = async (newName: string): Promise<void> => {
   const trimmed = newName.trim();

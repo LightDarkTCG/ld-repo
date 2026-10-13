@@ -2267,10 +2267,10 @@ export const CardNeuralMap: React.FC<CardNeuralMapProps> = ({
 
             {/* Cards List */}
             <div className="flex-1 overflow-y-auto p-3 space-y-2 divide-y divide-slate-800/40">
-              {filteredQuickAddCards.slice(0, 40).map((card) => {
+              {filteredQuickAddCards.slice(0, 40).map((card, idx) => {
                 const countInDeck = deck.filter(c => c.name === card.name).length;
                 return (
-                  <div key={card.id || card.code || card.name} className="pt-2 first:pt-0 flex items-center justify-between gap-3 group">
+                  <div key={`${card.id || card.code || card.name}-${idx}`} className="pt-2 first:pt-0 flex items-center justify-between gap-3 group">
                     <div className="flex items-center gap-2.5 min-w-0">
                       <div className="w-9 h-12 rounded bg-slate-950 border border-slate-700 overflow-hidden shrink-0 flex items-center justify-center">
                         {card.imageUrl ? (
@@ -2417,7 +2417,7 @@ export const CardNeuralMap: React.FC<CardNeuralMapProps> = ({
                 const typeStyle = TYPE_COLORS[card.type] || TYPE_COLORS['Combatente'];
                 return (
                   <div
-                    key={card.code || idx}
+                    key={`${card.id || card.code || card.name}-${idx}`}
                     className="bg-slate-950/70 border border-slate-800/80 hover:border-emerald-500/50 rounded-xl p-3 transition flex flex-col gap-2 group"
                   >
                     <div className="flex items-start gap-3">

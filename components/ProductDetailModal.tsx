@@ -16,10 +16,13 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
   allCards,
   onSelectCard
 }) => {
-  if (!product) return null;
+  const [activeMediaIndex, setActiveMediaIndex] = useState(0);
+  const [copiedCode, setCopiedCode] = useState(false);
+  const [showNotice, setShowNotice] = useState(false);
 
   // Extract all media items
   const mediaList: ProductMediaItem[] = useMemo(() => {
+    if (!product) return [{ type: 'image', url: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe' }];
     if (product.mediaList && Array.isArray(product.mediaList) && product.mediaList.length > 0) {
       const valid = product.mediaList.filter(m => m && m.url && m.url.trim() !== '');
       if (valid.length > 0) return valid;
@@ -30,15 +33,15 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
     return [{ type: 'image', url: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe' }];
   }, [product]);
 
-  const [activeMediaIndex, setActiveMediaIndex] = useState(0);
-  const [copiedCode, setCopiedCode] = useState(false);
-  const [showNotice, setShowNotice] = useState(false);
-  const currentMedia = mediaList[activeMediaIndex] || mediaList[0];
-
   // Parse card codes from Deck Builder code or code list
   const deckData: ParsedDeckData = useMemo(() => {
+    if (!product) return { cards: [], mainCount: 0, sideCount: 0, heroCount: 0 };
     return parseDeckFromCode(product.cardCodes, allCards);
-  }, [product.cardCodes, allCards]);
+  }, [product?.cardCodes, allCards]);
+
+  if (!product) return null;
+
+  const currentMedia = mediaList[activeMediaIndex] || mediaList[0];
 
   const handleCopyDeckCode = () => {
     if (!deckData.rawDeckBuilderCode) return;

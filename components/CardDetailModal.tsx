@@ -2,7 +2,7 @@ import React, { useMemo, useState, useEffect } from 'react';
 import { X, Zap, BookOpen, Box, Hash, Link as LinkIcon, Edit2, Check, Trash, Image as ImageIcon, Sparkles, Layers, Plus, Minus, BookmarkCheck, LogIn } from 'lucide-react';
 import { CardData, CardVariationItem } from '../types';
 import { Card } from './Card';
-import { useCards, cleanCardCode, getCardDisplayPriority } from '../CardContext';
+import { useCards, cleanCardCode, getCardDisplayPriority, resolveModernFrameOnly } from '../CardContext';
 import { compareCardCodes } from '../deckUtils';
 import { auth, storage } from '../firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
@@ -13,11 +13,12 @@ interface CardDetailModalProps {
   card: CardData | null;
   onClose: () => void;
   onSelectRelated?: (card: CardData) => void;
+  onOpenAuth?: () => void;
 }
 
-export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card: initialCard, onClose, onSelectRelated }) => {
+export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card: initialCard, onClose, onSelectRelated, onOpenAuth }) => {
   const { cards: allCards, archetypes, collections, saveCard, deleteCard } = useCards();
-  const { user, loginWithGoogle } = useAuth();
+  const { user } = useAuth();
   const { getQuantity, incrementCard, decrementCard } = useUserAlbum(user?.uid);
   const [isEditing, setIsEditing] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -27,10 +28,17 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card: initialC
   const [isUploading, setIsUploading] = useState(false);
 
   useEffect(() => {
-    setCard(initialCard);
-    setOriginalCode(initialCard?.code);
+    if (!initialCard) {
+      setCard(null);
+      setOriginalCode(undefined);
+      setIsEditing(false);
+      return;
+    }
+    const modernResolved = resolveModernFrameOnly(initialCard, allCards);
+    setCard(modernResolved);
+    setOriginalCode(modernResolved.code || initialCard.code);
     setIsEditing(false);
-  }, [initialCard]);
+  }, [initialCard, allCards]);
 
   // Find all variations (alternate arts, skins, frames) for this card
   // Computed stably based on initialCard so buttons remain fixed in their slots
@@ -115,11 +123,17 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card: initialC
       }
     });
 
+    // Regra: "quando a carta tiver frame legado e frame moderno, usar somente moderno"
+    const hasModernInList = list.some(c => c.frame === 'Moderno');
+    const sanitizedList = hasModernInList
+      ? list.filter(c => c.frame === 'Moderno' || (c.frame !== 'Legado' && !(c.variationType || '').toLowerCase().includes('legado')))
+      : list;
+
     // Deterministic, 100% stable sort:
     // 1º Display priority: Moderno > AA / Skin > Legado
     // 2º Numeric / natural code order (e.g. 00380 < A0380 < B0380)
     // 3º Image URL fallback to prevent any floating index swap
-    return list.sort((a, b) => {
+    return sanitizedList.sort((a, b) => {
       const pDiff = getCardDisplayPriority(b) - getCardDisplayPriority(a);
       if (pDiff !== 0) return pDiff;
       const codeDiff = compareCardCodes(a.code, b.code);
@@ -427,7 +441,7 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card: initialC
             ) : (
               <button
                 type="button"
-                onClick={loginWithGoogle}
+                onClick={onOpenAuth}
                 className="px-3 py-1.5 rounded-xl bg-purple-950 hover:bg-purple-900 text-purple-300 border border-purple-700/50 text-[11px] font-bold transition flex items-center gap-1.5"
               >
                 <LogIn size={13} />

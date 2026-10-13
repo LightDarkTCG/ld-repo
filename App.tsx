@@ -5,7 +5,7 @@ import {
   ShoppingCart, ExternalLink, Search, Filter, Box, ArrowDownAZ,
   Menu, X, ChevronRight, ChevronDown, ChevronUp, Scale, Ghost, Instagram, MessageCircle, Mail, Music, Info,
   Sword, Shield, Clock, AlertTriangle, Users, FileText, CheckCircle, Crown, Youtube, Settings, Sparkles,
-  LogIn, LogOut, BookmarkCheck, Cloud, User as UserIcon, Edit2, Check
+  LogIn, LogOut, BookmarkCheck, Cloud, User as UserIcon, Edit2, Check, Flame
 } from 'lucide-react';
 import { Card } from './components/Card';
 import { GameField } from './components/GameField';
@@ -14,6 +14,7 @@ import { CardDetailModal } from './components/CardDetailModal';
 import { AlbumModal } from './components/AlbumModal';
 import { SavedDecksModal } from './components/SavedDecksModal';
 import { AuthModal } from './components/AuthModal';
+import { PopularCardsModal } from './components/PopularCardsModal';
 import { useAuth } from './authService';
 import GameBoard from './components/GameBoard';
 import { TournamentManager } from './components/TournamentManager';
@@ -797,6 +798,7 @@ const CatalogModal = ({ isOpen, onClose, onOpenAdmin }: { isOpen: boolean, onClo
         card={selectedCard} 
         onClose={() => setSelectedCard(null)} 
         onSelectRelated={(related) => handleCardClick(related)}
+        onOpenAuth={() => setIsAuthModalOpen(true)}
       />
 
       {/* Easter Egg Modal */}
@@ -994,7 +996,7 @@ const CatalogModal = ({ isOpen, onClose, onOpenAdmin }: { isOpen: boolean, onClo
           <>
             <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-2 md:gap-8 justify-items-center">
               {displayedCards.map((card, idx) => (
-                <div key={card.code || `${card.name}-${idx}`} className="scale-[0.65] md:scale-90 origin-top w-full flex justify-center -mb-24 md:mb-0" onClick={() => handleCardClick(card)}>
+                <div key={`${card.code || card.name}_${card.collection || ''}_${card.frame || ''}_${idx}`} className="scale-[0.65] md:scale-90 origin-top w-full flex justify-center -mb-24 md:mb-0" onClick={() => handleCardClick(card)}>
                    <Card {...card} priority={idx < 28} />
                 </div>
               ))}
@@ -1105,7 +1107,7 @@ const defaultExclusiveProducts: ExclusiveProduct[] = [
 
 export default function App() {
   const { cards: allCards, collections, archetypes } = useCards();
-  const { user, isAdmin, loginWithGoogle, logoutGoogle, changeDisplayName } = useAuth();
+  const { user, isAdmin, logout, changeDisplayName } = useAuth();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isManualOpen, setIsManualOpen] = useState(false);
   const [isBuyModalOpen, setIsBuyModalOpen] = useState(false);
@@ -1114,6 +1116,7 @@ export default function App() {
   const [isDeckBuilderOpen, setIsDeckBuilderOpen] = useState(false);
   const [isAlbumOpen, setIsAlbumOpen] = useState(false);
   const [isSavedDecksOpen, setIsSavedDecksOpen] = useState(false);
+  const [isPopularCardsOpen, setIsPopularCardsOpen] = useState(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const [isGameOpen, setIsGameOpen] = useState(false);
@@ -1255,10 +1258,13 @@ export default function App() {
     return () => window.removeEventListener('scroll', handleScroll);
   }, [backgroundVideos.length]);
 
+  const allCardsRef = useRef(allCards);
+  allCardsRef.current = allCards;
+
   useEffect(() => {
     // Dynamic Showcase Rotation - EXCLUSIVELY Modern Frame Cards
     const rotateShowcase = () => {
-      const modernCards = allCards.filter(c => c.frame === 'Moderno');
+      const modernCards = (allCardsRef.current || []).filter(c => c.frame === 'Moderno');
       if (modernCards.length === 0) return;
 
       const getModernByType = (cardType: CardType) => {
@@ -1285,7 +1291,7 @@ export default function App() {
     const interval = setInterval(rotateShowcase, 12000); // Rotate every 12 seconds
 
     return () => clearInterval(interval);
-  }, [allCards]);
+  }, [allCards.length]);
 
   if (isGameMode) {
     return <GameBoard onClose={() => window.close()} />;
@@ -1312,6 +1318,7 @@ export default function App() {
         onSelectCard={(c) => {
           setInspectedDeckCard(c);
         }} 
+        onOpenAuth={() => setIsAuthModalOpen(true)}
       />
       <SavedDecksModal
         isOpen={isSavedDecksOpen}
@@ -1320,6 +1327,14 @@ export default function App() {
         onLoadDeck={(main, side) => {
           setIsDeckBuilderOpen(true);
         }}
+        onOpenAuth={() => setIsAuthModalOpen(true)}
+      />
+      <PopularCardsModal
+        isOpen={isPopularCardsOpen}
+        onClose={() => setIsPopularCardsOpen(false)}
+        allCards={allCards}
+        onSelectCard={(c) => setInspectedDeckCard(c)}
+        onOpenDeckBuilder={() => setIsDeckBuilderOpen(true)}
       />
       <AuthModal 
         isOpen={isAuthModalOpen} 
@@ -1365,6 +1380,13 @@ export default function App() {
             >
               <Layers size={14} className="text-purple-600" /> Monte seu Deck
             </button>
+            <button 
+              onClick={() => setIsPopularCardsOpen(true)} 
+              className="bg-slate-100 hover:bg-white text-slate-950 px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 flex items-center gap-1.5 shadow-sm active:scale-95 whitespace-nowrap"
+              title="Cartas Populares da Comunidade (Meta)"
+            >
+              <Flame size={14} className="text-red-500 fill-red-500/20" /> Cartas Populares
+            </button>
             <a 
               href="#novidades" 
               className="bg-slate-100 hover:bg-white text-slate-950 px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 flex items-center gap-1.5 shadow-sm active:scale-95 whitespace-nowrap"
@@ -1397,7 +1419,7 @@ export default function App() {
               <BookmarkCheck size={14} className="text-purple-600" /> Meu Álbum
             </button>
 
-            {/* Google Auth / Perfil */}
+            {/* Conta / Perfil */}
             {!user ? (
               <button 
                 onClick={() => setIsAuthModalOpen(true)}
@@ -1511,7 +1533,7 @@ export default function App() {
                     <div className="border-t border-slate-800/80 my-1"></div>
 
                     <button
-                      onClick={() => { logoutGoogle(); setIsUserMenuOpen(false); }}
+                      onClick={() => { logout(); setIsUserMenuOpen(false); }}
                       className="px-3 py-2 text-left text-xs text-red-400 hover:text-white hover:bg-red-950/50 flex items-center gap-2 transition"
                     >
                       <LogOut size={14} />
@@ -1547,6 +1569,12 @@ export default function App() {
                   className="bg-slate-100 hover:bg-white text-slate-950 px-3.5 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 shadow-sm text-left"
                 >
                   <Layers size={15} className="text-purple-600" /> Monte seu Deck
+                </button>
+                <button 
+                  onClick={() => { setIsPopularCardsOpen(true); setIsMenuOpen(false); }} 
+                  className="bg-slate-100 hover:bg-white text-slate-950 px-3.5 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 shadow-sm text-left"
+                >
+                  <Flame size={15} className="text-red-500 fill-red-500/20" /> Cartas Populares (Meta)
                 </button>
                 <button 
                   onClick={() => { setIsAlbumOpen(true); setIsMenuOpen(false); }}
@@ -1830,17 +1858,20 @@ export default function App() {
       </footer>
 
       {/* Product Detail Modal (Multiple Media Gallery & Decklist) */}
-      <ProductDetailModal 
-        product={selectedProduct}
-        onClose={() => setSelectedProduct(null)}
-        allCards={allCards}
-        onSelectCard={(c) => setInspectedDeckCard(c)}
-      />
+      {selectedProduct && (
+        <ProductDetailModal 
+          product={selectedProduct}
+          onClose={() => setSelectedProduct(null)}
+          allCards={allCards}
+          onSelectCard={(c) => setInspectedDeckCard(c)}
+        />
+      )}
 
       {/* Modal to inspect cards from the pre-built deck list */}
       <CardDetailModal 
         card={inspectedDeckCard}
         onClose={() => setInspectedDeckCard(null)}
+        onOpenAuth={() => setIsAuthModalOpen(true)}
       />
     </div>
   );

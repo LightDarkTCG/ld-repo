@@ -24,6 +24,7 @@ interface AlbumModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSelectCard?: (card: CardData) => void;
+  onOpenAuth?: () => void;
 }
 
 export type AlbumEdition = 'legado' | 'moderno' | 'all';
@@ -55,8 +56,8 @@ export const isSpecialCard = (c: CardData): boolean => {
   );
 };
 
-export const AlbumModal: React.FC<AlbumModalProps> = ({ isOpen, onClose, onSelectCard }) => {
-  const { user, loginWithGoogle } = useAuth();
+export const AlbumModal: React.FC<AlbumModalProps> = ({ isOpen, onClose, onSelectCard, onOpenAuth }) => {
+  const { user } = useAuth();
   const { cards: allCards } = useCards();
   const { getQuantity, incrementCard, decrementCard } = useUserAlbum(user?.uid);
 
@@ -264,11 +265,11 @@ export const AlbumModal: React.FC<AlbumModalProps> = ({ isOpen, onClose, onSelec
           <div className="flex items-center gap-3">
             {!user ? (
               <button
-                onClick={loginWithGoogle}
+                onClick={onOpenAuth}
                 className="px-4 py-2 rounded-xl text-xs sm:text-sm font-bold bg-purple-600 hover:bg-purple-500 text-white transition flex items-center gap-2 shadow-lg shadow-purple-900/40 active:scale-95"
               >
                 <LogIn size={16} />
-                <span>Entrar com Google</span>
+                <span>Entrar na Conta</span>
               </button>
             ) : (
               <div className="flex items-center gap-2 bg-slate-900/80 border border-slate-700/60 px-3 py-1.5 rounded-xl">

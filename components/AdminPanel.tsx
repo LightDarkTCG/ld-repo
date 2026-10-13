@@ -8,7 +8,7 @@ import { useCards, sanitizeForFirestore } from '../CardContext';
 import { ArchetypeData } from '../types';
 import { parseDeckFromCode } from '../deckUtils';
 import { BatchImageMatcher } from './BatchImageMatcher';
-import { isUserAdmin, loginWithGoogle, logoutGoogle } from '../authService';
+import { isUserAdmin, logout } from '../authService';
 
 export type AdminType = 'home' | 'catalog' | 'master';
 
@@ -615,20 +615,6 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
                 </div>
               )}
 
-              <button
-                type="button"
-                onClick={() => loginWithGoogle().catch(err => setError(err.message || 'Falha no login com Google'))}
-                className="w-full bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold py-3 rounded-xl transition flex items-center justify-center gap-2 shadow-lg shadow-purple-950/50 active:scale-98"
-              >
-                <LogIn size={18} /> Entrar com Google (Admin)
-              </button>
-
-              <div className="flex items-center gap-3 my-5">
-                <div className="flex-1 h-px bg-slate-800" />
-                <span className="text-[11px] text-slate-500 uppercase tracking-wider font-semibold">ou e-mail e senha</span>
-                <div className="flex-1 h-px bg-slate-800" />
-              </div>
-
               <form onSubmit={handleAuth} className="space-y-3">
                 <input 
                   type="email" 
@@ -662,10 +648,10 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
               </p>
               <div className="pt-3 flex flex-col gap-2">
                 <button 
-                  onClick={() => loginWithGoogle().catch(err => setError(err.message))}
+                  onClick={() => logout().then(() => setUser(null)).catch(err => setError(err.message))}
                   className="w-full bg-purple-600 hover:bg-purple-500 text-white font-bold py-2.5 rounded-xl transition text-xs flex items-center justify-center gap-2 shadow-lg shadow-purple-900/40"
                 >
-                  <LogIn size={15} /> Trocar para Conta de Administrador
+                  <LogIn size={15} /> Sair e Entrar com Conta Admin
                 </button>
                 <button 
                   onClick={onClose}
@@ -2148,8 +2134,8 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
 
                         <div className="mb-6 max-h-96 overflow-y-auto custom-scrollbar pr-2 space-y-3">
                           <h4 className="font-bold text-purple-400 mb-2">Cartas Encontradas ({parsedBatchCards.length})</h4>
-                          {parsedBatchCards.map(c => (
-                            <div key={c.code} className="bg-slate-950 border border-slate-800 p-3 rounded flex flex-col xl:flex-row xl:items-start gap-4">
+                          {parsedBatchCards.map((c, idx) => (
+                            <div key={`${c.code}-${idx}`} className="bg-slate-950 border border-slate-800 p-3 rounded flex flex-col xl:flex-row xl:items-start gap-4">
                               <div className="flex-1 min-w-0">
                                 <h5 className="font-bold text-white text-sm truncate">{c.name}</h5>
                                 <p className="text-xs text-slate-500">{c.code} • {c.type} • {c.collection || 'Sem Coleção'}</p>

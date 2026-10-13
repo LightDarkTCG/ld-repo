@@ -62,6 +62,78 @@ export const getCardDisplayPriority = (card: CardData): number => {
   return 1; // Legado / Base (3ª prioridade)
 };
 
+/**
+ * Regra: Quando a carta tiver frame legado e frame moderno, usar somente moderno.
+ * Converte a carta para sua versão ou variante moderna caso exista no catálogo ou em suas variantes.
+ */
+export const resolveModernFrameOnly = (card: CardData, allCardsList: CardData[]): CardData => {
+  if (!card) return card;
+  const baseCode = cleanCardCode(card.parentCode || card.code).toLowerCase();
+
+  // 1. Se a carta já tem frame Moderno:
+  if (card.frame === 'Moderno' || (card.code && card.code.endsWith('-M'))) {
+    const modernOnlyVariants = card.variants?.filter(
+      v => v.frame === 'Moderno' || (v.frame !== 'Legado' && !(v.name || '').toLowerCase().includes('legado'))
+    );
+    return {
+      ...card,
+      frame: 'Moderno',
+      variants: modernOnlyVariants && modernOnlyVariants.length > 0 ? modernOnlyVariants : undefined
+    };
+  }
+
+  // 2. Se a carta possui variante com frame Moderno dentro do seu próprio array de variantes:
+  const modernVariant = card.variants?.find(v => v.frame === 'Moderno');
+  if (modernVariant) {
+    const modernOnlyVariants = card.variants?.filter(
+      v => v.frame === 'Moderno' || (v.frame !== 'Legado' && !(v.name || '').toLowerCase().includes('legado'))
+    );
+    return {
+      ...card,
+      frame: 'Moderno',
+      imageUrl: modernVariant.imageUrl || card.imageUrl,
+      variationType: modernVariant.name || 'Novo Frame',
+      variants: modernOnlyVariants && modernOnlyVariants.length > 0 ? modernOnlyVariants : undefined
+    };
+  }
+
+  // 3. Se no catálogo geral allCardsList existe uma carta com o mesmo código base que tem frame Moderno:
+  if (allCardsList && allCardsList.length > 0) {
+    const matchingModern = allCardsList.find(c =>
+      c &&
+      (c.frame === 'Moderno' || (c.code && c.code.endsWith('-M')) || c.variants?.some(v => v.frame === 'Moderno')) &&
+      cleanCardCode(c.parentCode || c.code).toLowerCase() === baseCode
+    );
+
+    if (matchingModern) {
+      if (matchingModern.frame === 'Moderno') {
+        const modernOnlyVariants = matchingModern.variants?.filter(
+          v => v.frame === 'Moderno' || (v.frame !== 'Legado' && !(v.name || '').toLowerCase().includes('legado'))
+        );
+        return {
+          ...card,
+          imageUrl: matchingModern.imageUrl || card.imageUrl,
+          frame: 'Moderno',
+          variationType: matchingModern.variationType || 'Novo Frame',
+          variants: modernOnlyVariants && modernOnlyVariants.length > 0 ? modernOnlyVariants : undefined
+        };
+      }
+      const matchModVar = matchingModern.variants?.find(v => v.frame === 'Moderno');
+      if (matchModVar) {
+        return {
+          ...card,
+          imageUrl: matchModVar.imageUrl || card.imageUrl,
+          frame: 'Moderno',
+          variationType: matchModVar.name || 'Novo Frame',
+          variants: matchingModern.variants?.filter(v => v.frame === 'Moderno')
+        };
+      }
+    }
+  }
+
+  return card;
+};
+
 interface CardContextType {
   cards: CardData[];
   archetypes: ArchetypeData[];

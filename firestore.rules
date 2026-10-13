@@ -22,10 +22,22 @@ service cloud.firestore {
         allow read, write: if isOwner(userId) || isAdmin();
       }
 
-      // Decks salvos na nuvem
+      // Decks salvos na nuvem (leitura pública para cálculo das cartas mais populares da comunidade)
       match /savedDecks/{deckId} {
-        allow read, write: if isOwner(userId) || isAdmin();
+        allow read: if true;
+        allow write: if isOwner(userId) || isAdmin();
       }
+    }
+
+    // Suporte para Collection Group queries de savedDecks em toda a comunidade
+    match /{path=**}/savedDecks/{deckId} {
+      allow read: if true;
+    }
+
+    // Coleção pública espelhada de decks salvos da comunidade
+    match /communityDecks/{deckId} {
+      allow read: if true;
+      allow write: if request.auth != null;
     }
 
     // --- CONTEÚDO PÚBLICO (SOMENTE ADMIN PODE EDITAR/CRIAR/DELETAR) ---

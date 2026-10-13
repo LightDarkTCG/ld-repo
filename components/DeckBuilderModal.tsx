@@ -1,13 +1,14 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { X, Search, Save, Download, Trash2, Plus, Minus, AlertTriangle, CheckCircle, BarChart3, Copy, Eye, ChevronDown, ChevronUp, ChevronRight, ChevronLeft, Layers, Network, Cloud } from 'lucide-react';
+import { X, Search, Save, Download, Trash2, Plus, Minus, AlertTriangle, CheckCircle, BarChart3, Copy, Eye, ChevronDown, ChevronUp, ChevronRight, ChevronLeft, Layers, Network, Cloud, Flame } from 'lucide-react';
 import { CardData } from '../types';
 import { collectionsList, archetypesList } from '../data';
-import { useCards, cleanCardCode, getCardDisplayPriority } from '../CardContext';
+import { useCards, cleanCardCode, getCardDisplayPriority, resolveModernFrameOnly } from '../CardContext';
 import { compareCardCodes, isHeroGroupValid, getStructuralDeck } from '../deckUtils';
 import { Card } from './Card';
 import { CardDetailModal } from './CardDetailModal';
 import { CardNeuralMap } from './CardNeuralMap';
 import { SavedDecksModal } from './SavedDecksModal';
+import { PopularCardsModal } from './PopularCardsModal';
 
 interface DeckBuilderModalProps {
   isOpen: boolean;
@@ -24,6 +25,7 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
   const [activeTab, setActiveTab] = useState<'build' | 'neural' | 'stats' | 'save'>('build');
   const [inspectCard, setInspectCard] = useState<CardData | null>(null);
   const [showCloudDecksModal, setShowCloudDecksModal] = useState(false);
+  const [showPopularModal, setShowPopularModal] = useState(false);
   const [filters, setFilters] = useState({
     type: "Todos",
     archetype: "Todos",
@@ -220,16 +222,26 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
     const poolCards: CardData[] = [];
     groupedByCard.forEach((group) => {
       let chosenCard: CardData;
-      if (filters.frame === 'Moderno') {
-        const modernOptions = group.filter(c => c.frame === 'Moderno' || (c.code && c.code.endsWith('-M')));
+
+      const baseGroupCodeCheck = cleanCardCode(group[0]?.parentCode || group[0]?.code).toLowerCase();
+      const hasModern = group.some(c => c.frame === 'Moderno' || (c.code && c.code.endsWith('-M')) || c.variants?.some(v => v.frame === 'Moderno')) ||
+        allCards.some(c => c && (c.frame === 'Moderno' || (c.code && c.code.endsWith('-M')) || c.variants?.some(v => v.frame === 'Moderno')) && cleanCardCode(c.parentCode || c.code).toLowerCase() === baseGroupCodeCheck);
+
+      if (filters.frame === 'Legado' && hasModern) {
+        return;
+      }
+
+      if (filters.frame === 'Moderno' || hasModern) {
+        const modernOptions = group.filter(c => c.frame === 'Moderno' || (c.code && c.code.endsWith('-M')) || c.variants?.some(v => v.frame === 'Moderno'));
         chosenCard = modernOptions.length > 0 ? modernOptions[0] : group[0];
+        chosenCard = resolveModernFrameOnly(chosenCard, allCards);
       } else if (filters.frame === 'Legado') {
         const legacyOptions = group.filter(c => (c.frame || 'Legado') === 'Legado' && !c.code?.endsWith('-M'));
         chosenCard = legacyOptions.length > 0 ? legacyOptions[0] : group[0];
       } else {
         // Frame: "Todos" -> Apply Priority: Moderno > AA / Skin > Legado
         const sorted = [...group].sort((a, b) => getCardDisplayPriority(b) - getCardDisplayPriority(a));
-        chosenCard = sorted[0];
+        chosenCard = resolveModernFrameOnly(sorted[0], allCards);
       }
 
       poolCards.push({
@@ -318,6 +330,14 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
         allCards={allCards}
       />
 
+      {/* Popular Cards Meta Modal */}
+      <PopularCardsModal
+        isOpen={showPopularModal}
+        onClose={() => setShowPopularModal(false)}
+        allCards={allCards}
+        onSelectCard={(c) => setInspectCard(c)}
+      />
+
       {/* Header */}
       <div className="bg-slate-900 border-b border-slate-800 p-2 md:p-4 flex flex-col md:flex-row justify-between items-center shadow-lg gap-2 md:gap-0 shrink-0">
         <div className="flex flex-col md:flex-row items-center gap-2 md:gap-4 w-full md:w-auto">
@@ -358,6 +378,14 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
             >
               <Cloud size={14} className="text-purple-300" />
               <span>Decks na Nuvem</span>
+            </button>
+            <button 
+              onClick={() => setShowPopularModal(true)}
+              className="flex-1 md:flex-none px-2 md:px-3 py-1.5 rounded-md text-[10px] md:text-sm font-bold transition whitespace-nowrap flex items-center justify-center gap-1.5 bg-gradient-to-r from-red-950/80 to-amber-950/80 text-amber-200 hover:text-white border border-amber-600/40 shadow-sm active:scale-95"
+              title="Ver as 10 cartas mais usadas no Meta por categoria"
+            >
+              <Flame size={14} className="text-red-400" />
+              <span>Cartas Populares</span>
             </button>
           </div>
         </div>
@@ -513,7 +541,7 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
                   const isInDeck = isInMain || isInSide;
                   return (
                     <div 
-                      key={card.code || `${card.name}-${idx}`} 
+                      key={`${card.code || card.name}_${card.collection || ''}_${card.frame || ''}_${idx}`} 
                       className={`cursor-pointer group relative ${isInDeck ? 'opacity-50' : ''}`}
                     >
                       <div className="absolute top-1 right-1 z-10 opacity-0 group-hover:opacity-100 transition flex flex-col gap-1">
