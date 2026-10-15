@@ -22,10 +22,264 @@ const normalizeCode = (val: string | undefined | null) =>
   (val ? String(val) : '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
 
 /**
+ * Helper to parse a card code into structured components:
+ * year, set, letter prefix (e.g. 'B'), and numeric value.
+ */
+function parseCardCodeParts(code: string | undefined | null) {
+  if (!code) return null;
+  const parts = String(code).trim().split('/');
+  if (parts.length === 3) {
+    const rawNum = parts[2];
+    const match = rawNum.match(/^([a-zA-Z]*)(\d+)$/);
+    if (match) {
+      return {
+        year: parts[0],
+        set: parts[1],
+        letter: match[1].toUpperCase(),
+        num: parseInt(match[2], 10)
+      };
+    }
+  }
+  return null;
+}
+
+/**
+ * Encodes a single card into an ultra-short token:
+ * - 2025/0001/00042 -> "42"
+ * - 2025/0001/B0152 -> "B152"
+ * - 2026/0001/00301 -> "2.301"
+ * - 2026/0002/00315 -> "3.315"
+ * - If Modern frame -> appends "m" (e.g. "152m")
+ */
+export function encodeCardToken(card: CardData): string {
+  const code = (card.code || card.id || '').trim();
+  const isMod = card.frame === 'Moderno' || (card.id && card.id.includes('-MOD'));
+  const modSuffix = isMod ? 'm' : '';
+
+  const parsed = parseCardCodeParts(code);
+  if (!parsed) {
+    return `${code}${modSuffix}`;
+  }
+
+  const { year, set, letter, num } = parsed;
+  let pfx = '';
+  if (year === '2025' && set === '0001') {
+    pfx = '';
+  } else if (year === '2026' && set === '0001') {
+    pfx = '2.';
+  } else if (year === '2026' && set === '0002') {
+    pfx = '3.';
+  } else {
+    pfx = `${year.slice(2)}_${parseInt(set, 10)}.`;
+  }
+
+  return `${pfx}${letter}${num}${modSuffix}`;
+}
+
+/**
+ * Encodes a complete deck (Main + Side) into an ultra-compact string:
+ * Format: "LDT:1,2,3,4...;31,32,33"
+ * Size is typically ~70-150 characters (compared to ~900 characters in previous Base64 JSON).
+ */
+export function encodeDeckCode(mainDeck: CardData[], sideDeck: CardData[] = []): string {
+  const mainPart = (mainDeck || []).map(encodeCardToken).join(',');
+  const sidePart = (sideDeck || []).map(encodeCardToken).join(',');
+  if (sidePart) {
+    return `LDT:${mainPart};${sidePart}`;
+  }
+  return `LDT:${mainPart}`;
+}
+
+/**
+ * Decodes a single token back to CardData from the available cards list
+ */
+export function decodeCardToken(token: string, cards: CardData[]): CardData | null {
+  token = (token || '').trim();
+  if (!token) return null;
+
+  const isMod = token.endsWith('m') || token.endsWith('M');
+  const clean = isMod ? token.slice(0, -1) : token;
+
+  let targetYear = '2025';
+  let targetSet = '0001';
+  let rest = clean;
+
+  if (clean.includes('.')) {
+    const [pfx, numPart] = clean.split('.');
+    rest = numPart;
+    if (pfx === '2') {
+      targetYear = '2026';
+      targetSet = '0001';
+    } else if (pfx === '3') {
+      targetYear = '2026';
+      targetSet = '0002';
+    } else if (pfx.includes('_')) {
+      const [y, s] = pfx.split('_');
+      targetYear = y.length === 2 ? `20${y}` : y;
+      targetSet = s.padStart(4, '0');
+    }
+  }
+
+  const matchLetterNum = rest.match(/^([a-zA-Z]*)(\d+)$/);
+  if (matchLetterNum) {
+    const targetLetter = matchLetterNum[1].toUpperCase();
+    const targetNum = parseInt(matchLetterNum[2], 10);
+
+    // 1. Try frame-exact match first
+    let match = cards.find(c => {
+      const pk = parseCardCodeParts(c.code);
+      if (!pk) return false;
+      if (pk.year !== targetYear || parseInt(pk.set, 10) !== parseInt(targetSet, 10)) return false;
+      if (pk.letter !== targetLetter || pk.num !== targetNum) return false;
+      if (isMod) {
+        return c.frame === 'Moderno' || (c.id && c.id.includes('-MOD'));
+      } else {
+        return c.frame !== 'Moderno';
+      }
+    });
+    if (match) return match;
+
+    // 2. Try match without frame requirement
+    match = cards.find(c => {
+      const pk = parseCardCodeParts(c.code);
+      if (!pk) return false;
+      return pk.year === targetYear && parseInt(pk.set, 10) === parseInt(targetSet, 10) && pk.letter === targetLetter && pk.num === targetNum;
+    });
+    if (match) return match;
+  }
+
+  // 3. Fallback: Direct code or name match
+  const norm = (s?: string) => (s || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+  const cleanNorm = norm(clean);
+
+  const fallback = cards.find(c => {
+    return norm(c.code) === cleanNorm || norm(c.id) === cleanNorm || norm(c.name) === cleanNorm;
+  });
+
+  return fallback || null;
+}
+
+/**
+ * Universal deck decoder supporting:
+ * 1. Compact LDT format ("LDT:1,2,3;31,32")
+ * 2. Legacy Base64 JSON ("eyJtYWluIjp...")
+ * 3. Raw JSON ({ main: [...], side: [...] })
+ * 4. Plain comma or newline separated card codes
+ */
+export function decodeDeckCode(
+  rawInput: string | undefined | null,
+  cards: CardData[]
+): { main: CardData[]; side: CardData[]; missingCount: number; isValid: boolean } {
+  if (!rawInput || typeof rawInput !== 'string') {
+    return { main: [], side: [], missingCount: 0, isValid: false };
+  }
+  const trimmed = rawInput.trim();
+  if (!trimmed) {
+    return { main: [], side: [], missingCount: 0, isValid: false };
+  }
+
+  const cardsList = Array.isArray(cards) ? cards : [];
+  const mainList: CardData[] = [];
+  const sideList: CardData[] = [];
+  let missing = 0;
+
+  // 1. Compact LDT format
+  if (trimmed.startsWith('LDT:') || trimmed.startsWith('ldt:') || trimmed.startsWith('LDT1:')) {
+    const content = trimmed.replace(/^LDT1?:/i, '').trim();
+    const [mainStr, sideStr] = content.split(';');
+
+    if (mainStr) {
+      const tokens = mainStr.split(',').map(t => t.trim()).filter(Boolean);
+      for (const t of tokens) {
+        const found = decodeCardToken(t, cardsList);
+        if (found) mainList.push(found);
+        else missing++;
+      }
+    }
+
+    if (sideStr) {
+      const tokens = sideStr.split(',').map(t => t.trim()).filter(Boolean);
+      for (const t of tokens) {
+        const found = decodeCardToken(t, cardsList);
+        if (found) sideList.push(found);
+        else missing++;
+      }
+    }
+
+    return {
+      main: mainList,
+      side: sideList,
+      missingCount: missing,
+      isValid: mainList.length > 0 || sideList.length > 0
+    };
+  }
+
+  // 2. Base64 JSON (Legacy Deck Builder format) or Raw JSON
+  let parsedJson: any = null;
+  try {
+    const decoded = atob(trimmed);
+    parsedJson = JSON.parse(decoded);
+  } catch {
+    try {
+      parsedJson = JSON.parse(trimmed);
+    } catch {
+      parsedJson = null;
+    }
+  }
+
+  if (parsedJson && typeof parsedJson === 'object') {
+    let rawMain: string[] = [];
+    let rawSide: string[] = [];
+
+    if (Array.isArray(parsedJson)) {
+      rawMain = parsedJson;
+    } else {
+      if (Array.isArray(parsedJson.main)) rawMain = parsedJson.main;
+      if (Array.isArray(parsedJson.side)) rawSide = parsedJson.side;
+    }
+
+    for (const code of rawMain) {
+      const found = decodeCardToken(code, cardsList);
+      if (found) mainList.push(found);
+      else missing++;
+    }
+
+    for (const code of rawSide) {
+      const found = decodeCardToken(code, cardsList);
+      if (found) sideList.push(found);
+      else missing++;
+    }
+
+    return {
+      main: mainList,
+      side: sideList,
+      missingCount: missing,
+      isValid: mainList.length > 0 || sideList.length > 0
+    };
+  }
+
+  // 3. Fallback: Comma/newline separated list
+  const lines = trimmed.split(/[\n,]/).map(l => l.trim()).filter(Boolean);
+  for (const line of lines) {
+    const found = decodeCardToken(line, cardsList);
+    if (found) mainList.push(found);
+    else missing++;
+  }
+
+  return {
+    main: mainList,
+    side: sideList,
+    missingCount: missing,
+    isValid: mainList.length > 0
+  };
+}
+
+/**
  * Parses deck codes from either:
- * 1. Base64 encoded string generated by the Deck Builder: btoa(JSON.stringify({ main: string[], side: string[] }))
- * 2. Raw JSON string: { main: [...], side: [...] } or [...]
- * 3. Comma/newline separated codes with optional multipliers: "3x 2026/0001/00301, 2025/0001/00001"
+ * 1. Ultra-compact LDT format: LDT:1,2,3;31,32
+ * 2. Legacy Base64 encoded string generated by the Deck Builder: btoa(JSON.stringify({ main: string[], side: string[] }))
+ * 3. Raw JSON string: { main: [...], side: [...] } or [...]
+ * 4. Comma/newline separated codes with optional multipliers: "3x 2026/0001/00301, 2025/0001/00001"
  */
 export function parseDeckFromCode(rawInput: string | undefined | null, allCards?: CardData[]): ParsedDeckData {
   const emptyResult: ParsedDeckData = {
@@ -46,16 +300,53 @@ export function parseDeckFromCode(rawInput: string | undefined | null, allCards?
 
   const cardsList = Array.isArray(allCards) ? allCards : [];
 
+  // 1. Try Compact LDT format first
+  if (trimmed.startsWith('LDT:') || trimmed.startsWith('ldt:') || trimmed.startsWith('LDT1:')) {
+    const decoded = decodeDeckCode(trimmed, cardsList);
+    const groupCardList = (list: CardData[]): DeckCardEntry[] => {
+      const map = new Map<string, { qty: number; card: CardData }>();
+      for (const c of list) {
+        const key = c.code || c.id || c.name;
+        const existing = map.get(key);
+        if (existing) {
+          existing.qty++;
+        } else {
+          map.set(key, { qty: 1, card: c });
+        }
+      }
+      return Array.from(map.entries()).map(([code, item]) => ({
+        code,
+        qty: item.qty,
+        card: item.card
+      }));
+    };
+
+    const mainDeck = groupCardList(decoded.main);
+    const sideDeck = groupCardList(decoded.side);
+
+    return {
+      isValid: decoded.isValid,
+      isDeckBuilderCode: true,
+      mainDeck,
+      sideDeck,
+      totalMainCount: decoded.main.length,
+      totalSideCount: decoded.side.length,
+      totalCount: decoded.main.length + decoded.side.length,
+      rawDeckBuilderCode: trimmed,
+      missingCodes: []
+    };
+  }
+
   let parsedJson: any = null;
   let isDeckBuilderCode = false;
 
-  // 1. Try Base64 decoding (standard Deck Builder format)
+  // 2. Try Base64 decoding (legacy Deck Builder format)
   try {
     const decoded = atob(trimmed);
     parsedJson = JSON.parse(decoded);
     isDeckBuilderCode = true;
   } catch {
-    // 2. Try direct JSON parsing
+    // 3. Try direct JSON parsing
     try {
       parsedJson = JSON.parse(trimmed);
       isDeckBuilderCode = true;
@@ -135,10 +426,22 @@ export function parseDeckFromCode(rawInput: string | undefined | null, allCards?
     const totalMainCount = mainCodesRaw.length;
     const totalSideCount = sideCodesRaw.length;
 
-    // Ensure rawDeckBuilderCode is clean Base64
+    // Convert to compact LDT code
     let rawDeckBuilderCode = trimmed;
     try {
-      rawDeckBuilderCode = btoa(JSON.stringify({ main: mainCodesRaw, side: sideCodesRaw }));
+      const flatMainCards: CardData[] = [];
+      mainDeck.forEach(entry => {
+        for (let i = 0; i < entry.qty; i++) {
+          flatMainCards.push(entry.card || ({ code: entry.code } as any));
+        }
+      });
+      const flatSideCards: CardData[] = [];
+      sideDeck.forEach(entry => {
+        for (let i = 0; i < entry.qty; i++) {
+          flatSideCards.push(entry.card || ({ code: entry.code } as any));
+        }
+      });
+      rawDeckBuilderCode = encodeDeckCode(flatMainCards, flatSideCards);
     } catch {
       rawDeckBuilderCode = trimmed;
     }
@@ -165,6 +468,7 @@ export function parseDeckFromCode(rawInput: string | undefined | null, allCards?
   const flatMainCodes: string[] = [];
   const entries: DeckCardEntry[] = [];
   const missing: string[] = [];
+  const flatCards: CardData[] = [];
 
   for (const entry of rawEntries) {
     const match = entry.match(/^(\d+)\s*[xX]?\s+(.+)$/);
@@ -183,6 +487,8 @@ export function parseDeckFromCode(rawInput: string | undefined | null, allCards?
 
     for (let i = 0; i < qty; i++) {
       flatMainCodes.push(finalCode);
+      if (card) flatCards.push(card);
+      else flatCards.push({ code: finalCode } as any);
     }
 
     entries.push({
@@ -192,11 +498,11 @@ export function parseDeckFromCode(rawInput: string | undefined | null, allCards?
     });
   }
 
-  let generatedBase64 = '';
+  let generatedCompactCode = '';
   try {
-    generatedBase64 = btoa(JSON.stringify({ main: flatMainCodes, side: [] }));
+    generatedCompactCode = encodeDeckCode(flatCards, []);
   } catch {
-    generatedBase64 = '';
+    generatedCompactCode = '';
   }
 
   return {
@@ -207,7 +513,7 @@ export function parseDeckFromCode(rawInput: string | undefined | null, allCards?
     totalMainCount: flatMainCodes.length,
     totalSideCount: 0,
     totalCount: flatMainCodes.length,
-    rawDeckBuilderCode: generatedBase64,
+    rawDeckBuilderCode: generatedCompactCode,
     missingCodes: missing
   };
 }

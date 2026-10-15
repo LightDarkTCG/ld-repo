@@ -439,8 +439,8 @@ export const AlbumModal: React.FC<AlbumModalProps> = ({ isOpen, onClose, onSelec
                 title="Visualizar Ranking Top 10 dos Maiores Colecionadores"
               >
                 <Trophy size={16} className="text-amber-400 fill-amber-400/20" />
-                <span className="hidden sm:inline">Top 10 Colecionadores</span>
-                <span className="sm:hidden">Ranking</span>
+                <span className="hidden sm:inline">Hall da Fama</span>
+                <span className="sm:hidden">Hall da Fama</span>
               </button>
             )}
 

@@ -5,7 +5,7 @@ import {
   ShoppingCart, ExternalLink, Search, Filter, Box, ArrowDownAZ,
   Menu, X, ChevronRight, ChevronDown, ChevronUp, Scale, Ghost, Instagram, MessageCircle, Mail, Music, Info,
   Sword, Shield, Clock, AlertTriangle, Users, FileText, CheckCircle, Crown, Youtube, Settings, Sparkles,
-  LogIn, LogOut, BookmarkCheck, Cloud, User as UserIcon, Edit2, Check, Flame, Trophy
+  LogIn, LogOut, BookmarkCheck, Cloud, User as UserIcon, Edit2, Check, Flame, Trophy, Award
 } from 'lucide-react';
 import { Card } from './components/Card';
 import { GameField } from './components/GameField';
@@ -16,6 +16,7 @@ import { SavedDecksModal } from './components/SavedDecksModal';
 import { AuthModal } from './components/AuthModal';
 import { PopularCardsModal } from './components/PopularCardsModal';
 import { CollectorsRankingModal } from './components/CollectorsRankingModal';
+import { ChampionshipHistoryModal } from './components/ChampionshipHistoryModal';
 import { useAuth } from './authService';
 import GameBoard from './components/GameBoard';
 import { TournamentManager } from './components/TournamentManager';
@@ -1135,6 +1136,8 @@ export default function App() {
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const [isGameOpen, setIsGameOpen] = useState(false);
   const [isTournamentOpen, setIsTournamentOpen] = useState(false);
+  const [activeTournamentId, setActiveTournamentId] = useState<string | undefined>(undefined);
+  const [isChampionshipHistoryOpen, setIsChampionshipHistoryOpen] = useState(false);
   const [adminMode, setAdminMode] = useState<'none' | 'home' | 'catalog' | 'master'>('none');
   const [selectedType, setSelectedType] = useState<string | null>(null);
   const [scrolled, setScrolled] = useState(false);
@@ -1185,6 +1188,12 @@ export default function App() {
     if (params.get('mode') === 'game') {
       setIsGameMode(true);
       setIsGameOpen(true);
+    }
+
+    const tournamentParam = params.get('torneio') || params.get('tournament');
+    if (tournamentParam) {
+      setActiveTournamentId(tournamentParam);
+      setIsTournamentOpen(true);
     }
 
     const fetchHomeSettings = async () => {
@@ -1361,7 +1370,25 @@ export default function App() {
         isOpen={isAuthModalOpen} 
         onClose={() => setIsAuthModalOpen(false)} 
       />
-      {isTournamentOpen && <TournamentManager onClose={() => setIsTournamentOpen(false)} />}
+      {isTournamentOpen && (
+        <TournamentManager 
+          initialTournamentId={activeTournamentId}
+          onClose={() => {
+            setIsTournamentOpen(false);
+            setActiveTournamentId(undefined);
+          }}
+          onOpenAuth={() => setIsAuthModalOpen(true)}
+        />
+      )}
+      <ChampionshipHistoryModal
+        isOpen={isChampionshipHistoryOpen}
+        onClose={() => setIsChampionshipHistoryOpen(false)}
+        onOpenTournament={(tId) => {
+          setActiveTournamentId(tId);
+          setIsTournamentOpen(true);
+        }}
+        onOpenAuth={() => setIsAuthModalOpen(true)}
+      />
       <TypeModal type={selectedType} onClose={() => setSelectedType(null)} />
       {isGameOpen && <GameBoard onClose={() => setIsGameOpen(false)} />}
       {adminMode !== 'none' && isAdmin && <AdminPanel adminType={adminMode} onClose={() => {
@@ -1393,7 +1420,7 @@ export default function App() {
               onClick={() => setIsTournamentOpen(true)}
               className="bg-slate-100 hover:bg-white text-slate-950 px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 flex items-center gap-1.5 shadow-sm active:scale-95 whitespace-nowrap"
             >
-              <Crown size={14} className="text-amber-500 fill-amber-500/30" /> Criar Torneio
+              <Crown size={14} className="text-amber-500 fill-amber-500/30" /> Torneio
             </button>
             <button 
               onClick={() => setIsDeckBuilderOpen(true)} 
@@ -1408,43 +1435,17 @@ export default function App() {
             >
               <Flame size={14} className="text-red-500 fill-red-500/20" /> Cartas Populares
             </button>
-            <button 
-              onClick={() => setIsCollectorsRankingOpen(true)} 
-              className="bg-slate-100 hover:bg-white text-slate-950 px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 flex items-center gap-1.5 shadow-sm active:scale-95 whitespace-nowrap"
-              title="Ranking Top 10 dos Maiores Colecionadores"
-            >
-              <Trophy size={14} className="text-amber-500 fill-amber-500/20" /> Top Colecionadores
-            </button>
-            <a 
-              href="#novidades" 
-              className="bg-slate-100 hover:bg-white text-slate-950 px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 flex items-center gap-1.5 shadow-sm active:scale-95 whitespace-nowrap"
-            >
-              <Sparkles size={14} className="text-purple-600" /> Novidades
-            </a>
             <a 
               href="#arquetipos" 
               className="bg-slate-100 hover:bg-white text-slate-950 px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 flex items-center gap-1.5 shadow-sm active:scale-95 whitespace-nowrap"
             >
-              <BookOpen size={14} className="text-indigo-600" /> Arquétipos
-            </a>
-            <a 
-              href="#estrutura" 
-              className="bg-slate-100 hover:bg-white text-slate-950 px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 flex items-center gap-1.5 shadow-sm active:scale-95 whitespace-nowrap"
-            >
-              <Sword size={14} className="text-slate-700" /> Campo
+              <BookOpen size={14} className="text-indigo-600" /> Sobre o Jogo
             </a>
             <button 
               onClick={() => setIsBuyModalOpen(true)}
               className="bg-slate-100 hover:bg-white text-slate-950 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 flex items-center gap-1.5 shadow-sm active:scale-95 whitespace-nowrap"
             >
               <ShoppingCart size={14} className="text-slate-900" /> Comprar
-            </button>
-            <button 
-              onClick={() => setIsAlbumOpen(true)}
-              className="bg-slate-100 hover:bg-white text-slate-950 px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 flex items-center gap-1.5 shadow-sm active:scale-95 whitespace-nowrap"
-              title="Meu Álbum de Coleção"
-            >
-              <BookmarkCheck size={14} className="text-purple-600" /> Meu Álbum
             </button>
 
             {/* Conta / Perfil */}
@@ -1555,7 +1556,7 @@ export default function App() {
                       className="px-3 py-2 text-left text-xs text-slate-300 hover:text-white hover:bg-purple-900/30 flex items-center gap-2 transition"
                     >
                       <Trophy size={14} className="text-amber-400" />
-                      <span>Top 10 Colecionadores</span>
+                      <span>Hall da Fama</span>
                     </button>
 
                     <button
@@ -1564,6 +1565,14 @@ export default function App() {
                     >
                       <Cloud size={14} className="text-purple-400" />
                       <span>Meus Decks Salvos</span>
+                    </button>
+
+                    <button
+                      onClick={() => { setIsChampionshipHistoryOpen(true); setIsUserMenuOpen(false); }}
+                      className="px-3 py-2 text-left text-xs text-slate-300 hover:text-white hover:bg-purple-900/30 flex items-center gap-2 transition"
+                    >
+                      <Award size={14} className="text-amber-400" />
+                      <span>Histórico de Campeonatos</span>
                     </button>
 
                     <div className="border-t border-slate-800/80 my-1"></div>
@@ -1598,7 +1607,7 @@ export default function App() {
                   onClick={() => { setIsTournamentOpen(true); setIsMenuOpen(false); }}
                   className="bg-slate-100 hover:bg-white text-slate-950 px-3.5 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 shadow-sm"
                 >
-                  <Crown size={15} className="text-amber-500 fill-amber-500/30" /> Criar Torneio
+                  <Crown size={15} className="text-amber-500 fill-amber-500/30" /> Torneio
                 </button>
                 <button 
                   onClick={() => { setIsDeckBuilderOpen(true); setIsMenuOpen(false); }} 
@@ -1612,44 +1621,12 @@ export default function App() {
                 >
                   <Flame size={15} className="text-red-500 fill-red-500/20" /> Cartas Populares (Meta)
                 </button>
-                <button 
-                  onClick={() => { setIsCollectorsRankingOpen(true); setIsMenuOpen(false); }} 
-                  className="bg-slate-100 hover:bg-white text-slate-950 px-3.5 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 shadow-sm text-left"
-                >
-                  <Trophy size={15} className="text-amber-500 fill-amber-500/20" /> Top 10 Colecionadores
-                </button>
-                <button 
-                  onClick={() => { setIsAlbumOpen(true); setIsMenuOpen(false); }}
-                  className="bg-slate-100 hover:bg-white text-slate-950 px-3.5 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 shadow-sm"
-                >
-                  <BookmarkCheck size={15} className="text-purple-600" /> Meu Álbum
-                </button>
-                <button 
-                  onClick={() => { setIsSavedDecksOpen(true); setIsMenuOpen(false); }}
-                  className="bg-slate-100 hover:bg-white text-slate-950 px-3.5 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 shadow-sm"
-                >
-                  <Cloud size={15} className="text-purple-600" /> Meus Decks Salvos
-                </button>
-                <a 
-                  href="#novidades" 
-                  className="bg-slate-100 hover:bg-white text-slate-950 px-3.5 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 shadow-sm" 
-                  onClick={()=>setIsMenuOpen(false)}
-                >
-                  <Sparkles size={15} className="text-purple-600" /> Novidades
-                </a>
                 <a 
                   href="#arquetipos" 
                   className="bg-slate-100 hover:bg-white text-slate-950 px-3.5 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 shadow-sm" 
                   onClick={()=>setIsMenuOpen(false)}
                 >
-                  <BookOpen size={15} className="text-indigo-600" /> Arquétipos
-                </a>
-                <a 
-                  href="#estrutura" 
-                  className="bg-slate-100 hover:bg-white text-slate-950 px-3.5 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 shadow-sm" 
-                  onClick={()=>setIsMenuOpen(false)}
-                >
-                  <Sword size={15} className="text-slate-700" /> Campo
+                  <BookOpen size={15} className="text-indigo-600" /> Sobre o Jogo
                 </a>
                 <button 
                   onClick={() => { setIsBuyModalOpen(true); setIsMenuOpen(false); }}
@@ -1666,8 +1643,8 @@ export default function App() {
                     <LogIn size={15} /> Entrar na Conta
                   </button>
                 ) : (
-                  <>
-                    <div className="flex items-center justify-between bg-slate-900 border border-slate-800 px-3.5 py-2 rounded-lg text-xs">
+                  <div className="pt-2 border-t border-slate-800/80 flex flex-col gap-2">
+                    <div className="flex items-center justify-between bg-slate-900/90 border border-slate-800 px-3.5 py-2 rounded-lg text-xs">
                       <span className="font-bold text-white truncate max-w-[170px]">{user.displayName || 'Jogador'}</span>
                       <button
                         onClick={() => {
@@ -1681,13 +1658,42 @@ export default function App() {
                         <Edit2 size={12} /> Mudar Nome
                       </button>
                     </div>
+
+                    <button 
+                      onClick={() => { setIsAlbumOpen(true); setIsMenuOpen(false); }}
+                      className="bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white px-3.5 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 border border-slate-800"
+                    >
+                      <BookmarkCheck size={14} className="text-purple-400" /> Meu Álbum de Coleção
+                    </button>
+
+                    <button 
+                      onClick={() => { setIsCollectorsRankingOpen(true); setIsMenuOpen(false); }} 
+                      className="bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white px-3.5 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 border border-slate-800"
+                    >
+                      <Trophy size={14} className="text-amber-400" /> Hall da Fama
+                    </button>
+
+                    <button 
+                      onClick={() => { setIsSavedDecksOpen(true); setIsMenuOpen(false); }}
+                      className="bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white px-3.5 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 border border-slate-800"
+                    >
+                      <Cloud size={14} className="text-purple-400" /> Meus Decks Salvos
+                    </button>
+
+                    <button 
+                      onClick={() => { setIsChampionshipHistoryOpen(true); setIsMenuOpen(false); }}
+                      className="bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white px-3.5 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 border border-slate-800"
+                    >
+                      <Award size={14} className="text-amber-400" /> Histórico de Campeonatos
+                    </button>
+
                     <button 
                       onClick={() => { logout(); setIsMenuOpen(false); }}
                       className="bg-red-950/80 border border-red-800 text-red-300 hover:text-white px-3.5 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 shadow-sm"
                     >
-                      <LogOut size={15} /> Sair
+                      <LogOut size={15} /> Sair da Conta
                     </button>
-                  </>
+                  </div>
                 )}
              </div>
         )}

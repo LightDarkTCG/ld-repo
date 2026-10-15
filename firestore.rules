@@ -27,6 +27,12 @@ service cloud.firestore {
         allow read: if true;
         allow write: if isOwner(userId) || isAdmin();
       }
+
+      // Histórico de Campeonatos e Torneios do Usuário
+      match /championshipHistory/{historyId} {
+        allow read: if true;
+        allow write: if request.auth != null;
+      }
     }
 
     // Suporte para Collection Group queries de savedDecks em toda a comunidade
@@ -44,6 +50,13 @@ service cloud.firestore {
     match /collectorsRanking/{userId} {
       allow read: if true;
       allow write: if request.auth != null && (request.auth.uid == userId || isAdmin());
+    }
+
+    // Torneios Compartilhados da Comunidade e Oficiais
+    match /tournaments/{tournamentId} {
+      allow read: if true;
+      allow create, update: if true;
+      allow delete: if request.auth != null;
     }
 
     // --- CONTEÚDO PÚBLICO (SOMENTE ADMIN PODE EDITAR/CRIAR/DELETAR) ---

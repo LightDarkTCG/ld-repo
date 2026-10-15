@@ -147,7 +147,7 @@ export const CollectorsRankingModal: React.FC<CollectorsRankingModalProps> = ({
             <div>
               <div className="flex items-center gap-2">
                 <h3 className="text-xl sm:text-2xl font-black text-white tracking-tight flex items-center gap-2">
-                  Ranking dos Maiores Colecionadores
+                  Hall da Fama dos Colecionadores
                 </h3>
                 <span className="hidden sm:inline-flex px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-500/20 text-amber-300 border border-amber-500/40 items-center gap-1">
                   <Crown size={11} className="fill-amber-300" /> Top 10 Oficial

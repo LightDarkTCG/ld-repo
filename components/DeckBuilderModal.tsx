@@ -3,7 +3,7 @@ import { X, Search, Save, Download, Trash2, Plus, Minus, AlertTriangle, CheckCir
 import { CardData } from '../types';
 import { collectionsList, archetypesList } from '../data';
 import { useCards, cleanCardCode, getCardDisplayPriority, resolveModernFrameOnly } from '../CardContext';
-import { compareCardCodes, isHeroGroupValid, getStructuralDeck } from '../deckUtils';
+import { compareCardCodes, isHeroGroupValid, getStructuralDeck, encodeDeckCode, decodeDeckCode } from '../deckUtils';
 import { Card } from './Card';
 import { CardDetailModal } from './CardDetailModal';
 import { CardNeuralMap } from './CardNeuralMap';
@@ -124,50 +124,24 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
 
   const generateDeckCode = () => {
     if (!isValidToSave) return "";
-    const mainCodes = deck.map(c => c.code);
-    const sideCodes = sideDeck.map(c => c.code);
-    return btoa(JSON.stringify({ main: mainCodes, side: sideCodes }));
+    return encodeDeckCode(deck, sideDeck);
   };
 
   const loadDeckFromCode = () => {
     try {
-      const decoded = atob(importCode);
-      const parsed = JSON.parse(decoded);
-      
-      let mainCodes: string[] = [];
-      let sideCodes: string[] = [];
-
-      if (Array.isArray(parsed)) {
-        mainCodes = parsed;
-      } else if (parsed && parsed.main) {
-        mainCodes = parsed.main;
-        sideCodes = parsed.side || [];
-      } else {
-        throw new Error("Invalid format");
+      const decoded = decodeDeckCode(importCode, allCards);
+      if (!decoded.isValid && decoded.main.length === 0 && decoded.side.length === 0) {
+        alert("Código de deck inválido ou vazio. Verifique se copiou o código completo.");
+        return;
       }
-      
-      const newMainDeck: CardData[] = [];
-      const newSideDeck: CardData[] = [];
-      let missingCount = 0;
 
-      mainCodes.forEach(code => {
-        const found = allCards.find(c => c.code === code);
-        if (found) newMainDeck.push(found);
-        else missingCount++;
-      });
-
-      sideCodes.forEach(code => {
-        const found = allCards.find(c => c.code === code);
-        if (found) newSideDeck.push(found);
-        else missingCount++;
-      });
-
-      setDeck(newMainDeck);
-      setSideDeck(newSideDeck);
+      setDeck(decoded.main);
+      setSideDeck(decoded.side);
       setImportCode("");
-      alert(`Deck carregado! ${newMainDeck.length} cartas no principal, ${newSideDeck.length} no side deck.${missingCount > 0 ? ` ${missingCount} cartas não identificadas.` : ''}`);
+      setActiveTab('build');
+      alert(`Deck carregado com sucesso! ${decoded.main.length} cartas no principal, ${decoded.side.length} no side deck.${decoded.missingCount > 0 ? ` (${decoded.missingCount} cartas não identificadas).` : ''}`);
     } catch (e) {
-      alert("Código de deck inválido.");
+      alert("Código de deck inválido. Verifique se o código está correto.");
     }
   };
 
@@ -864,7 +838,7 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
                 {/* Export */}
                 <div>
                   <h3 className="text-2xl font-bold text-white mb-2">Salvar Deck</h3>
-                  <p className="text-slate-400 mb-4">Copie o código abaixo para salvar ou compartilhar seu deck.</p>
+                  <p className="text-slate-400 mb-4">Copie o código compacto abaixo para salvar ou compartilhar seu deck.</p>
                   
                   {deck.length > 0 || sideDeck.length > 0 ? (
                     isValidToSave ? (
@@ -873,15 +847,16 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
                           <input 
                             readOnly
                             value={generateDeckCode()}
-                            className="flex-1 bg-black border border-slate-700 rounded p-3 text-xs font-mono text-green-400 overflow-hidden text-ellipsis"
+                            className="flex-1 bg-black border border-slate-700 rounded p-3 text-xs font-mono text-green-400 overflow-hidden text-ellipsis select-all"
+                            title="Código compacto do deck"
                           />
                           <button 
                             onClick={() => {
                               navigator.clipboard.writeText(generateDeckCode());
-                              alert("Código copiado!");
+                              alert("Código compacto copiado!");
                             }}
                             className="bg-slate-800 hover:bg-slate-700 text-white p-3 rounded border border-slate-600 transition"
-                            title="Copiar"
+                            title="Copiar Código"
                           >
                             <Copy size={20} />
                           </button>
@@ -916,12 +891,12 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
                 {/* Import */}
                 <div>
                   <h3 className="text-2xl font-bold text-white mb-2">Carregar Deck</h3>
-                  <p className="text-slate-400 mb-4">Cole um código de deck aqui para editar.</p>
+                  <p className="text-slate-400 mb-4">Cole um código de deck aqui para editar (suporta o formato compacto LDT e códigos antigos).</p>
                   <div className="flex flex-col md:flex-row gap-2">
                     <input 
                       value={importCode}
                       onChange={(e) => setImportCode(e.target.value)}
-                      placeholder="Cole o código aqui..."
+                      placeholder="Cole o código do deck aqui (ex: LDT:1,2,3... ou código antigo)..."
                       className="flex-1 bg-black border border-slate-700 rounded p-3 text-sm text-white focus:border-purple-500 outline-none"
                     />
                     <button 
