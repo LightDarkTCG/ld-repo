@@ -5,7 +5,7 @@ import {
   ShoppingCart, ExternalLink, Search, Filter, Box, ArrowDownAZ,
   Menu, X, ChevronRight, ChevronDown, ChevronUp, Scale, Ghost, Instagram, MessageCircle, Mail, Music, Info,
   Sword, Shield, Clock, AlertTriangle, Users, FileText, CheckCircle, Crown, Youtube, Settings, Sparkles,
-  LogIn, LogOut, BookmarkCheck, Cloud, User as UserIcon, Edit2, Check, Flame
+  LogIn, LogOut, BookmarkCheck, Cloud, User as UserIcon, Edit2, Check, Flame, Trophy
 } from 'lucide-react';
 import { Card } from './components/Card';
 import { GameField } from './components/GameField';
@@ -15,6 +15,7 @@ import { AlbumModal } from './components/AlbumModal';
 import { SavedDecksModal } from './components/SavedDecksModal';
 import { AuthModal } from './components/AuthModal';
 import { PopularCardsModal } from './components/PopularCardsModal';
+import { CollectorsRankingModal } from './components/CollectorsRankingModal';
 import { useAuth } from './authService';
 import GameBoard from './components/GameBoard';
 import { TournamentManager } from './components/TournamentManager';
@@ -1129,6 +1130,7 @@ export default function App() {
   const [isAlbumOpen, setIsAlbumOpen] = useState(false);
   const [isSavedDecksOpen, setIsSavedDecksOpen] = useState(false);
   const [isPopularCardsOpen, setIsPopularCardsOpen] = useState(false);
+  const [isCollectorsRankingOpen, setIsCollectorsRankingOpen] = useState(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const [isGameOpen, setIsGameOpen] = useState(false);
@@ -1331,6 +1333,7 @@ export default function App() {
           setInspectedDeckCard(c);
         }} 
         onOpenAuth={() => setIsAuthModalOpen(true)}
+        onOpenRanking={() => setIsCollectorsRankingOpen(true)}
       />
       <SavedDecksModal
         isOpen={isSavedDecksOpen}
@@ -1347,6 +1350,12 @@ export default function App() {
         allCards={allCards}
         onSelectCard={(c) => setInspectedDeckCard(c)}
         onOpenDeckBuilder={() => setIsDeckBuilderOpen(true)}
+      />
+      <CollectorsRankingModal
+        isOpen={isCollectorsRankingOpen}
+        onClose={() => setIsCollectorsRankingOpen(false)}
+        onOpenAlbum={() => setIsAlbumOpen(true)}
+        onOpenAuth={() => setIsAuthModalOpen(true)}
       />
       <AuthModal 
         isOpen={isAuthModalOpen} 
@@ -1398,6 +1407,13 @@ export default function App() {
               title="Cartas Populares da Comunidade (Meta)"
             >
               <Flame size={14} className="text-red-500 fill-red-500/20" /> Cartas Populares
+            </button>
+            <button 
+              onClick={() => setIsCollectorsRankingOpen(true)} 
+              className="bg-slate-100 hover:bg-white text-slate-950 px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 flex items-center gap-1.5 shadow-sm active:scale-95 whitespace-nowrap"
+              title="Ranking Top 10 dos Maiores Colecionadores"
+            >
+              <Trophy size={14} className="text-amber-500 fill-amber-500/20" /> Top Colecionadores
             </button>
             <a 
               href="#novidades" 
@@ -1535,6 +1551,14 @@ export default function App() {
                     </button>
 
                     <button
+                      onClick={() => { setIsCollectorsRankingOpen(true); setIsUserMenuOpen(false); }}
+                      className="px-3 py-2 text-left text-xs text-slate-300 hover:text-white hover:bg-purple-900/30 flex items-center gap-2 transition"
+                    >
+                      <Trophy size={14} className="text-amber-400" />
+                      <span>Top 10 Colecionadores</span>
+                    </button>
+
+                    <button
                       onClick={() => { setIsSavedDecksOpen(true); setIsUserMenuOpen(false); }}
                       className="px-3 py-2 text-left text-xs text-slate-300 hover:text-white hover:bg-purple-900/30 flex items-center gap-2 transition"
                     >
@@ -1587,6 +1611,12 @@ export default function App() {
                   className="bg-slate-100 hover:bg-white text-slate-950 px-3.5 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 shadow-sm text-left"
                 >
                   <Flame size={15} className="text-red-500 fill-red-500/20" /> Cartas Populares (Meta)
+                </button>
+                <button 
+                  onClick={() => { setIsCollectorsRankingOpen(true); setIsMenuOpen(false); }} 
+                  className="bg-slate-100 hover:bg-white text-slate-950 px-3.5 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 shadow-sm text-left"
+                >
+                  <Trophy size={15} className="text-amber-500 fill-amber-500/20" /> Top 10 Colecionadores
                 </button>
                 <button 
                   onClick={() => { setIsAlbumOpen(true); setIsMenuOpen(false); }}

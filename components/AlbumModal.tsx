@@ -16,19 +16,22 @@ import {
   PackagePlus,
   RefreshCw,
   Check,
-  Trash2
+  Trash2,
+  Trophy
 } from 'lucide-react';
 import { CardData } from '../types';
 import { useCards, cleanCardCode } from '../CardContext';
 import { useAuth } from '../authService';
 import { useUserAlbum, normalizeAlbumKey } from '../albumService';
 import { compareCardCodes } from '../deckUtils';
+import { syncUserCollectorStats } from '../collectorsService';
 
 interface AlbumModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSelectCard?: (card: CardData) => void;
   onOpenAuth?: () => void;
+  onOpenRanking?: () => void;
 }
 
 export type AlbumEdition = 'legado' | 'moderno' | 'all';
@@ -77,16 +80,24 @@ export const isSpecialCard = (c: CardData): boolean => {
   );
 };
 
-export const AlbumModal: React.FC<AlbumModalProps> = ({ isOpen, onClose, onSelectCard, onOpenAuth }) => {
+export const AlbumModal: React.FC<AlbumModalProps> = ({ isOpen, onClose, onSelectCard, onOpenAuth, onOpenRanking }) => {
   const { user } = useAuth();
   const { cards: allCards } = useCards();
   const { 
+    album,
     getQuantity, 
     incrementCard, 
     decrementCard, 
     addCollectionCards, 
     removeCollectionCards 
   } = useUserAlbum(user?.uid);
+
+  // Sincroniza estatísticas de colecionador na nuvem sempre que o acervo mudar
+  React.useEffect(() => {
+    if (user && user.uid && album && Object.keys(album).length > 0 && allCards.length > 0) {
+      syncUserCollectorStats(user.uid, user, album, allCards);
+    }
+  }, [album, user?.uid, allCards.length]);
 
   // Edição do Álbum (Padrão: Legado conforme solicitação do usuário)
   const [albumEdition, setAlbumEdition] = useState<AlbumEdition>('legado');
@@ -420,6 +431,19 @@ export const AlbumModal: React.FC<AlbumModalProps> = ({ isOpen, onClose, onSelec
           </div>
 
           <div className="flex items-center gap-2 sm:gap-3">
+            {/* BOTÃO PARA VISUALIZAR RANKING TOP 10 COLECIONADORES */}
+            {onOpenRanking && (
+              <button
+                onClick={onOpenRanking}
+                className="px-3 sm:px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 transition flex items-center gap-1.5 shadow-sm active:scale-95 shrink-0"
+                title="Visualizar Ranking Top 10 dos Maiores Colecionadores"
+              >
+                <Trophy size={16} className="text-amber-400 fill-amber-400/20" />
+                <span className="hidden sm:inline">Top 10 Colecionadores</span>
+                <span className="sm:hidden">Ranking</span>
+              </button>
+            )}
+
             {/* BOTÃO PARA INSERIR COLEÇÕES / DECKS COMPLETOS */}
             <button
               onClick={() => setShowBulkModal(true)}

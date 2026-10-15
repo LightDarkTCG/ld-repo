@@ -63,6 +63,25 @@
         "updatedAt": { "type": "string", "description": "Last update timestamp" }
       },
       "required": ["id", "name", "mainDeckCodes"]
+    },
+    "CollectorRankEntry": {
+      "title": "Collector Rank Entry",
+      "description": "Public collector leaderboard record for a user.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Firebase user UID" },
+        "displayName": { "type": "string", "description": "Player nickname" },
+        "email": { "type": "string", "description": "Player email" },
+        "photoURL": { "type": "string", "description": "Avatar URL" },
+        "uniqueCards": { "type": "number", "description": "Distinct cards owned" },
+        "totalCopies": { "type": "number", "description": "Total physical copies owned" },
+        "uniqueLegado": { "type": "number", "description": "Unique legacy cards" },
+        "uniqueModerno": { "type": "number", "description": "Unique modern cards" },
+        "specialCards": { "type": "number", "description": "Special cards owned" },
+        "completionPercentage": { "type": "number", "description": "Completion % of game catalogue" },
+        "updatedAt": { "type": "string", "description": "Timestamp of ranking sync" }
+      },
+      "required": ["userId", "displayName", "uniqueCards"]
     }
   },
   "firestore": {
@@ -85,6 +104,10 @@
     "users/{userId}/savedDecks": {
       "schema": { "$ref": "#/entities/UserSavedDeck" },
       "description": "User saved decks collection."
+    },
+    "collectorsRanking": {
+      "schema": { "$ref": "#/entities/CollectorRankEntry" },
+      "description": "Public community ranking of top card collectors."
     }
   }
 }

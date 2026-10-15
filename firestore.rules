@@ -40,6 +40,12 @@ service cloud.firestore {
       allow write: if request.auth != null;
     }
 
+    // Ranking público de maiores colecionadores da comunidade
+    match /collectorsRanking/{userId} {
+      allow read: if true;
+      allow write: if request.auth != null && (request.auth.uid == userId || isAdmin());
+    }
+
     // --- CONTEÚDO PÚBLICO (SOMENTE ADMIN PODE EDITAR/CRIAR/DELETAR) ---
     match /customCards/{document=**} {
       allow read: if true;
