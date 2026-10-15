@@ -230,14 +230,16 @@ export function computePopularCards(
     // Converte cada carta para sua versão Moderna se possuir ambas
     const modernCandidates = matchingCards.map(c => getModernCardForPopular(c, allCards));
 
-    // Deduplica por código limpo
+    // Deduplica garantindo que quando a carta tiver frame legado e frame moderno, usar SOMENTE moderno
     const uniqueCardsMap = new Map<string, CardData>();
     for (const card of modernCandidates) {
+      const normName = (card.name || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
       const clean = cleanCardCode(card.code).toLowerCase();
-      if (!clean) continue;
-      const existing = uniqueCardsMap.get(clean);
+      const dedupeKey = normName || clean;
+      if (!dedupeKey) continue;
+      const existing = uniqueCardsMap.get(dedupeKey);
       if (!existing || getCardDisplayPriority(card) > getCardDisplayPriority(existing)) {
-        uniqueCardsMap.set(clean, card);
+        uniqueCardsMap.set(dedupeKey, card);
       }
     }
 

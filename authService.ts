@@ -183,6 +183,7 @@ export const useAuth = () => {
     loginWithEmail,
     registerWithEmail,
     logoutGoogle,
+    logout: logoutGoogle,
     changeDisplayName
   };
 };

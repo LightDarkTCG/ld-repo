@@ -77,7 +77,7 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
       const testHeroes = [...existingHeroes, card];
       
       if (!isHeroGroupValid(testHeroes)) {
-        alert(`O herói "${card.name}" não pôde ser adicionado. Regras de deck build: permitido somente 1 Herói no deck principal (exceto duplas canônicas que interagem entre si).`);
+        alert(`O herói "${card.name}" não pôde ser adicionado. Regras de deck build: permitido somente 1 Herói no deck principal (exceto variações do mesmo herói como Mahina, ou heróis com nomes diferentes que citem seus nomes completos nos efeitos, ex: Salazar Sucumbido pelo Caos + Conceito Caos, Von Linden + Selena Macroverso Inverso, Labri + Jenos Destinado).`);
         return;
       }
     }
@@ -208,11 +208,13 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
 
   // --- Filtered Pool ---
   const filteredPool = useMemo(() => {
-    // Group allCards by collection and base card code to consolidate variations of the same card
+    // Group allCards by collection, base card code, and frame to keep Moderno and Legado cards completely independent
     const groupedByCard = new Map<string, CardData[]>();
     for (const card of allCards) {
       const baseCode = cleanCardCode(card.parentCode || card.code);
-      const key = `${card.collection || ''}_${baseCode}`;
+      const isCardModern = card.frame === 'Moderno' || (card.code && card.code.endsWith('-M'));
+      const frameKey = isCardModern ? 'Moderno' : 'Legado';
+      const key = `${card.collection || ''}_${baseCode}_${frameKey}`;
       if (!groupedByCard.has(key)) {
         groupedByCard.set(key, []);
       }
@@ -221,28 +223,9 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
 
     const poolCards: CardData[] = [];
     groupedByCard.forEach((group) => {
-      let chosenCard: CardData;
-
-      const baseGroupCodeCheck = cleanCardCode(group[0]?.parentCode || group[0]?.code).toLowerCase();
-      const hasModern = group.some(c => c.frame === 'Moderno' || (c.code && c.code.endsWith('-M')) || c.variants?.some(v => v.frame === 'Moderno')) ||
-        allCards.some(c => c && (c.frame === 'Moderno' || (c.code && c.code.endsWith('-M')) || c.variants?.some(v => v.frame === 'Moderno')) && cleanCardCode(c.parentCode || c.code).toLowerCase() === baseGroupCodeCheck);
-
-      if (filters.frame === 'Legado' && hasModern) {
-        return;
-      }
-
-      if (filters.frame === 'Moderno' || hasModern) {
-        const modernOptions = group.filter(c => c.frame === 'Moderno' || (c.code && c.code.endsWith('-M')) || c.variants?.some(v => v.frame === 'Moderno'));
-        chosenCard = modernOptions.length > 0 ? modernOptions[0] : group[0];
-        chosenCard = resolveModernFrameOnly(chosenCard, allCards);
-      } else if (filters.frame === 'Legado') {
-        const legacyOptions = group.filter(c => (c.frame || 'Legado') === 'Legado' && !c.code?.endsWith('-M'));
-        chosenCard = legacyOptions.length > 0 ? legacyOptions[0] : group[0];
-      } else {
-        // Frame: "Todos" -> Apply Priority: Moderno > AA / Skin > Legado
-        const sorted = [...group].sort((a, b) => getCardDisplayPriority(b) - getCardDisplayPriority(a));
-        chosenCard = resolveModernFrameOnly(sorted[0], allCards);
-      }
+      // Pick highest priority skin/variation within the SAME frame
+      const sorted = [...group].sort((a, b) => getCardDisplayPriority(b) - getCardDisplayPriority(a));
+      const chosenCard = sorted[0];
 
       poolCards.push({
         ...chosenCard,
@@ -310,13 +293,6 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
   return (
     <div className="fixed inset-0 z-[100] flex flex-col bg-[#0a0a0c] animate-in fade-in zoom-in duration-200">
       
-      {/* Inspect Modal */}
-      <CardDetailModal 
-        card={inspectCard} 
-        onClose={() => setInspectCard(null)} 
-        onSelectRelated={(related) => setInspectCard(related)}
-      />
-
       {/* Cloud Decks Modal */}
       <SavedDecksModal
         isOpen={showCloudDecksModal}
@@ -336,6 +312,13 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
         onClose={() => setShowPopularModal(false)}
         allCards={allCards}
         onSelectCard={(c) => setInspectCard(c)}
+      />
+
+      {/* Inspect Modal (rendered after and with z-[180] so it always appears above PopularCardsModal) */}
+      <CardDetailModal 
+        card={inspectCard} 
+        onClose={() => setInspectCard(null)} 
+        onSelectRelated={(related) => setInspectCard(related)}
       />
 
       {/* Header */}

@@ -90,7 +90,7 @@ export const PopularCardsModal: React.FC<PopularCardsModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[150] bg-black/85 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-[120] bg-black/85 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 animate-in fade-in duration-200">
       <div 
         className="bg-slate-950 border border-purple-500/30 w-full max-w-6xl max-h-[92vh] rounded-2xl sm:rounded-3xl shadow-2xl flex flex-col overflow-hidden text-white"
         onClick={e => e.stopPropagation()}
@@ -155,7 +155,7 @@ export const PopularCardsModal: React.FC<PopularCardsModalProps> = ({
                   {report.topOverallCard.card.name}
                 </span>
                 <span className="text-slate-500 text-[11px]">
-                  ({report.topOverallCard.usagePercentage}% dos decks)
+                  ({report.topOverallCard.usagePercentage}%)
                 </span>
               </div>
             )}
@@ -481,9 +481,7 @@ const CategoryPodiumCard: React.FC<{
                   {item.card.name}
                 </h4>
                 <div className="flex items-center gap-1.5 text-[10px] text-slate-400 mt-0.5">
-                  <span className="text-purple-300 font-semibold">{item.usagePercentage}% dos decks</span>
-                  <span>•</span>
-                  <span>{item.totalCopies} cópias</span>
+                  <span className="text-purple-300 font-semibold">{item.usagePercentage}%</span>
                 </div>
               </div>
 
@@ -621,7 +619,7 @@ const Top10List: React.FC<{
                   <div className="mt-2 space-y-1">
                     <div className="flex items-center justify-between text-[10px]">
                       <span className="text-slate-400 font-medium">Presença nos Decks:</span>
-                      <span className="font-bold text-purple-300">{item.usagePercentage}% ({item.totalCopies} cópias)</span>
+                      <span className="font-bold text-purple-300">{item.usagePercentage}%</span>
                     </div>
                     <div className="w-full bg-slate-950 h-1.5 rounded-full overflow-hidden border border-slate-800">
                       <div 

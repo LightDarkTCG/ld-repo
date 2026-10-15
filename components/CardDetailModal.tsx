@@ -27,6 +27,9 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card: initialC
   const [fileToUpload, setFileToUpload] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
 
+  const allCardsRef = React.useRef(allCards);
+  allCardsRef.current = allCards;
+
   useEffect(() => {
     if (!initialCard) {
       setCard(null);
@@ -34,11 +37,10 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card: initialC
       setIsEditing(false);
       return;
     }
-    const modernResolved = resolveModernFrameOnly(initialCard, allCards);
-    setCard(modernResolved);
-    setOriginalCode(modernResolved.code || initialCard.code);
+    setCard(initialCard);
+    setOriginalCode(initialCard.code);
     setIsEditing(false);
-  }, [initialCard, allCards]);
+  }, [initialCard?.code, initialCard?.imageUrl, initialCard?.frame]);
 
   // Find all variations (alternate arts, skins, frames) for this card
   // Computed stably based on initialCard so buttons remain fixed in their slots
@@ -347,7 +349,7 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card: initialC
   };
 
   return (
-    <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md animate-in fade-in zoom-in duration-200">
+    <div className="fixed inset-0 z-[180] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md animate-in fade-in zoom-in duration-200">
       <div className="absolute top-4 right-4 flex gap-2 z-50">
         {isEditing ? (
           <>
@@ -406,7 +408,7 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card: initialC
               <div>
                 <span className="text-xs font-bold text-slate-200 block">No Meu Álbum</span>
                 <span className="text-[10px] text-slate-400">
-                  {getQuantity(card.code) > 0 ? `${getQuantity(card.code)} cópia(s) na coleção` : 'Não possui na coleção'}
+                  {getQuantity(card) > 0 ? `${getQuantity(card)} cópia(s) na coleção` : 'Não possui na coleção'}
                 </span>
               </div>
             </div>
@@ -415,10 +417,10 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card: initialC
               <div className="flex items-center gap-1.5 bg-slate-950 border border-slate-800 p-1 rounded-xl">
                 <button
                   type="button"
-                  onClick={() => decrementCard(card.code)}
-                  disabled={getQuantity(card.code) <= 0}
+                  onClick={() => decrementCard(card)}
+                  disabled={getQuantity(card) <= 0}
                   className={`w-7 h-7 rounded-lg flex items-center justify-center transition text-xs font-bold ${
-                    getQuantity(card.code) > 0 
+                    getQuantity(card) > 0 
                       ? 'bg-slate-800 hover:bg-red-950 hover:text-red-400 text-slate-300' 
                       : 'text-slate-600 cursor-not-allowed'
                   }`}
@@ -427,11 +429,11 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card: initialC
                   <Minus size={13} />
                 </button>
                 <span className="font-mono font-bold text-xs text-purple-300 px-2">
-                  {getQuantity(card.code)}
+                  {getQuantity(card)}
                 </span>
                 <button
                   type="button"
-                  onClick={() => incrementCard(card.code)}
+                  onClick={() => incrementCard(card)}
                   className="w-7 h-7 rounded-lg bg-purple-900/70 hover:bg-purple-700 text-purple-200 flex items-center justify-center transition text-xs font-bold shadow-sm"
                   title="Adicionar cópia"
                 >

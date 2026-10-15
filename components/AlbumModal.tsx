@@ -12,12 +12,16 @@ import {
   Crown,
   Star,
   Shield,
-  Award
+  Award,
+  PackagePlus,
+  RefreshCw,
+  Check,
+  Trash2
 } from 'lucide-react';
 import { CardData } from '../types';
 import { useCards, cleanCardCode } from '../CardContext';
 import { useAuth } from '../authService';
-import { useUserAlbum } from '../albumService';
+import { useUserAlbum, normalizeAlbumKey } from '../albumService';
 import { compareCardCodes } from '../deckUtils';
 
 interface AlbumModalProps {
@@ -28,6 +32,23 @@ interface AlbumModalProps {
 }
 
 export type AlbumEdition = 'legado' | 'moderno' | 'all';
+
+/**
+ * Metadados informativos para cada coleção / deck do jogo
+ */
+export const COLLECTION_METADATA: Record<string, { subtitle: string; heroName: string; category: 'deck' | 'booster' }> = {
+  'Insanis': { subtitle: 'Deck Estrutural de Jim - O Senhor do Macroverso', heroName: 'Jim - O Senhor do Macroverso', category: 'deck' },
+  'Príncipe do Macroverso': { subtitle: 'Deck Estrutural de Jenos', heroName: 'Jenos Senhor do Macroverso', category: 'deck' },
+  'Mechs e Mangas': { subtitle: 'Deck Estrutural de Vellret', heroName: 'Spear Vellret', category: 'deck' },
+  'Herdeiro do Caos': { subtitle: 'Deck Estrutural de Mahina', heroName: 'Mahina - O Herdeiro de Lúmeni', category: 'deck' },
+  'Mundo em Chamas': { subtitle: 'Deck Estrutural de Donnie', heroName: 'Donnie - Samurai das Chamas', category: 'deck' },
+  'Corruptor Profano': { subtitle: 'Deck Estrutural de Otto', heroName: 'Otto - Arauto da Corrupção', category: 'deck' },
+  'O Escolhido': { subtitle: 'Deck Estrutural de Salazar', heroName: 'Salazar - Guia dos Escolhidos', category: 'deck' },
+  'Deusa da Lua': { subtitle: 'Deck Estrutural de Selena', heroName: 'Selena - Deusa da Lua', category: 'deck' },
+  'Invasão do Caos': { subtitle: 'Expansão & Deck Invasão do Caos', heroName: 'Mahina - O Arauto do Véu', category: 'deck' },
+  'Booster Pack 1': { subtitle: 'Pacote de Expansão Clássico', heroName: '', category: 'booster' },
+  'Booster Pack 2': { subtitle: 'Pacote de Expansão Série 2', heroName: '', category: 'booster' },
+};
 
 /**
  * Identifica se a carta pertence ao formato / era Legado
@@ -59,7 +80,13 @@ export const isSpecialCard = (c: CardData): boolean => {
 export const AlbumModal: React.FC<AlbumModalProps> = ({ isOpen, onClose, onSelectCard, onOpenAuth }) => {
   const { user } = useAuth();
   const { cards: allCards } = useCards();
-  const { getQuantity, incrementCard, decrementCard } = useUserAlbum(user?.uid);
+  const { 
+    getQuantity, 
+    incrementCard, 
+    decrementCard, 
+    addCollectionCards, 
+    removeCollectionCards 
+  } = useUserAlbum(user?.uid);
 
   // Edição do Álbum (Padrão: Legado conforme solicitação do usuário)
   const [albumEdition, setAlbumEdition] = useState<AlbumEdition>('legado');
@@ -67,6 +94,136 @@ export const AlbumModal: React.FC<AlbumModalProps> = ({ isOpen, onClose, onSelec
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCollection, setSelectedCollection] = useState('Todas');
   const [filterMode, setFilterMode] = useState<'all' | 'owned' | 'missing'>('all');
+
+  // Estados para inserção de coleções completas em lote
+  const [showBulkModal, setShowBulkModal] = useState(false);
+  const [bulkMode, setBulkMode] = useState<'add' | 'ensure_at_least'>('add');
+  const [bulkTab, setBulkTab] = useState<'all' | 'deck' | 'booster'>('all');
+  const [bulkLoadingName, setBulkLoadingName] = useState<string | null>(null);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // Lista estruturada de coleções disponíveis com contagem de posse para inserção em lote
+  const collectionsSummary = useMemo(() => {
+    // Determinar as cartas com base no álbum ativo (Legado, Moderno ou Todos)
+    let poolCards: CardData[] = [];
+    if (albumEdition === 'legado') {
+      poolCards = allCards.filter(isLegacyCard);
+    } else if (albumEdition === 'moderno') {
+      poolCards = allCards.filter(c => !isLegacyCard(c));
+    } else {
+      poolCards = allCards;
+    }
+
+    const map = new Map<string, CardData[]>();
+    for (const card of poolCards) {
+      if (!card || !card.collection) continue;
+      if (!map.has(card.collection)) {
+        map.set(card.collection, []);
+      }
+      map.get(card.collection)!.push(card);
+    }
+
+    return Array.from(map.entries()).map(([name, cards]) => {
+      // Deduplicar cartas pela chave única independente do álbum
+      const uniqueMap = new Map<string, CardData>();
+      cards.forEach(c => {
+        const key = normalizeAlbumKey(c);
+        if (key && !uniqueMap.has(key)) {
+          uniqueMap.set(key, c);
+        }
+      });
+      const uniqueCards = Array.from(uniqueMap.values());
+      
+      let ownedCount = 0;
+      let totalCopies = 0;
+      uniqueCards.forEach(c => {
+        const q = getQuantity(c);
+        if (q > 0) {
+          ownedCount++;
+          totalCopies += q;
+        }
+      });
+
+      const meta = COLLECTION_METADATA[name] || {
+        subtitle: 'Coleção de cartas do jogo',
+        heroName: '',
+        category: (uniqueCards.length <= 35 ? 'deck' : 'booster') as 'deck' | 'booster'
+      };
+
+      const heroCard = meta.heroName 
+        ? uniqueCards.find(c => c.name.toLowerCase().includes(meta.heroName.toLowerCase())) || uniqueCards[0]
+        : uniqueCards[0];
+
+      return {
+        name,
+        subtitle: meta.subtitle,
+        category: meta.category,
+        totalCards: uniqueCards.length,
+        ownedCount,
+        totalCopies,
+        percent: uniqueCards.length > 0 ? Math.round((ownedCount / uniqueCards.length) * 100) : 0,
+        cards: uniqueCards,
+        coverImage: heroCard?.imageUrl
+      };
+    }).sort((a, b) => {
+      if (a.category !== b.category) {
+        return a.category === 'deck' ? -1 : 1;
+      }
+      return a.name.localeCompare(b.name);
+    });
+  }, [allCards, albumEdition, getQuantity]);
+
+  // Coleção atualmente selecionada no filtro (se for uma coleção real)
+  const currentCollectionData = useMemo(() => {
+    if (selectedCollection === 'Todas' || selectedCollection.startsWith('★')) return null;
+    return collectionsSummary.find(c => c.name === selectedCollection) || null;
+  }, [collectionsSummary, selectedCollection]);
+
+  const handleAddCollection = async (collectionName: string, mode: 'add' | 'ensure_at_least' = bulkMode) => {
+    if (!user) {
+      if (onOpenAuth) onOpenAuth();
+      else alert('Faça login com sua conta para salvar suas cartas no álbum.');
+      return;
+    }
+
+    const col = collectionsSummary.find(c => c.name === collectionName);
+    if (!col || col.cards.length === 0) return;
+
+    setBulkLoadingName(collectionName);
+    try {
+      // Passa a lista completa de CardData para manter cada frame independente
+      const count = await addCollectionCards(col.cards, mode, 1);
+      const actionText = mode === 'add' ? 'adicionadas (+1 cópia de cada)' : 'completadas com sucesso';
+      setToastMessage(`${count} cartas de "${collectionName}" foram ${actionText}!`);
+      setTimeout(() => setToastMessage(null), 3500);
+    } catch (err) {
+      console.error('Erro ao adicionar coleção:', err);
+      alert('Houve um erro ao atualizar o álbum. Tente novamente.');
+    } finally {
+      setBulkLoadingName(null);
+    }
+  };
+
+  const handleRemoveCollection = async (collectionName: string) => {
+    if (!user) return;
+    const col = collectionsSummary.find(c => c.name === collectionName);
+    if (!col || col.cards.length === 0) return;
+
+    if (!window.confirm(`Deseja realmente zerar a quantidade de todas as cartas de "${collectionName}" no seu álbum?`)) {
+      return;
+    }
+
+    setBulkLoadingName(collectionName);
+    try {
+      await removeCollectionCards(col.cards);
+      setToastMessage(`Cartas de "${collectionName}" foram zeradas no seu álbum.`);
+      setTimeout(() => setToastMessage(null), 3500);
+    } catch (err) {
+      console.error('Erro ao remover coleção:', err);
+    } finally {
+      setBulkLoadingName(null);
+    }
+  };
 
   // Pool de cartas conforme o Álbum selecionado
   const albumPoolCards = useMemo(() => {
@@ -79,12 +236,12 @@ export const AlbumModal: React.FC<AlbumModalProps> = ({ isOpen, onClose, onSelec
       pool = allCards;
     }
 
-    // Deduplicação pelo código canônico + coleção + raridade para preservar variantes especiais
+    // Deduplicação pela chave canônica do álbum para preservar variantes especiais e frames independentes
     const seen = new Set<string>();
     const list: CardData[] = [];
 
     for (const card of pool) {
-      const codeKey = `${cleanCardCode(card.code)}_${card.collection || ''}_${card.rarity || ''}_${card.frame || ''}`;
+      const codeKey = normalizeAlbumKey(card);
       if (seen.has(codeKey)) continue;
       seen.add(codeKey);
       list.push(card);
@@ -117,7 +274,7 @@ export const AlbumModal: React.FC<AlbumModalProps> = ({ isOpen, onClose, onSelec
       : albumPoolCards;
 
     baseCards.forEach(card => {
-      const qty = getQuantity(card.code);
+      const qty = getQuantity(card);
       if (qty > 0) {
         totalUniqueOwned++;
         totalCopies += qty;
@@ -141,7 +298,7 @@ export const AlbumModal: React.FC<AlbumModalProps> = ({ isOpen, onClose, onSelec
     const term = searchTerm.trim().toLowerCase();
 
     return albumPoolCards.filter(card => {
-      const qty = getQuantity(card.code);
+      const qty = getQuantity(card);
       const isOwned = qty > 0;
       const cardSpecial = isSpecialCard(card);
 
@@ -262,7 +419,18 @@ export const AlbumModal: React.FC<AlbumModalProps> = ({ isOpen, onClose, onSelec
             </button>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3">
+            {/* BOTÃO PARA INSERIR COLEÇÕES / DECKS COMPLETOS */}
+            <button
+              onClick={() => setShowBulkModal(true)}
+              className="px-3 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white transition flex items-center gap-1.5 shadow-lg shadow-emerald-950/40 active:scale-95 shrink-0"
+              title="Adicionar Decks Estruturais ou Coleções inteiras de uma só vez ao seu álbum"
+            >
+              <PackagePlus size={16} />
+              <span className="hidden sm:inline">Inserir Coleção / Deck</span>
+              <span className="sm:hidden">+ Coleção</span>
+            </button>
+
             {!user ? (
               <button
                 onClick={onOpenAuth}
@@ -330,7 +498,7 @@ export const AlbumModal: React.FC<AlbumModalProps> = ({ isOpen, onClose, onSelec
                 <span className="text-[11px] uppercase tracking-wider text-amber-400 font-bold block">Cartas Especiais</span>
                 <div className="flex items-baseline gap-1.5">
                   <span className="text-lg sm:text-xl font-black text-amber-300">
-                    {albumPoolCards.filter(c => isSpecialCard(c) && getQuantity(c.code) > 0).length}/{specialCardsCount}
+                    {albumPoolCards.filter(c => isSpecialCard(c) && getQuantity(c) > 0).length}/{specialCardsCount}
                   </span>
                   <span className="text-xs text-slate-500 font-medium">no álbum</span>
                 </div>
@@ -514,6 +682,88 @@ export const AlbumModal: React.FC<AlbumModalProps> = ({ isOpen, onClose, onSelec
 
         {/* LISTA / GRID DE CARTAS */}
         <div className="flex-1 overflow-y-auto p-4 sm:p-6 bg-[#070a12]">
+          {/* BANNER DE INSERÇÃO RÁPIDA QUANDO UMA COLEÇÃO ESPECÍFICA ESTÁ SELECIONADA */}
+          {currentCollectionData && (
+            <div className="mb-4 p-3.5 sm:p-4 rounded-2xl bg-gradient-to-r from-purple-950/70 via-slate-900 to-slate-950 border border-purple-500/40 flex flex-wrap items-center justify-between gap-3 shadow-lg">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-purple-900/60 border border-purple-500/50 flex items-center justify-center text-purple-300 shrink-0">
+                  <PackagePlus size={20} />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h4 className="text-xs sm:text-sm font-bold text-white">
+                      Coleção: {currentCollectionData.name}
+                    </h4>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-purple-300 font-semibold border border-purple-700/40">
+                      {currentCollectionData.ownedCount}/{currentCollectionData.totalCards} no seu álbum ({currentCollectionData.percent}%)
+                    </span>
+                    {currentCollectionData.ownedCount >= currentCollectionData.totalCards && (
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-300 font-semibold border border-emerald-500/40 flex items-center gap-1">
+                        <CheckCircle2 size={11} /> Completa
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-slate-400 mt-0.5">
+                    {currentCollectionData.subtitle} • Já possui esse deck ou coleção física? Insira todas as {currentCollectionData.totalCards} cartas de uma vez sem precisar clicar uma a uma.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  onClick={() => handleAddCollection(currentCollectionData.name, 'add')}
+                  disabled={bulkLoadingName === currentCollectionData.name}
+                  className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 transition shadow-lg shadow-emerald-950/40 active:scale-95 disabled:opacity-50"
+                  title="Adicionar 1 cópia de cada carta desta coleção ao seu álbum"
+                >
+                  {bulkLoadingName === currentCollectionData.name ? (
+                    <RefreshCw size={14} className="animate-spin text-white" />
+                  ) : (
+                    <Plus size={14} />
+                  )}
+                  <span>Inserir Deck Completo (+1 cada)</span>
+                </button>
+
+                <button
+                  onClick={() => handleAddCollection(currentCollectionData.name, 'ensure_at_least')}
+                  disabled={bulkLoadingName === currentCollectionData.name}
+                  className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs flex items-center gap-1.5 transition shadow-lg shadow-indigo-950/40 active:scale-95 disabled:opacity-50"
+                  title="Preencher as cartas faltantes desta coleção"
+                >
+                  <CheckCircle2 size={14} />
+                  <span>Completar Faltantes</span>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* BANNER PROMINENTE PARA INSERIR COLEÇÕES COMPLETAS QUANDO EM TODAS */}
+          {!currentCollectionData && (
+            <div className="mb-4 p-3.5 sm:p-4 rounded-2xl bg-gradient-to-r from-purple-950/60 via-slate-900 to-slate-950 border border-purple-500/30 flex flex-wrap items-center justify-between gap-3 shadow-lg">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-emerald-950/80 border border-emerald-500/40 flex items-center justify-center text-emerald-400 shrink-0">
+                  <PackagePlus size={20} />
+                </div>
+                <div>
+                  <h4 className="text-xs sm:text-sm font-bold text-white flex items-center gap-2">
+                    Possui Decks Estruturais ou Coleções Físicas?
+                  </h4>
+                  <p className="text-[11px] text-slate-400 mt-0.5">
+                    Insira todas as cartas de um deck inteiro (Corruptor Profano, O Escolhido, Deusa da Lua, etc.) de uma vez só no seu álbum!
+                  </p>
+                </div>
+              </div>
+
+              <button
+                onClick={() => setShowBulkModal(true)}
+                className="px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs flex items-center gap-2 transition shadow-lg shadow-emerald-950/40 active:scale-95"
+              >
+                <PackagePlus size={15} />
+                <span>Inserir Coleções & Decks Completos</span>
+              </button>
+            </div>
+          )}
+
           {filteredCards.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-64 text-center">
               <p className="text-slate-400 text-base mb-2">Nenhuma carta encontrada com os filtros selecionados.</p>
@@ -532,13 +782,13 @@ export const AlbumModal: React.FC<AlbumModalProps> = ({ isOpen, onClose, onSelec
           ) : (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-4">
               {filteredCards.map((card) => {
-                const qty = getQuantity(card.code);
+                const qty = getQuantity(card);
                 const isOwned = qty > 0;
                 const cardSpecial = isSpecialCard(card);
 
                 return (
                   <div
-                    key={`${card.code}_${card.collection || ''}_${card.rarity || ''}`}
+                    key={normalizeAlbumKey(card)}
                     className={`relative rounded-xl transition-all duration-200 group flex flex-col items-center p-2 border ${
                       cardSpecial
                         ? isOwned
@@ -615,7 +865,7 @@ export const AlbumModal: React.FC<AlbumModalProps> = ({ isOpen, onClose, onSelec
                     {/* CONTROLES DE QUANTIDADE (+ / -) */}
                     <div className="w-full mt-2 pt-2 border-t border-slate-800/70 flex items-center justify-between gap-1">
                       <button
-                        onClick={() => decrementCard(card.code)}
+                        onClick={() => decrementCard(card)}
                         disabled={qty <= 0}
                         className={`flex-1 py-1 rounded-lg flex items-center justify-center transition text-xs font-bold ${
                           qty > 0 
@@ -632,7 +882,7 @@ export const AlbumModal: React.FC<AlbumModalProps> = ({ isOpen, onClose, onSelec
                       </span>
 
                       <button
-                        onClick={() => incrementCard(card.code)}
+                        onClick={() => incrementCard(card)}
                         className="flex-1 py-1 rounded-lg flex items-center justify-center transition text-xs font-bold bg-purple-950/70 hover:bg-purple-800 text-purple-200 border border-purple-700/50"
                         title="Aumentar quantidade"
                       >
@@ -666,7 +916,230 @@ export const AlbumModal: React.FC<AlbumModalProps> = ({ isOpen, onClose, onSelec
           </button>
         </div>
 
+        {/* TOAST FLUTUANTE DE SUCESSO */}
+        {toastMessage && (
+          <div className="absolute top-20 left-1/2 -translate-x-1/2 z-[100] px-5 py-3 rounded-2xl bg-emerald-600/95 text-white font-bold text-xs sm:text-sm shadow-2xl flex items-center gap-2.5 border border-emerald-400 backdrop-blur-md animate-in fade-in slide-in-from-top-3 duration-200">
+            <CheckCircle2 size={18} className="text-white shrink-0" />
+            <span>{toastMessage}</span>
+          </div>
+        )}
+
       </div>
+
+      {/* MODAL DE INSERÇÃO DE COLEÇÕES / DECKS COMPLETOS */}
+      {showBulkModal && (
+        <div className="fixed inset-0 z-[160] bg-black/85 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 animate-in fade-in duration-200">
+          <div 
+            className="bg-[#0b0f19] border border-purple-500/40 w-full max-w-4xl max-h-[90vh] rounded-2xl sm:rounded-3xl shadow-2xl flex flex-col overflow-hidden text-white"
+            onClick={e => e.stopPropagation()}
+          >
+            {/* HEADER DO MODAL */}
+            <div className="p-4 sm:p-6 border-b border-slate-800 bg-gradient-to-r from-slate-950 via-purple-950/40 to-slate-950 flex items-center justify-between gap-4 shrink-0">
+              <div className="flex items-center gap-3.5">
+                <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-white shadow-lg shadow-emerald-950/60 shrink-0">
+                  <PackagePlus size={24} />
+                </div>
+                <div>
+                  <h3 className="text-lg sm:text-xl font-black text-white flex items-center gap-2">
+                    Inserir Coleções & Decks Completos
+                  </h3>
+                  <p className="text-xs sm:text-sm text-slate-400 mt-0.5">
+                    Adicione todas as cartas de um Deck Estrutural ou Coleção de uma só vez ao seu álbum!
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowBulkModal(false)}
+                className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition"
+                title="Fechar"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* BARRA DE CONFIGURAÇÕES (MODO + ABAS) */}
+            <div className="p-3 sm:p-4 bg-slate-900/70 border-b border-slate-800 flex flex-wrap items-center justify-between gap-3 text-xs shrink-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-slate-400 font-bold uppercase tracking-wider text-[10px]">Ação:</span>
+                <div className="flex bg-slate-950 border border-slate-800 rounded-xl p-1 gap-1">
+                  <button
+                    onClick={() => setBulkMode('add')}
+                    className={`px-3 py-1.5 rounded-lg font-bold transition flex items-center gap-1.5 text-xs ${
+                      bulkMode === 'add'
+                        ? 'bg-purple-600 text-white shadow-sm'
+                        : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    <Plus size={13} />
+                    <span>+1 Cópia de Cada Carta</span>
+                  </button>
+                  <button
+                    onClick={() => setBulkMode('ensure_at_least')}
+                    className={`px-3 py-1.5 rounded-lg font-bold transition flex items-center gap-1.5 text-xs ${
+                      bulkMode === 'ensure_at_least'
+                        ? 'bg-purple-600 text-white shadow-sm'
+                        : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    <CheckCircle2 size={13} />
+                    <span>Completar Faltantes (ao menos 1)</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* ABAS */}
+              <div className="flex items-center bg-slate-950 border border-slate-800 rounded-xl p-1 gap-1">
+                <button
+                  onClick={() => setBulkTab('all')}
+                  className={`px-3 py-1 rounded-lg font-bold transition text-xs ${
+                    bulkTab === 'all' ? 'bg-slate-800 text-white shadow-sm' : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  Todas ({collectionsSummary.length})
+                </button>
+                <button
+                  onClick={() => setBulkTab('deck')}
+                  className={`px-3 py-1 rounded-lg font-bold transition text-xs flex items-center gap-1 ${
+                    bulkTab === 'deck' ? 'bg-amber-950/80 text-amber-300 border border-amber-600/40' : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  <Shield size={12} />
+                  <span>Decks ({collectionsSummary.filter(c => c.category === 'deck').length})</span>
+                </button>
+                <button
+                  onClick={() => setBulkTab('booster')}
+                  className={`px-3 py-1 rounded-lg font-bold transition text-xs flex items-center gap-1 ${
+                    bulkTab === 'booster' ? 'bg-purple-950/80 text-purple-300 border border-purple-600/40' : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  <Sparkles size={12} />
+                  <span>Boosters ({collectionsSummary.filter(c => c.category === 'booster').length})</span>
+                </button>
+              </div>
+            </div>
+
+            {/* LISTA DE CARDS DAS COLEÇÕES */}
+            <div className="flex-1 overflow-y-auto p-4 sm:p-6 bg-[#08080c] space-y-3.5 custom-scrollbar">
+              {collectionsSummary
+                .filter(col => bulkTab === 'all' || col.category === bulkTab)
+                .map(col => {
+                  const isLoading = bulkLoadingName === col.name;
+                  const isComplete = col.ownedCount >= col.totalCards;
+
+                  return (
+                    <div
+                      key={col.name}
+                      className={`p-3.5 sm:p-4 rounded-2xl border transition flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 ${
+                        isComplete
+                          ? 'bg-slate-900/70 border-emerald-500/40 shadow-sm'
+                          : 'bg-slate-900/40 border-slate-800 hover:border-purple-500/40'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3.5 flex-1 min-w-0">
+                        <div className="w-12 h-16 sm:w-14 sm:h-20 rounded-xl bg-slate-950 overflow-hidden shrink-0 border border-slate-700/80 shadow-md flex items-center justify-center">
+                          {col.coverImage ? (
+                            <img src={col.coverImage} alt={col.name} className="w-full h-full object-cover" />
+                          ) : (
+                            <Layers size={22} className="text-purple-400" />
+                          )}
+                        </div>
+
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <h4 className="text-sm sm:text-base font-black text-white">
+                              {col.name}
+                            </h4>
+                            <span className={`px-2 py-0.5 rounded-md text-[10px] font-extrabold uppercase tracking-wider ${
+                              col.category === 'deck' 
+                                ? 'bg-amber-950/80 text-amber-300 border border-amber-600/40' 
+                                : 'bg-purple-950/80 text-purple-300 border border-purple-600/40'
+                            }`}>
+                              {col.category === 'deck' ? 'Deck Estrutural (30)' : 'Booster Pack'}
+                            </span>
+                            {isComplete && (
+                              <span className="px-2 py-0.5 rounded-md text-[10px] font-extrabold bg-emerald-950/80 text-emerald-300 border border-emerald-500/40 flex items-center gap-1">
+                                <CheckCircle2 size={11} /> Completo
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs text-slate-400 mt-0.5">
+                            {col.subtitle} • {col.totalCards} cartas registradas
+                          </p>
+
+                          {/* Progresso no Álbum */}
+                          <div className="mt-2 space-y-1 max-w-md">
+                            <div className="flex items-center justify-between text-[11px]">
+                              <span className="text-slate-400">Posse no Álbum:</span>
+                              <span className="font-bold text-slate-200">
+                                {col.ownedCount} de {col.totalCards} únicas ({col.percent}%) • {col.totalCopies} cópias
+                              </span>
+                            </div>
+                            <div className="w-full bg-slate-950 h-2 rounded-full overflow-hidden border border-slate-800">
+                              <div
+                                className={`h-full rounded-full transition-all duration-500 ${
+                                  isComplete ? 'bg-gradient-to-r from-emerald-500 to-teal-400' : 'bg-gradient-to-r from-purple-600 to-indigo-500'
+                                }`}
+                                style={{ width: `${col.percent}%` }}
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Botões de Ação */}
+                      <div className="flex items-center gap-2 w-full sm:w-auto justify-end shrink-0">
+                        {col.ownedCount > 0 && (
+                          <button
+                            onClick={() => handleRemoveCollection(col.name)}
+                            disabled={isLoading}
+                            className="p-2.5 rounded-xl bg-slate-900 hover:bg-red-950/80 text-slate-400 hover:text-red-300 border border-slate-800 hover:border-red-700/60 transition text-xs font-bold"
+                            title="Zerar cópias desta coleção no álbum"
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        )}
+
+                        <button
+                          onClick={() => handleAddCollection(col.name)}
+                          disabled={isLoading}
+                          className="flex-1 sm:flex-initial px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-2 transition shadow-lg shadow-emerald-950/40 active:scale-95 disabled:opacity-50"
+                        >
+                          {isLoading ? (
+                            <>
+                              <RefreshCw size={15} className="animate-spin" />
+                              <span>Salvando...</span>
+                            </>
+                          ) : (
+                            <>
+                              <Plus size={15} />
+                              <span>
+                                {bulkMode === 'add'
+                                  ? `Inserir Coleção (+1 cada)`
+                                  : `Completar Faltantes`}
+                              </span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+            </div>
+
+            {/* FOOTER DO MODAL */}
+            <div className="p-4 bg-slate-950 border-t border-slate-800 flex items-center justify-between text-xs text-slate-400">
+              <span>Sincronizado automaticamente com a sua conta na nuvem.</span>
+              <button
+                onClick={() => setShowBulkModal(false)}
+                className="px-5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold transition"
+              >
+                Concluir
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 };

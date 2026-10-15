@@ -297,35 +297,135 @@ export function isModernCard(card?: CardData | null): boolean {
   return card.frame === 'Moderno' || (typeof card.code === 'string' && (card.code.endsWith('-M') || card.code.endsWith('-MOD')));
 }
 
+/**
+ * Normaliza o texto removendo acentos, pontuação, guilhotinas e espaços extras
+ */
+export function normalizeHeroText(val: string | undefined | null): string {
+  if (!val) return '';
+  return String(val)
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[«»"'"'`()\[\]]/g, ' ')
+    .replace(/[-–—]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * Identifica a identidade central / família do herói pelo nome
+ * Heróis com a mesma identidade base representam o mesmo personagem
+ * (ex: Mahina Arauto do Véu, Estrategista Mahina, Equilíbrio Imperfeito Mahina, Mahina Herdeiro de Lúmeni são todos Mahina)
+ */
+export function getHeroIdentity(heroName: string | undefined | null): string | null {
+  const norm = normalizeHeroText(heroName);
+  if (!norm) return null;
+  if (norm.includes('mahina')) return 'mahina';
+  if (norm.includes('jenos')) return 'jenos';
+  if (norm.includes('donnie')) return 'donnie';
+  if (norm.includes('salazar')) return 'salazar';
+  if (norm.includes('selena')) return 'selena';
+  if (norm.includes('vellret') || norm.includes('spear')) return 'vellret';
+  if (norm.includes('jim')) return 'jim';
+  if (norm.includes('otto')) return 'otto';
+  if (norm.includes('asmonious')) return 'asmonious';
+  if (norm.includes('arqcuia')) return 'arqcuia';
+  if (norm.includes('criven')) return 'criven';
+  if (norm.includes('vasta')) return 'vasta';
+  if (norm.includes('conceito caos')) return 'conceito_caos';
+  if (norm.includes('linden')) return 'von_linden';
+  if (norm.includes('labri')) return 'labri';
+  return null;
+}
+
+/**
+ * Verifica se a descrição de um herói cita o nome completo de outro herói
+ */
+function citesHeroFullName(desc: string | undefined | null, heroFullName: string | undefined | null): boolean {
+  if (!desc || !heroFullName) return false;
+  const cleanD = normalizeHeroText(desc);
+  const cleanN = normalizeHeroText(heroFullName);
+  if (!cleanD || !cleanN || cleanN.length < 3) return false;
+  return cleanD.includes(cleanN);
+}
+
+/**
+ * Verifica se dois heróis são compatíveis no mesmo deck de acordo com as regras:
+ * 1. Pertencem à mesma identidade/personagem:
+ *    - Mahina - O Arauto do Véu pode ser colocado com todos os outros Mahinas.
+ *    - Jenos pode ser colocado com outros Jenos, Donnie com Donnie, Salazar com Salazar, etc.
+ * 2. HEROIS COM NOMES DIFERENTES:
+ *    - SOMENTE heróis que citem nomes completos de outros heróis podem ser combinados!
+ *    - Exemplo: Salazar Sucumbido pelo Caos pode ser colocado com Conceito Caos, mas Conceito Caos NÃO pode ser colocado com outros Salazar's!
+ *    - Von Linden + Selena Macroverso Inverso (somente Selena Macroverso Inverso, não outras Selenas)
+ *    - Labri a Filha Imperfeita + Jenos Destinado (somente Jenos Destinado, não outros Jenos)
+ *    - Otto - Arauto da Corrupção + Asmonious - O Corruptor (citado expressamente no efeito do Otto)
+ */
+export function areTwoHeroesCompatible(h1: CardData, h2: CardData): boolean {
+  if (!h1 || !h2) return true;
+  const name1 = normalizeHeroText(h1.name);
+  const name2 = normalizeHeroText(h2.name);
+  if (name1 === name2) return true;
+
+  const id1 = getHeroIdentity(h1.name);
+  const id2 = getHeroIdentity(h2.name);
+
+  // 1. Mesma identidade/personagem (Ex: Mahina com Mahina, Jenos com Jenos, Donnie com Donnie, Salazar com Salazar, Selena com Selena, Vellret com Vellret, Jim com Jim)
+  if (id1 && id2 && id1 === id2) {
+    return true;
+  }
+
+  // 2. HEROIS COM NOMES DIFERENTES:
+  // A) Citação direta do nome completo no efeito/descrição:
+  if (citesHeroFullName(h1.description, h2.name) || citesHeroFullName(h2.description, h1.name)) {
+    return true;
+  }
+
+  // B) Pares canônicos explícitos confirmados pelo criador:
+  // - Salazar Sucumbido pelo Caos + Conceito Caos
+  // (Conceito Caos pode ser colocado com Salazar Sucumbido pelo Caos, mas NUNCA com outros Salazars)
+  const isSalazarSucumbidoAndCaos =
+    (name1.includes('sucumbido') && name2.includes('conceito caos')) ||
+    (name2.includes('sucumbido') && name1.includes('conceito caos'));
+  if (isSalazarSucumbidoAndCaos) return true;
+
+  // - Von Linden + Selena Macroverso Inverso
+  // (Von Linden pode ser colocado com Selena Macroverso Inverso, mas NUNCA com outras Selenas como Deusa da Lua)
+  const isVonLindenAndSelenaInverso =
+    ((id1 === 'von_linden' && name2.includes('macroverso inverso')) ||
+     (id2 === 'von_linden' && name1.includes('macroverso inverso')));
+  if (isVonLindenAndSelenaInverso) return true;
+
+  // - Labri a Filha Imperfeita + Jenos Destinado
+  // (Labri pode ser colocada com Jenos Destinado, mas NUNCA com outros Jenos como Corrompido ou Senhor do Macroverso)
+  const isLabriAndJenosDestinado =
+    ((id1 === 'labri' && name2.includes('destinado')) ||
+     (id2 === 'labri' && name1.includes('destinado')));
+  if (isLabriAndJenosDestinado) return true;
+
+  return false;
+}
+
 export function isHeroGroupValid(heroes: CardData[]): boolean {
   if (!heroes || heroes.length <= 1) return true;
 
-  // Rule: Somente 1 herói no deck.
-  // Exceções permitidas apenas para heróis específicos que interagem entre si:
-  const names = heroes.map(h => h.name || '');
-
-  // 1. Otto + Asmonious (interação canônica no deck Corruptor Profano)
-  const hasOtto = names.some(n => n.includes('Otto'));
-  const hasAsmonious = names.some(n => n.includes('Asmonious'));
-  if (heroes.length === 2 && hasOtto && hasAsmonious) {
+  // Se todos os heróis compartilham da mesma identidade base (ex: todos são Mahina, todos Jenos, todos Donnie)
+  const firstId = getHeroIdentity(heroes[0]?.name);
+  if (firstId && heroes.every(h => getHeroIdentity(h?.name) === firstId)) {
     return true;
   }
 
-  // 2. Von Linden - O Conceito Evolução + Selena - Macroverso Inverso
-  const hasVonEvolucao = names.includes("Von Linden - O Conceito Evolução");
-  const hasSelenaMacroverso = names.includes("Selena - Macroverso Inverso");
-  if (heroes.length === 2 && hasVonEvolucao && hasSelenaMacroverso) {
-    return true;
+  // Se há heróis com identidades diferentes, TODOS os pares dentro do grupo devem ser mutuamente compatíveis
+  // (garante que se Conceito Caos estiver com Salazar Sucumbido pelo Caos, outro Salazar incompatível não possa entrar)
+  for (let i = 0; i < heroes.length; i++) {
+    for (let j = i + 1; j < heroes.length; j++) {
+      if (!areTwoHeroesCompatible(heroes[i], heroes[j])) {
+        return false;
+      }
+    }
   }
 
-  // 3. Conceito Caos + Salazar - Sucumbido pelo Caos
-  const hasConceitoCaos = names.includes("Conceito Caos");
-  const hasSalazarCaos = names.includes("Salazar - Sucumbido pelo Caos");
-  if (heroes.length === 2 && hasConceitoCaos && hasSalazarCaos) {
-    return true;
-  }
-
-  return false;
+  return true;
 }
 
 export const STRUCTURAL_COLLECTIONS_ALIASES: Record<string, string> = {

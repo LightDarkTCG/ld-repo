@@ -600,7 +600,17 @@ const playBeep = () => {
   }
 };
 
-const CatalogModal = ({ isOpen, onClose, onOpenAdmin }: { isOpen: boolean, onClose: () => void, onOpenAdmin: () => void }) => {
+const CatalogModal = ({ 
+  isOpen, 
+  onClose, 
+  onOpenAdmin, 
+  onOpenAuth 
+}: { 
+  isOpen: boolean; 
+  onClose: () => void; 
+  onOpenAdmin: () => void; 
+  onOpenAuth?: () => void; 
+}) => {
   const { cards: allCards, collections, archetypes } = useCards();
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedCard, setSelectedCard] = useState<CardData | null>(null);
@@ -794,12 +804,14 @@ const CatalogModal = ({ isOpen, onClose, onOpenAdmin }: { isOpen: boolean, onClo
     <div className="fixed inset-0 z-[70] flex flex-col bg-slate-950 animate-in fade-in duration-200">
       
       {/* Use the new extracted component */}
-      <CardDetailModal 
-        card={selectedCard} 
-        onClose={() => setSelectedCard(null)} 
-        onSelectRelated={(related) => handleCardClick(related)}
-        onOpenAuth={() => setIsAuthModalOpen(true)}
-      />
+      {selectedCard && (
+        <CardDetailModal 
+          card={selectedCard} 
+          onClose={() => setSelectedCard(null)} 
+          onSelectRelated={(related) => handleCardClick(related)}
+          onOpenAuth={() => onOpenAuth?.()}
+        />
+      )}
 
       {/* Easter Egg Modal */}
       {showEasterEgg && (
@@ -1309,7 +1321,7 @@ export default function App() {
         } else {
           alert('Acesso restrito ao administrador.');
         }
-      }} />
+      }} onOpenAuth={() => setIsAuthModalOpen(true)} />
       {isLoreOpen && <LoreView onClose={() => setIsLoreOpen(false)} />}
       <DeckBuilderModal isOpen={isDeckBuilderOpen} onClose={() => setIsDeckBuilderOpen(false)} />
       <AlbumModal 
@@ -1640,7 +1652,7 @@ export default function App() {
                       </button>
                     </div>
                     <button 
-                      onClick={() => { logoutGoogle(); setIsMenuOpen(false); }}
+                      onClick={() => { logout(); setIsMenuOpen(false); }}
                       className="bg-red-950/80 border border-red-800 text-red-300 hover:text-white px-3.5 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 shadow-sm"
                     >
                       <LogOut size={15} /> Sair
@@ -1868,11 +1880,13 @@ export default function App() {
       )}
 
       {/* Modal to inspect cards from the pre-built deck list */}
-      <CardDetailModal 
-        card={inspectedDeckCard}
-        onClose={() => setInspectedDeckCard(null)}
-        onOpenAuth={() => setIsAuthModalOpen(true)}
-      />
+      {inspectedDeckCard && (
+        <CardDetailModal 
+          card={inspectedDeckCard}
+          onClose={() => setInspectedDeckCard(null)}
+          onOpenAuth={() => setIsAuthModalOpen(true)}
+        />
+      )}
     </div>
   );
 }
