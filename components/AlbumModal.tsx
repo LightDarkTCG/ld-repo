@@ -17,14 +17,16 @@ import {
   RefreshCw,
   Check,
   Trash2,
-  Trophy
+  Trophy,
+  Heart
 } from 'lucide-react';
 import { CardData } from '../types';
 import { useCards, cleanCardCode } from '../CardContext';
 import { useAuth } from '../authService';
-import { useUserAlbum, normalizeAlbumKey } from '../albumService';
+import { useUserAlbum, normalizeAlbumKey, FOIL_TYPES, FoilTypeInfo } from '../albumService';
 import { compareCardCodes } from '../deckUtils';
 import { syncUserCollectorStats } from '../collectorsService';
+import { useUserWishlist } from '../wishlistService';
 
 interface AlbumModalProps {
   isOpen: boolean;
@@ -32,6 +34,7 @@ interface AlbumModalProps {
   onSelectCard?: (card: CardData) => void;
   onOpenAuth?: () => void;
   onOpenRanking?: () => void;
+  onOpenWishlist?: () => void;
 }
 
 export type AlbumEdition = 'legado' | 'moderno' | 'all';
@@ -80,17 +83,23 @@ export const isSpecialCard = (c: CardData): boolean => {
   );
 };
 
-export const AlbumModal: React.FC<AlbumModalProps> = ({ isOpen, onClose, onSelectCard, onOpenAuth, onOpenRanking }) => {
+export const AlbumModal: React.FC<AlbumModalProps> = ({ isOpen, onClose, onSelectCard, onOpenAuth, onOpenRanking, onOpenWishlist }) => {
   const { user } = useAuth();
   const { cards: allCards } = useCards();
   const { 
     album,
     getQuantity, 
+    getCardFoils,
+    hasFoil,
+    toggleCardFoil,
     incrementCard, 
     decrementCard, 
     addCollectionCards, 
     removeCollectionCards 
   } = useUserAlbum(user?.uid);
+
+  // Cartas que procuro (Wishlist)
+  const { isCardWanted, addCard: addWantedCard, removeCard: removeWantedCard } = useUserWishlist(user?.uid, user);
 
   // Sincroniza estatísticas de colecionador na nuvem sempre que o acervo mudar
   React.useEffect(() => {
@@ -105,6 +114,8 @@ export const AlbumModal: React.FC<AlbumModalProps> = ({ isOpen, onClose, onSelec
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCollection, setSelectedCollection] = useState('Todas');
   const [filterMode, setFilterMode] = useState<'all' | 'owned' | 'missing'>('all');
+  const [selectedFoilFilter, setSelectedFoilFilter] = useState<'all' | 'any_foil' | string>('all');
+  const [cardForFoilModal, setCardForFoilModal] = useState<CardData | null>(null);
 
   // Estados para inserção de coleções completas em lote
   const [showBulkModal, setShowBulkModal] = useState(false);
@@ -333,6 +344,10 @@ export const AlbumModal: React.FC<AlbumModalProps> = ({ isOpen, onClose, onSelec
         return false;
       }
 
+      // Filtro de Foil
+      if (selectedFoilFilter === 'any_foil' && !hasFoil(card)) return false;
+      if (selectedFoilFilter !== 'all' && selectedFoilFilter !== 'any_foil' && !hasFoil(card, selectedFoilFilter)) return false;
+
       // Filtro de busca textual
       if (term) {
         const nameMatch = (card.name || '').toLowerCase().includes(term);
@@ -345,7 +360,7 @@ export const AlbumModal: React.FC<AlbumModalProps> = ({ isOpen, onClose, onSelec
 
       return true;
     });
-  }, [albumPoolCards, searchTerm, selectedCollection, filterMode, onlySpecials, getQuantity]);
+  }, [albumPoolCards, searchTerm, selectedCollection, filterMode, onlySpecials, selectedFoilFilter, getQuantity, hasFoil]);
 
   if (!isOpen) return null;
 
@@ -610,6 +625,26 @@ export const AlbumModal: React.FC<AlbumModalProps> = ({ isOpen, onClose, onSelec
               </button>
             </div>
 
+            {/* FILTRO DE ACABAMENTO FOIL */}
+            <div className="flex items-center gap-1.5 bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-xl">
+              <Sparkles size={14} className="text-yellow-400" />
+              <select
+                value={selectedFoilFilter}
+                onChange={(e) => setSelectedFoilFilter(e.target.value)}
+                className="bg-transparent text-xs text-slate-200 outline-none cursor-pointer font-medium max-w-[150px] truncate"
+              >
+                <option value="all" className="bg-slate-900">Todos os Acabamentos</option>
+                <option value="any_foil" className="bg-slate-900 text-yellow-300 font-bold">✨ Apenas Foils</option>
+                <optgroup label="11 Tipos de Foil" className="bg-slate-900 text-purple-300">
+                  {FOIL_TYPES.map(foil => (
+                    <option key={foil.id} value={foil.id} className="bg-slate-900 text-slate-200">
+                      Foil {foil.name}
+                    </option>
+                  ))}
+                </optgroup>
+              </select>
+            </div>
+
             {/* SELEÇÃO DE COLEÇÃO */}
             <div className="flex items-center gap-1.5 bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-xl">
               <Layers size={14} className="text-purple-400" />
@@ -652,6 +687,21 @@ export const AlbumModal: React.FC<AlbumModalProps> = ({ isOpen, onClose, onSelec
                 </optgroup>
               </select>
             </div>
+
+            {/* BOTAO PARA ABRIR CARTAS QUE PROCURO */}
+            {onOpenWishlist && (
+              <button
+                onClick={() => {
+                  onClose();
+                  onOpenWishlist();
+                }}
+                className="px-3 py-1.5 rounded-xl bg-pink-950/70 hover:bg-pink-900 border border-pink-700/60 text-pink-200 text-xs font-bold transition flex items-center gap-1.5 shadow-sm active:scale-95 shrink-0"
+                title="Abrir minha lista de Cartas que Procuro"
+              >
+                <Heart size={14} className="fill-pink-400 text-pink-400" />
+                <span>Cartas que Procuro</span>
+              </button>
+            )}
           </div>
         </div>
 
@@ -809,12 +859,17 @@ export const AlbumModal: React.FC<AlbumModalProps> = ({ isOpen, onClose, onSelec
                 const qty = getQuantity(card);
                 const isOwned = qty > 0;
                 const cardSpecial = isSpecialCard(card);
+                const cardFoils = getCardFoils(card);
+                const hasAnyFoil = cardFoils.length > 0;
+                const isWanted = isCardWanted(card);
 
                 return (
                   <div
                     key={normalizeAlbumKey(card)}
                     className={`relative rounded-xl transition-all duration-200 group flex flex-col items-center p-2 border ${
-                      cardSpecial
+                      hasAnyFoil
+                        ? 'bg-slate-900/95 border-pink-500/80 shadow-lg shadow-pink-950/40 foil-card-rainbow'
+                        : cardSpecial
                         ? isOwned
                           ? 'bg-slate-900/95 border-amber-500/70 shadow-lg shadow-amber-950/30'
                           : 'bg-slate-950/70 border-amber-600/40 opacity-80 hover:opacity-100'
@@ -823,8 +878,34 @@ export const AlbumModal: React.FC<AlbumModalProps> = ({ isOpen, onClose, onSelec
                         : 'bg-slate-950/60 border-slate-800/80 opacity-70 hover:opacity-100'
                     }`}
                   >
-                    {/* BADGE DE QUANTIDADE / STATUS */}
-                    <div className="absolute top-3 right-3 z-10">
+                    {/* BOTOES DE TOPO (QUANTIDADE, ESPECIAL E WISHLIST) */}
+                    <div className="absolute top-3 right-3 z-10 flex items-center gap-1">
+                      {/* Botão de Lista de Desejos (Cartas que Procuro) */}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (!user) {
+                            if (onOpenAuth) onOpenAuth();
+                            return;
+                          }
+                          if (isWanted) {
+                            removeWantedCard(card);
+                          } else {
+                            addWantedCard(card, 'qualquer', '', 1, 'media');
+                          }
+                        }}
+                        className={`p-1 rounded-full transition shadow-md ${
+                          isWanted
+                            ? 'bg-pink-600 text-white border border-pink-400'
+                            : 'bg-slate-950/80 text-slate-400 hover:text-pink-400 hover:bg-slate-900 border border-slate-800'
+                        }`}
+                        title={isWanted ? 'Remover das Cartas que Procuro' : 'Adicionar às Cartas que Procuro'}
+                      >
+                        <Heart size={11} className={isWanted ? 'fill-white' : ''} />
+                      </button>
+
+                      {/* Quantidade */}
                       {isOwned ? (
                         <div className="bg-emerald-600 text-white font-black text-xs px-2 py-0.5 rounded-full shadow-lg border border-emerald-400 font-mono flex items-center gap-1">
                           <CheckCircle2 size={12} />
@@ -886,8 +967,40 @@ export const AlbumModal: React.FC<AlbumModalProps> = ({ isOpen, onClose, onSelec
                       </div>
                     </div>
 
+                    {/* SELETOR E STATUS DE FOIL */}
+                    <div className="w-full mt-1.5 pt-1.5 border-t border-slate-800/70">
+                      {hasAnyFoil ? (
+                        <button
+                          type="button"
+                          onClick={() => setCardForFoilModal(card)}
+                          className="w-full py-1 px-1.5 rounded-lg text-[10px] font-bold transition flex items-center justify-between bg-gradient-to-r from-pink-950/80 via-purple-950/80 to-amber-950/80 border border-purple-500/70 text-purple-100 hover:border-pink-400 shadow-sm"
+                          title="Clique para ver ou alterar os acabamentos Foil desta carta"
+                        >
+                          <span className="flex items-center gap-1 truncate">
+                            <Sparkles size={11} className="text-yellow-400 animate-pulse shrink-0" />
+                            <span className="truncate">
+                              {cardFoils.map(f => FOIL_TYPES.find(ft => ft.id === f)?.shortName || f).join(', ')}
+                            </span>
+                          </span>
+                          <span className="text-[9px] px-1 py-0.2 bg-black/50 text-amber-300 rounded font-mono shrink-0 ml-1">
+                            {cardFoils.length} {cardFoils.length === 1 ? 'foil' : 'foils'}
+                          </span>
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setCardForFoilModal(card)}
+                          className="w-full py-1 px-1.5 rounded-lg text-[10px] font-semibold transition flex items-center justify-center gap-1 bg-slate-900/80 hover:bg-purple-950/70 border border-slate-800 hover:border-purple-600/60 text-slate-400 hover:text-purple-300"
+                          title="Marcar acabamentos Foil (Arco-íris, Estilhaço, Ouro, etc.)"
+                        >
+                          <Sparkles size={11} className="text-slate-500" />
+                          <span>+ Tipo Foil</span>
+                        </button>
+                      )}
+                    </div>
+
                     {/* CONTROLES DE QUANTIDADE (+ / -) */}
-                    <div className="w-full mt-2 pt-2 border-t border-slate-800/70 flex items-center justify-between gap-1">
+                    <div className="w-full mt-1.5 pt-1.5 border-t border-slate-800/70 flex items-center justify-between gap-1">
                       <button
                         onClick={() => decrementCard(card)}
                         disabled={qty <= 0}
@@ -1156,6 +1269,176 @@ export const AlbumModal: React.FC<AlbumModalProps> = ({ isOpen, onClose, onSelec
               <button
                 onClick={() => setShowBulkModal(false)}
                 className="px-5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold transition"
+              >
+                Concluir
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL DE GERENCIAMENTO DE TIPOS FOIL DA CARTA */}
+      {cardForFoilModal && (
+        <div className="fixed inset-0 z-[170] bg-black/90 backdrop-blur-md flex items-center justify-center p-3 animate-in fade-in duration-200">
+          <div 
+            className="bg-[#0e111c] border border-purple-500/50 w-full max-w-2xl max-h-[90vh] rounded-2xl sm:rounded-3xl shadow-2xl flex flex-col overflow-hidden text-white"
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="p-4 sm:p-5 border-b border-purple-900/40 bg-gradient-to-r from-pink-950/60 via-purple-950/50 to-slate-950 flex items-center justify-between gap-3 shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-pink-500 to-purple-600 flex items-center justify-center text-white shadow-lg shadow-pink-950/60 shrink-0">
+                  <Sparkles size={20} className="animate-pulse" />
+                </div>
+                <div>
+                  <h3 className="text-base sm:text-lg font-black text-white flex items-center gap-2">
+                    Acabamentos Foil da Carta
+                  </h3>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    {cardForFoilModal.name} <span className="font-mono text-purple-400">({cardForFoilModal.code})</span>
+                  </p>
+                </div>
+              </div>
+
+              <button
+                onClick={() => setCardForFoilModal(null)}
+                className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition"
+                title="Fechar"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Corpo do Modal */}
+            <div className="p-4 sm:p-6 flex-1 overflow-y-auto custom-scrollbar space-y-4">
+              {/* Preview e Resumo */}
+              <div className="p-3 bg-slate-900/90 border border-slate-800 rounded-2xl flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-10 h-14 bg-slate-950 rounded-lg overflow-hidden shrink-0 border border-slate-700">
+                    {cardForFoilModal.imageUrl ? (
+                      <img src={cardForFoilModal.imageUrl} alt={cardForFoilModal.name} className="w-full h-full object-cover" />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center text-[8px] font-bold">LDT</div>
+                    )}
+                  </div>
+                  <div className="min-w-0">
+                    <span className="text-sm font-bold text-white block truncate">{cardForFoilModal.name}</span>
+                    <span className="text-xs text-slate-400 font-mono">
+                      {cardForFoilModal.collection} • Posse: <strong className="text-emerald-400 font-bold">{getQuantity(cardForFoilModal)}x</strong>
+                    </span>
+                  </div>
+                </div>
+
+                <div className="text-right shrink-0">
+                  <span className="text-[10px] text-slate-400 uppercase tracking-wider block">Foils Ativas:</span>
+                  <span className="text-xs font-bold text-yellow-300 font-mono">
+                    {getCardFoils(cardForFoilModal).length} de 11 tipos
+                  </span>
+                </div>
+              </div>
+
+              {/* Botões Rápidos */}
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
+                  <Sparkles size={13} className="text-purple-400" />
+                  Selecione os Tipos Foil que possui:
+                </span>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!user) {
+                        if (onOpenAuth) onOpenAuth();
+                        return;
+                      }
+                      FOIL_TYPES.forEach(f => {
+                        if (!hasFoil(cardForFoilModal, f.id)) {
+                          toggleCardFoil(cardForFoilModal, f.id);
+                        }
+                      });
+                    }}
+                    className="text-[11px] text-purple-400 hover:text-purple-300 font-bold px-2 py-1 rounded bg-purple-950/50 hover:bg-purple-900 border border-purple-800/60 transition"
+                  >
+                    Marcar Todas
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!user) {
+                        if (onOpenAuth) onOpenAuth();
+                        return;
+                      }
+                      FOIL_TYPES.forEach(f => {
+                        if (hasFoil(cardForFoilModal, f.id)) {
+                          toggleCardFoil(cardForFoilModal, f.id);
+                        }
+                      });
+                    }}
+                    className="text-[11px] text-slate-400 hover:text-slate-200 font-bold px-2 py-1 rounded bg-slate-900 hover:bg-slate-800 border border-slate-800 transition"
+                  >
+                    Limpar
+                  </button>
+                </div>
+              </div>
+
+              {/* Grid dos 11 Tipos de Foil */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                {FOIL_TYPES.map((foil) => {
+                  const isActive = hasFoil(cardForFoilModal, foil.id);
+
+                  return (
+                    <button
+                      key={foil.id}
+                      type="button"
+                      onClick={() => {
+                        if (!user) {
+                          if (onOpenAuth) onOpenAuth();
+                          return;
+                        }
+                        toggleCardFoil(cardForFoilModal, foil.id);
+                      }}
+                      className={`p-3 rounded-2xl border text-left transition duration-200 flex items-start justify-between gap-3 group ${
+                        isActive
+                          ? `${foil.badgeBg} border-2 ${foil.border} shadow-lg shadow-purple-950/50`
+                          : 'bg-slate-900/60 border-slate-800/90 hover:border-slate-700 hover:bg-slate-900'
+                      }`}
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className={`text-xs font-black tracking-wide ${isActive ? 'text-white' : 'text-slate-200 group-hover:text-white'}`}>
+                            Foil {foil.name}
+                          </span>
+                          <span className="text-[10px] text-purple-300 font-mono">
+                            ({foil.id})
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-400 mt-1 leading-tight">
+                          {foil.description}
+                        </p>
+                      </div>
+
+                      {/* Checkbox visual */}
+                      <div className={`w-5 h-5 rounded-lg flex items-center justify-center shrink-0 transition ${
+                        isActive 
+                          ? 'bg-gradient-to-br from-pink-500 to-purple-600 text-white shadow-md' 
+                          : 'border border-slate-700 bg-slate-950/70 text-transparent'
+                      }`}>
+                        <Check size={13} className={isActive ? 'opacity-100' : 'opacity-0'} />
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="p-3 sm:p-4 bg-slate-950 border-t border-slate-800 flex items-center justify-between text-xs text-slate-400 shrink-0">
+              <span>As alterações de Foil são salvas automaticamente na nuvem.</span>
+              <button
+                type="button"
+                onClick={() => setCardForFoilModal(null)}
+                className="px-5 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold transition shadow-md"
               >
                 Concluir
               </button>

@@ -6,8 +6,148 @@ import { CardData } from './types';
 
 export interface AlbumEntry {
   quantity: number;
+  foils?: string[]; // Tipos de foil possuídos (ex: 'arco iris', 'ouro')
   updatedAt?: any;
 }
+
+export interface FoilTypeInfo {
+  id: string;
+  name: string;
+  shortName: string;
+  color: string;
+  badgeBg: string;
+  border: string;
+  gradient: string;
+  shimmerClass: string;
+  description: string;
+}
+
+/**
+ * 11 Tipos de cartas Foil disponíveis no jogo
+ */
+export const FOIL_TYPES: FoilTypeInfo[] = [
+  { 
+    id: 'arco iris', 
+    name: 'Arco-íris', 
+    shortName: 'Arco-íris',
+    color: 'text-pink-300', 
+    badgeBg: 'bg-gradient-to-r from-pink-500/20 via-purple-500/20 to-cyan-500/20 text-pink-200 border-pink-500/50', 
+    border: 'border-pink-500', 
+    gradient: 'from-pink-500 via-purple-500 to-cyan-400',
+    shimmerClass: 'foil-shimmer-rainbow',
+    description: 'Reflexo prismático iridescente de arco-íris cósmico' 
+  },
+  { 
+    id: 'estilhaço', 
+    name: 'Estilhaço', 
+    shortName: 'Estilhaço',
+    color: 'text-cyan-300', 
+    badgeBg: 'bg-cyan-950/70 text-cyan-200 border-cyan-500/50', 
+    border: 'border-cyan-500', 
+    gradient: 'from-cyan-400 via-sky-500 to-indigo-500',
+    shimmerClass: 'foil-shimmer-shatter',
+    description: 'Padrão geométrico de vidro quebrado cintilante' 
+  },
+  { 
+    id: 'confeti', 
+    name: 'Confeti', 
+    shortName: 'Confeti',
+    color: 'text-yellow-300', 
+    badgeBg: 'bg-yellow-950/70 text-yellow-200 border-yellow-500/50', 
+    border: 'border-yellow-500', 
+    gradient: 'from-yellow-400 via-pink-400 to-emerald-400',
+    shimmerClass: 'foil-shimmer-confetti',
+    description: 'Partículas cintilantes multicoloridas espalhadas' 
+  },
+  { 
+    id: 'coração', 
+    name: 'Coração', 
+    shortName: 'Coração',
+    color: 'text-rose-400', 
+    badgeBg: 'bg-rose-950/70 text-rose-200 border-rose-500/50', 
+    border: 'border-rose-500', 
+    gradient: 'from-rose-400 via-pink-500 to-red-500',
+    shimmerClass: 'foil-shimmer-heart',
+    description: 'Holofoil com micro-corações brilhantes pulsantes' 
+  },
+  { 
+    id: 'espiral', 
+    name: 'Espiral', 
+    shortName: 'Espiral',
+    color: 'text-indigo-300', 
+    badgeBg: 'bg-indigo-950/70 text-indigo-200 border-indigo-500/50', 
+    border: 'border-indigo-500', 
+    gradient: 'from-indigo-400 via-purple-500 to-violet-600',
+    shimmerClass: 'foil-shimmer-spiral',
+    description: 'Vórtice hipnótico espiral com ondas de luz' 
+  },
+  { 
+    id: 'prata', 
+    name: 'Prata', 
+    shortName: 'Prata',
+    color: 'text-slate-200', 
+    badgeBg: 'bg-slate-800 text-slate-100 border-slate-400/60', 
+    border: 'border-slate-400', 
+    gradient: 'from-slate-200 via-gray-300 to-slate-400',
+    shimmerClass: 'foil-shimmer-silver',
+    description: 'Acabamento cromado espelhado metálico puro' 
+  },
+  { 
+    id: 'ouro', 
+    name: 'Ouro', 
+    shortName: 'Ouro',
+    color: 'text-amber-300', 
+    badgeBg: 'bg-amber-950/80 text-amber-200 border-amber-500/60', 
+    border: 'border-amber-500', 
+    gradient: 'from-amber-300 via-yellow-400 to-amber-500',
+    shimmerClass: 'foil-shimmer-gold',
+    description: 'Brilho nobre e dourado maciço dos campeões' 
+  },
+  { 
+    id: 'confeti 3d', 
+    name: 'Confeti 3D', 
+    shortName: 'Confeti 3D',
+    color: 'text-emerald-300', 
+    badgeBg: 'bg-emerald-950/70 text-emerald-200 border-emerald-500/50', 
+    border: 'border-emerald-500', 
+    gradient: 'from-emerald-400 via-teal-400 to-cyan-500',
+    shimmerClass: 'foil-shimmer-3d',
+    description: 'Efeito holográfico tridimensional profundo' 
+  },
+  { 
+    id: 'frente e verso', 
+    name: 'Frente e Verso', 
+    shortName: 'Frente/Verso',
+    color: 'text-purple-300', 
+    badgeBg: 'bg-purple-950/70 text-purple-200 border-purple-500/50', 
+    border: 'border-purple-500', 
+    gradient: 'from-purple-400 via-fuchsia-500 to-pink-500',
+    shimmerClass: 'foil-shimmer-double',
+    description: 'Laminação holofoil de alta densidade em ambas as faces' 
+  },
+  { 
+    id: 'palha', 
+    name: 'Palha', 
+    shortName: 'Palha',
+    color: 'text-amber-200', 
+    badgeBg: 'bg-yellow-950/60 text-yellow-200 border-yellow-600/50', 
+    border: 'border-yellow-600', 
+    gradient: 'from-yellow-600 via-amber-400 to-yellow-700',
+    shimmerClass: 'foil-shimmer-straw',
+    description: 'traços holograficos como palha espalhada'
+  },
+  { 
+    id: 'floco de neve', 
+    name: 'Floco de Neve', 
+    shortName: 'Floco Neve',
+    color: 'text-sky-200', 
+    badgeBg: 'bg-sky-950/70 text-sky-200 border-sky-400/50', 
+    border: 'border-sky-400', 
+    gradient: 'from-sky-200 via-blue-300 to-indigo-300',
+    shimmerClass: 'foil-shimmer-snowflake',
+    description: 'Cristais poligonais gélidos e flocos de neve' 
+  }
+];
 
 export type UserAlbumMap = Record<string, AlbumEntry>;
 
@@ -117,6 +257,67 @@ export const setMultipleUserCardQuantities = async (
 };
 
 /**
+ * Atualiza a lista de foils possuídas para uma carta no álbum do usuário
+ */
+export const setUserCardFoils = async (
+  userId: string,
+  cardOrCode: CardData | string,
+  foils: string[],
+  currentQty: number = 1,
+  frame?: string
+): Promise<void> => {
+  if (!userId || !cardOrCode) return;
+  const key = normalizeAlbumKey(cardOrCode, frame);
+  if (!key) return;
+
+  const albumRef = doc(db, 'users', userId, 'album', 'data');
+  const cleanFoils = Array.from(new Set(foils.map(f => f.trim().toLowerCase()))).filter(Boolean);
+  
+  // Se marcou foil mas a quantidade é 0, eleva para pelo menos 1 cópia
+  const targetQty = cleanFoils.length > 0 ? Math.max(1, currentQty) : currentQty;
+
+  await setDoc(albumRef, {
+    cards: {
+      [key]: {
+        quantity: targetQty,
+        foils: cleanFoils,
+        updatedAt: new Date().toISOString()
+      }
+    },
+    lastUpdated: serverTimestamp()
+  }, { merge: true });
+};
+
+/**
+ * Alterna a posse de um tipo específico de foil em uma carta
+ */
+export const toggleUserCardFoil = async (
+  userId: string,
+  cardOrCode: CardData | string,
+  foilId: string,
+  currentEntry?: AlbumEntry,
+  frame?: string
+): Promise<string[]> => {
+  if (!userId || !cardOrCode || !foilId) return [];
+  const key = normalizeAlbumKey(cardOrCode, frame);
+  if (!key) return [];
+
+  const cleanFoilId = foilId.trim().toLowerCase();
+  const currentFoils = (currentEntry?.foils || []).map(f => f.toLowerCase());
+  
+  let newFoils: string[];
+  if (currentFoils.includes(cleanFoilId)) {
+    newFoils = currentFoils.filter(f => f !== cleanFoilId);
+  } else {
+    newFoils = [...currentFoils, cleanFoilId];
+  }
+
+  const currentQty = currentEntry?.quantity || 0;
+  await setUserCardFoils(userId, cardOrCode, newFoils, currentQty, frame);
+  return newFoils;
+};
+
+/**
  * Hook para gerenciar o álbum do usuário conectado com sincronização em tempo real
  */
 export const useUserAlbum = (userId?: string | null) => {
@@ -220,11 +421,40 @@ export const useUserAlbum = (userId?: string | null) => {
     return entries.length;
   };
 
+  const getCardFoils = (cardOrCode?: CardData | string | null, frame?: string): string[] => {
+    if (!cardOrCode) return [];
+    const key = normalizeAlbumKey(cardOrCode, frame);
+    return album[key]?.foils || [];
+  };
+
+  const hasFoil = (cardOrCode?: CardData | string | null, foilType?: string, frame?: string): boolean => {
+    const foils = getCardFoils(cardOrCode, frame);
+    if (!foilType) return foils.length > 0;
+    return foils.includes(foilType.toLowerCase().trim());
+  };
+
+  const setCardFoils = async (cardOrCode: CardData | string, foils: string[], frame?: string) => {
+    if (!userId) return;
+    const current = getQuantity(cardOrCode, frame);
+    await setUserCardFoils(userId, cardOrCode, foils, current, frame);
+  };
+
+  const toggleCardFoil = async (cardOrCode: CardData | string, foilId: string, frame?: string) => {
+    if (!userId) return [];
+    const key = normalizeAlbumKey(cardOrCode, frame);
+    const entry = album[key];
+    return await toggleUserCardFoil(userId, cardOrCode, foilId, entry, frame);
+  };
+
   return {
     album,
     loading,
     getQuantity,
     hasCard,
+    getCardFoils,
+    hasFoil,
+    setCardFoils,
+    toggleCardFoil,
     updateQuantity,
     incrementCard,
     decrementCard,

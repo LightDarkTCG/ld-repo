@@ -17,6 +17,7 @@ import { AuthModal } from './components/AuthModal';
 import { PopularCardsModal } from './components/PopularCardsModal';
 import { CollectorsRankingModal } from './components/CollectorsRankingModal';
 import { ChampionshipHistoryModal } from './components/ChampionshipHistoryModal';
+import { UserProfileModal, TargetUserProfile } from './components/UserProfileModal';
 import { useAuth } from './authService';
 import GameBoard from './components/GameBoard';
 import { TournamentManager } from './components/TournamentManager';
@@ -1138,6 +1139,15 @@ export default function App() {
   const [isTournamentOpen, setIsTournamentOpen] = useState(false);
   const [activeTournamentId, setActiveTournamentId] = useState<string | undefined>(undefined);
   const [isChampionshipHistoryOpen, setIsChampionshipHistoryOpen] = useState(false);
+  const [isUserProfileOpen, setIsUserProfileOpen] = useState(false);
+  const [targetUserProfile, setTargetUserProfile] = useState<TargetUserProfile | null>(null);
+  const [userProfileInitialTab, setUserProfileInitialTab] = useState<'wishlist' | 'most_wanted' | 'stats'>('wishlist');
+
+  const openUserProfile = (profile?: TargetUserProfile | null, tab: 'wishlist' | 'most_wanted' | 'stats' = 'wishlist') => {
+    setTargetUserProfile(profile || null);
+    setUserProfileInitialTab(tab);
+    setIsUserProfileOpen(true);
+  };
   const [adminMode, setAdminMode] = useState<'none' | 'home' | 'catalog' | 'master'>('none');
   const [selectedType, setSelectedType] = useState<string | null>(null);
   const [scrolled, setScrolled] = useState(false);
@@ -1343,6 +1353,7 @@ export default function App() {
         }} 
         onOpenAuth={() => setIsAuthModalOpen(true)}
         onOpenRanking={() => setIsCollectorsRankingOpen(true)}
+        onOpenWishlist={() => openUserProfile(null, 'wishlist')}
       />
       <SavedDecksModal
         isOpen={isSavedDecksOpen}
@@ -1363,6 +1374,20 @@ export default function App() {
       <CollectorsRankingModal
         isOpen={isCollectorsRankingOpen}
         onClose={() => setIsCollectorsRankingOpen(false)}
+        onOpenAlbum={() => setIsAlbumOpen(true)}
+        onOpenAuth={() => setIsAuthModalOpen(true)}
+        onOpenUserProfile={(target) => openUserProfile(target, 'wishlist')}
+        onOpenMostWanted={() => openUserProfile(null, 'most_wanted')}
+      />
+      <UserProfileModal
+        isOpen={isUserProfileOpen}
+        onClose={() => {
+          setIsUserProfileOpen(false);
+          setTargetUserProfile(null);
+        }}
+        targetProfile={targetUserProfile}
+        initialTab={userProfileInitialTab}
+        onOpenCardDetail={(c) => setInspectedDeckCard(c)}
         onOpenAlbum={() => setIsAlbumOpen(true)}
         onOpenAuth={() => setIsAuthModalOpen(true)}
       />
@@ -1544,6 +1569,22 @@ export default function App() {
                     </button>
 
                     <button
+                      onClick={() => { openUserProfile(null, 'wishlist'); setIsUserMenuOpen(false); }}
+                      className="px-3 py-2 text-left text-xs text-slate-300 hover:text-white hover:bg-purple-900/30 flex items-center gap-2 transition"
+                    >
+                      <Heart size={14} className="text-pink-400 fill-pink-400/20" />
+                      <span>Meu Perfil & Cartas que Procuro</span>
+                    </button>
+
+                    <button
+                      onClick={() => { openUserProfile(null, 'most_wanted'); setIsUserMenuOpen(false); }}
+                      className="px-3 py-2 text-left text-xs text-slate-300 hover:text-white hover:bg-purple-900/30 flex items-center gap-2 transition"
+                    >
+                      <Flame size={14} className="text-amber-400 fill-amber-400/20" />
+                      <span>Cartas Mais Procuradas</span>
+                    </button>
+
+                    <button
                       onClick={() => { setIsAlbumOpen(true); setIsUserMenuOpen(false); }}
                       className="px-3 py-2 text-left text-xs text-slate-300 hover:text-white hover:bg-purple-900/30 flex items-center gap-2 transition"
                     >
@@ -1658,6 +1699,20 @@ export default function App() {
                         <Edit2 size={12} /> Mudar Nome
                       </button>
                     </div>
+
+                    <button 
+                      onClick={() => { openUserProfile(null, 'wishlist'); setIsMenuOpen(false); }}
+                      className="bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white px-3.5 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 border border-slate-800"
+                    >
+                      <Heart size={14} className="text-pink-400 fill-pink-400/20" /> Meu Perfil & Cartas que Procuro
+                    </button>
+
+                    <button 
+                      onClick={() => { openUserProfile(null, 'most_wanted'); setIsMenuOpen(false); }}
+                      className="bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white px-3.5 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 border border-slate-800"
+                    >
+                      <Flame size={14} className="text-amber-400 fill-amber-400/20" /> Cartas Mais Procuradas
+                    </button>
 
                     <button 
                       onClick={() => { setIsAlbumOpen(true); setIsMenuOpen(false); }}

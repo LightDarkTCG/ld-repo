@@ -22,6 +22,12 @@ service cloud.firestore {
         allow read, write: if isOwner(userId) || isAdmin();
       }
 
+      // Wishlist pessoal / Cartas que procuro (leitura pública para exibição de perfil, gravação pelo dono)
+      match /wishlist/{document=**} {
+        allow read: if true;
+        allow write: if isOwner(userId) || isAdmin();
+      }
+
       // Decks salvos na nuvem (leitura pública para cálculo das cartas mais populares da comunidade)
       match /savedDecks/{deckId} {
         allow read: if true;
@@ -33,6 +39,12 @@ service cloud.firestore {
         allow read: if true;
         allow write: if request.auth != null;
       }
+    }
+
+    // Coleção comunitária de Wishlists para agregação de cartas mais procuradas
+    match /communityWishlists/{userId} {
+      allow read: if true;
+      allow write: if request.auth != null;
     }
 
     // Suporte para Collection Group queries de savedDecks em toda a comunidade

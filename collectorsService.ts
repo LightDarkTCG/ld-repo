@@ -16,6 +16,10 @@ export interface CollectorRankEntry {
   uniqueModerno: number;
   specialCards: number;
   completionPercentage: number;
+  isAmbassador?: boolean; // Colecionador é Embaixador Oficial do jogo
+  ambassadorRole?: string; // Ex: 'Embaixador Oficial', 'Criador & Embaixador'
+  ambassadorAssignedBy?: string; // Email do administrador que nomeou
+  ambassadorAssignedAt?: any; // Data da nomeação
   updatedAt?: any;
 }
 
@@ -155,6 +159,10 @@ export function subscribeCollectorsRanking(
           uniqueModerno: data.uniqueModerno || 0,
           specialCards: data.specialCards || 0,
           completionPercentage: data.completionPercentage || 0,
+          isAmbassador: Boolean(data.isAmbassador),
+          ambassadorRole: data.ambassadorRole || (data.isAmbassador ? 'Embaixador Oficial' : undefined),
+          ambassadorAssignedBy: data.ambassadorAssignedBy || undefined,
+          ambassadorAssignedAt: data.ambassadorAssignedAt || undefined,
           updatedAt: data.updatedAt
         });
       }
@@ -164,4 +172,36 @@ export function subscribeCollectorsRanking(
     console.error('Erro ao ouvir ranking de colecionadores:', err);
     if (onError) onError(err);
   });
+}
+
+/**
+ * Atribui ou remove o status de Embaixador de um colecionador.
+ * Exclusivo para administradores.
+ */
+export async function setCollectorAmbassadorStatus(
+  userId: string,
+  isAmbassador: boolean,
+  adminEmail?: string,
+  role: string = 'Embaixador Oficial'
+): Promise<void> {
+  if (!userId) throw new Error('ID do usuário é obrigatório');
+
+  const rankRef = doc(db, 'collectorsRanking', userId);
+  await setDoc(rankRef, {
+    isAmbassador,
+    ambassadorRole: isAmbassador ? role : null,
+    ambassadorAssignedBy: isAmbassador ? (adminEmail || 'admin') : null,
+    ambassadorAssignedAt: isAmbassador ? serverTimestamp() : null
+  }, { merge: true });
+
+  // Espelha no documento do usuário em /users/{userId}
+  try {
+    const userRef = doc(db, 'users', userId);
+    await setDoc(userRef, {
+      isAmbassador,
+      ambassadorRole: isAmbassador ? role : null
+    }, { merge: true });
+  } catch (err) {
+    console.warn('Não foi possível espelhar em users:', err);
+  }
 }
