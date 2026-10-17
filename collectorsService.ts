@@ -4,8 +4,6 @@ import { db } from './firebase';
 import { UserAlbumMap, normalizeAlbumKey } from './albumService';
 import { CardData } from './types';
 import { isLegacyCard, isSpecialCard } from './components/AlbumModal';
-import { cleanCardCode } from './CardContext';
-import { allCards as defaultCards } from './data';
 
 export interface CollectorRankEntry {
   userId: string;
@@ -34,103 +32,60 @@ export interface CatalogueStats {
   variationCount: number;
   specialCount: number;
   cardMap: Map<string, CardData>;
+  cardsList: CardData[];
 }
 
 /**
- * Retorna o universo total e contagem rigorosa do catálogo de cartas:
- * FÓRMULA OFICIAL DO JOGO:
- * TOTAL DE CARTAS = Quantidade de Cartas Legado 
- *                 + Quantidade de Cartas Modernas 
- *                 + Variações, Skins, Artes Alternativas e qualquer uma adicionada depois.
- *
- * Sempre segue o catálogo de cartas e aumenta a quantidade máxima de cartas possíveis.
- * NUNCA altera automaticamente as cartas atuais dos colecionadores (eles mesmos devem preencher as que faltam).
+ * Retorna o universo total e contagem rigorosa do catálogo de cartas.
+ * Segue EXATAMENTE o mesmo conjunto de cartas e regras do Álbum ("Todos"):
+ * TOTAL DE CARTAS = Todas as cartas colecionáveis registradas no jogo (Legado, Modernas, Variações, Skins e Artes Alternativas).
  */
 export function getCatalogueUniverse(allCards: CardData[]): CatalogueStats {
-  const seenCodes = new Set<string>();
-  const allSources: CardData[] = [];
-
-  for (const c of [...defaultCards, ...(allCards || [])]) {
-    if (!c) continue;
-    const key = `${c.id || ''}_${c.code || ''}_${c.frame || ''}_${c.variationType || ''}_${c.imageUrl || ''}`;
-    if (!seenCodes.has(key)) {
-      seenCodes.add(key);
-      allSources.push(c);
-    }
-  }
-
-  const legacySet = new Set<string>();
-  const modernSet = new Set<string>();
-  const variationSet = new Set<string>();
-  const specialSet = new Set<string>();
+  const seen = new Set<string>();
   const cardMap = new Map<string, CardData>();
+  const cardsList: CardData[] = [];
 
-  for (const c of allSources) {
-    if (!c) continue;
-    const baseCode = cleanCardCode(c.parentCode || c.code);
-    if (!baseCode) continue;
+  let legacyCount = 0;
+  let modernCount = 0;
+  let variationCount = 0;
+  let specialCount = 0;
 
-    const baseAlbumKey = normalizeAlbumKey(c);
-    if (baseAlbumKey) {
-      cardMap.set(baseAlbumKey, c);
+  for (const card of allCards || []) {
+    if (!card) continue;
+    const codeKey = normalizeAlbumKey(card);
+    if (!codeKey || seen.has(codeKey)) continue;
+    seen.add(codeKey);
+
+    cardsList.push(card);
+    cardMap.set(codeKey, card);
+
+    if (isSpecialCard(card) || card.isVariation) {
+      specialCount++;
     }
-
-    if (isSpecialCard(c)) {
-      specialSet.add(baseAlbumKey);
+    if (card.isVariation) {
+      variationCount++;
     }
-
-    // 1. Variações, Skins, Artes Alternativas
-    if (c.isVariation) {
-      variationSet.add(baseAlbumKey || c.id || `${baseCode}_var`);
-    } 
-    // 2. Cartas Modernas nativas (ex: Invasão do Caos ou coleções modernas)
-    else if (c.frame === 'Moderno' || (c.code && c.code.endsWith('-M')) || c.collection === 'Invasão do Caos' || c.collection === 'Booster Invasão do Caos' || c.collection === 'Reforço Macroversal') {
-      modernSet.add(baseAlbumKey || `${baseCode}_MOD`);
-    } 
-    // 3. Cartas Legado
-    else {
-      legacySet.add(baseAlbumKey || baseCode);
-      // Cada carta Legado também possui sua versão com Novo Frame Moderno no jogo
-      const modKey = normalizeAlbumKey(c, 'Moderno');
-      modernSet.add(modKey);
-      cardMap.set(modKey, { ...c, frame: 'Moderno' });
-    }
-
-    // Variantes internas no array c.variants (skins, artes alternativas)
-    if (c.variants && Array.isArray(c.variants)) {
-      c.variants.forEach(v => {
-        const vKey = normalizeAlbumKey(v.code || c.code, v.frame, v.id);
-        if (vKey) {
-          cardMap.set(vKey, { ...c, ...v, id: v.id || c.id });
-          variationSet.add(vKey);
-          if (isSpecialCard(c)) specialSet.add(vKey);
-        }
-      });
+    if (isLegacyCard(card)) {
+      legacyCount++;
+    } else {
+      modernCount++;
     }
   }
-
-  const legacyCount = legacySet.size;
-  const modernCount = modernSet.size;
-  const variationCount = variationSet.size;
-  const specialCount = specialSet.size;
-
-  // FÓRMULA OFICIAL EXATA:
-  // TOTAL DE CARTAS = quantidade legado + quantidade modernas + variações + skins + alternativas e qualquer uma que adicionar depois
-  const totalCount = legacyCount + modernCount + variationCount;
 
   return {
-    totalCount,
+    totalCount: cardsList.length,
     legacyCount,
     modernCount,
     variationCount,
     specialCount,
-    cardMap
+    cardMap,
+    cardsList
   };
 }
 
 /**
  * Calcula as estatísticas completas e reais do acervo de um colecionador:
- * REGRA: CARTAS ÚNICAS = SOMA DE TODAS LEGADO, TODAS MODERNAS, TODAS AS VARIAÇÕES, SKINS E ARTES ALTERNATIVAS.
+ * Avalia a posse do usuário contra exatamente as mesmas cartas do Álbum Geral.
  */
 export function calculateCollectorStats(
   albumCards: UserAlbumMap,
@@ -154,34 +109,25 @@ export function calculateCollectorStats(
   let specialCards = 0;
   let totalCopies = 0;
 
-  Object.entries(albumCards || {}).forEach(([key, entry]) => {
+  // Itera por todas as cartas reais do catálogo do jogo
+  for (const card of universe.cardsList) {
+    const key = normalizeAlbumKey(card);
+    const entry = albumCards?.[key];
     const qty = entry?.quantity || 0;
     if (qty > 0) {
       totalCopies += qty;
-
-      const card = universe.cardMap.get(key);
-      const isModern = key.endsWith('_MOD') || 
-                       key.endsWith('-MOD') || 
-                       key.endsWith('-M') || 
-                       key.endsWith('_M') || 
-                       (card && (!isLegacyCard(card) || card.frame === 'Moderno'));
-
-      if (isModern) {
-        uniqueModerno++;
-      } else {
+      if (isLegacyCard(card)) {
         uniqueLegado++;
+      } else {
+        uniqueModerno++;
       }
-
-      if (card && isSpecialCard(card)) {
+      if (isSpecialCard(card) || card.isVariation) {
         specialCards++;
       }
     }
-  });
+  }
 
-  // CARTAS UNICAS = SOMA DE TODAS LEGADO, TODAS MODERNAS, TODAS AS VARIAÇÕES, SKINS E ARTES ALTERNATIVAS
   const uniqueCards = uniqueLegado + uniqueModerno;
-
-  // O total máximo de cartas possíveis segue dinamicamente o catálogo do jogo
   const totalCatalogueCount = universe.totalCount;
 
   // Porcentagem de conclusão da coleção geral (limitada a 100%)
@@ -205,7 +151,6 @@ export function calculateCollectorStats(
 
 /**
  * Sincroniza as estatísticas de colecionador do usuário com o ranking comunitário na nuvem.
- * Apenas atualiza o usuário que chamou a sincronização através de seu próprio álbum.
  */
 export async function syncUserCollectorStats(
   userId: string,
@@ -273,7 +218,6 @@ export function sortCollectors(
 
 /**
  * Ouve o ranking de colecionadores em tempo real.
- * Não altera nem distorce os valores registrados de nenhum colecionador.
  */
 export function subscribeCollectorsRanking(
   onUpdate: (ranking: CollectorRankEntry[]) => void,
@@ -351,7 +295,8 @@ export async function setCollectorAmbassadorStatus(
 }
 
 /**
- * Recalcula manualmente o ranking se explicitamente solicitado pelo administrador.
+ * Audita e atualiza os documentos de ranking no Firestore calculando com precisão
+ * a posse com base no catálogo oficial do Álbum.
  */
 export async function repairAllRankingDocs(allCards: CardData[]): Promise<number> {
   let fixedCount = 0;

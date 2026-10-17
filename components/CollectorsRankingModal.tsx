@@ -103,10 +103,17 @@ export const CollectorsRankingModal: React.FC<CollectorsRankingModalProps> = ({
     }
   }, [isOpen, user?.uid, album, allCards.length]);
 
-  // Universo dinâmico do catálogo: Legado + Modernas + Variações, Skins & Alternativas
+  // Universo dinâmico do catálogo exatamente idêntico ao Álbum Geral
   const catalogueStats = useMemo(() => {
     return getCatalogueUniverse(allCards);
   }, [allCards]);
+
+  // Se for Administrador, audita e sincroniza todos os documentos de ranking no Firestore
+  useEffect(() => {
+    if (isOpen && isAdmin && allCards.length > 0) {
+      repairAllRankingDocs(allCards);
+    }
+  }, [isOpen, isAdmin, allCards.length]);
 
   // Ordena todos os colecionadores pelo critério selecionado
   const sortedAllCollectors = useMemo(() => {
@@ -314,7 +321,7 @@ export const CollectorsRankingModal: React.FC<CollectorsRankingModalProps> = ({
             <span className="text-slate-600 hidden sm:inline">•</span>
             <span className="text-slate-400">Modernas: <strong className="text-purple-300">{catalogueStats.modernCount}</strong></span>
             <span className="text-slate-600 hidden sm:inline">•</span>
-            <span className="text-slate-400">Variações & Skins: <strong className="text-pink-300">{catalogueStats.variationCount}</strong></span>
+            <span className="text-slate-400">Especiais & Variações: <strong className="text-pink-300">{catalogueStats.specialCount}</strong></span>
           </div>
           <span className="text-[11px] text-slate-400 hidden md:inline">O total máximo segue o catálogo automaticamente</span>
         </div>
