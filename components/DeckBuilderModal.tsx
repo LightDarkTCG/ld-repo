@@ -83,9 +83,9 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
     }
 
     if (isSide) {
-      setSideDeck([...sideDeck, card]);
+      setSideDeck([...sideDeck, card].sort((a, b) => compareCardCodes(a.code, b.code)));
     } else {
-      setDeck([...deck, card]);
+      setDeck([...deck, card].sort((a, b) => compareCardCodes(a.code, b.code)));
     }
   };
 
@@ -182,7 +182,7 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
 
   // --- Filtered Pool ---
   const filteredPool = useMemo(() => {
-    // Group allCards by collection, base card code, and frame to keep Moderno and Legado cards completely independent
+    // Agrupar allCards por código base e coleção para que variações não apareçam como cartas duplicadas
     const groupedByCard = new Map<string, CardData[]>();
     for (const card of allCards) {
       const baseCode = cleanCardCode(card.parentCode || card.code);
@@ -197,9 +197,15 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
 
     const poolCards: CardData[] = [];
     groupedByCard.forEach((group) => {
-      // Pick highest priority skin/variation within the SAME frame
-      const sorted = [...group].sort((a, b) => getCardDisplayPriority(b) - getCardDisplayPriority(a));
-      const chosenCard = sorted[0];
+      // Priorizar a versão moderna para a carta
+      const sorted = [...group].sort((a, b) => {
+        return getCardDisplayPriority(b) - getCardDisplayPriority(a);
+      });
+      let chosenCard = sorted[0];
+
+      if (chosenCard.frame !== 'Moderno') {
+        chosenCard = resolveModernFrameOnly(chosenCard, group);
+      }
 
       poolCards.push({
         ...chosenCard,

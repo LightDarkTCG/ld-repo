@@ -18,6 +18,7 @@ import { CardData } from '../types';
 import { useAuth } from '../authService';
 import { useSavedDecks, UserSavedDeck } from '../savedDecksService';
 import { cleanCardCode } from '../CardContext';
+import { compareCardCodes } from '../deckUtils';
 
 interface SavedDecksModalProps {
   isOpen: boolean;
@@ -83,11 +84,12 @@ export const SavedDecksModal: React.FC<SavedDecksModalProps> = ({
   };
 
   const handleLoadSavedDeck = (savedDeck: UserSavedDeck) => {
-    // Reconstruir o Main Deck a partir dos códigos
+    // Reconstruir o Main Deck a partir dos códigos garantindo que cartas base sejam priorizadas
     const mainList: CardData[] = [];
     (savedDeck.mainDeckCodes || []).forEach(code => {
       const cleanTarget = cleanCardCode(code).toLowerCase();
-      const match = allCards.find(c => cleanCardCode(c.code).toLowerCase() === cleanTarget);
+      const match = allCards.find(c => !c.isVariation && cleanCardCode(c.code).toLowerCase() === cleanTarget) ||
+                    allCards.find(c => cleanCardCode(c.code).toLowerCase() === cleanTarget);
       if (match) {
         mainList.push(match);
       }
@@ -97,11 +99,16 @@ export const SavedDecksModal: React.FC<SavedDecksModalProps> = ({
     const sideList: CardData[] = [];
     (savedDeck.sideDeckCodes || []).forEach(code => {
       const cleanTarget = cleanCardCode(code).toLowerCase();
-      const match = allCards.find(c => cleanCardCode(c.code).toLowerCase() === cleanTarget);
+      const match = allCards.find(c => !c.isVariation && cleanCardCode(c.code).toLowerCase() === cleanTarget) ||
+                    allCards.find(c => cleanCardCode(c.code).toLowerCase() === cleanTarget);
       if (match) {
         sideList.push(match);
       }
     });
+
+    // Manter o deck perfeitamente ordenado pelo código das cartas
+    mainList.sort((a, b) => compareCardCodes(a.code, b.code));
+    sideList.sort((a, b) => compareCardCodes(a.code, b.code));
 
     onLoadDeck(mainList, sideList);
     onClose();

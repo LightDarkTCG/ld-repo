@@ -21,7 +21,7 @@ import {
   Heart
 } from 'lucide-react';
 import { CardData } from '../types';
-import { useCards, cleanCardCode } from '../CardContext';
+import { useCards, cleanCardCode, getCardDisplayPriority, resolveModernFrameOnly } from '../CardContext';
 import { useAuth } from '../authService';
 import { useUserAlbum, normalizeAlbumKey, FOIL_TYPES, FoilTypeInfo } from '../albumService';
 import { compareCardCodes } from '../deckUtils';
@@ -108,8 +108,8 @@ export const AlbumModal: React.FC<AlbumModalProps> = ({ isOpen, onClose, onSelec
     }
   }, [album, user?.uid, allCards.length]);
 
-  // Edição do Álbum (Padrão: Legado conforme solicitação do usuário)
-  const [albumEdition, setAlbumEdition] = useState<AlbumEdition>('legado');
+  // Edição do Álbum (Padrão: Álbum Completo 'all' - reflete 100% o catálogo geral)
+  const [albumEdition, setAlbumEdition] = useState<AlbumEdition>('all');
   const [onlySpecials, setOnlySpecials] = useState<boolean>(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCollection, setSelectedCollection] = useState('Todas');
@@ -124,20 +124,86 @@ export const AlbumModal: React.FC<AlbumModalProps> = ({ isOpen, onClose, onSelec
   const [bulkLoadingName, setBulkLoadingName] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  // Lista estruturada de coleções disponíveis com contagem de posse para inserção em lote
-  const collectionsSummary = useMemo(() => {
-    // Determinar as cartas com base no álbum ativo (Legado, Moderno ou Todos)
-    let poolCards: CardData[] = [];
-    if (albumEdition === 'legado') {
-      poolCards = allCards.filter(isLegacyCard);
-    } else if (albumEdition === 'moderno') {
-      poolCards = allCards.filter(c => !isLegacyCard(c));
-    } else {
-      poolCards = allCards;
+  // Pool de cartas conforme o Álbum selecionado:
+  // Agrupa cartas por coleção e código base para que variações (artes alternativas, skins)
+  // fiquem agrupadas DENTRO da carta principal, garantindo 1 único slot por carta no álbum!
+  const albumPoolCards = useMemo(() => {
+    const groupedByCard = new Map<string, CardData[]>();
+    for (const card of allCards) {
+      const baseCode = cleanCardCode(card.parentCode || card.code);
+      const key = baseCode;
+      if (!groupedByCard.has(key)) {
+        groupedByCard.set(key, []);
+      }
+      groupedByCard.get(key)!.push(card);
     }
 
+    const poolCards: CardData[] = [];
+    groupedByCard.forEach((group) => {
+      let candidateCards = group;
+      if (albumEdition === 'legado') {
+        candidateCards = group.filter(isLegacyCard);
+        if (candidateCards.length === 0) return;
+      } else if (albumEdition === 'moderno') {
+        candidateCards = group.filter(c => !isLegacyCard(c));
+        if (candidateCards.length === 0) return;
+      }
+
+      // Escolhe a representação visual prioritária para a edição do álbum ativa:
+      // REGRA: Exibir sempre primeiro o frame moderno das cartas (caso tenha)!
+      const sorted = [...candidateCards].sort((a, b) => {
+        return getCardDisplayPriority(b) - getCardDisplayPriority(a);
+      });
+      let chosenCard = sorted[0];
+
+      if (albumEdition !== 'legado' && chosenCard.frame !== 'Moderno') {
+        chosenCard = resolveModernFrameOnly(chosenCard, group);
+      }
+
+      // Consolida todas as variações deste grupo dentro de chosenCard.variants
+      const allVariants: any[] = [];
+      const baseGroupCode = cleanCardCode(chosenCard.parentCode || chosenCard.code);
+      group.forEach(item => {
+        if (item.variants && item.variants.length > 0) {
+          item.variants.forEach(v => {
+            const vBase = cleanCardCode(v.code || item.code);
+            if (vBase === baseGroupCode && !allVariants.some(existing => existing.imageUrl === v.imageUrl)) {
+              allVariants.push({
+                ...v,
+                code: cleanCardCode(v.code)
+              });
+            }
+          });
+        }
+        if (item.imageUrl && item.imageUrl !== chosenCard.imageUrl) {
+          if (!allVariants.some(existing => existing.imageUrl === item.imageUrl)) {
+            allVariants.push({
+              id: item.id || `var_${item.code}`,
+              name: item.variationType || (item.frame === 'Moderno' ? 'Novo Frame' : 'Legado'),
+              imageUrl: item.imageUrl,
+              frame: item.frame || 'Legado',
+              code: cleanCardCode(item.code),
+              rarity: item.rarity,
+              tier: item.tier
+            });
+          }
+        }
+      });
+
+      poolCards.push({
+        ...chosenCard,
+        code: cleanCardCode(chosenCard.code),
+        variants: allVariants.length > 0 ? allVariants : chosenCard.variants
+      });
+    });
+
+    return poolCards.sort((a, b) => compareCardCodes(a.code, b.code));
+  }, [allCards, albumEdition]);
+
+  // Lista estruturada de coleções disponíveis com contagem de posse baseada nas cartas do álbum ativo
+  const collectionsSummary = useMemo(() => {
     const map = new Map<string, CardData[]>();
-    for (const card of poolCards) {
+    for (const card of albumPoolCards) {
       if (!card || !card.collection) continue;
       if (!map.has(card.collection)) {
         map.set(card.collection, []);
@@ -146,19 +212,9 @@ export const AlbumModal: React.FC<AlbumModalProps> = ({ isOpen, onClose, onSelec
     }
 
     return Array.from(map.entries()).map(([name, cards]) => {
-      // Deduplicar cartas pela chave única independente do álbum
-      const uniqueMap = new Map<string, CardData>();
-      cards.forEach(c => {
-        const key = normalizeAlbumKey(c);
-        if (key && !uniqueMap.has(key)) {
-          uniqueMap.set(key, c);
-        }
-      });
-      const uniqueCards = Array.from(uniqueMap.values());
-      
       let ownedCount = 0;
       let totalCopies = 0;
-      uniqueCards.forEach(c => {
+      cards.forEach(c => {
         const q = getQuantity(c);
         if (q > 0) {
           ownedCount++;
@@ -169,22 +225,22 @@ export const AlbumModal: React.FC<AlbumModalProps> = ({ isOpen, onClose, onSelec
       const meta = COLLECTION_METADATA[name] || {
         subtitle: 'Coleção de cartas do jogo',
         heroName: '',
-        category: (uniqueCards.length <= 35 ? 'deck' : 'booster') as 'deck' | 'booster'
+        category: (cards.length <= 35 ? 'deck' : 'booster') as 'deck' | 'booster'
       };
 
       const heroCard = meta.heroName 
-        ? uniqueCards.find(c => c.name.toLowerCase().includes(meta.heroName.toLowerCase())) || uniqueCards[0]
-        : uniqueCards[0];
+        ? cards.find(c => c.name.toLowerCase().includes(meta.heroName.toLowerCase())) || cards[0]
+        : cards[0];
 
       return {
         name,
         subtitle: meta.subtitle,
         category: meta.category,
-        totalCards: uniqueCards.length,
+        totalCards: cards.length,
         ownedCount,
         totalCopies,
-        percent: uniqueCards.length > 0 ? Math.round((ownedCount / uniqueCards.length) * 100) : 0,
-        cards: uniqueCards,
+        percent: cards.length > 0 ? Math.round((ownedCount / cards.length) * 100) : 0,
+        cards,
         coverImage: heroCard?.imageUrl
       };
     }).sort((a, b) => {
@@ -193,7 +249,7 @@ export const AlbumModal: React.FC<AlbumModalProps> = ({ isOpen, onClose, onSelec
       }
       return a.name.localeCompare(b.name);
     });
-  }, [allCards, albumEdition, getQuantity]);
+  }, [albumPoolCards, getQuantity]);
 
   // Coleção atualmente selecionada no filtro (se for uma coleção real)
   const currentCollectionData = useMemo(() => {
@@ -246,31 +302,6 @@ export const AlbumModal: React.FC<AlbumModalProps> = ({ isOpen, onClose, onSelec
       setBulkLoadingName(null);
     }
   };
-
-  // Pool de cartas conforme o Álbum selecionado
-  const albumPoolCards = useMemo(() => {
-    let pool: CardData[] = [];
-    if (albumEdition === 'legado') {
-      pool = allCards.filter(isLegacyCard);
-    } else if (albumEdition === 'moderno') {
-      pool = allCards.filter(c => !isLegacyCard(c));
-    } else {
-      pool = allCards;
-    }
-
-    // Deduplicação pela chave canônica do álbum para preservar variantes especiais e frames independentes
-    const seen = new Set<string>();
-    const list: CardData[] = [];
-
-    for (const card of pool) {
-      const codeKey = normalizeAlbumKey(card);
-      if (seen.has(codeKey)) continue;
-      seen.add(codeKey);
-      list.push(card);
-    }
-
-    return list.sort((a, b) => compareCardCodes(a.code, b.code));
-  }, [allCards, albumEdition]);
 
   // Coleções disponíveis no álbum atual
   const availableCollections = useMemo(() => {
@@ -395,8 +426,40 @@ export const AlbumModal: React.FC<AlbumModalProps> = ({ isOpen, onClose, onSelec
             </div>
           </div>
 
-          {/* SELETOR DE EDIÇÃO DO ÁLBUM (LEGADO vs MODERNO vs TODOS) */}
+          {/* SELETOR DE EDIÇÃO DO ÁLBUM (COMPLETO vs MODERNO vs LEGADO) */}
           <div className="flex items-center gap-1.5 p-1 bg-slate-950 border border-slate-800 rounded-xl shadow-inner">
+            <button
+              onClick={() => {
+                setAlbumEdition('all');
+                setSelectedCollection('Todas');
+                setOnlySpecials(false);
+              }}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
+                albumEdition === 'all'
+                  ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-md shadow-purple-950/40'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <Sparkles size={14} className={albumEdition === 'all' ? 'text-purple-300' : 'text-slate-400'} />
+              <span>Álbum Completo</span>
+            </button>
+
+            <button
+              onClick={() => {
+                setAlbumEdition('moderno');
+                setSelectedCollection('Todas');
+                setOnlySpecials(false);
+              }}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
+                albumEdition === 'moderno'
+                  ? 'bg-gradient-to-r from-purple-700 to-indigo-700 text-white shadow-md shadow-purple-950/40'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <Sparkles size={14} className={albumEdition === 'moderno' ? 'text-purple-300' : 'text-slate-400'} />
+              <span>Álbum Moderno</span>
+            </button>
+
             <button
               onClick={() => {
                 setAlbumEdition('legado');
@@ -411,37 +474,6 @@ export const AlbumModal: React.FC<AlbumModalProps> = ({ isOpen, onClose, onSelec
             >
               <Shield size={14} className={albumEdition === 'legado' ? 'text-amber-200' : 'text-slate-400'} />
               <span>Álbum Legado</span>
-            </button>
-
-            <button
-              onClick={() => {
-                setAlbumEdition('moderno');
-                setSelectedCollection('Todas');
-                setOnlySpecials(false);
-              }}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
-                albumEdition === 'moderno'
-                  ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-md shadow-purple-950/40'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              <Sparkles size={14} className={albumEdition === 'moderno' ? 'text-purple-300' : 'text-slate-400'} />
-              <span>Álbum Moderno</span>
-            </button>
-
-            <button
-              onClick={() => {
-                setAlbumEdition('all');
-                setSelectedCollection('Todas');
-                setOnlySpecials(false);
-              }}
-              className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition ${
-                albumEdition === 'all'
-                  ? 'bg-slate-700 text-white shadow-sm'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              <span>Todos</span>
             </button>
           </div>
 

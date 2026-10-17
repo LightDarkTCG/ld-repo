@@ -56,12 +56,7 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card: initialC
     // Find matching cards in search pool that belong to this card
     const matches = allSearchCards.filter(c => {
       const cBase = cleanCardCode(c.parentCode || c.code);
-      if (cBase !== baseCode) return false;
-      // Do not group cards from different collections unless explicitly a variation
-      if (c.collection && targetCollection && c.collection !== targetCollection && !c.isVariation && !initialCard.isVariation) {
-        return false;
-      }
-      return true;
+      return cBase === baseCode;
     });
 
     const list: CardData[] = [];
@@ -154,21 +149,11 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card: initialC
       }
     });
 
-    // Ordenação intuitiva:
-    // 1º Legado (era clássica)
-    // 2º Novo Frame (Moderno)
-    // 3º Artes Alternativas, Skins e Variações
+    // Ordenação de variações:
+    // 1º Novo Frame (Moderno)
+    // 2º Artes Alternativas e Skins
+    // 3º Legado
     return list.sort((a, b) => {
-      const aIsLegado = a.frame === 'Legado' && !a.isVariation;
-      const bIsLegado = b.frame === 'Legado' && !b.isVariation;
-      const aIsNovoFrame = a.frame === 'Moderno' && !a.isVariation;
-      const bIsNovoFrame = b.frame === 'Moderno' && !b.isVariation;
-
-      if (aIsLegado && !bIsLegado) return -1;
-      if (!aIsLegado && bIsLegado) return 1;
-      if (aIsNovoFrame && !bIsNovoFrame) return -1;
-      if (!aIsNovoFrame && bIsNovoFrame) return 1;
-
       const pDiff = getCardDisplayPriority(b) - getCardDisplayPriority(a);
       if (pDiff !== 0) return pDiff;
       const codeDiff = compareCardCodes(a.code, b.code);

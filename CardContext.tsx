@@ -504,38 +504,46 @@ export const CardProvider = ({ children }: { children: ReactNode }) => {
             }
           }
         }
-      } else if (isModern || (targetVarType && targetVarType !== 'Legado')) {
-        // Deleting SPECIFIC MODERN FRAME or VARIATION
-        // 1. Delete specific document if ID is provided
-        if (specificId) {
+      } else {
+        // Deleting ONLY the SPECIFIC VARIANT, SKIN, OR FRAME
+        console.log('Deleting specific variant/frame:', { specificId, targetImageUrl, targetFrame, targetVarType });
+
+        // 1. If specific document exists with ID matching specificId and it's not the base doc:
+        if (specificId && specificId !== cleanDocId) {
           await deleteDoc(doc(db, 'customCards', specificId)).catch(() => {});
         }
 
-        // 2. Scan and remove any customCard document that represents this modern frame / variant
+        // 2. Scan related documents: delete ONLY the document that matches this exact variant/frame
         for (const docSnap of relatedDocs) {
           const d = docSnap.data();
-          const isDocModern = d.frame === 'Moderno' || docSnap.id.endsWith('-MOD') || docSnap.id.endsWith('-M');
-          const matchesImage = targetImageUrl && d.imageUrl === targetImageUrl;
-          const isDocVariantOrMod = docSnap.id.includes('-MOD') || docSnap.id.includes('-M') || docSnap.id.includes('_var_') || d.isVariation;
 
-          if (docSnap.id === specificId) {
-            await deleteDoc(docSnap.ref);
-          } else if (matchesImage && isDocModern) {
-            await deleteDoc(docSnap.ref);
-          } else if (isModern && isDocModern && isDocVariantOrMod) {
-            // If target has matching image or if no image was specified, clean this modern doc
-            if (!targetImageUrl || matchesImage || d.variationType === targetVarType) {
-              await deleteDoc(docSnap.ref);
+          // Never delete the base cleanDocId document when deleting an alternate art or variation
+          if (docSnap.id === cleanDocId) {
+            // Only if deleting the Modern base frame override on a default legacy card
+            if (targetFrame === 'Moderno' && targetVarType === 'Novo Frame' && d.frame === 'Moderno' && (!targetImageUrl || d.imageUrl === targetImageUrl)) {
+              if (isDefault) {
+                // Revert to legacy default card
+                await deleteDoc(docSnap.ref);
+              }
             }
-          } else if (docSnap.id === cleanDocId && d.frame === 'Moderno') {
-            // The customCard doc itself has Modern frame override
-            if (!targetImageUrl || matchesImage) {
+            continue;
+          }
+
+          // For separate variation documents (-MOD, -M, _var_...):
+          const matchesId = specificId && docSnap.id === specificId;
+          const matchesImage = Boolean(targetImageUrl && d.imageUrl === targetImageUrl);
+
+          if (matchesId || matchesImage) {
+            await deleteDoc(docSnap.ref);
+          } else if (targetFrame === 'Moderno' && targetVarType === 'Novo Frame' && (docSnap.id.endsWith('-MOD') || docSnap.id.endsWith('-M'))) {
+            // Deleting the Modern frame version
+            if (!targetImageUrl || d.imageUrl === targetImageUrl) {
               await deleteDoc(docSnap.ref);
             }
           }
         }
 
-        // 3. Remove this variant from any variants array in relatedDocs
+        // 3. Remove this exact variant from any variants array across related docs
         for (const docSnap of relatedDocs) {
           const d = docSnap.data();
           if (d.variants && Array.isArray(d.variants)) {
@@ -543,7 +551,7 @@ export const CardProvider = ({ children }: { children: ReactNode }) => {
             const filtered = d.variants.filter((v: any) => {
               if (specificId && v.id === specificId) return false;
               if (targetImageUrl && v.imageUrl === targetImageUrl) return false;
-              if (isModern && (v.frame === 'Moderno' || v.name === 'Novo Frame')) {
+              if (targetFrame === 'Moderno' && targetVarType === 'Novo Frame' && (v.frame === 'Moderno' || v.name === 'Novo Frame')) {
                 if (!targetImageUrl || v.imageUrl === targetImageUrl) return false;
               }
               return true;
@@ -554,21 +562,10 @@ export const CardProvider = ({ children }: { children: ReactNode }) => {
           }
         }
 
-        // 4. CRITICAL: If cleanDocId had { deleted: true } set previously (e.g. from the previous bug),
-        // remove the deleted marker so the default legacy card is properly preserved!
+        // 4. If cleanDocId had { deleted: true } set previously, remove that flag if isDefault so base card lives!
         const baseDoc = relatedDocs.find(d => d.id === cleanDocId);
         if (baseDoc && baseDoc.data().deleted === true && isDefault) {
           await deleteDoc(baseDoc.ref);
-        }
-      } else {
-        // Deleting LEGACY version (or default base card)
-        if (isDefault) {
-          await setDoc(doc(db, 'customCards', cleanDocId), { code: cleanCode, deleted: true });
-        } else {
-          if (specificId) {
-            await deleteDoc(doc(db, 'customCards', specificId)).catch(() => {});
-          }
-          await deleteDoc(doc(db, 'customCards', cleanDocId)).catch(() => {});
         }
       }
 

@@ -543,16 +543,18 @@ function compareSegments(segA: string, segB: string): number {
   const pA = parseCodeSegment(segA);
   const pB = parseCodeSegment(segB);
 
-  // Standard pure numbers (empty prefix) come before letter-prefixed cards
+  // If both have numbers: compare numerical values first!
+  // This ensures A0301 (card 301 variation) comes before card 00302
+  if (pA.num !== null && pB.num !== null && pA.num !== pB.num) {
+    return pA.num - pB.num;
+  }
+
+  // Same number (e.g. 00301 vs A0301 vs B0301): base card (empty prefix) comes first
   if (pA.prefix !== pB.prefix) {
     if (pA.prefix === "") return -1;
     if (pB.prefix === "") return 1;
     const prefCmp = pA.prefix.localeCompare(pB.prefix, undefined, { sensitivity: 'base' });
     if (prefCmp !== 0) return prefCmp;
-  }
-
-  if (pA.num !== null && pB.num !== null) {
-    if (pA.num !== pB.num) return pA.num - pB.num;
   }
 
   return segA.localeCompare(segB, undefined, { numeric: true, sensitivity: 'base' });
@@ -561,29 +563,69 @@ function compareSegments(segA: string, segB: string): number {
 /**
  * Robust natural/numerical sorting comparison for card codes.
  * Ensures cards are ordered by set and numeric index (e.g. 00001, 00002, 00010, 0011, 00100).
+ * Handles multi-sheet standard sets (e.g. 2026/0001/00314 followed by 2026/0002/00315, and 00449 followed by 00450 through 00453 Melty).
  */
 export function compareCardCodes(codeA?: string | null, codeB?: string | null): number {
   if (!codeA && !codeB) return 0;
   if (!codeA) return 1;
   if (!codeB) return -1;
 
-  const trimA = String(codeA).trim();
-  const trimB = String(codeB).trim();
+  const rawA = String(codeA).trim();
+  const rawB = String(codeB).trim();
 
-  if (trimA === trimB) return 0;
+  if (rawA === rawB) return 0;
 
-  const partsA = trimA.split('/');
-  const partsB = trimB.split('/');
+  // Clean suffixes like -MOD, -M, -ALT so variations/modern frames stay directly alongside their base code
+  const cleanA = rawA.replace(/-(?:ALT|MOD|alt|mod|M)$/i, '').trim();
+  const cleanB = rawB.replace(/-(?:ALT|MOD|alt|mod|M)$/i, '').trim();
 
-  if (partsA.length === partsB.length && partsA.length > 1) {
+  const partsA = cleanA.split('/');
+  const partsB = cleanB.split('/');
+
+  if (partsA.length === 3 && partsB.length === 3) {
+    // 1. Year comparison
+    const yearCmp = compareSegments(partsA[0], partsB[0]);
+    if (yearCmp !== 0) return yearCmp;
+
+    // Check if middle segments are standard release sheets (0001, 0002, etc. < 100)
+    const isStdSheet = (s: string) => {
+      const n = parseInt(s, 10);
+      return !isNaN(n) && n < 100;
+    };
+    const stdA = isStdSheet(partsA[1]);
+    const stdB = isStdSheet(partsB[1]);
+
+    if (stdA && stdB) {
+      // Both standard sequential sheets: compare card number (parts[2]) first!
+      // This ensures 00314 (sheet 1) is immediately followed by 00315 (sheet 2),
+      // 00449 (sheet 2) is followed by 00450 (sheet 1), and Melty (00453) is at the very end!
+      const numCmp = compareSegments(partsA[2], partsB[2]);
+      if (numCmp !== 0) return numCmp;
+      const sheetCmp = compareSegments(partsA[1], partsB[1]);
+      if (sheetCmp !== 0) return sheetCmp;
+    } else if (stdA && !stdB) {
+      return -1; // standard sets before special event sets (e.g. 1508)
+    } else if (!stdA && stdB) {
+      return 1;
+    } else {
+      // Both are special event sets (e.g. 1508): compare set code, then card number
+      const sheetCmp = compareSegments(partsA[1], partsB[1]);
+      if (sheetCmp !== 0) return sheetCmp;
+      const numCmp = compareSegments(partsA[2], partsB[2]);
+      if (numCmp !== 0) return numCmp;
+    }
+  } else if (partsA.length === partsB.length && partsA.length > 1) {
     for (let i = 0; i < partsA.length; i++) {
       const cmp = compareSegments(partsA[i], partsB[i]);
       if (cmp !== 0) return cmp;
     }
-    return 0;
+  } else {
+    const cmp = compareSegments(cleanA, cleanB);
+    if (cmp !== 0) return cmp;
   }
 
-  return compareSegments(trimA, trimB);
+  // If base codes are equal, sort base before modern/alt
+  return rawA.localeCompare(rawB, undefined, { numeric: true, sensitivity: 'base' });
 }
 
 export const STRUCTURAL_FLAGSHIP_HEROES: Record<string, string> = {

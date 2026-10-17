@@ -25,11 +25,10 @@ import { AdminPanel } from './components/AdminPanel';
 import { LoreView } from './components/LoreView';
 import { compareCardCodes } from './deckUtils';
 import { db } from './firebase';
-import { collection, getDocs, doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc } from 'firebase/firestore';
 import { ref, listAll, getDownloadURL } from 'firebase/storage';
 import { storage } from './firebase';
-import { archetypesList, collectionsList } from './data';
-import { useCards, cleanCardCode, getCardDisplayPriority } from './CardContext';
+import { useCards, cleanCardCode, getCardDisplayPriority, resolveModernFrameOnly } from './CardContext';
 import { CardData, CardType, ArchetypeData, ExclusiveProduct } from './types';
 import { NovidadesSection } from './components/NovidadesSection';
 import { ProductDetailModal } from './components/ProductDetailModal';
@@ -664,37 +663,45 @@ const CatalogModal = ({
   };
 
   const filteredCards = useMemo(() => {
-    // Group allCards by collection and base card code so variations of the same card are grouped,
-    // but distinct cards across collections/packs (like Booster Pack reprints or different card codes) remain distinct.
+    // Agrupa allCards estritamente pelo código base para que variações (skins, artes alternativas,
+    // mesmo de outras coleções como LOUCURAS CAÓTICAS) usem o MESMO ESPAÇO no catálogo como variação!
     const groupedByCard = new Map<string, CardData[]>();
     for (const card of allCards) {
       const baseCode = cleanCardCode(card.parentCode || card.code);
-      const key = `${card.collection || ''}_${baseCode}`;
+      const key = baseCode;
       if (!groupedByCard.has(key)) {
         groupedByCard.set(key, []);
       }
       groupedByCard.get(key)!.push(card);
     }
 
-    // For each unique card group, pick the primary card based on filter and priority:
-    // Moderno > AA / Skin > Legado
+    // Para cada grupo de carta única, escolhe a carta principal baseando-se no filtro e prioridade
     const catalogCards: CardData[] = [];
     groupedByCard.forEach((group) => {
       let chosenCard: CardData;
 
-      if (filters.frame === 'Moderno') {
-        const modernOptions = group.filter(c => c.frame === 'Moderno' || (c.code && c.code.endsWith('-M')));
-        chosenCard = modernOptions.length > 0 ? modernOptions[0] : group[0];
-      } else if (filters.frame === 'Legado') {
+      if (filters.frame === 'Legado') {
         const legacyOptions = group.filter(c => (c.frame || 'Legado') === 'Legado' && !c.code?.endsWith('-M'));
         chosenCard = legacyOptions.length > 0 ? legacyOptions[0] : group[0];
+      } else if (filters.collection !== 'Todos') {
+        const inCollection = group.filter(c => c.collection === filters.collection);
+        const candidates = inCollection.length > 0 ? inCollection : group;
+        // Prioriza sempre primeiro o frame moderno das cartas (caso tenha)
+        const sorted = [...candidates].sort((a, b) => getCardDisplayPriority(b) - getCardDisplayPriority(a));
+        chosenCard = sorted[0];
       } else {
-        // Frame: "Todos" -> Apply Priority: Moderno > AA / Skin > Legado
+        // Frame: "Todos" ou "Moderno" -> REGRA ESTREITA: Exibir sempre primeiro o frame moderno das cartas (caso tenha)
         const sorted = [...group].sort((a, b) => getCardDisplayPriority(b) - getCardDisplayPriority(a));
         chosenCard = sorted[0];
       }
 
-      // Consolidate all variations from the group into chosenCard.variants
+      // Se o usuário não filtrou exclusivamente por Legado e a escolhida ainda for Legado,
+      // resolve para a versão/variante de Frame Moderno caso exista no grupo ou em variants
+      if (filters.frame !== 'Legado' && chosenCard.frame !== 'Moderno') {
+        chosenCard = resolveModernFrameOnly(chosenCard, group);
+      }
+
+      // Consolida todas as variações deste grupo dentro de chosenCard.variants
       const allVariants: any[] = [];
       const baseGroupCode = cleanCardCode(chosenCard.parentCode || chosenCard.code);
       group.forEach(item => {
@@ -743,7 +750,12 @@ const CatalogModal = ({
 
       const matchesType = filters.type === "Todos" || card.type === filters.type;
       const matchesArchetype = filters.archetype === "Todos" || (card.archetype || "").includes(filters.archetype);
-      const matchesCollection = filters.collection === "Todos" || (card.collection && card.collection === filters.collection);
+      
+      // Se filtrando por coleção, verifica se a carta ou alguma de suas variações pertence a essa coleção
+      const matchesCollection = filters.collection === "Todos" || 
+        card.collection === filters.collection ||
+        Boolean(card.variants && card.variants.some((v: any) => v.collection === filters.collection));
+
       const matchesFrame = filters.frame === "Todos" || (card.frame || "Legado") === filters.frame;
       const matchesRarity = filters.rarity === "Todos" || (card.rarity || "Comum") === filters.rarity;
       const matchesCt = filters.minCt === "" || card.ct === parseInt(filters.minCt);
