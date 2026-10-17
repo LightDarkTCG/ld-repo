@@ -65,17 +65,29 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card: initialC
     });
 
     const list: CardData[] = [];
+    const seenIds = new Set<string>();
+    const seenImages = new Set<string>();
     const seenKeys = new Set<string>();
 
     const addVersion = (c: CardData, defaultFrame?: string, defaultVarType?: string) => {
+      if (!c) return;
       const frame = c.frame || defaultFrame || 'Legado';
       const isMod = frame === 'Moderno' || (c.code && c.code.endsWith('-M'));
       const effectiveFrame = isMod ? 'Moderno' : 'Legado';
       const variationType = c.variationType || defaultVarType || (effectiveFrame === 'Moderno' ? 'Novo Frame' : 'Legado');
       
+      // If this variant has an ID that we already added, do not duplicate!
+      if (c.id && seenIds.has(c.id)) return;
+
+      // If exact image and frame already exists, do not duplicate!
+      if (c.imageUrl && seenImages.has(`${effectiveFrame}_${c.imageUrl}`)) return;
+
       const key = `${effectiveFrame}_${variationType}_${c.imageUrl || ''}`;
       if (seenKeys.has(key)) return;
+      
       seenKeys.add(key);
+      if (c.id) seenIds.add(c.id);
+      if (c.imageUrl) seenImages.add(`${effectiveFrame}_${c.imageUrl}`);
 
       let cRarity = c.rarity;
       if (effectiveFrame === 'Moderno' && (!cRarity || cRarity === 'Beta')) {
@@ -109,11 +121,21 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card: initialC
     allCandidateVariants.forEach(v => {
       const vBase = cleanCardCode(v.code || baseCode);
       if (vBase === baseCode && v.imageUrl) {
+        // If an item with this variant ID was ALREADY added as a standalone document, SKIP IT!
+        if (v.id && seenIds.has(v.id)) return;
+
         const vFrame = v.frame || 'Moderno';
         const vVarType = v.name || (vFrame === 'Moderno' ? 'Novo Frame' : 'Legado');
+
+        // If this image and frame was already added, skip!
+        if (seenImages.has(`${vFrame}_${v.imageUrl}`)) return;
+
         const key = `${vFrame}_${vVarType}_${v.imageUrl}`;
         if (!seenKeys.has(key)) {
           seenKeys.add(key);
+          if (v.id) seenIds.add(v.id);
+          seenImages.add(`${vFrame}_${v.imageUrl}`);
+
           let vRarity = v.rarity;
           if (vFrame === 'Moderno' && (!vRarity || vRarity === 'Beta')) {
             vRarity = 'Comum';
@@ -475,10 +497,11 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card: initialC
               </div>
               <div className="grid grid-cols-2 gap-1.5">
                 {cardVariations.map((v, idx) => {
-                  const isCurrent = (
-                    (v.id && card.id && v.id === card.id) ||
-                    (v.imageUrl === card.imageUrl && v.frame === (card.frame || 'Legado')) ||
-                    (v.frame === (card.frame || 'Legado') && cleanCardCode(v.code) === cleanCardCode(card.code) && v.variationType === card.variationType)
+                  const isCurrent = Boolean(
+                    card && (
+                      (v.id && card.id && v.id === card.id && v.imageUrl === card.imageUrl) ||
+                      (v.imageUrl === card.imageUrl && (v.frame || 'Legado') === (card.frame || 'Legado'))
+                    )
                   );
                   return (
                     <button

@@ -1272,15 +1272,6 @@ export default function App() {
   const videoRefs = useRef<(HTMLVideoElement | null)[]>([]);
 
   useEffect(() => {
-    if (adminMode !== 'none') {
-      videoRefs.current.forEach(vid => {
-        if (vid) {
-          try { vid.pause(); } catch {}
-        }
-      });
-      return;
-    }
-
     videoRefs.current.forEach((vid, i) => {
       if (vid) {
         if (i === currentVideoIndex) {
@@ -1291,7 +1282,7 @@ export default function App() {
         }
       }
     });
-  }, [currentVideoIndex, adminMode]);
+  }, [currentVideoIndex]);
 
   useEffect(() => {
     setCurrentVideoIndex(Math.floor(Math.random() * backgroundVideos.length));
@@ -1772,10 +1763,7 @@ export default function App() {
 
       {/* Hero Section */}
       <header className="relative pt-32 pb-20 lg:pt-48 lg:pb-32 overflow-hidden h-[80vh] flex items-center">
-        <div 
-          className="absolute top-0 left-0 w-full h-full z-0 overflow-hidden bg-black"
-          style={{ display: adminMode !== 'none' ? 'none' : 'block' }}
-        >
+        <div className="absolute top-0 left-0 w-full h-full z-0 overflow-hidden bg-black">
           {backgroundVideos.map((vid: any, i: number) => {
             const isActive = i === currentVideoIndex;
             return (

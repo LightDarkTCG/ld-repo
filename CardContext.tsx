@@ -184,6 +184,11 @@ export const CardProvider = ({ children }: { children: ReactNode }) => {
 
   useEffect(() => {
     const unsubCards = onSnapshot(collection(db, 'customCards'), (snapshot) => {
+      const rawDocsMap = new Map<string, CardData>();
+      snapshot.forEach(docSnap => {
+        rawDocsMap.set(docSnap.id, { ...(docSnap.data() as CardData), id: docSnap.id });
+      });
+
       const customCardsMap = new Map<string, CardData>();
       
       snapshot.forEach(docSnap => {
@@ -196,10 +201,13 @@ export const CardProvider = ({ children }: { children: ReactNode }) => {
           const seenImages = new Set<string>();
           cleanedVariants = [];
           for (const v of rawData.variants) {
-            if (!v.imageUrl || seenImages.has(v.imageUrl)) continue;
-            seenImages.add(v.imageUrl);
+            // If this variant has a corresponding child doc, use the child doc's authoritative latest data
+            const childDoc = v.id ? rawDocsMap.get(v.id) : null;
+            const effectiveImg = (childDoc && childDoc.imageUrl) ? childDoc.imageUrl : v.imageUrl;
+            if (!effectiveImg || seenImages.has(effectiveImg)) continue;
+            seenImages.add(effectiveImg);
 
-            const vCode = cleanCardCode(v.code || rawData.code);
+            const vCode = cleanCardCode((childDoc && childDoc.code) || v.code || rawData.code);
             // Skip variants if they mistakenly came from an entirely different collection/code (e.g. B-reprints)
             if (vCode && cleanedCode && vCode !== cleanedCode) {
               if (vCode.includes('B') !== cleanedCode.includes('B')) {
@@ -208,13 +216,18 @@ export const CardProvider = ({ children }: { children: ReactNode }) => {
             }
 
             // As requested by user: cards of Modern frame are Comum, not Beta
-            let vRarity = v.rarity;
-            if (v.frame === 'Moderno' && (!vRarity || vRarity === 'Beta')) {
+            let vRarity = (childDoc && childDoc.rarity) || v.rarity;
+            const vFrame = (childDoc && childDoc.frame) || v.frame;
+            if (vFrame === 'Moderno' && (!vRarity || vRarity === 'Beta')) {
               vRarity = 'Comum';
             }
 
             cleanedVariants.push({
               ...v,
+              id: v.id || (childDoc ? childDoc.id : undefined),
+              imageUrl: effectiveImg,
+              frame: vFrame || 'Moderno',
+              name: (childDoc && childDoc.variationType) || v.name || 'Variação',
               code: vCode,
               rarity: vRarity || 'Comum'
             });
@@ -345,18 +358,33 @@ export const CardProvider = ({ children }: { children: ReactNode }) => {
         const parentSnap = await getDoc(parentRef);
         if (parentSnap.exists()) {
           const parentData = parentSnap.data() as CardData;
-          const variants = parentData.variants || [];
-          const vIdx = variants.findIndex(v => v.imageUrl === cleanedCard.imageUrl || v.id === docId);
+          const variants = [...(parentData.variants || [])];
+          
+          const vIdx = variants.findIndex(v => 
+            (v.id && (v.id === docId || v.id === card.id)) ||
+            (v.imageUrl && (v.imageUrl === cleanedCard.imageUrl || (card.imageUrl && v.imageUrl === card.imageUrl))) ||
+            (v.name && cleanedCard.variationType && v.name.toLowerCase() === cleanedCard.variationType.toLowerCase())
+          );
+
+          const updatedItem: CardVariationItem = {
+            id: docId,
+            code: cleanedCard.code,
+            frame: cleanedCard.frame || 'Moderno',
+            name: cleanedCard.variationType || 'Variação',
+            rarity: cleanedCard.rarity || 'Comum',
+            imageUrl: cleanedCard.imageUrl || ''
+          };
+
           if (vIdx >= 0) {
             variants[vIdx] = {
               ...variants[vIdx],
-              code: cleanedCard.code,
-              frame: cleanedCard.frame || 'Moderno',
-              name: cleanedCard.variationType || variants[vIdx].name,
-              rarity: cleanedCard.rarity || 'Comum'
+              ...updatedItem
             };
-            await updateDoc(parentRef, { variants: sanitizeForFirestore(variants) });
+          } else {
+            variants.push(updatedItem);
           }
+
+          await updateDoc(parentRef, { variants: sanitizeForFirestore(variants) });
         }
       } catch (err) {
         console.warn('Could not sync parent variant:', err);

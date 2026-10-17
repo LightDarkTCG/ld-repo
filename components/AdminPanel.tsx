@@ -21,14 +21,6 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
   const [loading, setLoading] = useState(false);
   const [uploadingProductMedia, setUploadingProductMedia] = useState<string | null>(null);
 
-  useEffect(() => {
-    const originalOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => {
-      document.body.style.overflow = originalOverflow;
-    };
-  }, []);
-
   const [activeAdminTab, setActiveAdminTab] = useState<'settings' | 'tabs' | 'items' | 'timeline' | 'archetypes' | 'collections' | 'cards' | 'batch_cards' | 'batch_images' | 'apendices' | 'add_card'>(() => {
     if (adminType === 'home') return 'settings';
     if (adminType === 'catalog') return 'add_card';
@@ -591,8 +583,8 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
   };
 
   return (
-    <div className="fixed inset-0 z-[200] bg-slate-950 flex items-center justify-center p-2 sm:p-4">
-      <div className="bg-slate-900 w-full max-w-6xl h-[92vh] flex flex-col rounded-2xl border border-purple-500 shadow-2xl relative overflow-hidden">
+    <div className="fixed inset-0 z-[200] bg-black/90 backdrop-blur flex items-center justify-center p-4">
+      <div className="bg-slate-900 w-full max-w-6xl h-[90vh] flex flex-col rounded-xl border border-purple-500 shadow-2xl relative overflow-hidden">
         
         <div className="bg-slate-950 p-4 border-b border-slate-800 flex justify-between items-center shrink-0">
           <h2 className="text-2xl font-bold text-white flex items-center gap-2">
