@@ -303,13 +303,14 @@ export const AlbumModal: React.FC<AlbumModalProps> = ({ isOpen, onClose, onSelec
       }
     });
 
+    const clampedUniqueOwned = Math.min(baseCards.length, totalUniqueOwned);
     const percent = baseCards.length > 0 
-      ? Math.round((totalUniqueOwned / baseCards.length) * 100) 
+      ? Math.min(100, Math.round((clampedUniqueOwned / baseCards.length) * 100)) 
       : 0;
 
     return {
       totalCards: baseCards.length,
-      totalUniqueOwned,
+      totalUniqueOwned: clampedUniqueOwned,
       totalCopies,
       percent
     };

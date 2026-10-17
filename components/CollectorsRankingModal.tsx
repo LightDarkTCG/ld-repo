@@ -31,7 +31,9 @@ import {
   subscribeCollectorsRanking, 
   sortCollectors, 
   syncUserCollectorStats,
-  setCollectorAmbassadorStatus
+  setCollectorAmbassadorStatus,
+  getCatalogueUniverse,
+  repairAllRankingDocs
 } from '../collectorsService';
 
 interface CollectorsRankingModalProps {
@@ -101,6 +103,11 @@ export const CollectorsRankingModal: React.FC<CollectorsRankingModalProps> = ({
     }
   }, [isOpen, user?.uid, album, allCards.length]);
 
+  // Universo dinâmico do catálogo: Legado + Modernas + Variações, Skins & Alternativas
+  const catalogueStats = useMemo(() => {
+    return getCatalogueUniverse(allCards);
+  }, [allCards]);
+
   // Ordena todos os colecionadores pelo critério selecionado
   const sortedAllCollectors = useMemo(() => {
     return sortCollectors(collectors, criteria);
@@ -167,6 +174,9 @@ export const CollectorsRankingModal: React.FC<CollectorsRankingModalProps> = ({
     }
     setIsSyncing(true);
     await syncUserCollectorStats(user.uid, user, album, allCards);
+    if (isAdmin) {
+      await repairAllRankingDocs(allCards);
+    }
     setIsSyncing(false);
   };
 
@@ -220,8 +230,12 @@ export const CollectorsRankingModal: React.FC<CollectorsRankingModalProps> = ({
       case 'special':
         return `${entry.specialCards} cartas especiais`;
       case 'unique':
-      default:
-        return `${entry.uniqueCards} cartas únicas (${entry.completionPercentage}%)`;
+      default: {
+        const pct = catalogueStats.totalCount > 0 
+          ? Math.min(100, Math.round((entry.uniqueCards / catalogueStats.totalCount) * 100))
+          : entry.completionPercentage;
+        return `${entry.uniqueCards} de ${catalogueStats.totalCount} cartas únicas (${pct}%)`;
+      }
     }
   };
 
@@ -287,6 +301,22 @@ export const CollectorsRankingModal: React.FC<CollectorsRankingModalProps> = ({
               <X size={22} />
             </button>
           </div>
+        </div>
+
+        {/* BANNER DINÂMICO DO CATÁLOGO DE CARTAS (FÓRMULA OFICIAL) */}
+        <div className="px-4 py-2 bg-gradient-to-r from-purple-950/70 via-slate-900 to-amber-950/60 border-b border-purple-900/30 flex items-center justify-between text-xs text-slate-300 flex-wrap gap-2 shrink-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <Sparkles size={14} className="text-amber-400 shrink-0" />
+            <span className="font-bold text-white">Catálogo do Jogo:</span>
+            <span className="font-mono text-amber-300 font-bold">{catalogueStats.totalCount} cartas possíveis</span>
+            <span className="text-slate-600 hidden sm:inline">•</span>
+            <span className="text-slate-400">Legado: <strong className="text-slate-200">{catalogueStats.legacyCount}</strong></span>
+            <span className="text-slate-600 hidden sm:inline">•</span>
+            <span className="text-slate-400">Modernas: <strong className="text-purple-300">{catalogueStats.modernCount}</strong></span>
+            <span className="text-slate-600 hidden sm:inline">•</span>
+            <span className="text-slate-400">Variações & Skins: <strong className="text-pink-300">{catalogueStats.variationCount}</strong></span>
+          </div>
+          <span className="text-[11px] text-slate-400 hidden md:inline">O total máximo segue o catálogo automaticamente</span>
         </div>
 
         {/* ABAS DO RANKING: RANKING DE JOGADORES VS EMBAIXADORES DO JOGO */}
@@ -571,12 +601,14 @@ export const CollectorsRankingModal: React.FC<CollectorsRankingModalProps> = ({
                         <div className="w-full mt-3 max-w-[200px]">
                           <div className="flex items-center justify-between text-[10px] mb-1">
                             <span className="text-slate-400">Progresso do Jogo:</span>
-                            <span className="font-bold text-amber-300">{top1.completionPercentage}%</span>
+                            <span className="font-bold text-amber-300">
+                              {catalogueStats.totalCount > 0 ? Math.min(100, Math.round((top1.uniqueCards / catalogueStats.totalCount) * 100)) : top1.completionPercentage}%
+                            </span>
                           </div>
                           <div className="w-full bg-slate-950 h-2 rounded-full overflow-hidden border border-amber-500/30">
                             <div 
                               className="bg-gradient-to-r from-amber-500 to-yellow-300 h-full rounded-full transition-all duration-500"
-                              style={{ width: `${top1.completionPercentage}%` }}
+                              style={{ width: `${catalogueStats.totalCount > 0 ? Math.min(100, Math.round((top1.uniqueCards / catalogueStats.totalCount) * 100)) : top1.completionPercentage}%` }}
                             />
                           </div>
                         </div>
@@ -780,7 +812,9 @@ export const CollectorsRankingModal: React.FC<CollectorsRankingModalProps> = ({
                               <div className="flex items-center gap-2 sm:gap-3 text-right shrink-0">
                                 <div className="hidden sm:block">
                                   <span className="text-[10px] text-slate-400 uppercase tracking-wider block">Progresso</span>
-                                  <span className="font-bold text-xs text-emerald-400 font-mono">{entry.completionPercentage}%</span>
+                                  <span className="font-bold text-xs text-emerald-400 font-mono">
+                                    {catalogueStats.totalCount > 0 ? Math.min(100, Math.round((entry.uniqueCards / catalogueStats.totalCount) * 100)) : entry.completionPercentage}%
+                                  </span>
                                 </div>
 
                                 <div>
@@ -977,7 +1011,7 @@ export const CollectorsRankingModal: React.FC<CollectorsRankingModalProps> = ({
                               {getMetricLabel(ambassador)}
                             </span>
                             <span className="text-[10px] text-slate-400 block mt-0.5">
-                              {ambassador.completionPercentage}% do jogo completo
+                              {catalogueStats.totalCount > 0 ? Math.min(100, Math.round((ambassador.uniqueCards / catalogueStats.totalCount) * 100)) : ambassador.completionPercentage}% do jogo completo ({ambassador.uniqueCards} de {catalogueStats.totalCount})
                             </span>
                           </div>
                         </div>
@@ -1067,7 +1101,7 @@ export const CollectorsRankingModal: React.FC<CollectorsRankingModalProps> = ({
                   {isCurrentUserAmbassador ? (
                     'Seu perfil está em destaque especial sem ocupar posições no ranking geral dos jogadores.'
                   ) : currentUserRank?.entry ? (
-                    `${currentUserRank.entry.totalCopies} cópias físicas no acervo • ${currentUserRank.entry.completionPercentage}% do jogo completo`
+                    `${currentUserRank.entry.totalCopies} cópias físicas no acervo • ${currentUserRank.entry.uniqueCards} de ${catalogueStats.totalCount} cartas (${catalogueStats.totalCount > 0 ? Math.min(100, Math.round((currentUserRank.entry.uniqueCards / catalogueStats.totalCount) * 100)) : currentUserRank.entry.completionPercentage}% do jogo)`
                   ) : (
                     'Adicione cartas físicas ou decks no Álbum para disputar o Top 10 com outros jogadores!'
                   )}

@@ -8,6 +8,7 @@ import { auth, storage } from '../firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { useAuth, isUserAdmin } from '../authService';
 import { useUserAlbum } from '../albumService';
+import { allCards as defaultCards } from '../data';
 
 interface CardDetailModalProps {
   card: CardData | null;
@@ -49,8 +50,11 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card: initialC
     const baseCode = cleanCardCode(initialCard.parentCode || initialCard.code);
     const targetCollection = initialCard.collection;
     
-    // Find matching cards in allCards that belong to this card
-    const matches = allCards.filter(c => {
+    // Combine allCards with defaultCards so classic Legado versions are always discoverable
+    const allSearchCards = [...allCards, ...defaultCards];
+
+    // Find matching cards in search pool that belong to this card
+    const matches = allSearchCards.filter(c => {
       const cBase = cleanCardCode(c.parentCode || c.code);
       if (cBase !== baseCode) return false;
       // Do not group cards from different collections unless explicitly a variation
@@ -61,43 +65,41 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card: initialC
     });
 
     const list: CardData[] = [];
-    const seenImages = new Set<string>();
+    const seenKeys = new Set<string>();
 
-    // 1. Matches from allCards (stable order)
-    for (const c of matches) {
-      if (c.imageUrl && !seenImages.has(c.imageUrl)) {
-        seenImages.add(c.imageUrl);
-        let cRarity = c.rarity;
-        if (c.frame === 'Moderno' && (!cRarity || cRarity === 'Beta')) {
-          cRarity = 'Comum';
-        }
-        list.push({
-          ...c,
-          code: cleanCardCode(c.code),
-          frame: c.frame || 'Legado',
-          variationType: c.variationType || (c.frame === 'Moderno' ? 'Novo Frame' : 'Legado'),
-          rarity: cRarity || 'Comum'
-        });
-      }
-    }
+    const addVersion = (c: CardData, defaultFrame?: string, defaultVarType?: string) => {
+      const frame = c.frame || defaultFrame || 'Legado';
+      const isMod = frame === 'Moderno' || (c.code && c.code.endsWith('-M'));
+      const effectiveFrame = isMod ? 'Moderno' : 'Legado';
+      const variationType = c.variationType || defaultVarType || (effectiveFrame === 'Moderno' ? 'Novo Frame' : 'Legado');
+      
+      const key = `${effectiveFrame}_${variationType}_${c.imageUrl || ''}`;
+      if (seenKeys.has(key)) return;
+      seenKeys.add(key);
 
-    // 2. Initial card itself if not already present
-    if (initialCard.imageUrl && !seenImages.has(initialCard.imageUrl)) {
-      seenImages.add(initialCard.imageUrl);
-      let initRarity = initialCard.rarity;
-      if (initialCard.frame === 'Moderno' && (!initRarity || initRarity === 'Beta')) {
-        initRarity = 'Comum';
+      let cRarity = c.rarity;
+      if (effectiveFrame === 'Moderno' && (!cRarity || cRarity === 'Beta')) {
+        cRarity = 'Comum';
       }
+
       list.push({
-        ...initialCard,
-        code: cleanCardCode(initialCard.code),
-        frame: initialCard.frame || 'Legado',
-        variationType: initialCard.variationType || (initialCard.frame === 'Moderno' ? 'Novo Frame' : 'Legado'),
-        rarity: initRarity || 'Comum'
+        ...c,
+        code: cleanCardCode(c.code) || cleanCardCode(baseCode),
+        frame: effectiveFrame,
+        variationType,
+        rarity: cRarity || 'Comum'
       });
+    };
+
+    // 1. Initial card itself
+    addVersion(initialCard, initialCard.frame, initialCard.variationType);
+
+    // 2. Matches from allCards and defaultCards
+    for (const c of matches) {
+      addVersion(c, c.frame, c.variationType);
     }
 
-    // 3. Candidate variants from initialCard.variants, matches variants, or card.variants
+    // 3. Candidate variants from initialCard.variants and matches variants
     const allCandidateVariants: CardVariationItem[] = [];
     if (initialCard.variants) allCandidateVariants.push(...initialCard.variants);
     matches.forEach(m => {
@@ -106,36 +108,45 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card: initialC
 
     allCandidateVariants.forEach(v => {
       const vBase = cleanCardCode(v.code || baseCode);
-      if (vBase === baseCode && v.imageUrl && !seenImages.has(v.imageUrl)) {
-        seenImages.add(v.imageUrl);
-        let vRarity = v.rarity;
-        if (v.frame === 'Moderno' && (!vRarity || vRarity === 'Beta')) {
-          vRarity = 'Comum';
+      if (vBase === baseCode && v.imageUrl) {
+        const vFrame = v.frame || 'Moderno';
+        const vVarType = v.name || (vFrame === 'Moderno' ? 'Novo Frame' : 'Legado');
+        const key = `${vFrame}_${vVarType}_${v.imageUrl}`;
+        if (!seenKeys.has(key)) {
+          seenKeys.add(key);
+          let vRarity = v.rarity;
+          if (vFrame === 'Moderno' && (!vRarity || vRarity === 'Beta')) {
+            vRarity = 'Comum';
+          }
+          list.push({
+            ...initialCard,
+            id: v.id || `var_${v.code || baseCode}_${seenKeys.size}`,
+            code: cleanCardCode(v.code) || cleanCardCode(baseCode),
+            imageUrl: v.imageUrl,
+            frame: vFrame,
+            variationType: vVarType,
+            isVariation: true,
+            rarity: vRarity || 'Comum'
+          });
         }
-        list.push({
-          ...initialCard,
-          id: v.id || `var_${v.code}`,
-          code: cleanCardCode(v.code) || cleanCardCode(baseCode),
-          imageUrl: v.imageUrl,
-          frame: v.frame || 'Moderno',
-          variationType: v.name || (v.frame === 'Moderno' ? 'Novo Frame' : 'Legado'),
-          isVariation: true,
-          rarity: vRarity || 'Comum'
-        });
       }
     });
 
-    // Regra: "quando a carta tiver frame legado e frame moderno, usar somente moderno"
-    const hasModernInList = list.some(c => c.frame === 'Moderno');
-    const sanitizedList = hasModernInList
-      ? list.filter(c => c.frame === 'Moderno' || (c.frame !== 'Legado' && !(c.variationType || '').toLowerCase().includes('legado')))
-      : list;
+    // Ordenação intuitiva:
+    // 1º Legado (era clássica)
+    // 2º Novo Frame (Moderno)
+    // 3º Artes Alternativas, Skins e Variações
+    return list.sort((a, b) => {
+      const aIsLegado = a.frame === 'Legado' && !a.isVariation;
+      const bIsLegado = b.frame === 'Legado' && !b.isVariation;
+      const aIsNovoFrame = a.frame === 'Moderno' && !a.isVariation;
+      const bIsNovoFrame = b.frame === 'Moderno' && !b.isVariation;
 
-    // Deterministic, 100% stable sort:
-    // 1º Display priority: Moderno > AA / Skin > Legado
-    // 2º Numeric / natural code order (e.g. 00380 < A0380 < B0380)
-    // 3º Image URL fallback to prevent any floating index swap
-    return sanitizedList.sort((a, b) => {
+      if (aIsLegado && !bIsLegado) return -1;
+      if (!aIsLegado && bIsLegado) return 1;
+      if (aIsNovoFrame && !bIsNovoFrame) return -1;
+      if (!aIsNovoFrame && bIsNovoFrame) return 1;
+
       const pDiff = getCardDisplayPriority(b) - getCardDisplayPriority(a);
       if (pDiff !== 0) return pDiff;
       const codeDiff = compareCardCodes(a.code, b.code);
@@ -466,8 +477,8 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card: initialC
                 {cardVariations.map((v, idx) => {
                   const isCurrent = (
                     (v.id && card.id && v.id === card.id) ||
-                    (v.imageUrl === card.imageUrl && cleanCardCode(v.code) === cleanCardCode(card.code)) ||
-                    (v.imageUrl === card.imageUrl)
+                    (v.imageUrl === card.imageUrl && v.frame === (card.frame || 'Legado')) ||
+                    (v.frame === (card.frame || 'Legado') && cleanCardCode(v.code) === cleanCardCode(card.code) && v.variationType === card.variationType)
                   );
                   return (
                     <button
