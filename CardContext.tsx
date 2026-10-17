@@ -134,6 +134,14 @@ export const resolveModernFrameOnly = (card: CardData, allCardsList: CardData[])
   return card;
 };
 
+export interface DeleteCardOptions {
+  specificId?: string;
+  frame?: string;
+  imageUrl?: string;
+  variationType?: string;
+  deleteAllVersions?: boolean;
+}
+
 interface CardContextType {
   cards: CardData[];
   archetypes: ArchetypeData[];
@@ -142,7 +150,7 @@ interface CardContextType {
   saveCard: (card: CardData) => Promise<void>;
   saveArchetype: (archetype: ArchetypeData) => Promise<void>;
   saveCollection: (name: string) => Promise<void>;
-  deleteCard: (code: string) => Promise<void>;
+  deleteCard: (target: string | CardData, options?: DeleteCardOptions) => Promise<void>;
   deleteCollection?: (name: string) => Promise<void>;
   cleanAllCardSuffixes: () => Promise<{ updatedCount: number }>;
 }
@@ -443,21 +451,130 @@ export const CardProvider = ({ children }: { children: ReactNode }) => {
     await deleteDoc(doc(db, 'customCollections', name.replace(/\//g, '_')));
   };
 
-  const deleteCard = async (code: string) => {
-    if (!code) return;
+  const deleteCard = async (target: string | CardData, options?: DeleteCardOptions) => {
+    if (!target) return;
     try {
-      console.log('deleting', code);
-      const isDefault = defaultCards.some(d => d.code === code);
-      const cleanDocId = cleanCardCode(code).replace(/\//g, '_');
-      if (isDefault) {
-        // Store as deleted so it removes the original default card when loaded
-        await setDoc(doc(db, 'customCards', cleanDocId), { code: cleanCardCode(code), deleted: true });
+      const cardObj: CardData | null = typeof target === 'object' && target !== null ? target : null;
+      const rawCode = typeof target === 'string' ? target : (cardObj?.code || '');
+      const cleanCode = cleanCardCode(rawCode || cardObj?.parentCode || '');
+      const cleanDocId = cleanCode.replace(/\//g, '_');
+      const specificId = options?.specificId || cardObj?.id;
+      const targetFrame = options?.frame || cardObj?.frame;
+      const targetImageUrl = options?.imageUrl || cardObj?.imageUrl;
+      const targetVarType = options?.variationType || cardObj?.variationType;
+      const deleteAll = Boolean(options?.deleteAllVersions);
+      const isModern = targetFrame === 'Moderno' || targetVarType === 'Novo Frame';
+      const isDefault = defaultCards.some(d => cleanCardCode(d.code) === cleanCode);
+
+      console.log('deleteCard executing:', { rawCode, cleanCode, cleanDocId, specificId, targetFrame, isModern, deleteAll });
+
+      // Fetch all documents from customCards
+      const snap = await getDocs(collection(db, 'customCards'));
+      const relatedDocs = snap.docs.filter(docSnap => {
+        const d = docSnap.data();
+        const dCode = cleanCardCode(d.code);
+        const dParentCode = cleanCardCode(d.parentCode);
+        return (
+          docSnap.id === cleanDocId ||
+          docSnap.id === specificId ||
+          docSnap.id.startsWith(cleanDocId + '-') ||
+          docSnap.id.startsWith(cleanDocId + '_') ||
+          dCode === cleanCode ||
+          dParentCode === cleanCode
+        );
+      });
+
+      if (deleteAll) {
+        // Delete all related documents in Firestore
+        for (const docSnap of relatedDocs) {
+          await deleteDoc(docSnap.ref);
+        }
+        if (isDefault) {
+          // If default base card from data.ts, mark it as deleted
+          await setDoc(doc(db, 'customCards', cleanDocId), { code: cleanCode, deleted: true });
+        }
+        // Clean up any remaining references in any card's variants array
+        for (const docSnap of snap.docs) {
+          const d = docSnap.data();
+          if (d.variants && Array.isArray(d.variants)) {
+            const initialLen = d.variants.length;
+            const filtered = d.variants.filter((v: any) => cleanCardCode(v.code) !== cleanCode && v.id !== specificId);
+            if (filtered.length !== initialLen) {
+              await updateDoc(docSnap.ref, { variants: sanitizeForFirestore(filtered) });
+            }
+          }
+        }
+      } else if (isModern || (targetVarType && targetVarType !== 'Legado')) {
+        // Deleting SPECIFIC MODERN FRAME or VARIATION
+        // 1. Delete specific document if ID is provided
+        if (specificId) {
+          await deleteDoc(doc(db, 'customCards', specificId)).catch(() => {});
+        }
+
+        // 2. Scan and remove any customCard document that represents this modern frame / variant
+        for (const docSnap of relatedDocs) {
+          const d = docSnap.data();
+          const isDocModern = d.frame === 'Moderno' || docSnap.id.endsWith('-MOD') || docSnap.id.endsWith('-M');
+          const matchesImage = targetImageUrl && d.imageUrl === targetImageUrl;
+          const isDocVariantOrMod = docSnap.id.includes('-MOD') || docSnap.id.includes('-M') || docSnap.id.includes('_var_') || d.isVariation;
+
+          if (docSnap.id === specificId) {
+            await deleteDoc(docSnap.ref);
+          } else if (matchesImage && isDocModern) {
+            await deleteDoc(docSnap.ref);
+          } else if (isModern && isDocModern && isDocVariantOrMod) {
+            // If target has matching image or if no image was specified, clean this modern doc
+            if (!targetImageUrl || matchesImage || d.variationType === targetVarType) {
+              await deleteDoc(docSnap.ref);
+            }
+          } else if (docSnap.id === cleanDocId && d.frame === 'Moderno') {
+            // The customCard doc itself has Modern frame override
+            if (!targetImageUrl || matchesImage) {
+              await deleteDoc(docSnap.ref);
+            }
+          }
+        }
+
+        // 3. Remove this variant from any variants array in relatedDocs
+        for (const docSnap of relatedDocs) {
+          const d = docSnap.data();
+          if (d.variants && Array.isArray(d.variants)) {
+            const initialLen = d.variants.length;
+            const filtered = d.variants.filter((v: any) => {
+              if (specificId && v.id === specificId) return false;
+              if (targetImageUrl && v.imageUrl === targetImageUrl) return false;
+              if (isModern && (v.frame === 'Moderno' || v.name === 'Novo Frame')) {
+                if (!targetImageUrl || v.imageUrl === targetImageUrl) return false;
+              }
+              return true;
+            });
+            if (filtered.length !== initialLen) {
+              await updateDoc(docSnap.ref, { variants: sanitizeForFirestore(filtered) });
+            }
+          }
+        }
+
+        // 4. CRITICAL: If cleanDocId had { deleted: true } set previously (e.g. from the previous bug),
+        // remove the deleted marker so the default legacy card is properly preserved!
+        const baseDoc = relatedDocs.find(d => d.id === cleanDocId);
+        if (baseDoc && baseDoc.data().deleted === true && isDefault) {
+          await deleteDoc(baseDoc.ref);
+        }
       } else {
-        await deleteDoc(doc(db, 'customCards', cleanDocId));
+        // Deleting LEGACY version (or default base card)
+        if (isDefault) {
+          await setDoc(doc(db, 'customCards', cleanDocId), { code: cleanCode, deleted: true });
+        } else {
+          if (specificId) {
+            await deleteDoc(doc(db, 'customCards', specificId)).catch(() => {});
+          }
+          await deleteDoc(doc(db, 'customCards', cleanDocId)).catch(() => {});
+        }
       }
-      console.log('deleted', code);
+
+      console.log('deleteCard completed successfully for:', cleanCode);
     } catch (e: any) {
-      console.error('error deleting', e);
+      console.error('error deleting card:', e);
       alert('Erro ao apagar: ' + e.message);
     }
   };

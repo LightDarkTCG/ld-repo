@@ -2039,7 +2039,7 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
                                      setConfirmId(c.code);
                                      return;
                                    }
-                                   await deleteCard(c.code);
+                                   await deleteCard(c);
                                    setConfirmId(null);
                                  }} className={`p-2 rounded text-white ${confirmId === c.code ? 'bg-red-800 animate-pulse' : 'bg-red-600'}`}><Trash2 size={14}/></button>
                            </div>

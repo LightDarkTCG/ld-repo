@@ -343,18 +343,25 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card: initialC
     }
   };
 
-  const handleDelete = async () => {
-    if (!confirmDelete) {
-      setConfirmDelete(true);
-      return;
-    }
+  const handleDeleteSpecific = async () => {
     if (card) {
-      console.log('handleDelete called, originalCode:', originalCode, 'card.code:', card.code);
-      if (originalCode) {
-        await deleteCard(originalCode);
-      } else {
-        await deleteCard(card.code);
-      }
+      await deleteCard(card, {
+        specificId: card.id,
+        frame: card.frame,
+        imageUrl: card.imageUrl,
+        variationType: card.variationType,
+        deleteAllVersions: false
+      });
+      onClose();
+    }
+  };
+
+  const handleDeleteAll = async () => {
+    if (card) {
+      await deleteCard(card, {
+        specificId: card.id,
+        deleteAllVersions: true
+      });
       onClose();
     }
   };
@@ -386,12 +393,43 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card: initialC
       <div className="absolute top-4 right-4 flex gap-2 z-50">
         {isEditing ? (
           <>
-            <button 
-              onClick={handleDelete} 
-              className={`p-2 rounded-full text-white transition flex items-center gap-2 px-4 shadow-lg ${confirmDelete ? 'bg-red-700 hover:bg-red-600 shadow-red-900/80 animate-pulse' : 'bg-red-600 hover:bg-red-500 shadow-red-900/50'}`}
-            >
-              <Trash size={20} /> {confirmDelete ? "Tem certeza?" : "Apagar"}
-            </button>
+            {confirmDelete ? (
+              <div className="flex items-center gap-1.5 bg-slate-900 border border-red-500/80 p-1 rounded-full shadow-2xl animate-in fade-in">
+                <button
+                  type="button"
+                  onClick={handleDeleteSpecific}
+                  className="px-3 py-1.5 bg-red-700 hover:bg-red-600 rounded-full text-white text-xs font-bold transition flex items-center gap-1.5 shadow-md shadow-red-950/60"
+                  title={`Apagar somente este frame (${card?.variationType || card?.frame || 'Moderno'})`}
+                >
+                  <Trash size={14} /> Apagar este frame ({card?.variationType || card?.frame || 'Moderno'})
+                </button>
+                {cardVariations.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={handleDeleteAll}
+                    className="px-3 py-1.5 bg-red-900 hover:bg-red-800 rounded-full text-red-200 text-xs font-bold transition flex items-center gap-1.5 border border-red-700/60"
+                    title="Apagar todas as versões e frames desta carta"
+                  >
+                    <Trash size={14} /> Apagar todas as versões
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setConfirmDelete(false)}
+                  className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 rounded-full text-slate-300 text-xs font-bold transition"
+                >
+                  Cancelar
+                </button>
+              </div>
+            ) : (
+              <button 
+                type="button"
+                onClick={() => setConfirmDelete(true)} 
+                className="p-2 rounded-full text-white transition flex items-center gap-2 px-4 shadow-lg bg-red-600 hover:bg-red-500 shadow-red-900/50"
+              >
+                <Trash size={20} /> Apagar
+              </button>
+            )}
             <button 
               onClick={handleSaveAndAddAnother} 
               disabled={isUploading}
