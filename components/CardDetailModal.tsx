@@ -2,7 +2,7 @@ import React, { useMemo, useState, useEffect } from 'react';
 import { X, Zap, BookOpen, Box, Hash, Link as LinkIcon, Edit2, Check, Trash, Image as ImageIcon, Sparkles, Layers, Plus, Minus, BookmarkCheck, LogIn } from 'lucide-react';
 import { CardData, CardVariationItem } from '../types';
 import { Card } from './Card';
-import { useCards, cleanCardCode, getCardDisplayPriority, resolveModernFrameOnly } from '../CardContext';
+import { useCards, cleanCardCode, getBaseCardCode, getCardDisplayPriority, resolveModernFrameOnly } from '../CardContext';
 import { compareCardCodes } from '../deckUtils';
 import { auth, storage } from '../firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
@@ -38,16 +38,19 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card: initialC
       setIsEditing(false);
       return;
     }
-    setCard(initialCard);
-    setOriginalCode(initialCard.code);
+    const effectiveCard = (initialCard.frame !== 'Moderno') 
+      ? resolveModernFrameOnly(initialCard, allCards) 
+      : initialCard;
+    setCard(effectiveCard);
+    setOriginalCode(effectiveCard.code);
     setIsEditing(false);
-  }, [initialCard?.code, initialCard?.imageUrl, initialCard?.frame]);
+  }, [initialCard?.code, initialCard?.imageUrl, initialCard?.frame, allCards]);
 
   // Find all variations (alternate arts, skins, frames) for this card
   // Computed stably based on initialCard so buttons remain fixed in their slots
   const cardVariations = useMemo(() => {
     if (!initialCard) return [];
-    const baseCode = cleanCardCode(initialCard.parentCode || initialCard.code);
+    const baseCode = getBaseCardCode(initialCard.code, initialCard.parentCode);
     const targetCollection = initialCard.collection;
     
     // Combine allCards with defaultCards so classic Legado versions are always discoverable
@@ -55,7 +58,7 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card: initialC
 
     // Find matching cards in search pool that belong to this card
     const matches = allSearchCards.filter(c => {
-      const cBase = cleanCardCode(c.parentCode || c.code);
+      const cBase = getBaseCardCode(c.code, c.parentCode);
       return cBase === baseCode;
     });
 
@@ -114,7 +117,7 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card: initialC
     });
 
     allCandidateVariants.forEach(v => {
-      const vBase = cleanCardCode(v.code || baseCode);
+      const vBase = getBaseCardCode(v.code || baseCode);
       if (vBase === baseCode && v.imageUrl) {
         // If an item with this variant ID was ALREADY added as a standalone document, SKIP IT!
         if (v.id && seenIds.has(v.id)) return;

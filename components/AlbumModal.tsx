@@ -21,7 +21,7 @@ import {
   Heart
 } from 'lucide-react';
 import { CardData } from '../types';
-import { useCards, cleanCardCode, getCardDisplayPriority, resolveModernFrameOnly } from '../CardContext';
+import { useCards, cleanCardCode, getBaseCardCode, getCardDisplayPriority, resolveModernFrameOnly } from '../CardContext';
 import { useAuth } from '../authService';
 import { useUserAlbum, normalizeAlbumKey, FOIL_TYPES, FoilTypeInfo } from '../albumService';
 import { compareCardCodes } from '../deckUtils';
@@ -54,6 +54,9 @@ export const COLLECTION_METADATA: Record<string, { subtitle: string; heroName: s
   'Invasão do Caos': { subtitle: 'Expansão & Deck Invasão do Caos', heroName: 'Mahina - O Arauto do Véu', category: 'deck' },
   'Booster Pack 1': { subtitle: 'Pacote de Expansão Clássico', heroName: '', category: 'booster' },
   'Booster Pack 2': { subtitle: 'Pacote de Expansão Série 2', heroName: '', category: 'booster' },
+  'Booster Invasão do Caos': { subtitle: 'Pacote de Booster Invasão do Caos', heroName: 'A PRIMEIRA', category: 'booster' },
+  'Reforço Macroversal': { subtitle: 'Expansão Reforço Macroversal', heroName: 'ASMONIOUS - A ESSÊNCIA DA CORRUPÇÃO', category: 'booster' },
+  'LOUCURAS CAÓTICAS': { subtitle: 'Coleção Especial de Artes Alternativas e Skins', heroName: 'O Caos', category: 'booster' },
 };
 
 /**
@@ -62,25 +65,42 @@ export const COLLECTION_METADATA: Record<string, { subtitle: string; heroName: s
 export const isLegacyCard = (c: CardData): boolean => {
   if (c.frame === 'Moderno') return false;
   if (c.code && c.code.endsWith('-M')) return false;
-  if (c.collection === 'Invasão do Caos' || c.collection === 'Booster Invasão do Caos' || c.collection === 'Reforço Macroversal') return false;
+  if (c.collection === 'Invasão do Caos' || c.collection === 'Booster Invasão do Caos' || c.collection === 'Reforço Macroversal' || c.collection === 'LOUCURAS CAÓTICAS') return false;
+  if (c.code && c.code.startsWith('2026')) return false;
   return true;
 };
 
 /**
- * Identifica se a carta é Especial (Limitadas, Raras, Eventos, Promos e Colecionador)
+ * Identifica se a carta é Especial (Limitadas, Raras, Muito Raras, Eventos, Promos)
+ * Cartas Comuns ou do conjunto base Beta NUNCA são especiais, mesmo que possuam novo frame ou variação visual.
  */
 export const isSpecialCard = (c: CardData): boolean => {
-  const r = (c.rarity || '').toLowerCase();
-  return (
-    r === 'limitadas' ||
-    r === 'limitada' ||
-    r === 'rara' ||
+  if (!c) return false;
+  const r = (c.rarity || '').trim().toLowerCase();
+
+  // Cartas Comuns ou Beta NUNCA são especiais
+  if (r === 'comum' || r === 'beta') {
+    return false;
+  }
+
+  // Raridades nobres e especiais
+  if (
+    r.includes('limitad') ||
     r === 'evento' ||
     r === 'especial' ||
     r === 'promo' ||
-    c.isVariation === true ||
-    (c.collection || '').toLowerCase().includes('especial')
-  );
+    r.includes('rara')
+  ) {
+    return true;
+  }
+
+  // Coleções especiais exclusivas de evento/promo
+  const col = (c.collection || '').toLowerCase();
+  if (col.includes('evento especial') || col.includes('promocional')) {
+    return true;
+  }
+
+  return false;
 };
 
 export const AlbumModal: React.FC<AlbumModalProps> = ({ isOpen, onClose, onSelectCard, onOpenAuth, onOpenRanking, onOpenWishlist }) => {
@@ -130,7 +150,7 @@ export const AlbumModal: React.FC<AlbumModalProps> = ({ isOpen, onClose, onSelec
   const albumPoolCards = useMemo(() => {
     const groupedByCard = new Map<string, CardData[]>();
     for (const card of allCards) {
-      const baseCode = cleanCardCode(card.parentCode || card.code);
+      const baseCode = getBaseCardCode(card.code, card.parentCode);
       const key = baseCode;
       if (!groupedByCard.has(key)) {
         groupedByCard.set(key, []);
@@ -157,16 +177,16 @@ export const AlbumModal: React.FC<AlbumModalProps> = ({ isOpen, onClose, onSelec
       let chosenCard = sorted[0];
 
       if (albumEdition !== 'legado' && chosenCard.frame !== 'Moderno') {
-        chosenCard = resolveModernFrameOnly(chosenCard, group);
+        chosenCard = resolveModernFrameOnly(chosenCard, allCards);
       }
 
       // Consolida todas as variações deste grupo dentro de chosenCard.variants
       const allVariants: any[] = [];
-      const baseGroupCode = cleanCardCode(chosenCard.parentCode || chosenCard.code);
+      const baseGroupCode = getBaseCardCode(chosenCard.code, chosenCard.parentCode);
       group.forEach(item => {
         if (item.variants && item.variants.length > 0) {
           item.variants.forEach(v => {
-            const vBase = cleanCardCode(v.code || item.code);
+            const vBase = getBaseCardCode(v.code || item.code);
             if (vBase === baseGroupCode && !allVariants.some(existing => existing.imageUrl === v.imageUrl)) {
               allVariants.push({
                 ...v,
@@ -183,6 +203,7 @@ export const AlbumModal: React.FC<AlbumModalProps> = ({ isOpen, onClose, onSelec
               imageUrl: item.imageUrl,
               frame: item.frame || 'Legado',
               code: cleanCardCode(item.code),
+              collection: item.collection,
               rarity: item.rarity,
               tier: item.tier
             });
@@ -202,16 +223,22 @@ export const AlbumModal: React.FC<AlbumModalProps> = ({ isOpen, onClose, onSelec
 
   // Lista estruturada de coleções disponíveis com contagem de posse baseada nas cartas do álbum ativo
   const collectionsSummary = useMemo(() => {
-    const map = new Map<string, CardData[]>();
-    for (const card of albumPoolCards) {
-      if (!card || !card.collection) continue;
-      if (!map.has(card.collection)) {
-        map.set(card.collection, []);
+    const colNames = new Set<string>();
+    albumPoolCards.forEach(card => {
+      if (card.collection) colNames.add(card.collection);
+      if (card.variants) {
+        card.variants.forEach((v: any) => {
+          if (v.collection) colNames.add(v.collection);
+        });
       }
-      map.get(card.collection)!.push(card);
-    }
+    });
 
-    return Array.from(map.entries()).map(([name, cards]) => {
+    return Array.from(colNames).map(name => {
+      const cards = albumPoolCards.filter(card => 
+        card.collection === name || 
+        Boolean(card.variants && card.variants.some((v: any) => v.collection === name))
+      );
+
       let ownedCount = 0;
       let totalCopies = 0;
       cards.forEach(c => {
@@ -308,6 +335,11 @@ export const AlbumModal: React.FC<AlbumModalProps> = ({ isOpen, onClose, onSelec
     const cols = new Set<string>();
     albumPoolCards.forEach(c => {
       if (c.collection) cols.add(c.collection);
+      if (c.variants) {
+        c.variants.forEach((v: any) => {
+          if (v.collection) cols.add(v.collection);
+        });
+      }
     });
     return Array.from(cols).sort();
   }, [albumPoolCards]);
@@ -371,8 +403,10 @@ export const AlbumModal: React.FC<AlbumModalProps> = ({ isOpen, onClose, onSelec
         return false;
       } else if (selectedCollection === '★ Eventos' && !(card.rarity || '').toLowerCase().includes('evento')) {
         return false;
-      } else if (selectedCollection !== 'Todas' && !selectedCollection.startsWith('★') && card.collection !== selectedCollection) {
-        return false;
+      } else if (selectedCollection !== 'Todas' && !selectedCollection.startsWith('★')) {
+        const matchesCol = card.collection === selectedCollection || 
+          Boolean(card.variants && card.variants.some((v: any) => v.collection === selectedCollection));
+        if (!matchesCol) return false;
       }
 
       // Filtro de Foil
@@ -958,6 +992,8 @@ export const AlbumModal: React.FC<AlbumModalProps> = ({ isOpen, onClose, onSelec
                             ? 'bg-amber-500 text-slate-950 border-amber-300 shadow-amber-950/70'
                             : (card.rarity || '').toLowerCase() === 'evento'
                             ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white border-pink-300 shadow-pink-950/70'
+                            : (card.rarity || '').toLowerCase().includes('rara')
+                            ? 'bg-indigo-600 text-white border-indigo-300 shadow-indigo-950/70'
                             : 'bg-cyan-600 text-white border-cyan-300 shadow-cyan-950/70'
                         }`}>
                           <Star size={10} className="fill-current" />

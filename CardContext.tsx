@@ -39,27 +39,66 @@ export const sanitizeForFirestore = <T extends Record<string, any>>(obj: T): T =
  */
 export const cleanCardCode = (rawCode?: string): string => {
   if (!rawCode) return '';
-  return rawCode.replace(/-(?:ALT|MOD|alt|mod)$/i, '').trim();
+  return rawCode.replace(/-(?:ALT|MOD|alt|mod|M)$/i, '').trim();
 };
 
 /**
- * Priority order for displaying cards in the catalog:
- * 1º Moderno (highest)
- * 2º AA / Skin (Arte Alternativa, Skin)
- * 3º Legado / Clássico
+ * Obtém o código canônico da carta base para agrupamento consistente no catálogo e no álbum:
+ * - Se a carta possui parentCode, utiliza o parentCode limpo.
+ * - Converte códigos de variação com letras no número da carta para o código base correspondente:
+ *   Ex: '2025/0001/B0001' (Jim skin de Booster 2) -> '2025/0001/00001'
+ *       '2025/0001/B0232' (Blair skin de Natal) -> '2025/0001/00232'
+ *       '2025/0001/0B188' (Hyummeng skin) -> '2025/0001/00188'
+ *       '2026/0001/A0301' (Mahina skin A) -> '2026/0001/00301'
+ */
+export const getBaseCardCode = (rawCode?: string, parentCode?: string): string => {
+  const codeToUse = parentCode || rawCode;
+  if (!codeToUse) return '';
+  const clean = cleanCardCode(codeToUse);
+  const parts = clean.split('/');
+  if (parts.length === 3) {
+    const year = parts[0];
+    const sheet = parts[1];
+    const numStr = parts[2];
+    const digits = numStr.replace(/[^0-9]/g, '');
+    if (digits) {
+      const paddedNum = digits.padStart(5, '0');
+      const cleanSheetDigits = sheet.replace(/[^0-9]/g, '');
+      const paddedSheet = cleanSheetDigits ? cleanSheetDigits.padStart(4, '0') : sheet;
+      return `${year}/${paddedSheet}/${paddedNum}`;
+    }
+  }
+  return clean;
+};
+
+/**
+ * Priority order for displaying cards in the catalog and album:
+ * 1º Moderno - Base / Novo Frame (highest priority: 4)
+ * 2º Moderno - Arte Alternativa / Skin (priority: 3)
+ * 3º Legado - Base (priority: 2)
+ * 4º Legado - Arte Alternativa / Skin (priority: 1)
+ * REGRA ABSOLUTA: FRAME MODERNO SEMPRE PRIMEIRO, SE NÃO TIVER, FRAME LEGADO
  */
 export const getCardDisplayPriority = (card: CardData): number => {
-  const isModern = card.frame === 'Moderno' || (card.code && card.code.endsWith('-M'));
+  if (!card) return 0;
+  const isModernDirect = card.frame === 'Moderno' || (card.code && card.code.endsWith('-M'));
+  const hasModernVariant = Boolean(card.variants && card.variants.some(v => v.frame === 'Moderno'));
+  const isModern = isModernDirect || hasModernVariant;
+
   const typeLower = (card.variationType || '').toLowerCase();
   const isSkinOrAA = typeLower.includes('skin') || 
                      typeLower.includes('arte alternativa') || 
                      typeLower.includes('aa') || 
                      (card.isVariation && !typeLower.includes('novo frame') && !typeLower.includes('moderno'));
 
-  if (isModern && !isSkinOrAA) return 3; // Moderno puro (1ª prioridade)
-  if (isModern && isSkinOrAA) return 2.5; // Moderno AA / Skin
-  if (isSkinOrAA) return 2; // AA / Skin (2ª prioridade)
-  return 1; // Legado / Base (3ª prioridade)
+  // 1º Moderno Puro / Novo Frame
+  if (isModern && !isSkinOrAA) return 4;
+  // 2º Moderno Arte Alternativa / Skin
+  if (isModern && isSkinOrAA) return 3;
+  // 3º Legado Base
+  if (!isModern && !isSkinOrAA) return 2;
+  // 4º Legado Arte Alternativa / Skin
+  return 1;
 };
 
 /**
@@ -68,7 +107,7 @@ export const getCardDisplayPriority = (card: CardData): number => {
  */
 export const resolveModernFrameOnly = (card: CardData, allCardsList: CardData[]): CardData => {
   if (!card) return card;
-  const baseCode = cleanCardCode(card.parentCode || card.code).toLowerCase();
+  const baseCode = getBaseCardCode(card.code, card.parentCode).toLowerCase();
 
   // 1. Se a carta já tem frame Moderno:
   if (card.frame === 'Moderno' || (card.code && card.code.endsWith('-M'))) {
@@ -102,7 +141,7 @@ export const resolveModernFrameOnly = (card: CardData, allCardsList: CardData[])
     const matchingModern = allCardsList.find(c =>
       c &&
       (c.frame === 'Moderno' || (c.code && c.code.endsWith('-M')) || c.variants?.some(v => v.frame === 'Moderno')) &&
-      cleanCardCode(c.parentCode || c.code).toLowerCase() === baseCode
+      getBaseCardCode(c.code, c.parentCode).toLowerCase() === baseCode
     );
 
     if (matchingModern) {
@@ -216,12 +255,6 @@ export const CardProvider = ({ children }: { children: ReactNode }) => {
             seenImages.add(effectiveImg);
 
             const vCode = cleanCardCode((childDoc && childDoc.code) || v.code || rawData.code);
-            // Skip variants if they mistakenly came from an entirely different collection/code (e.g. B-reprints)
-            if (vCode && cleanedCode && vCode !== cleanedCode) {
-              if (vCode.includes('B') !== cleanedCode.includes('B')) {
-                continue;
-              }
-            }
 
             // As requested by user: cards of Modern frame are Comum, not Beta
             let vRarity = (childDoc && childDoc.rarity) || v.rarity;

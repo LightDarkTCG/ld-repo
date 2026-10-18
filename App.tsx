@@ -28,7 +28,7 @@ import { db } from './firebase';
 import { doc, getDoc } from 'firebase/firestore';
 import { ref, listAll, getDownloadURL } from 'firebase/storage';
 import { storage } from './firebase';
-import { useCards, cleanCardCode, getCardDisplayPriority, resolveModernFrameOnly } from './CardContext';
+import { useCards, cleanCardCode, getBaseCardCode, getCardDisplayPriority, resolveModernFrameOnly } from './CardContext';
 import { CardData, CardType, ArchetypeData, ExclusiveProduct } from './types';
 import { NovidadesSection } from './components/NovidadesSection';
 import { ProductDetailModal } from './components/ProductDetailModal';
@@ -667,7 +667,7 @@ const CatalogModal = ({
     // mesmo de outras coleções como LOUCURAS CAÓTICAS) usem o MESMO ESPAÇO no catálogo como variação!
     const groupedByCard = new Map<string, CardData[]>();
     for (const card of allCards) {
-      const baseCode = cleanCardCode(card.parentCode || card.code);
+      const baseCode = getBaseCardCode(card.code, card.parentCode);
       const key = baseCode;
       if (!groupedByCard.has(key)) {
         groupedByCard.set(key, []);
@@ -683,31 +683,34 @@ const CatalogModal = ({
       if (filters.frame === 'Legado') {
         const legacyOptions = group.filter(c => (c.frame || 'Legado') === 'Legado' && !c.code?.endsWith('-M'));
         chosenCard = legacyOptions.length > 0 ? legacyOptions[0] : group[0];
-      } else if (filters.collection !== 'Todos') {
-        const inCollection = group.filter(c => c.collection === filters.collection);
-        const candidates = inCollection.length > 0 ? inCollection : group;
-        // Prioriza sempre primeiro o frame moderno das cartas (caso tenha)
+      } else {
+        // Se houver filtro específico de coleção, dá preferência às opções pertencentes a essa coleção
+        let candidates = group;
+        if (filters.collection !== 'Todos') {
+          const colMatches = group.filter(c => c.collection === filters.collection);
+          if (colMatches.length > 0) {
+            candidates = colMatches;
+          }
+        }
+
+        // REGRA ABSOLUTA: FRAME MODERNO, SE NÃO TIVER, FRAME LEGADO
+        // Ordena por prioridade: Moderno Puro (4) > Moderno AA (3) > Legado Base (2) > Legado AA (1)
         const sorted = [...candidates].sort((a, b) => getCardDisplayPriority(b) - getCardDisplayPriority(a));
         chosenCard = sorted[0];
-      } else {
-        // Frame: "Todos" ou "Moderno" -> REGRA ESTREITA: Exibir sempre primeiro o frame moderno das cartas (caso tenha)
-        const sorted = [...group].sort((a, b) => getCardDisplayPriority(b) - getCardDisplayPriority(a));
-        chosenCard = sorted[0];
-      }
 
-      // Se o usuário não filtrou exclusivamente por Legado e a escolhida ainda for Legado,
-      // resolve para a versão/variante de Frame Moderno caso exista no grupo ou em variants
-      if (filters.frame !== 'Legado' && chosenCard.frame !== 'Moderno') {
-        chosenCard = resolveModernFrameOnly(chosenCard, group);
+        // Se a carta escolhida não for Moderno, mas houver qualquer variante moderna no grupo ou no catálogo:
+        if (chosenCard.frame !== 'Moderno') {
+          chosenCard = resolveModernFrameOnly(chosenCard, allCards);
+        }
       }
 
       // Consolida todas as variações deste grupo dentro de chosenCard.variants
       const allVariants: any[] = [];
-      const baseGroupCode = cleanCardCode(chosenCard.parentCode || chosenCard.code);
+      const baseGroupCode = getBaseCardCode(chosenCard.code, chosenCard.parentCode);
       group.forEach(item => {
         if (item.variants && item.variants.length > 0) {
           item.variants.forEach(v => {
-            const vBase = cleanCardCode(v.code || item.code);
+            const vBase = getBaseCardCode(v.code || item.code);
             if (vBase === baseGroupCode && !allVariants.some(existing => existing.imageUrl === v.imageUrl)) {
               allVariants.push({
                 ...v,
@@ -724,6 +727,7 @@ const CatalogModal = ({
               imageUrl: item.imageUrl,
               frame: item.frame || 'Legado',
               code: cleanCardCode(item.code),
+              collection: item.collection,
               rarity: item.rarity,
               tier: item.tier
             });

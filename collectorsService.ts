@@ -59,7 +59,7 @@ export function getCatalogueUniverse(allCards: CardData[]): CatalogueStats {
     cardsList.push(card);
     cardMap.set(codeKey, card);
 
-    if (isSpecialCard(card) || card.isVariation) {
+    if (isSpecialCard(card)) {
       specialCount++;
     }
     if (card.isVariation) {
@@ -121,7 +121,7 @@ export function calculateCollectorStats(
       } else {
         uniqueModerno++;
       }
-      if (isSpecialCard(card) || card.isVariation) {
+      if (isSpecialCard(card)) {
         specialCards++;
       }
     }

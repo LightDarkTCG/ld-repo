@@ -2,7 +2,7 @@ import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { X, Search, Save, Download, Trash2, Plus, Minus, AlertTriangle, CheckCircle, BarChart3, Copy, Eye, ChevronDown, ChevronUp, ChevronRight, ChevronLeft, Layers, Network, Cloud, Flame } from 'lucide-react';
 import { CardData } from '../types';
 import { collectionsList, archetypesList } from '../data';
-import { useCards, cleanCardCode, getCardDisplayPriority, resolveModernFrameOnly } from '../CardContext';
+import { useCards, cleanCardCode, getBaseCardCode, getCardDisplayPriority, resolveModernFrameOnly } from '../CardContext';
 import { compareCardCodes, isHeroGroupValid, getStructuralDeck, encodeDeckCode, decodeDeckCode } from '../deckUtils';
 import { Card } from './Card';
 import { CardDetailModal } from './CardDetailModal';
@@ -182,13 +182,12 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
 
   // --- Filtered Pool ---
   const filteredPool = useMemo(() => {
-    // Agrupar allCards por código base e coleção para que variações não apareçam como cartas duplicadas
+    // Agrupar allCards por código base canônico para que variações (skins, artes alternativas,
+    // mesmo de outras coleções como LOUCURAS CAÓTICAS) usem o MESMO ESPAÇO como variação!
     const groupedByCard = new Map<string, CardData[]>();
     for (const card of allCards) {
-      const baseCode = cleanCardCode(card.parentCode || card.code);
-      const isCardModern = card.frame === 'Moderno' || (card.code && card.code.endsWith('-M'));
-      const frameKey = isCardModern ? 'Moderno' : 'Legado';
-      const key = `${card.collection || ''}_${baseCode}_${frameKey}`;
+      const baseCode = getBaseCardCode(card.code, card.parentCode);
+      const key = baseCode;
       if (!groupedByCard.has(key)) {
         groupedByCard.set(key, []);
       }
@@ -197,19 +196,51 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
 
     const poolCards: CardData[] = [];
     groupedByCard.forEach((group) => {
-      // Priorizar a versão moderna para a carta
+      // Priorizar a versão moderna para a carta (Moderno sempre primeiro)
       const sorted = [...group].sort((a, b) => {
         return getCardDisplayPriority(b) - getCardDisplayPriority(a);
       });
       let chosenCard = sorted[0];
 
       if (chosenCard.frame !== 'Moderno') {
-        chosenCard = resolveModernFrameOnly(chosenCard, group);
+        chosenCard = resolveModernFrameOnly(chosenCard, allCards);
       }
+
+      // Consolida variantes
+      const allVariants: any[] = [];
+      const baseGroupCode = getBaseCardCode(chosenCard.code, chosenCard.parentCode);
+      group.forEach(item => {
+        if (item.variants && item.variants.length > 0) {
+          item.variants.forEach(v => {
+            const vBase = getBaseCardCode(v.code || item.code);
+            if (vBase === baseGroupCode && !allVariants.some(existing => existing.imageUrl === v.imageUrl)) {
+              allVariants.push({
+                ...v,
+                code: cleanCardCode(v.code)
+              });
+            }
+          });
+        }
+        if (item.imageUrl && item.imageUrl !== chosenCard.imageUrl) {
+          if (!allVariants.some(existing => existing.imageUrl === item.imageUrl)) {
+            allVariants.push({
+              id: item.id || `var_${item.code}`,
+              name: item.variationType || (item.frame === 'Moderno' ? 'Novo Frame' : 'Legado'),
+              imageUrl: item.imageUrl,
+              frame: item.frame || 'Legado',
+              code: cleanCardCode(item.code),
+              collection: item.collection,
+              rarity: item.rarity,
+              tier: item.tier
+            });
+          }
+        }
+      });
 
       poolCards.push({
         ...chosenCard,
-        code: cleanCardCode(chosenCard.code)
+        code: cleanCardCode(chosenCard.code),
+        variants: allVariants.length > 0 ? allVariants : chosenCard.variants
       });
     });
 
@@ -219,7 +250,9 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
       
       const matchesType = filters.type === "Todos" || card.type === filters.type;
       const matchesArch = filters.archetype === "Todos" || (card.archetype || "").includes(filters.archetype);
-      const matchesColl = filters.collection === "Todos" || card.collection === filters.collection;
+      const matchesColl = filters.collection === "Todos" || 
+                          card.collection === filters.collection ||
+                          Boolean(card.variants && card.variants.some((v: any) => v.collection === filters.collection));
       const matchesFrame = filters.frame === "Todos" || (card.frame || "Legado") === filters.frame;
       const matchesCt = filters.ct === "Todos" || card.ct === parseInt(filters.ct);
       
