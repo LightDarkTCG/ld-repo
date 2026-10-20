@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Settings, Lock, Plus, Trash2, X, Image as ImageIcon, Edit2, Check, Layout, Clock, Grid, Palette, ChevronRight, Layers, BookOpen, Database, Box, Upload, Film, Sparkles, Calendar, Loader2, LogIn, ShieldAlert, Copy } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Settings, Lock, Plus, Trash2, X, Image as ImageIcon, Edit2, Check, Layout, Clock, Grid, Palette, ChevronRight, Layers, BookOpen, Database, Box, Upload, Film, Sparkles, Calendar, Loader2, LogIn, ShieldAlert, Copy, Search } from 'lucide-react';
 import { signInWithEmailAndPassword, onAuthStateChanged, signOut } from 'firebase/auth';
 import { collection, getDocs, addDoc, deleteDoc, updateDoc, doc, setDoc, getDoc } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
@@ -78,6 +78,9 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
   const [cardEditArchetype, setCardEditArchetype] = useState('Desconhecido');
   const [cardEditLore, setCardEditLore] = useState('');
   const [cardEditIsHidden, setCardEditIsHidden] = useState(false);
+  const [cardSearchQuery, setCardSearchQuery] = useState('');
+  const [cardFilterCollection, setCardFilterCollection] = useState('all');
+  const [cardFilterFrame, setCardFilterFrame] = useState('all');
 
   const [batchCardsInput, setBatchCardsInput] = useState('');
   const [batchCardsDraft, setBatchCardsDraft] = useState(false);
@@ -104,6 +107,22 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
 
   const [timelineTabId, setTimelineTabId] = useState('');
   const [timelineDate, setTimelineDate] = useState('');
+
+  const filteredManageCards = useMemo(() => {
+    return cards.filter(c => {
+      if (cardFilterCollection !== 'all' && c.collection !== cardFilterCollection) return false;
+      if (cardFilterFrame !== 'all' && (c.frame || 'Legado') !== cardFilterFrame) return false;
+      if (cardSearchQuery.trim()) {
+        const q = cardSearchQuery.toLowerCase().trim();
+        const matchName = (c.name || '').toLowerCase().includes(q);
+        const matchCode = (c.code || '').toLowerCase().includes(q);
+        const matchArch = (c.archetype || '').toLowerCase().includes(q);
+        const matchColl = (c.collection || '').toLowerCase().includes(q);
+        if (!matchName && !matchCode && !matchArch && !matchColl) return false;
+      }
+      return true;
+    });
+  }, [cards, cardSearchQuery, cardFilterCollection, cardFilterFrame]);
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (u) => {
@@ -234,13 +253,15 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
     if (!code) return;
     const sourceCard = cards.find(c => c.code === code);
     if (sourceCard) {
+      setEditingId(sourceCard.code);
       setFormName(sourceCard.name);
       setFormDescription(sourceCard.description || '');
+      setFormImageUrl(sourceCard.imageUrl || '');
       setCardEditType(sourceCard.type || 'Herói');
-      setCardEditArchetype(sourceCard.archetype || 'Desconhecido');
-      setCardEditCT(String(sourceCard.ct || 0));
-      setCardEditAttack(String(sourceCard.attack || 0));
-      setCardEditDefense(String(sourceCard.defense || 0));
+      setCardEditArchetype(sourceCard.archetype || '');
+      setCardEditCT(String(sourceCard.ct !== undefined ? sourceCard.ct : 0));
+      setCardEditAttack(String(sourceCard.attack !== undefined ? sourceCard.attack : 0));
+      setCardEditDefense(String(sourceCard.defense !== undefined ? sourceCard.defense : 0));
       setCardEditLore(sourceCard.lore || '');
       setCardCollection(sourceCard.collection);
       setCardEditCode(sourceCard.code);
@@ -251,6 +272,7 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
       }
       setCardFrame(effFrame);
       setCardRarity(effRarity);
+      setCardEditIsHidden(!!sourceCard.isHidden);
     }
     e.target.value = '';
   };
@@ -271,11 +293,11 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
     setCardFrame(effFrame);
     setCardRarity(effRarity);
     setCardEditCode(c.code);
-    setCardEditAttack(String(c.attack || 0));
-    setCardEditDefense(String(c.defense || 0));
-    setCardEditCT(String(c.ct || 0));
+    setCardEditAttack(String(c.attack !== undefined ? c.attack : 0));
+    setCardEditDefense(String(c.defense !== undefined ? c.defense : 0));
+    setCardEditCT(String(c.ct !== undefined ? c.ct : 0));
     setCardEditType(c.type || 'Herói');
-    setCardEditArchetype(c.archetype || 'Desconhecido');
+    setCardEditArchetype(c.archetype || '');
     setCardEditLore(c.lore || '');
     setCardEditIsHidden(!!c.isHidden);
   };
@@ -448,6 +470,7 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
   const saveCardData = async () => {
     if (!formName.trim() || !cardCollection.trim()) return setError('Nome e Coleção obrigatórios.');
     setLoading(true);
+    setError('');
     try {
       const finalImg = await handleSaveUpload();
       
@@ -476,8 +499,13 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
         imageUrl: finalImg,
         isHidden: cardEditIsHidden
       });
+      alert(`Carta "${formName}" salva com sucesso!`);
       resetForm();
-    } catch(e:any) { setError(e.message); }
+      setActiveAdminTab('cards');
+    } catch(e:any) { 
+      setError(e.message); 
+      alert('Erro ao salvar carta: ' + e.message);
+    }
     setLoading(false);
   };
 
@@ -2204,16 +2232,32 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
                         
                         <div>
                           <label className="text-sm font-bold text-slate-400 block mb-1">Arquétipo</label>
-                          <div className="flex flex-wrap gap-2 bg-slate-950 border border-slate-700 p-2 rounded max-h-32 overflow-y-auto">
+                          <div className="flex items-center gap-2 mb-2">
+                            <input 
+                              type="text" 
+                              value={cardEditArchetype} 
+                              onChange={e => setCardEditArchetype(e.target.value)} 
+                              placeholder="Ex: Reativo ou Sortudo / Reativo"
+                              className="w-full bg-slate-950 border border-purple-500/60 rounded p-2 text-sm text-white font-mono"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setCardEditArchetype('')}
+                              className="px-2.5 py-2 text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 rounded font-bold transition shrink-0"
+                            >
+                              Limpar
+                            </button>
+                          </div>
+                          <div className="flex flex-wrap gap-1.5 bg-slate-950 border border-slate-700 p-2 rounded max-h-32 overflow-y-auto custom-scrollbar">
                             {archetypes.map(a => {
                               const isSelected = cardEditArchetype.split(' / ').includes(a.name);
                               return (
-                                <label key={a.name} className={`px-2 py-1 text-xs rounded cursor-pointer border transition-colors ${isSelected ? 'bg-purple-900 border-purple-500 text-white' : 'bg-slate-900 border-slate-700 text-slate-400 hover:bg-slate-800'}`}>
+                                <label key={a.name} className={`px-2 py-0.5 text-xs rounded cursor-pointer border transition-colors ${isSelected ? 'bg-purple-900 border-purple-500 text-white font-bold' : 'bg-slate-900 border-slate-700 text-slate-400 hover:bg-slate-800'}`}>
                                   <input type="checkbox" className="hidden" checked={isSelected} onChange={(e) => {
                                     let curr = cardEditArchetype.split(' / ').filter(x => x && x !== 'Desconhecido');
                                     if (e.target.checked) curr.push(a.name);
                                     else curr = curr.filter(x => x !== a.name);
-                                    setCardEditArchetype(curr.length > 0 ? curr.join(' / ') : 'Desconhecido');
+                                    setCardEditArchetype(curr.length > 0 ? curr.join(' / ') : '');
                                   }} />
                                   {a.name}
                                 </label>
@@ -2336,36 +2380,128 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
                       </button>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-                      {cards.filter(c => c.code.startsWith('CUST-') || c.code.startsWith('C-')).map((c, idx) => (
-                        <div key={`${c.code}-${idx}`} className="bg-slate-900 border border-slate-700 p-2 rounded flex gap-3 relative item-center h-24 overflow-hidden group">
-                           {c.imageUrl && <img src={c.imageUrl} className="w-16 h-full object-cover rounded bg-slate-800" />}
-                           <div className="flex-1 py-1">
-                             <div className="flex items-center gap-2">
-                               <h4 className="font-bold text-white leading-tight truncate">{c.name}</h4>
-                               {c.isHidden && <span className="text-[9px] bg-red-900/50 text-red-300 font-bold px-2 py-0.5 rounded border border-red-800">DRAFT</span>}
-                             </div>
-                             <p className="text-xs text-purple-400">{c.collection}</p>
-                             <div className="flex gap-2 text-xs text-slate-500 mt-1">
-                               <span>CT: {c.ct}</span> • <span>{c.type}</span>
-                               {(c.type === 'Herói' || c.type === 'Combatente') && (
-                                 <span>• {c.attack}/{c.defense}</span>
-                               )}
-                             </div>
-                           </div>
-                           <div className="absolute right-2 top-0 bottom-0 flex flex-col justify-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                 <button onClick={() => startEditCard(c)} className="bg-blue-600 p-2 rounded text-white"><Edit2 size={14}/></button>
-                                 <button onClick={async () => {
-                                   if (confirmId !== c.code) {
-                                     setConfirmId(c.code);
-                                     return;
-                                   }
-                                   await deleteCard(c);
-                                   setConfirmId(null);
-                                 }} className={`p-2 rounded text-white ${confirmId === c.code ? 'bg-red-800 animate-pulse' : 'bg-red-600'}`}><Trash2 size={14}/></button>
-                           </div>
+                    {/* Barra de Pesquisa e Filtros de Cartas */}
+                    <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 mb-6 flex flex-col md:flex-row gap-3 items-stretch md:items-center justify-between">
+                      <div className="relative flex-1">
+                        <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                        <input
+                          type="text"
+                          value={cardSearchQuery}
+                          onChange={e => setCardSearchQuery(e.target.value)}
+                          placeholder="Buscar por nome, código, arquétipo (ex: Dragão Vermelho Guardião, Reativo)..."
+                          className="w-full bg-slate-950 border border-slate-700 rounded-xl pl-9 pr-8 py-2 text-sm text-white placeholder-slate-500 focus:border-purple-500 outline-none"
+                        />
+                        {cardSearchQuery && (
+                          <button
+                            type="button"
+                            onClick={() => setCardSearchQuery('')}
+                            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
+                          >
+                            <X size={15} />
+                          </button>
+                        )}
+                      </div>
+
+                      <div className="flex flex-wrap sm:flex-nowrap gap-2">
+                        <select
+                          value={cardFilterCollection}
+                          onChange={e => setCardFilterCollection(e.target.value)}
+                          className="bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-300 outline-none"
+                        >
+                          <option value="all">Todas as Coleções ({collections.length})</option>
+                          {collections.map(col => (
+                            <option key={col} value={col}>{col}</option>
+                          ))}
+                        </select>
+
+                        <select
+                          value={cardFilterFrame}
+                          onChange={e => setCardFilterFrame(e.target.value)}
+                          className="bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-300 outline-none"
+                        >
+                          <option value="all">Todos os Frames</option>
+                          <option value="Legado">Legado</option>
+                          <option value="Moderno">Moderno</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between text-xs text-slate-400 mb-3 px-1">
+                      <span>Mostrando <strong className="text-purple-300">{filteredManageCards.length}</strong> de <strong className="text-white">{cards.length}</strong> cartas</span>
+                      {cardSearchQuery && (
+                        <button onClick={() => setCardSearchQuery('')} className="text-purple-400 hover:underline">
+                          Limpar busca
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 max-h-[550px] overflow-y-auto custom-scrollbar pr-1">
+                      {filteredManageCards.map((c, idx) => (
+                        <div key={`${c.code}-${c.imageUrl || idx}`} className="bg-slate-900 border border-slate-700/80 hover:border-purple-500/50 p-2.5 rounded-xl flex gap-3 relative items-center h-28 overflow-hidden group transition-all">
+                          {c.imageUrl ? (
+                            <img src={c.imageUrl} alt={c.name} className="w-16 h-full object-cover rounded-lg bg-slate-800 shrink-0 border border-slate-800" />
+                          ) : (
+                            <div className="w-16 h-full rounded-lg bg-slate-950 border border-slate-800 flex items-center justify-center font-bold text-slate-600 shrink-0">
+                              LD
+                            </div>
+                          )}
+                          <div className="flex-1 min-w-0 py-0.5">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <h4 className="font-bold text-white text-sm leading-tight truncate max-w-[160px]" title={c.name}>{c.name}</h4>
+                              <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${c.frame === 'Moderno' ? 'bg-emerald-950 text-emerald-400 border border-emerald-800/60' : 'bg-indigo-950 text-indigo-300 border border-indigo-800/60'}`}>
+                                {c.frame || 'Legado'}
+                              </span>
+                              {c.isHidden && <span className="text-[9px] bg-red-900/50 text-red-300 font-bold px-1.5 py-0.5 rounded border border-red-800">DRAFT</span>}
+                            </div>
+                            <div className="flex items-center gap-1.5 text-xs text-purple-400 mt-0.5 truncate">
+                              <span className="truncate">{c.collection || 'Coleção'}</span>
+                              <span className="text-slate-600">•</span>
+                              <span className="font-mono text-[11px] text-slate-400 shrink-0">{c.code}</span>
+                            </div>
+                            {c.archetype && (
+                              <div className="mt-1">
+                                <span className="inline-block text-[10px] font-medium px-2 py-0.5 rounded-full bg-purple-950/80 text-purple-300 border border-purple-800/60 truncate max-w-[200px]" title={c.archetype}>
+                                  {c.archetype}
+                                </span>
+                              </div>
+                            )}
+                            <div className="flex gap-2 text-[11px] text-slate-500 mt-1">
+                              <span>CT: <strong className="text-yellow-400">{c.ct}</strong></span> • <span>{c.type}</span>
+                              {(c.type === 'Herói' || c.type === 'Combatente') && (
+                                <span>• ⚔{c.attack || 0} / 🛡{c.defense || 0}</span>
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex flex-col justify-center gap-1.5 shrink-0">
+                            <button 
+                              onClick={() => startEditCard(c)} 
+                              title="Editar Carta e Configurações" 
+                              className="bg-blue-600 hover:bg-blue-500 p-2 rounded-lg text-white transition shadow"
+                            >
+                              <Edit2 size={15}/>
+                            </button>
+                            <button 
+                              onClick={async () => {
+                                if (confirmId !== c.code) {
+                                  setConfirmId(c.code);
+                                  return;
+                                }
+                                await deleteCard(c);
+                                setConfirmId(null);
+                              }} 
+                              title="Apagar ou Ocultar Carta"
+                              className={`p-2 rounded-lg text-white transition shadow ${confirmId === c.code ? 'bg-red-800 animate-pulse' : 'bg-red-600/80 hover:bg-red-600'}`}
+                            >
+                              <Trash2 size={15}/>
+                            </button>
+                          </div>
                         </div>
                       ))}
+                      {filteredManageCards.length === 0 && (
+                        <div className="col-span-full py-12 text-center text-slate-500">
+                          <p className="text-sm">Nenhuma carta encontrada com os filtros atuais.</p>
+                        </div>
+                      )}
                     </div>
                   </>
                 )}

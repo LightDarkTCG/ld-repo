@@ -68,13 +68,14 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card: initialC
       setIsEditing(false);
       return;
     }
+    // Não sobrescreve se o administrador estiver editando ativamente a carta
+    if (isEditing) return;
     const effectiveCard = (initialCard.frame !== 'Moderno') 
       ? resolveModernFrameOnly(initialCard, allCards) 
       : initialCard;
     setCard(effectiveCard);
     setOriginalCode(effectiveCard.code);
-    setIsEditing(false);
-  }, [initialCard?.code, initialCard?.imageUrl, initialCard?.frame, allCards]);
+  }, [initialCard?.code, initialCard?.imageUrl, initialCard?.frame, allCards, isEditing]);
 
   // Find all variations (alternate arts, skins, frames) for this card
   // Computed stably based on initialCard so buttons remain fixed in their slots
@@ -350,14 +351,21 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card: initialC
 
   const handleSave = async () => {
     if (card) {
-      const finalCard = sanitizeCardStats(await processImageUpload(card));
-      if (originalCode && originalCode !== finalCard.code) {
-        await deleteCard(originalCode);
+      try {
+        const finalCard = sanitizeCardStats(await processImageUpload(card));
+        if (originalCode && originalCode !== finalCard.code) {
+          await deleteCard(originalCode);
+        }
+        await saveCard(finalCard);
+        setOriginalCode(finalCard.code);
+        setCard(finalCard);
+        setIsEditing(false);
+        setAdminActionFeedback('Carta salva com sucesso!');
+        setTimeout(() => setAdminActionFeedback(null), 3500);
+      } catch (err: any) {
+        console.error('Erro ao salvar carta:', err);
+        alert('Erro ao salvar carta: ' + (err?.message || 'Erro desconhecido'));
       }
-      await saveCard(finalCard);
-      setOriginalCode(finalCard.code);
-      setCard(finalCard);
-      setIsEditing(false);
     }
   };
 
@@ -894,24 +902,43 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card: initialC
               )}
 
               {isEditing ? (
-                <div className="flex flex-wrap gap-1 max-w-[200px]">
-                  {archetypes.map(a => {
-                    const isSelected = (card.archetype || '').split(' / ').includes(a.name);
-                    return (
-                      <label key={a.name} className={`px-2 py-1 text-[10px] rounded cursor-pointer border transition-colors ${isSelected ? 'bg-purple-900 border-purple-500 text-purple-100' : 'bg-slate-900 border-slate-700 text-slate-400 hover:bg-slate-800'}`}>
-                        <input type="checkbox" className="hidden" checked={isSelected} onChange={(e) => {
-                          let curr = (card.archetype || '').split(' / ').filter(x => x && x !== 'Desconhecido');
-                          if (e.target.checked) curr.push(a.name);
-                          else curr = curr.filter(x => x !== a.name);
-                          setCard({...card, archetype: curr.length > 0 ? curr.join(' / ') : 'Desconhecido'});
-                        }} />
-                        {a.name}
-                      </label>
-                    );
-                  })}
+                <div className="flex flex-col gap-1.5 w-full max-w-sm">
+                  <div className="flex items-center gap-1.5">
+                    <input 
+                      type="text" 
+                      value={card.archetype || ''} 
+                      onChange={(e) => setCard({...card, archetype: e.target.value})} 
+                      placeholder="Arquétipo (ex: Reativo)"
+                      className="flex-1 px-2.5 py-1 text-xs bg-slate-900 border border-purple-500/60 rounded text-purple-200 outline-none font-mono"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setCard({...card, archetype: ''})}
+                      className="px-2 py-1 text-[10px] bg-slate-800 hover:bg-slate-700 text-slate-300 rounded font-bold transition"
+                      title="Limpar Arquétipo"
+                    >
+                      Limpar
+                    </button>
+                  </div>
+                  <div className="flex flex-wrap gap-1 max-h-24 overflow-y-auto custom-scrollbar p-1 bg-slate-950/60 rounded border border-slate-800">
+                    {archetypes.map(a => {
+                      const isSelected = (card.archetype || '').split(' / ').includes(a.name);
+                      return (
+                        <label key={a.name} className={`px-2 py-0.5 text-[10px] rounded cursor-pointer border transition-colors ${isSelected ? 'bg-purple-900 border-purple-500 text-purple-100 font-bold' : 'bg-slate-900 border-slate-700 text-slate-400 hover:bg-slate-800'}`}>
+                          <input type="checkbox" className="hidden" checked={isSelected} onChange={(e) => {
+                            let curr = (card.archetype || '').split(' / ').filter(x => x && x !== 'Desconhecido');
+                            if (e.target.checked) curr.push(a.name);
+                            else curr = curr.filter(x => x !== a.name);
+                            setCard({...card, archetype: curr.length > 0 ? curr.join(' / ') : ''});
+                          }} />
+                          {a.name}
+                        </label>
+                      );
+                    })}
+                  </div>
                 </div>
               ) : (
-                <span className="px-3 py-1 bg-purple-900/30 rounded text-purple-300 border border-purple-800/50">{card.archetype}</span>
+                <span className="px-3 py-1 bg-purple-900/30 rounded text-purple-300 border border-purple-800/50">{card.archetype || "Sem Arquétipo"}</span>
               )}
 
               {isEditing ? (

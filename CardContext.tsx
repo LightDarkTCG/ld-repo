@@ -331,11 +331,25 @@ export const CardProvider = ({ children }: { children: ReactNode }) => {
           }
         }
 
+        // Prioriza documento do Firestore salvo pelo Administrador
+        const firestoreCard = group.find(c => Boolean(c.id && (!c.isVariation || cleanCardCode(c.code) === baseCode))) ||
+                              group.find(c => Boolean(c.id));
+
         // PRIORIDADE 2: REGRA ABSOLUTA: FRAME MODERNO SEMPRE PRIMEIRO, SE NÃO TIVER, FRAME LEGADO
+        // Se a prioridade de frame for igual, a versão customizada salva no Firestore SEMPRE tem prioridade sobre o default estático!
         if (!chosenCard) {
           const nonDeletedGroup = group.filter(c => !c.imageUrl || !deletedVariantImages.has(c.imageUrl));
           const candidateGroup = nonDeletedGroup.length > 0 ? nonDeletedGroup : group;
-          const sorted = [...candidateGroup].sort((a, b) => getCardDisplayPriority(b) - getCardDisplayPriority(a));
+          const sorted = [...candidateGroup].sort((a, b) => {
+            const pDiff = getCardDisplayPriority(b) - getCardDisplayPriority(a);
+            if (pDiff !== 0) return pDiff;
+            const aIsFirestore = Boolean(a.id);
+            const bIsFirestore = Boolean(b.id);
+            if (aIsFirestore !== bIsFirestore) {
+              return bIsFirestore ? 1 : -1;
+            }
+            return 0;
+          });
           chosenCard = sorted[0];
 
           if (chosenCard.frame !== 'Moderno') {
@@ -343,10 +357,10 @@ export const CardProvider = ({ children }: { children: ReactNode }) => {
           }
         }
 
-        // Determina a raridade oficial da carta base: se a carta do conjunto original era Comum/Beta, permanece Comum
+        // Determina a raridade oficial da carta base: respeita edição do Admin no Firestore
         const defaultMatch = defaultCards.find(d => getBaseCardCode(d.code, d.parentCode) === baseCode);
-        let finalRarity = chosenCard.rarity || 'Comum';
-        if (defaultMatch) {
+        let finalRarity = firestoreCard?.rarity || chosenCard.rarity || 'Comum';
+        if (!firestoreCard?.rarity && defaultMatch) {
           const dRarity = (defaultMatch.rarity || '').toLowerCase();
           if (dRarity === 'beta' || dRarity === 'comum' || !dRarity) {
             finalRarity = 'Comum';
@@ -391,8 +405,24 @@ export const CardProvider = ({ children }: { children: ReactNode }) => {
           }
         });
 
+        // Metadados editados pelo Admin no Firestore sempre prevalecem sobre valores estáticos default
+        const customProps = firestoreCard ? {
+          name: firestoreCard.name || chosenCard.name,
+          archetype: firestoreCard.archetype !== undefined ? firestoreCard.archetype : chosenCard.archetype,
+          type: firestoreCard.type || chosenCard.type,
+          collection: firestoreCard.collection || chosenCard.collection,
+          description: firestoreCard.description !== undefined ? firestoreCard.description : chosenCard.description,
+          ct: firestoreCard.ct !== undefined ? firestoreCard.ct : chosenCard.ct,
+          attack: firestoreCard.attack !== undefined ? firestoreCard.attack : chosenCard.attack,
+          defense: firestoreCard.defense !== undefined ? firestoreCard.defense : chosenCard.defense,
+          lore: firestoreCard.lore !== undefined ? firestoreCard.lore : chosenCard.lore,
+          isHidden: firestoreCard.isHidden !== undefined ? firestoreCard.isHidden : chosenCard.isHidden,
+          ...(firestoreCard.frame ? { frame: firestoreCard.frame } : {})
+        } : {};
+
         canonicalCards.push({
           ...chosenCard,
+          ...customProps,
           code: cleanCardCode(baseCode) || cleanCardCode(chosenCard.code),
           rarity: finalRarity,
           catalogCoverImageUrl: coverImageUrl || undefined,
