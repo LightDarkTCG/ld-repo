@@ -71,6 +71,13 @@ service cloud.firestore {
       allow delete: if request.auth != null;
     }
 
+    // Solicitações de Verificação de Tiragem Rara no Álbum
+    match /albumVerificationRequests/{requestId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null;
+      allow update, delete: if isAdmin();
+    }
+
     // --- CONTEÚDO PÚBLICO (SOMENTE ADMIN PODE EDITAR/CRIAR/DELETAR) ---
     match /customCards/{document=**} {
       allow read: if true;

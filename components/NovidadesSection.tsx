@@ -5,7 +5,7 @@ import { parseDeckFromCode } from '../deckUtils';
 
 interface NovidadesSectionProps {
   products: ExclusiveProduct[];
-  onOpenProductModal: (product: ExclusiveProduct) => void;
+  onOpenProductModal: (product: ExclusiveProduct, variationIndex?: number) => void;
   allCards: CardData[];
 }
 
@@ -174,12 +174,43 @@ export const NovidadesSection: React.FC<NovidadesSectionProps> = ({
                       </div>
                     )}
 
-                    {/* Preço só aparece se o link estiver disponível */}
-                    {hasLink && product.price && product.price.trim() !== '' && (
-                      <div className="inline-flex items-center gap-1.5 bg-emerald-950/80 border border-emerald-500/50 px-3 py-1.5 rounded-lg text-emerald-300 font-mono font-black text-sm shadow-md">
-                        <span className="text-[10px] text-emerald-400 font-bold uppercase tracking-wider">Preço:</span>
-                        <span>{product.price.startsWith('R$') ? product.price : `R$ ${product.price}`}</span>
+                    {/* Preço ou Variações de Preço */}
+                    {product.priceVariations && product.priceVariations.length > 0 ? (
+                      <div className="flex flex-wrap items-center gap-2">
+                        {product.priceVariations.map((v, vIdx) => {
+                          const isFoil = (v.name || '').toLowerCase().includes('foil') || 
+                                         (v.badge || '').toLowerCase().includes('foil');
+                          return (
+                            <button
+                              key={vIdx}
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onOpenProductModal(product, vIdx);
+                              }}
+                              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-mono font-bold transition hover:scale-105 shadow-sm cursor-pointer ${
+                                isFoil
+                                  ? 'bg-gradient-to-r from-amber-500/25 to-yellow-500/25 text-amber-300 border-amber-500/60 shadow-[0_0_12px_rgba(245,158,11,0.2)]'
+                                  : 'bg-purple-950/80 text-purple-200 border-purple-700/60'
+                              }`}
+                              title={`Clique para ver detalhes e comprar a ${v.name} (${v.price})`}
+                            >
+                              {isFoil && <Sparkles size={12} className="text-amber-400" />}
+                              <span>{v.name}:</span>
+                              <span className="text-emerald-300 font-black">
+                                {v.price.startsWith('R$') ? v.price : `R$ ${v.price}`}
+                              </span>
+                            </button>
+                          );
+                        })}
                       </div>
+                    ) : (
+                      hasLink && product.price && product.price.trim() !== '' && (
+                        <div className="inline-flex items-center gap-1.5 bg-emerald-950/80 border border-emerald-500/50 px-3 py-1.5 rounded-lg text-emerald-300 font-mono font-black text-sm shadow-md">
+                          <span className="text-[10px] text-emerald-400 font-bold uppercase tracking-wider">Preço:</span>
+                          <span>{product.price.startsWith('R$') ? product.price : `R$ ${product.price}`}</span>
+                        </div>
+                      )
                     )}
                   </div>
                 </div>
@@ -195,16 +226,30 @@ export const NovidadesSection: React.FC<NovidadesSectionProps> = ({
 
                   {isButtonEnabled && (
                     hasLink ? (
-                      <a 
-                        href={buttonLink} 
-                        target="_blank" 
-                        rel="noopener noreferrer"
-                        onClick={(e) => e.stopPropagation()}
-                        className="w-full sm:flex-1 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold py-3.5 px-6 rounded-xl transition-all duration-300 flex items-center justify-center gap-2 shadow-lg shadow-purple-900/40 hover:scale-[1.02] active:scale-[0.98] text-sm md:text-base"
-                      >
-                        <ShoppingCart size={18} />
-                        <span>{buttonText}</span>
-                      </a>
+                      product.priceVariations && product.priceVariations.length > 0 ? (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onOpenProductModal(product);
+                          }}
+                          className="w-full sm:flex-1 bg-gradient-to-r from-purple-600 via-indigo-600 to-purple-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold py-3.5 px-6 rounded-xl transition-all duration-300 flex items-center justify-center gap-2 shadow-lg shadow-purple-900/40 hover:scale-[1.02] active:scale-[0.98] text-sm md:text-base cursor-pointer"
+                        >
+                          <ShoppingCart size={18} />
+                          <span>Escolher Versão & Comprar</span>
+                        </button>
+                      ) : (
+                        <a 
+                          href={buttonLink} 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                          className="w-full sm:flex-1 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold py-3.5 px-6 rounded-xl transition-all duration-300 flex items-center justify-center gap-2 shadow-lg shadow-purple-900/40 hover:scale-[1.02] active:scale-[0.98] text-sm md:text-base"
+                        >
+                          <ShoppingCart size={18} />
+                          <span>{buttonText}</span>
+                        </a>
+                      )
                     ) : (
                       <button 
                         type="button"
@@ -402,52 +447,97 @@ export const NovidadesSection: React.FC<NovidadesSectionProps> = ({
                     </div>
                   )}
 
-                  {/* Preço só aparece se o link estiver disponível */}
-                  {hasLink && currentProduct.price && currentProduct.price.trim() !== '' && (
-                    <div className="inline-flex items-center gap-1.5 bg-emerald-950/80 border border-emerald-500/50 px-3 py-1.5 rounded-lg text-emerald-300 font-mono font-black text-sm shadow-md">
-                      <span className="text-[10px] text-emerald-400 font-bold uppercase tracking-wider">Preço:</span>
-                      <span>{currentProduct.price.startsWith('R$') ? currentProduct.price : `R$ ${currentProduct.price}`}</span>
-                    </div>
+                    {/* Preço ou Variações de Preço */}
+                    {currentProduct.priceVariations && currentProduct.priceVariations.length > 0 ? (
+                      <div className="flex flex-wrap items-center gap-2">
+                        {currentProduct.priceVariations.map((v, vIdx) => {
+                          const isFoil = (v.name || '').toLowerCase().includes('foil') || 
+                                         (v.badge || '').toLowerCase().includes('foil');
+                          return (
+                            <button
+                              key={vIdx}
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onOpenProductModal(currentProduct, vIdx);
+                              }}
+                              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-mono font-bold transition hover:scale-105 shadow-sm cursor-pointer ${
+                                isFoil
+                                  ? 'bg-gradient-to-r from-amber-500/25 to-yellow-500/25 text-amber-300 border-amber-500/60 shadow-[0_0_12px_rgba(245,158,11,0.2)]'
+                                  : 'bg-purple-950/80 text-purple-200 border-purple-700/60'
+                              }`}
+                              title={`Clique para ver detalhes e comprar a ${v.name} (${v.price})`}
+                            >
+                              {isFoil && <Sparkles size={12} className="text-amber-400" />}
+                              <span>{v.name}:</span>
+                              <span className="text-emerald-300 font-black">
+                                {v.price.startsWith('R$') ? v.price : `R$ ${v.price}`}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      hasLink && currentProduct.price && currentProduct.price.trim() !== '' && (
+                        <div className="inline-flex items-center gap-1.5 bg-emerald-950/80 border border-emerald-500/50 px-3 py-1.5 rounded-lg text-emerald-300 font-mono font-black text-sm shadow-md">
+                          <span className="text-[10px] text-emerald-400 font-bold uppercase tracking-wider">Preço:</span>
+                          <span>{currentProduct.price.startsWith('R$') ? currentProduct.price : `R$ ${currentProduct.price}`}</span>
+                        </div>
+                      )
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex flex-col sm:flex-row items-center gap-3 pt-4 border-t border-slate-800">
+                  <button
+                    onClick={() => onOpenProductModal(currentProduct)}
+                    className="w-full sm:w-auto px-5 py-3.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-200 text-sm font-bold transition flex items-center justify-center gap-2 border border-slate-700"
+                  >
+                    <Eye size={16} />
+                    <span>Ver Detalhes</span>
+                  </button>
+
+                  {isButtonEnabled && (
+                    hasLink ? (
+                      currentProduct.priceVariations && currentProduct.priceVariations.length > 0 ? (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onOpenProductModal(currentProduct);
+                          }}
+                          className="w-full sm:flex-1 bg-gradient-to-r from-purple-600 via-indigo-600 to-purple-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold py-3.5 px-6 rounded-xl transition-all duration-300 flex items-center justify-center gap-2 shadow-lg shadow-purple-900/40 hover:scale-[1.02] active:scale-[0.98] text-sm md:text-base cursor-pointer"
+                        >
+                          <ShoppingCart size={18} />
+                          <span>Escolher Versão & Comprar</span>
+                        </button>
+                      ) : (
+                        <a 
+                          href={buttonLink} 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                          className="w-full sm:flex-1 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold py-3.5 px-6 rounded-xl transition-all duration-300 flex items-center justify-center gap-2 shadow-lg shadow-purple-900/40 hover:scale-[1.02] active:scale-[0.98] text-sm md:text-base"
+                        >
+                          <ShoppingCart size={18} />
+                          <span>{buttonText}</span>
+                        </a>
+                      )
+                    ) : (
+                      <button 
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setNoticeProduct(currentProduct);
+                        }}
+                        className="w-full sm:flex-1 bg-gradient-to-r from-amber-600 via-purple-600 to-indigo-600 hover:from-amber-500 hover:via-purple-500 hover:to-indigo-500 text-white font-bold py-3.5 px-6 rounded-xl transition-all duration-300 flex items-center justify-center gap-2 shadow-lg shadow-purple-900/40 hover:scale-[1.02] active:scale-[0.98] text-sm md:text-base cursor-pointer"
+                      >
+                        <Calendar size={18} className="text-amber-300" />
+                        <span>{buttonText}</span>
+                      </button>
+                    )
                   )}
                 </div>
-              </div>
-
-              <div className="flex flex-col sm:flex-row items-center gap-3 pt-4 border-t border-slate-800">
-                <button
-                  onClick={() => onOpenProductModal(currentProduct)}
-                  className="w-full sm:w-auto px-5 py-3.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-200 text-sm font-bold transition flex items-center justify-center gap-2 border border-slate-700"
-                >
-                  <Eye size={16} />
-                  <span>Ver Detalhes</span>
-                </button>
-
-                {isButtonEnabled && (
-                  hasLink ? (
-                    <a 
-                      href={buttonLink} 
-                      target="_blank" 
-                      rel="noopener noreferrer"
-                      onClick={(e) => e.stopPropagation()}
-                      className="w-full sm:flex-1 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold py-3.5 px-6 rounded-xl transition-all duration-300 flex items-center justify-center gap-2 shadow-lg shadow-purple-900/40 hover:scale-[1.02] active:scale-[0.98] text-sm md:text-base"
-                    >
-                      <ShoppingCart size={18} />
-                      <span>{buttonText}</span>
-                    </a>
-                  ) : (
-                    <button 
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setNoticeProduct(currentProduct);
-                      }}
-                      className="w-full sm:flex-1 bg-gradient-to-r from-amber-600 via-purple-600 to-indigo-600 hover:from-amber-500 hover:via-purple-500 hover:to-indigo-500 text-white font-bold py-3.5 px-6 rounded-xl transition-all duration-300 flex items-center justify-center gap-2 shadow-lg shadow-purple-900/40 hover:scale-[1.02] active:scale-[0.98] text-sm md:text-base cursor-pointer"
-                    >
-                      <Calendar size={18} className="text-amber-300" />
-                      <span>{buttonText}</span>
-                    </button>
-                  )
-                )}
-              </div>
             </div>
           </div>
 

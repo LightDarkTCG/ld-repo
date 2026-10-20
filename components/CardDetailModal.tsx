@@ -1,5 +1,26 @@
 import React, { useMemo, useState, useEffect } from 'react';
-import { X, Zap, BookOpen, Box, Hash, Link as LinkIcon, Edit2, Check, Trash, Image as ImageIcon, Sparkles, Layers, Plus, Minus, BookmarkCheck, LogIn } from 'lucide-react';
+import { 
+  X, 
+  Zap, 
+  BookOpen, 
+  Box, 
+  Hash, 
+  Link as LinkIcon, 
+  Edit2, 
+  Check, 
+  Trash, 
+  Image as ImageIcon, 
+  Sparkles, 
+  Layers, 
+  Plus, 
+  Minus, 
+  BookmarkCheck, 
+  LogIn,
+  Crown,
+  ShieldAlert,
+  CheckCircle2,
+  AlertTriangle
+} from 'lucide-react';
 import { CardData, CardVariationItem } from '../types';
 import { Card } from './Card';
 import { useCards, cleanCardCode, getBaseCardCode, getCardDisplayPriority, resolveModernFrameOnly } from '../CardContext';
@@ -9,6 +30,8 @@ import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { useAuth, isUserAdmin } from '../authService';
 import { useUserAlbum } from '../albumService';
 import { allCards as defaultCards } from '../data';
+import { isCardRarePrint } from '../rarePrintService';
+import { VerificationRequestModal } from './VerificationRequestModal';
 
 interface CardDetailModalProps {
   card: CardData | null;
@@ -18,7 +41,7 @@ interface CardDetailModalProps {
 }
 
 export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card: initialCard, onClose, onSelectRelated, onOpenAuth }) => {
-  const { cards: allCards, archetypes, collections, saveCard, deleteCard } = useCards();
+  const { cards: allCards, archetypes, collections, saveCard, deleteCard, setCardCatalogCover, setCardRarePrintSettings } = useCards();
   const { user } = useAuth();
   const { getQuantity, incrementCard, decrementCard } = useUserAlbum(user?.uid);
   const [isEditing, setIsEditing] = useState(false);
@@ -27,6 +50,13 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card: initialC
   const [originalCode, setOriginalCode] = useState(initialCard?.code);
   const [fileToUpload, setFileToUpload] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
+  
+  // Modal de Verificação para jogadores comuns tentando adicionar Tiragem Rara
+  const [isVerificationModalOpen, setIsVerificationModalOpen] = useState(false);
+  
+  // Feedback ao definir capa ou alterar tiragem
+  const [adminActionFeedback, setAdminActionFeedback] = useState<string | null>(null);
+  const [isSavingRareSettings, setIsSavingRareSettings] = useState(false);
 
   const allCardsRef = React.useRef(allCards);
   allCardsRef.current = allCards;
@@ -331,6 +361,63 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card: initialC
     }
   };
 
+  const isCurrentCover = Boolean(
+    card && (
+      card.isCatalogCover ||
+      (card.catalogCoverImageUrl && card.imageUrl === card.catalogCoverImageUrl)
+    )
+  );
+
+  const handleToggleCatalogCover = async (targetCard?: CardData | CardVariationItem) => {
+    const cardToUse = targetCard || card;
+    if (!cardToUse || !card) return;
+    const isTargetCover = Boolean(
+      cardToUse.isCatalogCover ||
+      (card.catalogCoverImageUrl && cardToUse.imageUrl === card.catalogCoverImageUrl)
+    );
+    try {
+      await setCardCatalogCover(card, cardToUse, isTargetCover);
+      setAdminActionFeedback(isTargetCover ? 'Capa automática restaurada!' : 'Definida como capa do catálogo!');
+      setTimeout(() => setAdminActionFeedback(null), 3500);
+    } catch (err: any) {
+      console.error(err);
+    }
+  };
+
+  const handleSaveRarePrintSettings = async (isRare: boolean, maxCopies: number = 1) => {
+    if (!card) return;
+    try {
+      setIsSavingRareSettings(true);
+      await setCardRarePrintSettings(card, isRare, maxCopies);
+      setCard({
+        ...card,
+        isRarePrint: isRare,
+        requiresAdminVerification: isRare,
+        maxPrintCopies: isRare ? maxCopies : 0
+      });
+      setAdminActionFeedback(isRare ? `Tiragem rara configurada (${maxCopies} cópia(s))!` : 'Tiragem padrão restaurada!');
+      setTimeout(() => setAdminActionFeedback(null), 3500);
+    } catch (err: any) {
+      console.error(err);
+    } finally {
+      setIsSavingRareSettings(false);
+    }
+  };
+
+  const handleAlbumAddClick = () => {
+    if (!card) return;
+    if (!user) {
+      if (onOpenAuth) onOpenAuth();
+      return;
+    }
+    // Se a carta é de tiragem rara e o usuário logado NÃO é o administrador, abre o modal de solicitação!
+    if (isCardRarePrint(card) && !isUserAdmin(user)) {
+      setIsVerificationModalOpen(true);
+      return;
+    }
+    incrementCard(card);
+  };
+
   const handleDeleteSpecific = async () => {
     if (card) {
       await deleteCard(card, {
@@ -338,8 +425,10 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card: initialC
         frame: card.frame,
         imageUrl: card.imageUrl,
         variationType: card.variationType,
-        deleteAllVersions: false
+        deleteAllVersions: false,
+        isSingleVariantOnly: true
       });
+      setConfirmDelete(false);
       onClose();
     }
   };
@@ -350,6 +439,7 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card: initialC
         specificId: card.id,
         deleteAllVersions: true
       });
+      setConfirmDelete(false);
       onClose();
     }
   };
@@ -378,46 +468,83 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card: initialC
 
   return (
     <div className="fixed inset-0 z-[180] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md animate-in fade-in zoom-in duration-200">
+      
+      {/* MODAL DE CONFIRMAÇÃO CLARA DE EXCLUSÃO */}
+      {confirmDelete && (
+        <div className="fixed inset-0 z-[230] flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm animate-in fade-in">
+          <div className="bg-slate-900 border border-red-500/60 rounded-2xl p-6 max-w-md w-full shadow-2xl flex flex-col gap-4 text-left">
+            <div className="flex items-center gap-3 text-red-400">
+              <div className="w-10 h-10 rounded-xl bg-red-950/80 border border-red-700/50 flex items-center justify-center">
+                <Trash size={20} />
+              </div>
+              <div>
+                <h4 className="text-base font-black text-white">Excluir Carta do Jogo</h4>
+                <p className="text-xs text-slate-400">Escolha exatamente o que deseja apagar:</p>
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-2.5 my-1">
+              <button
+                type="button"
+                onClick={handleDeleteSpecific}
+                className="p-3 bg-red-950/60 hover:bg-red-900/80 border border-red-700/60 rounded-xl text-left transition flex flex-col gap-1 group"
+              >
+                <span className="text-xs font-bold text-red-200 group-hover:text-white flex items-center gap-1.5">
+                  <Trash size={14} className="text-red-400" />
+                  Apagar APENAS este Frame / Variação
+                </span>
+                <span className="text-[11px] text-slate-400">
+                  Remove somente a arte ativa ({card?.variationType || card?.frame || 'Moderno'}). A carta base e as outras variações continuam ativas no jogo.
+                </span>
+              </button>
+
+              {cardVariations.length > 1 && (
+                <button
+                  type="button"
+                  onClick={handleDeleteAll}
+                  className="p-3 bg-red-900/50 hover:bg-red-800/80 border border-red-500/80 rounded-xl text-left transition flex flex-col gap-1 group"
+                >
+                  <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                    <AlertTriangle size={14} className="text-amber-400" />
+                    Apagar TODAS as {cardVariations.length} Versões desta Carta
+                  </span>
+                  <span className="text-[11px] text-red-300/80">
+                    Exclui permanentemente todos os frames, artes e o registro base desta carta de todo o catálogo.
+                  </span>
+                </button>
+              )}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setConfirmDelete(false)}
+              className="w-full py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold transition text-center"
+            >
+              Cancelar
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL DE SOLICITAÇÃO DE VERIFICAÇÃO DE TIRAGEM RARA */}
+      <VerificationRequestModal
+        isOpen={isVerificationModalOpen}
+        onClose={() => setIsVerificationModalOpen(false)}
+        card={card}
+        user={user}
+        onOpenAuth={onOpenAuth}
+      />
+
       <div className="absolute top-4 right-4 flex gap-2 z-50">
         {isEditing ? (
           <>
-            {confirmDelete ? (
-              <div className="flex items-center gap-1.5 bg-slate-900 border border-red-500/80 p-1 rounded-full shadow-2xl animate-in fade-in">
-                <button
-                  type="button"
-                  onClick={handleDeleteSpecific}
-                  className="px-3 py-1.5 bg-red-700 hover:bg-red-600 rounded-full text-white text-xs font-bold transition flex items-center gap-1.5 shadow-md shadow-red-950/60"
-                  title={`Apagar somente este frame (${card?.variationType || card?.frame || 'Moderno'})`}
-                >
-                  <Trash size={14} /> Apagar este frame ({card?.variationType || card?.frame || 'Moderno'})
-                </button>
-                {cardVariations.length > 1 && (
-                  <button
-                    type="button"
-                    onClick={handleDeleteAll}
-                    className="px-3 py-1.5 bg-red-900 hover:bg-red-800 rounded-full text-red-200 text-xs font-bold transition flex items-center gap-1.5 border border-red-700/60"
-                    title="Apagar todas as versões e frames desta carta"
-                  >
-                    <Trash size={14} /> Apagar todas as versões
-                  </button>
-                )}
-                <button
-                  type="button"
-                  onClick={() => setConfirmDelete(false)}
-                  className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 rounded-full text-slate-300 text-xs font-bold transition"
-                >
-                  Cancelar
-                </button>
-              </div>
-            ) : (
-              <button 
-                type="button"
-                onClick={() => setConfirmDelete(true)} 
-                className="p-2 rounded-full text-white transition flex items-center gap-2 px-4 shadow-lg bg-red-600 hover:bg-red-500 shadow-red-900/50"
-              >
-                <Trash size={20} /> Apagar
-              </button>
-            )}
+            <button 
+              type="button"
+              onClick={() => setConfirmDelete(true)} 
+              className="p-2 rounded-full text-white transition flex items-center gap-2 px-4 shadow-lg bg-red-600 hover:bg-red-500 shadow-red-900/50"
+            >
+              <Trash size={20} /> Apagar
+            </button>
             <button 
               onClick={handleSaveAndAddAnother} 
               disabled={isUploading}
@@ -434,13 +561,23 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card: initialC
             </button>
           </>
         ) : isUserAdmin(user) ? (
-          <button 
-            onClick={() => setIsEditing(true)} 
-            className="p-2 bg-slate-800 rounded-full text-purple-400 hover:text-white hover:bg-slate-700 transition"
-            title="Editar Carta"
-          >
-            <Edit2 size={24} />
-          </button>
+          <>
+            <button 
+              type="button"
+              onClick={() => setConfirmDelete(true)} 
+              className="p-2 bg-slate-800 rounded-full text-red-400 hover:text-white hover:bg-red-600 transition"
+              title="Apagar Carta ou Variação"
+            >
+              <Trash size={20} />
+            </button>
+            <button 
+              onClick={() => setIsEditing(true)} 
+              className="p-2 bg-slate-800 rounded-full text-purple-400 hover:text-white hover:bg-slate-700 transition"
+              title="Editar Carta"
+            >
+              <Edit2 size={24} />
+            </button>
+          </>
         ) : null}
         <button 
           onClick={onClose} 
@@ -454,9 +591,102 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card: initialC
         
         {/* Left Column: Image & Variations */}
         <div className="flex flex-col items-center gap-4">
-          <div className="scale-110 origin-center">
+          <div className="scale-110 origin-center relative">
             <Card {...card} priority={true} />
+            {isCurrentCover && (
+              <div className="absolute top-2 left-2 z-20 bg-amber-500 text-slate-950 font-black text-[10px] px-2 py-0.5 rounded-full shadow-lg border border-amber-300 flex items-center gap-1">
+                <Crown size={12} className="fill-current" />
+                <span>Capa do Catálogo</span>
+              </div>
+            )}
+            {isCardRarePrint(card) && (
+              <div className="absolute top-2 right-2 z-20 bg-gradient-to-r from-amber-500 to-yellow-500 text-slate-950 font-black text-[10px] px-2 py-0.5 rounded-full shadow-lg border border-yellow-200 flex items-center gap-1">
+                <ShieldAlert size={12} />
+                <span>{card.maxPrintCopies === 1 ? '1/1 Cópia Única' : `Tiragem (${card.maxPrintCopies || 1})`}</span>
+              </div>
+            )}
           </div>
+
+          {/* Feedback de ação administrativa */}
+          {adminActionFeedback && (
+            <div className="w-full max-w-sm bg-emerald-950/80 border border-emerald-500/50 text-emerald-300 text-xs font-bold p-2.5 rounded-xl flex items-center gap-2 animate-in fade-in">
+              <CheckCircle2 size={16} className="text-emerald-400 shrink-0" />
+              <span>{adminActionFeedback}</span>
+            </div>
+          )}
+
+          {/* ADMIN TOOLBAR: DEFINIR CAPA DO CATÁLOGO & TIRAGEM RARA */}
+          {isUserAdmin(user) && (
+            <div className="w-full max-w-sm bg-slate-900/95 border border-amber-500/40 rounded-2xl p-3 shadow-xl flex flex-col gap-2.5">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-black text-amber-300 flex items-center gap-1.5 uppercase tracking-wide">
+                  <Crown size={14} className="text-amber-400 fill-amber-400/30" />
+                  Controles de Administrador
+                </span>
+                <span className="text-[10px] bg-amber-500/20 text-amber-300 border border-amber-500/40 px-1.5 py-0.5 rounded font-mono font-bold">
+                  Admin
+                </span>
+              </div>
+
+              {/* Botão de Definir Capa */}
+              <button
+                type="button"
+                onClick={() => handleToggleCatalogCover()}
+                className={`w-full py-2 px-3 rounded-xl text-xs font-black transition flex items-center justify-center gap-2 shadow-md border ${
+                  isCurrentCover
+                    ? 'bg-amber-500 text-slate-950 border-amber-300 shadow-amber-950/50 hover:bg-amber-400'
+                    : 'bg-slate-950 text-amber-300 border-amber-500/40 hover:bg-amber-950/40 hover:border-amber-400'
+                }`}
+              >
+                <Crown size={15} className={isCurrentCover ? 'fill-current' : ''} />
+                <span>
+                  {isCurrentCover
+                    ? '✓ Capa Atual do Catálogo (Restaurar Automático)'
+                    : 'Definir Este Frame como Capa do Catálogo'}
+                </span>
+              </button>
+
+              {/* Seção de Tiragem Rara */}
+              <div className="pt-2 border-t border-slate-800 flex flex-col gap-2">
+                <div className="flex items-center justify-between text-xs">
+                  <label className="flex items-center gap-2 cursor-pointer font-bold text-slate-200">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(card.isRarePrint || card.requiresAdminVerification)}
+                      onChange={(e) => {
+                        const checked = e.target.checked;
+                        handleSaveRarePrintSettings(checked, card.maxPrintCopies || 1);
+                      }}
+                      className="w-4 h-4 accent-amber-500 rounded cursor-pointer"
+                    />
+                    <span className="flex items-center gap-1 text-amber-300">
+                      <ShieldAlert size={14} />
+                      Tiragem Rara (Verificação Obrigatória)
+                    </span>
+                  </label>
+                  {(card.isRarePrint || card.requiresAdminVerification) && (
+                    <div className="flex items-center gap-1">
+                      <span className="text-[10px] text-slate-400 font-bold">Cópias:</span>
+                      <input
+                        type="number"
+                        min="1"
+                        max="999"
+                        value={card.maxPrintCopies || 1}
+                        onChange={(e) => {
+                          const val = parseInt(e.target.value) || 1;
+                          handleSaveRarePrintSettings(true, val);
+                        }}
+                        className="w-12 bg-slate-950 border border-amber-500/50 rounded p-1 text-center font-mono font-bold text-xs text-amber-300 outline-none"
+                      />
+                    </div>
+                  )}
+                </div>
+                <p className="text-[10px] text-slate-400 leading-tight">
+                  Quando ativo, jogadores comuns não podem adicionar esta carta livremente ao álbum; uma notificação de conferência chegará ao seu perfil para você aprovar.
+                </p>
+              </div>
+            </div>
+          )}
 
           {/* Meu Álbum Widget */}
           <div className="w-full max-w-sm bg-slate-900/90 border border-slate-800 rounded-2xl p-3 shadow-lg flex items-center justify-between gap-3 mt-1">
@@ -492,9 +722,13 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card: initialC
                 </span>
                 <button
                   type="button"
-                  onClick={() => incrementCard(card)}
-                  className="w-7 h-7 rounded-lg bg-purple-900/70 hover:bg-purple-700 text-purple-200 flex items-center justify-center transition text-xs font-bold shadow-sm"
-                  title="Adicionar cópia"
+                  onClick={handleAlbumAddClick}
+                  className={`w-7 h-7 rounded-lg text-purple-200 flex items-center justify-center transition text-xs font-bold shadow-sm ${
+                    isCardRarePrint(card) && !isUserAdmin(user)
+                      ? 'bg-amber-600 hover:bg-amber-500 text-slate-950 font-black'
+                      : 'bg-purple-900/70 hover:bg-purple-700'
+                  }`}
+                  title={isCardRarePrint(card) && !isUserAdmin(user) ? 'Solicitar posse de tiragem rara' : 'Adicionar cópia'}
                 >
                   <Plus size={13} />
                 </button>
@@ -529,6 +763,11 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card: initialC
                       (v.imageUrl === card.imageUrl && (v.frame || 'Legado') === (card.frame || 'Legado'))
                     )
                   );
+                  const isVarCover = Boolean(
+                    v.isCatalogCover ||
+                    (card.catalogCoverImageUrl && v.imageUrl === card.catalogCoverImageUrl)
+                  );
+
                   return (
                     <button
                       key={`${v.id || ''}_${cleanCardCode(v.code)}_${v.imageUrl || idx}`}
@@ -544,7 +783,10 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card: initialC
                       }`}
                     >
                       <span className="truncate w-full font-bold flex items-center justify-between">
-                        <span>{v.variationType || (v.frame === 'Moderno' ? 'Moderno' : 'Legado')}</span>
+                        <span className="flex items-center gap-1">
+                          {isVarCover && <Crown size={12} className="text-amber-300 fill-amber-300 shrink-0" title="Capa do Catálogo" />}
+                          <span className="truncate">{v.variationType || (v.frame === 'Moderno' ? 'Moderno' : 'Legado')}</span>
+                        </span>
                         {isCurrent && <span className="text-[9px] bg-purple-700 px-1 rounded">Ativo</span>}
                       </span>
                       <div className="flex items-center gap-1.5 w-full flex-wrap">

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Settings, Lock, Plus, Trash2, X, Image as ImageIcon, Edit2, Check, Layout, Clock, Grid, Palette, ChevronRight, Layers, BookOpen, Database, Box, Upload, Film, Sparkles, Calendar, Loader2, LogIn, ShieldAlert } from 'lucide-react';
+import { Settings, Lock, Plus, Trash2, X, Image as ImageIcon, Edit2, Check, Layout, Clock, Grid, Palette, ChevronRight, Layers, BookOpen, Database, Box, Upload, Film, Sparkles, Calendar, Loader2, LogIn, ShieldAlert, Copy } from 'lucide-react';
 import { signInWithEmailAndPassword, onAuthStateChanged, signOut } from 'firebase/auth';
 import { collection, getDocs, addDoc, deleteDoc, updateDoc, doc, setDoc, getDoc } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
@@ -1262,19 +1262,289 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
                                   </div>
                                 </div>
 
-                                {/* Conditional Price OR No-Link Message */}
-                                {prod.buttonLink && prod.buttonLink.trim() !== '' ? (
-                                  <div className="w-full bg-emerald-950/40 border border-emerald-700/50 rounded-lg p-3.5 mt-1">
-                                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                                      <div>
-                                        <label className="text-xs font-bold text-emerald-400 uppercase tracking-wider block mb-0.5">
-                                          Preço do Produto (Visível com Link Disponível)
+                                {/* Seção de Preços & Variações (Normal, Full Foil, etc.) */}
+                                <div className="w-full bg-slate-950/80 border border-slate-800 rounded-xl p-4 mt-1 flex flex-col gap-4">
+                                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-3">
+                                    <div>
+                                      <div className="flex items-center gap-2">
+                                        <Sparkles size={16} className="text-amber-400" />
+                                        <label className="text-xs font-black uppercase tracking-wider text-amber-300">
+                                          Variações de Preço do Deck (ex: Versão Normal vs Full Foil)
                                         </label>
-                                        <p className="text-[11px] text-slate-300">
-                                          Como há um link de venda configurado, informe o preço para ser exibido na vitrine e nos detalhes.
-                                        </p>
                                       </div>
-                                      <div className="w-full sm:w-52 shrink-0">
+                                      <p className="text-[11px] text-slate-400 mt-0.5">
+                                        Permite definir múltiplos preços e acabamentos para o mesmo deck pré-venda (ex: Normal a R$ 89,90 e Full Foil a R$ 149,90).
+                                      </p>
+                                    </div>
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          const np = [...(homeSettings.exclusiveProducts || [])];
+                                          const currentVars = [...(np[i].priceVariations || [])];
+                                          const isFirst = currentVars.length === 0;
+                                          const isSecond = currentVars.length === 1;
+
+                                          currentVars.push({
+                                            name: isFirst ? 'Versão Normal' : isSecond ? 'Versão Full Foil' : `Variação #${currentVars.length + 1}`,
+                                            price: isFirst ? (prod.price || 'R$ 89,90') : isSecond ? 'R$ 149,90' : '',
+                                            badge: isFirst ? 'Normal' : isSecond ? 'Full Foil' : '',
+                                            description: isFirst ? 'Cartas no acabamento tradicional padrão' : isSecond ? 'Todas as cartas 100% holográficas Full Foil' : '',
+                                            buttonLink: prod.buttonLink || '',
+                                            isDefault: isFirst
+                                          });
+                                          np[i].priceVariations = currentVars;
+                                          if (!np[i].price && currentVars[0]?.price) {
+                                            np[i].price = currentVars[0].price;
+                                          }
+                                          setHomeSettings({...homeSettings, exclusiveProducts: np});
+                                        }}
+                                        className="px-3 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-xs font-bold transition flex items-center gap-1.5 shadow-sm"
+                                      >
+                                        <Plus size={13} />
+                                        <span>+ Adicionar Variação</span>
+                                      </button>
+
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          const np = [...(homeSettings.exclusiveProducts || [])];
+                                          np[i].priceVariations = [
+                                            {
+                                              name: 'Versão Normal',
+                                              price: prod.price || 'R$ 89,90',
+                                              badge: 'Normal',
+                                              description: 'Acabamento padrão não-foil, todas as cartas inclusas',
+                                              buttonLink: prod.buttonLink || '',
+                                              isDefault: true
+                                            },
+                                            {
+                                              name: 'Versão Full Foil',
+                                              price: 'R$ 149,90',
+                                              badge: 'Full Foil',
+                                              description: 'Edição Especial: 100% das cartas com acabamento holográfico Full Foil',
+                                              buttonLink: prod.buttonLink || '',
+                                              isDefault: false
+                                            }
+                                          ];
+                                          if (!np[i].price) np[i].price = 'R$ 89,90';
+                                          setHomeSettings({...homeSettings, exclusiveProducts: np});
+                                        }}
+                                        className="px-3 py-1.5 rounded-lg bg-purple-950/80 hover:bg-purple-900 text-purple-300 border border-purple-700/60 text-xs font-bold transition flex items-center gap-1.5"
+                                        title="Preenche automaticamente com o modelo de duas versões (Normal e Full Foil)"
+                                      >
+                                        <Sparkles size={13} className="text-amber-400" />
+                                        <span>Preset Halloween (Normal & Foil)</span>
+                                      </button>
+                                    </div>
+                                  </div>
+
+                                  {/* Lista de Variações Existentes */}
+                                  {prod.priceVariations && prod.priceVariations.length > 0 ? (
+                                    <div className="flex flex-col gap-3">
+                                      <div className="bg-amber-950/30 border border-amber-500/30 px-3 py-2 rounded-lg flex items-center justify-between text-xs text-amber-300 font-mono">
+                                        <span>
+                                          ✨ {prod.priceVariations.length} {prod.priceVariations.length === 1 ? 'variação configurada' : 'variações configuradas'} para este deck:
+                                        </span>
+                                        <span className="text-emerald-400 font-bold">
+                                          {prod.priceVariations.map((v: any) => `${v.name || 'Sem nome'}: ${v.price || 'R$ 0,00'}`).join('  |  ')}
+                                        </span>
+                                      </div>
+
+                                      {prod.priceVariations.map((v: any, vIdx: number) => (
+                                        <div 
+                                          key={vIdx} 
+                                          className="p-3.5 bg-slate-900 rounded-xl border border-slate-700/80 flex flex-col gap-3 transition-all hover:border-slate-600 shadow-md"
+                                        >
+                                          <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                                            <span className="text-xs font-bold text-amber-300 flex items-center gap-1.5">
+                                              <span className="w-5 h-5 rounded-full bg-amber-500/20 border border-amber-500/40 text-[10px] flex items-center justify-center font-mono">
+                                                {vIdx + 1}
+                                              </span>
+                                              <span>{v.name || `Variação #${vIdx + 1}`}</span>
+                                              {v.price && (
+                                                <span className="ml-2 text-emerald-400 font-mono text-xs font-bold">
+                                                  ({v.price.startsWith('R$') ? v.price : `R$ ${v.price}`})
+                                                </span>
+                                              )}
+                                            </span>
+                                            <div className="flex items-center gap-3">
+                                              <label className="flex items-center gap-1.5 text-xs text-slate-300 cursor-pointer">
+                                                <input
+                                                  type="radio"
+                                                  name={`defaultVar_${i}`}
+                                                  checked={Boolean(v.isDefault)}
+                                                  onChange={() => {
+                                                    const np = [...(homeSettings.exclusiveProducts || [])];
+                                                    np[i].priceVariations = np[i].priceVariations.map((item: any, idx: number) => ({
+                                                      ...item,
+                                                      isDefault: idx === vIdx
+                                                    }));
+                                                    setHomeSettings({...homeSettings, exclusiveProducts: np});
+                                                  }}
+                                                  className="accent-amber-500"
+                                                />
+                                                <span className="text-[11px] text-slate-400">Padrão Selecionada</span>
+                                              </label>
+
+                                              {/* Duplicar Variação */}
+                                              <button
+                                                type="button"
+                                                onClick={() => {
+                                                  const np = [...(homeSettings.exclusiveProducts || [])];
+                                                  const copy = { ...v, name: `${v.name || 'Variação'} (Cópia)`, isDefault: false };
+                                                  np[i].priceVariations.splice(vIdx + 1, 0, copy);
+                                                  setHomeSettings({...homeSettings, exclusiveProducts: np});
+                                                }}
+                                                className="text-purple-400 hover:text-purple-300 p-1 hover:bg-purple-950/40 rounded transition flex items-center gap-1 text-[11px]"
+                                                title="Duplicar esta variação"
+                                              >
+                                                <Copy size={13} />
+                                                <span className="hidden sm:inline">Clonar</span>
+                                              </button>
+
+                                              {/* Remover Variação */}
+                                              <button
+                                                type="button"
+                                                onClick={() => {
+                                                  const np = [...(homeSettings.exclusiveProducts || [])];
+                                                  np[i].priceVariations = np[i].priceVariations.filter((_: any, idx: number) => idx !== vIdx);
+                                                  setHomeSettings({...homeSettings, exclusiveProducts: np});
+                                                }}
+                                                className="text-red-400 hover:text-red-300 p-1 hover:bg-red-950/40 rounded transition"
+                                                title="Remover Variação"
+                                              >
+                                                <Trash2 size={15} />
+                                              </button>
+                                            </div>
+                                          </div>
+
+                                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                            <div>
+                                              <label className="text-[11px] text-slate-400 block mb-1">Nome da Variação</label>
+                                              <input
+                                                type="text"
+                                                value={v.name || ''}
+                                                onChange={(e) => {
+                                                  const np = [...(homeSettings.exclusiveProducts || [])];
+                                                  np[i].priceVariations[vIdx].name = e.target.value;
+                                                  setHomeSettings({...homeSettings, exclusiveProducts: np});
+                                                }}
+                                                className="w-full bg-slate-950 border border-slate-700 rounded p-2 text-white text-xs font-bold"
+                                                placeholder="Ex: Versão Normal ou Versão Full Foil"
+                                              />
+                                            </div>
+                                            <div>
+                                              <label className="text-[11px] text-slate-400 block mb-1">Preço (R$)</label>
+                                              <input
+                                                type="text"
+                                                value={v.price || ''}
+                                                onChange={(e) => {
+                                                  const np = [...(homeSettings.exclusiveProducts || [])];
+                                                  np[i].priceVariations[vIdx].price = e.target.value;
+                                                  setHomeSettings({...homeSettings, exclusiveProducts: np});
+                                                }}
+                                                className="w-full bg-slate-950 border border-emerald-500/50 rounded p-2 text-emerald-300 font-mono font-bold text-xs"
+                                                placeholder="Ex: R$ 89,90 ou R$ 149,90"
+                                              />
+                                            </div>
+                                            <div>
+                                              <label className="text-[11px] text-slate-400 block mb-1">Etiqueta / Badge (opcional)</label>
+                                              <input
+                                                type="text"
+                                                value={v.badge || ''}
+                                                onChange={(e) => {
+                                                  const np = [...(homeSettings.exclusiveProducts || [])];
+                                                  np[i].priceVariations[vIdx].badge = e.target.value;
+                                                  setHomeSettings({...homeSettings, exclusiveProducts: np});
+                                                }}
+                                                className="w-full bg-slate-950 border border-slate-700 rounded p-2 text-amber-300 text-xs"
+                                                placeholder="Ex: Full Foil, Normal, Mais Vendido"
+                                              />
+                                            </div>
+                                          </div>
+
+                                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                            <div>
+                                              <label className="text-[11px] text-slate-400 block mb-1">Link de Compra desta Variação (opcional)</label>
+                                              <input
+                                                type="text"
+                                                value={v.buttonLink || ''}
+                                                onChange={(e) => {
+                                                  const np = [...(homeSettings.exclusiveProducts || [])];
+                                                  np[i].priceVariations[vIdx].buttonLink = e.target.value;
+                                                  setHomeSettings({...homeSettings, exclusiveProducts: np});
+                                                }}
+                                                className="w-full bg-slate-950 border border-slate-700 rounded p-2 text-slate-200 text-xs"
+                                                placeholder="Deixe vazio para usar o link geral do produto"
+                                              />
+                                            </div>
+                                            <div>
+                                              <label className="text-[11px] text-slate-400 block mb-1">Descrição / Detalhe Rápido (opcional)</label>
+                                              <input
+                                                type="text"
+                                                value={v.description || ''}
+                                                onChange={(e) => {
+                                                  const np = [...(homeSettings.exclusiveProducts || [])];
+                                                  np[i].priceVariations[vIdx].description = e.target.value;
+                                                  setHomeSettings({...homeSettings, exclusiveProducts: np});
+                                                }}
+                                                className="w-full bg-slate-950 border border-slate-700 rounded p-2 text-slate-300 text-xs"
+                                                placeholder="Ex: Cartas não-foil ou 100% holográficas Full Foil"
+                                              />
+                                            </div>
+                                          </div>
+                                        </div>
+                                      ))}
+
+                                      <div className="flex items-center justify-between pt-2">
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            const np = [...(homeSettings.exclusiveProducts || [])];
+                                            const currentVars = [...(np[i].priceVariations || [])];
+                                            currentVars.push({
+                                              name: `Variação #${currentVars.length + 1}`,
+                                              price: '',
+                                              badge: '',
+                                              description: '',
+                                              buttonLink: prod.buttonLink || '',
+                                              isDefault: false
+                                            });
+                                            np[i].priceVariations = currentVars;
+                                            setHomeSettings({...homeSettings, exclusiveProducts: np});
+                                          }}
+                                          className="px-3.5 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-300 text-xs font-bold transition flex items-center gap-1.5 border border-slate-700"
+                                        >
+                                          <Plus size={14} />
+                                          <span>Adicionar Mais uma Variação</span>
+                                        </button>
+
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            if (window.confirm('Deseja desativar as variações e usar apenas um preço único simples?')) {
+                                              const np = [...(homeSettings.exclusiveProducts || [])];
+                                              np[i].priceVariations = [];
+                                              setHomeSettings({...homeSettings, exclusiveProducts: np});
+                                            }
+                                          }}
+                                          className="text-xs text-slate-400 hover:text-red-400 transition underline underline-offset-2"
+                                        >
+                                          Voltar para Preço Único Simples
+                                        </button>
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    /* Preço Único Simples */
+                                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-900/60 p-3.5 rounded-lg border border-slate-800">
+                                      <div>
+                                        <span className="text-xs font-bold text-slate-300 block">Preço Padrão (Sem Variações):</span>
+                                        <span className="text-[11px] text-slate-500">
+                                          Para definir preços diferentes por versão (ex: Normal vs Full Foil), use os botões "+ Adicionar Variação" ou "Preset Halloween" acima.
+                                        </span>
+                                      </div>
+                                      <div className="w-full sm:w-56 shrink-0 flex items-center gap-2">
                                         <input 
                                           type="text" 
                                           value={prod.price || ''} 
@@ -1288,30 +1558,31 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
                                         />
                                       </div>
                                     </div>
-                                  </div>
-                                ) : (
-                                  <div className="w-full bg-purple-950/40 border border-purple-700/50 rounded-lg p-3.5 mt-1 space-y-2">
-                                    <div>
+                                  )}
+
+                                  {/* Mensagem quando não houver link de venda configurado */}
+                                  {(!prod.buttonLink || prod.buttonLink.trim() === '') && (
+                                    <div className="bg-purple-950/40 border border-purple-700/50 rounded-lg p-3 space-y-1.5">
                                       <label className="text-xs font-bold text-purple-300 uppercase tracking-wider flex items-center gap-1.5">
-                                        <Sparkles size={14} className="text-amber-400" /> Mensagem ao Clicar (Sem Link de Venda)
+                                        <Sparkles size={14} className="text-amber-400" /> Mensagem ao Clicar (Status de Pré-Venda Sem Link)
                                       </label>
-                                      <p className="text-[11px] text-slate-300 mt-0.5">
-                                        Como você não colocou link de venda, ao clicar no botão na vitrine ou nos detalhes, uma janela de aviso exibirá esta mensagem na tela.
+                                      <p className="text-[11px] text-slate-300">
+                                        Como não há link direto configurado, ao clicar no botão na vitrine ou detalhes uma janela de aviso exibirá este status:
                                       </p>
+                                      <input 
+                                        type="text" 
+                                        value={prod.noLinkMessage !== undefined ? prod.noLinkMessage : 'PRÉ VENDA ABRE EM 15/10'} 
+                                        onChange={e => {
+                                          const np = [...(homeSettings.exclusiveProducts || [])]; 
+                                          np[i].noLinkMessage = e.target.value; 
+                                          setHomeSettings({...homeSettings, exclusiveProducts: np});
+                                        }} 
+                                        className="w-full bg-slate-950 border border-purple-500/60 focus:border-purple-400 rounded p-2 text-purple-200 font-bold text-sm outline-none" 
+                                        placeholder="Ex: PRÉ VENDA ABRE EM 15/10" 
+                                      />
                                     </div>
-                                    <input 
-                                      type="text" 
-                                      value={prod.noLinkMessage !== undefined ? prod.noLinkMessage : 'PRÉ VENDA ABRE EM 15/10'} 
-                                      onChange={e => {
-                                        const np = [...(homeSettings.exclusiveProducts || [])]; 
-                                        np[i].noLinkMessage = e.target.value; 
-                                        setHomeSettings({...homeSettings, exclusiveProducts: np});
-                                      }} 
-                                      className="w-full bg-slate-950 border border-purple-500/60 focus:border-purple-400 rounded p-2 text-purple-200 font-bold text-sm outline-none" 
-                                      placeholder="Ex: PRÉ VENDA ABRE EM 15/10" 
-                                    />
-                                  </div>
-                                )}
+                                  )}
+                                </div>
                               </div>
                             );
                           })}
@@ -1331,6 +1602,7 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
                                   buttonText: 'Comprar Agora', 
                                   buttonLink: '', 
                                   price: '',
+                                  priceVariations: [],
                                   noLinkMessage: 'PRÉ VENDA ABRE EM 15/10',
                                   isActive: true, 
                                   isButtonActive: true 
@@ -1341,6 +1613,55 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
                             className="bg-purple-600 hover:bg-purple-500 text-white text-sm px-5 py-2.5 rounded-lg flex items-center gap-2 transition font-bold shadow-md shadow-purple-900/30"
                           >
                             <Plus size={16} /> Adicionar Novo Produto em NOVIDADES
+                          </button>
+
+                          <button 
+                            type="button"
+                            onClick={() => {
+                              const halloweenDeck: any = {
+                                title: 'Deck Halloween - Invasão das Sombras', 
+                                badge: 'Edição Especial Halloween',
+                                description: 'Deck temático de Halloween completo pronto para jogar com criaturas das trevas e magias sombrias. Escolha entre a versão Normal tradicional e a cobiçada versão Full Foil 100% holográfica!', 
+                                mediaType: 'image', 
+                                mediaUrl: 'https://firebasestorage.googleapis.com/v0/b/gen-lang-client-0120804533.firebasestorage.app/o/wb_images%2F1788736620932_Prancheta%2014.png?alt=media&token=efac4eed-1323-40d1-a15c-9687c910a9b2', 
+                                mediaList: [
+                                  {
+                                    type: 'image',
+                                    url: 'https://firebasestorage.googleapis.com/v0/b/gen-lang-client-0120804533.firebasestorage.app/o/wb_images%2F1788736620932_Prancheta%2014.png?alt=media&token=efac4eed-1323-40d1-a15c-9687c910a9b2'
+                                  }
+                                ],
+                                cardCodes: 'eyJtYWluIjpbIjIwMjUvMDAwMS8wMDAwMSIsIjIwMjUvMDAwMS8wMDAwMiIsIjIwMjUvMDAwMS8wMDAwMiIsIjIwMjUvMDAwMS8wMDAwMyIsIjIwMjUvMDAwMS8wMDAwNCIsIjIwMjUvMDAwMS8wMDAwNSJdLCJzaWRlIjpbIjIwMjUvMDAwMS8wMDAwNiJdfQ==',
+                                buttonText: 'Comprar Agora', 
+                                buttonLink: '', 
+                                price: 'R$ 89,90',
+                                priceVariations: [
+                                  {
+                                    name: 'Versão Normal',
+                                    price: 'R$ 89,90',
+                                    badge: 'Normal',
+                                    description: 'Acabamento padrão não-foil, todas as cartas inclusas',
+                                    buttonLink: '',
+                                    isDefault: true
+                                  },
+                                  {
+                                    name: 'Versão Full Foil',
+                                    price: 'R$ 149,90',
+                                    badge: 'Full Foil',
+                                    description: 'Edição Especial: 100% das cartas com acabamento holográfico Full Foil',
+                                    buttonLink: '',
+                                    isDefault: false
+                                  }
+                                ],
+                                noLinkMessage: 'PRÉ VENDA DE HALLOWEEN ABRE EM 15/10',
+                                isActive: true, 
+                                isButtonActive: true 
+                              };
+                              const np = [...(homeSettings.exclusiveProducts || []), halloweenDeck];
+                              setHomeSettings({...homeSettings, exclusiveProducts: np});
+                            }} 
+                            className="bg-amber-600/30 hover:bg-amber-600/50 text-amber-300 border border-amber-500/50 text-sm px-4 py-2.5 rounded-lg flex items-center gap-2 transition font-bold shadow-md"
+                          >
+                            <Sparkles size={16} className="text-amber-400" /> + Inserir Deck Modelo Halloween (Normal & Full Foil)
                           </button>
                         </div>
 

@@ -25,7 +25,7 @@ import { AdminPanel } from './components/AdminPanel';
 import { LoreView } from './components/LoreView';
 import { compareCardCodes } from './deckUtils';
 import { db } from './firebase';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, onSnapshot } from 'firebase/firestore';
 import { ref, listAll, getDownloadURL } from 'firebase/storage';
 import { storage } from './firebase';
 import { useCards, cleanCardCode, getBaseCardCode, getCardDisplayPriority, resolveModernFrameOnly } from './CardContext';
@@ -680,9 +680,18 @@ const CatalogModal = ({
     groupedByCard.forEach((group) => {
       let chosenCard: CardData;
 
+      // 1. PRIORIDADE MÁXIMA: Capa manual definida pelo Administrador
+      const manualCover = group.find(c => 
+        c.isCatalogCover || 
+        (c.catalogCoverImageUrl && c.imageUrl === c.catalogCoverImageUrl) ||
+        group.some(parent => parent.catalogCoverImageUrl && c.imageUrl === parent.catalogCoverImageUrl)
+      );
+
       if (filters.frame === 'Legado') {
         const legacyOptions = group.filter(c => (c.frame || 'Legado') === 'Legado' && !c.code?.endsWith('-M'));
         chosenCard = legacyOptions.length > 0 ? legacyOptions[0] : group[0];
+      } else if (manualCover && filters.collection === 'Todos') {
+        chosenCard = manualCover;
       } else {
         // Se houver filtro específico de coleção, dá preferência às opções pertencentes a essa coleção
         let candidates = group;
@@ -693,14 +702,18 @@ const CatalogModal = ({
           }
         }
 
-        // REGRA ABSOLUTA: FRAME MODERNO, SE NÃO TIVER, FRAME LEGADO
-        // Ordena por prioridade: Moderno Puro (4) > Moderno AA (3) > Legado Base (2) > Legado AA (1)
-        const sorted = [...candidates].sort((a, b) => getCardDisplayPriority(b) - getCardDisplayPriority(a));
-        chosenCard = sorted[0];
+        if (manualCover && candidates.some(c => c.imageUrl === manualCover.imageUrl)) {
+          chosenCard = manualCover;
+        } else {
+          // REGRA ABSOLUTA: FRAME MODERNO, SE NÃO TIVER, FRAME LEGADO
+          // Ordena por prioridade: Moderno Puro (4) > Moderno AA (3) > Legado Base (2) > Legado AA (1)
+          const sorted = [...candidates].sort((a, b) => getCardDisplayPriority(b) - getCardDisplayPriority(a));
+          chosenCard = sorted[0];
 
-        // Se a carta escolhida não for Moderno, mas houver qualquer variante moderna no grupo ou no catálogo:
-        if (chosenCard.frame !== 'Moderno') {
-          chosenCard = resolveModernFrameOnly(chosenCard, allCards);
+          // Se a carta escolhida não for Moderno, mas houver qualquer variante moderna no grupo ou no catálogo:
+          if (chosenCard.frame !== 'Moderno') {
+            chosenCard = resolveModernFrameOnly(chosenCard, allCards);
+          }
         }
       }
 
@@ -735,8 +748,15 @@ const CatalogModal = ({
         }
       });
 
+      const anyCover = group.find(c => c.catalogCoverImageUrl)?.catalogCoverImageUrl;
+      const anyRequiresVerification = group.some(c => c.requiresAdminVerification || c.isRarePrint);
+      const anyMaxCopies = group.find(c => typeof c.maxPrintCopies === 'number')?.maxPrintCopies;
+
       const cardWithVariants: CardData = {
         ...chosenCard,
+        catalogCoverImageUrl: anyCover || chosenCard.catalogCoverImageUrl,
+        requiresAdminVerification: anyRequiresVerification || chosenCard.requiresAdminVerification,
+        maxPrintCopies: anyMaxCopies ?? chosenCard.maxPrintCopies,
         code: cleanCardCode(chosenCard.code),
         variants: allVariants.length > 0 ? allVariants : chosenCard.variants
       };
@@ -1113,9 +1133,9 @@ const defaultModernShowcase: CardData[] = [
 
 const defaultExclusiveProducts: ExclusiveProduct[] = [
   {
-    title: "Deck Pré-Montado - Especial",
-    badge: "Deck Pré-Montado",
-    description: "Adquira decks temáticos prontos para jogar, boosters especiais e colecionáveis oficiais de Light Dark TCG com envio direto.",
+    title: "Deck Halloween - Invasão das Sombras",
+    badge: "Edição Especial Halloween",
+    description: "Adquira o Deck Temático de Halloween completo pronto para jogar com criaturas das trevas e magias sombrias. Escolha entre a versão Normal tradicional e a cobiçada versão Full Foil 100% holográfica!",
     mediaType: "video",
     mediaUrl: "https://firebasestorage.googleapis.com/v0/b/gen-lang-client-0120804533.firebasestorage.app/o/home_videos%2FSeamless_looping_video_from_image_202606031804%20(1).mp4?alt=media&token=efbb7217-ad2c-466f-bb35-55903af9b685",
     mediaList: [
@@ -1129,8 +1149,28 @@ const defaultExclusiveProducts: ExclusiveProduct[] = [
       }
     ],
     cardCodes: "eyJtYWluIjpbIjIwMjUvMDAwMS8wMDAwMSIsIjIwMjUvMDAwMS8wMDAwMiIsIjIwMjUvMDAwMS8wMDAwMiIsIjIwMjUvMDAwMS8wMDAwMyIsIjIwMjUvMDAwMS8wMDAwNCIsIjIwMjUvMDAwMS8wMDAwNSJdLCJzaWRlIjpbIjIwMjUvMDAwMS8wMDAwNiJdfQ==",
+    price: "R$ 89,90",
+    priceVariations: [
+      {
+        name: "Versão Normal",
+        price: "R$ 89,90",
+        badge: "Padrão",
+        description: "Acabamento tradicional não-foil com todas as cartas inclusas",
+        buttonLink: "https://mpago.la/1FZ3Mip",
+        isDefault: true
+      },
+      {
+        name: "Versão Full Foil",
+        price: "R$ 149,90",
+        badge: "Full Foil",
+        description: "Edição Especial Halloween: 100% das cartas do deck com acabamento holográfico Full Foil",
+        buttonLink: "https://mpago.la/1FZ3Mip",
+        isDefault: false
+      }
+    ],
     buttonText: "Comprar Agora",
     buttonLink: "https://mpago.la/1FZ3Mip",
+    noLinkMessage: "PRÉ VENDA DE HALLOWEEN ABRE EM 15/10",
     isButtonActive: true,
     isActive: true
   }
@@ -1170,6 +1210,7 @@ export default function App() {
   const [currentVideoIndex, setCurrentVideoIndex] = useState(0);
   const [showcaseCards, setShowcaseCards] = useState<CardData[]>(defaultModernShowcase);
   const [selectedProduct, setSelectedProduct] = useState<ExclusiveProduct | null>(null);
+  const [selectedProductVariationIndex, setSelectedProductVariationIndex] = useState<number | undefined>(undefined);
   const [inspectedDeckCard, setInspectedDeckCard] = useState<CardData | null>(null);
 
   // Alteração de nome de usuário
@@ -1773,7 +1814,10 @@ export default function App() {
       {/* Novidades Section */}
       <NovidadesSection 
         products={homeSettings?.exclusiveProducts || defaultExclusiveProducts} 
-        onOpenProductModal={(product) => setSelectedProduct(product)}
+        onOpenProductModal={(product, variationIndex) => {
+          setSelectedProduct(product);
+          setSelectedProductVariationIndex(variationIndex);
+        }}
         allCards={allCards}
       />
 
@@ -1980,7 +2024,11 @@ export default function App() {
       {selectedProduct && (
         <ProductDetailModal 
           product={selectedProduct}
-          onClose={() => setSelectedProduct(null)}
+          initialVariationIndex={selectedProductVariationIndex}
+          onClose={() => {
+            setSelectedProduct(null);
+            setSelectedProductVariationIndex(undefined);
+          }}
           allCards={allCards}
           onSelectCard={(c) => setInspectedDeckCard(c)}
         />

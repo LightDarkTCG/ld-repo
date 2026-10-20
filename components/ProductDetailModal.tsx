@@ -1,6 +1,6 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { X, ShoppingCart, Play, Image as ImageIcon, ChevronLeft, ChevronRight, Layers, Sword, Shield, Sparkles, ExternalLink, Copy, Check, Info, Calendar } from 'lucide-react';
-import { ExclusiveProduct, ProductMediaItem, CardData } from '../types';
+import { ExclusiveProduct, ProductMediaItem, CardData, ProductPriceVariation } from '../types';
 import { parseDeckFromCode, ParsedDeckData, DeckCardEntry } from '../deckUtils';
 
 interface ProductDetailModalProps {
@@ -8,13 +8,15 @@ interface ProductDetailModalProps {
   onClose: () => void;
   allCards: CardData[];
   onSelectCard?: (card: CardData) => void;
+  initialVariationIndex?: number;
 }
 
 export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
   product,
   onClose,
   allCards,
-  onSelectCard
+  onSelectCard,
+  initialVariationIndex
 }) => {
   const [activeMediaIndex, setActiveMediaIndex] = useState(0);
   const [copiedCode, setCopiedCode] = useState(false);
@@ -39,6 +41,39 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
     return parseDeckFromCode(product.cardCodes, allCards);
   }, [product?.cardCodes, allCards]);
 
+  // Suporte a variações de preço (ex: Versão Normal vs Versão Full Foil)
+  const priceVariations: ProductPriceVariation[] = useMemo(() => {
+    if (!product?.priceVariations || !Array.isArray(product.priceVariations)) return [];
+    return product.priceVariations.filter(v => v && v.name && v.name.trim() !== '');
+  }, [product?.priceVariations]);
+
+  const hasVariations = priceVariations.length > 0;
+
+  // Estado da variação selecionada (inicia com initialVariationIndex, isDefault ou índice 0)
+  const [selectedVariationIndex, setSelectedVariationIndex] = useState<number>(() => {
+    if (typeof initialVariationIndex === 'number' && initialVariationIndex >= 0) {
+      return initialVariationIndex;
+    }
+    if (!product?.priceVariations || product.priceVariations.length === 0) return 0;
+    const defIdx = product.priceVariations.findIndex(v => v.isDefault);
+    return defIdx >= 0 ? defIdx : 0;
+  });
+
+  // Sincroniza se o produto ou initialVariationIndex mudar
+  useEffect(() => {
+    if (typeof initialVariationIndex === 'number' && initialVariationIndex >= 0 && initialVariationIndex < priceVariations.length) {
+      setSelectedVariationIndex(initialVariationIndex);
+      return;
+    }
+    if (priceVariations.length > 0) {
+      const defIdx = priceVariations.findIndex(v => v.isDefault);
+      setSelectedVariationIndex(defIdx >= 0 ? defIdx : 0);
+    } else {
+      setSelectedVariationIndex(0);
+    }
+    setActiveMediaIndex(0);
+  }, [product, initialVariationIndex, priceVariations.length]);
+
   if (!product) return null;
 
   const currentMedia = mediaList[activeMediaIndex] || mediaList[0];
@@ -50,10 +85,26 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
     setTimeout(() => setCopiedCode(false), 2500);
   };
 
+  const activeVariationIndex = (selectedVariationIndex >= 0 && selectedVariationIndex < priceVariations.length)
+    ? selectedVariationIndex
+    : 0;
+
+  const selectedVariation: ProductPriceVariation | null = hasVariations
+    ? priceVariations[activeVariationIndex]
+    : null;
+
   const isButtonEnabled = product.isButtonActive !== false && product.isActive !== false;
-  const buttonLink = product.buttonLink;
-  const hasLink = Boolean(buttonLink && buttonLink.trim() !== '');
-  const buttonText = product.buttonText || (hasLink ? 'Comprar Agora' : 'Consultar Pré-Venda');
+  const currentPrice = selectedVariation ? selectedVariation.price : (product.price || '');
+  const currentLink = (selectedVariation?.buttonLink && selectedVariation.buttonLink.trim() !== '')
+    ? selectedVariation.buttonLink
+    : product.buttonLink;
+  const hasLink = Boolean(currentLink && currentLink.trim() !== '');
+
+  const buttonText = selectedVariation?.buttonText || product.buttonText || (
+    hasLink 
+      ? (hasVariations ? `Comprar ${selectedVariation?.name}` : 'Comprar Agora')
+      : 'Consultar Pré-Venda'
+  );
 
   const renderCardGrid = (entries: DeckCardEntry[]) => {
     return (
@@ -236,21 +287,104 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                 )}
               </div>
 
-              {/* Buy Action */}
-              <div className="pt-4 border-t border-slate-800/80">
-                {/* Preço só aparece se o link estiver disponível */}
-                {hasLink && product.price && product.price.trim() !== '' && (
-                  <div className="flex items-center justify-between bg-slate-900/90 border border-emerald-500/40 px-4 py-3 rounded-xl mb-3 shadow-inner">
-                    <span className="text-xs text-slate-300 font-bold uppercase tracking-wider">Valor do Produto</span>
+              {/* Buy Action & Variations */}
+              <div className="pt-4 border-t border-slate-800/80 flex flex-col gap-4">
+                
+                {/* Seletor de Variações de Preço (ex: Versão Normal vs Versão Full Foil) */}
+                {hasVariations && (
+                  <div className="space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-black uppercase tracking-wider text-purple-300 flex items-center gap-1.5">
+                        <Sparkles size={14} className="text-amber-400" />
+                        <span>Escolha o Acabamento / Versão:</span>
+                      </label>
+                      <span className="text-[11px] text-slate-400 font-medium font-mono">
+                        {priceVariations.length} opções
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                      {priceVariations.map((variation, idx) => {
+                        const isSelected = activeVariationIndex === idx;
+                        const isFoil = (variation.name || '').toLowerCase().includes('foil') || 
+                                       (variation.badge || '').toLowerCase().includes('foil');
+
+                        return (
+                          <div
+                            key={idx}
+                            onClick={() => setSelectedVariationIndex(idx)}
+                            className={`p-3.5 rounded-xl border-2 transition-all duration-200 cursor-pointer relative flex flex-col justify-between gap-2 text-left ${
+                              isSelected
+                                ? 'bg-gradient-to-br from-purple-950/90 via-slate-900 to-indigo-950/90 border-purple-500 shadow-[0_0_20px_rgba(168,85,247,0.35)] ring-1 ring-purple-400'
+                                : 'bg-slate-900/70 border-slate-800 hover:border-slate-700 hover:bg-slate-850'
+                            }`}
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="flex items-center gap-2">
+                                <div className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${
+                                  isSelected ? 'border-purple-400 bg-purple-600' : 'border-slate-600 bg-slate-950'
+                                }`}>
+                                  {isSelected && <div className="w-1.5 h-1.5 bg-white rounded-full" />}
+                                </div>
+                                <span className={`font-bold text-sm ${isSelected ? 'text-white' : 'text-slate-200'}`}>
+                                  {variation.name}
+                                </span>
+                              </div>
+
+                              {/* Badge da Variação */}
+                              {(variation.badge || isFoil) && (
+                                <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-full shrink-0 flex items-center gap-1 border shadow-sm ${
+                                  isFoil
+                                    ? 'bg-gradient-to-r from-amber-500/25 to-yellow-500/25 text-yellow-300 border-yellow-500/50'
+                                    : 'bg-purple-950 text-purple-300 border-purple-700/60'
+                                }`}>
+                                  {isFoil && <Sparkles size={10} className="text-yellow-400" />}
+                                  <span>{variation.badge || 'Full Foil'}</span>
+                                </span>
+                              )}
+                            </div>
+
+                            {variation.description && (
+                              <p className="text-[11px] text-slate-400 leading-tight pl-6">
+                                {variation.description}
+                              </p>
+                            )}
+
+                            <div className="flex items-center justify-between pt-1 border-t border-slate-800/80 pl-6 mt-0.5">
+                              <span className="text-[10px] text-slate-400 font-medium">Preço desta versão:</span>
+                              <span className={`font-black font-mono text-base ${isSelected ? 'text-emerald-400 font-bold' : 'text-slate-300'}`}>
+                                {variation.price.startsWith('R$') ? variation.price : `R$ ${variation.price}`}
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Exibição do Preço Selecionado */}
+                {currentPrice && currentPrice.trim() !== '' && (
+                  <div className="flex items-center justify-between bg-slate-900/90 border border-emerald-500/40 px-4 py-3 rounded-xl shadow-inner">
+                    <div>
+                      <span className="text-xs text-slate-300 font-bold uppercase tracking-wider block">
+                        {hasVariations ? `Valor da Versão (${selectedVariation?.name}):` : 'Valor do Produto:'}
+                      </span>
+                      {hasVariations && selectedVariation?.badge && (
+                        <span className="text-[10px] text-amber-300 font-mono flex items-center gap-1 mt-0.5">
+                          <Sparkles size={10} /> {selectedVariation.badge}
+                        </span>
+                      )}
+                    </div>
                     <span className="text-2xl font-black text-emerald-400 font-mono">
-                      {product.price.startsWith('R$') ? product.price : `R$ ${product.price}`}
+                      {currentPrice.startsWith('R$') ? currentPrice : `R$ ${currentPrice}`}
                     </span>
                   </div>
                 )}
 
                 {/* Se não houver link de venda, mostra o status de lançamento */}
                 {!hasLink && (
-                  <div className="p-3.5 rounded-xl bg-purple-950/60 border border-purple-800/60 flex items-center gap-3 text-left mb-3">
+                  <div className="p-3.5 rounded-xl bg-purple-950/60 border border-purple-800/60 flex items-center gap-3 text-left">
                     <Calendar size={22} className="text-amber-400 shrink-0" />
                     <div>
                       <div className="text-[11px] font-bold uppercase tracking-wider text-purple-300">Status de Lançamento</div>
@@ -262,7 +396,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                 {isButtonEnabled ? (
                   hasLink ? (
                     <a 
-                      href={buttonLink}
+                      href={currentLink}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="w-full bg-gradient-to-r from-purple-600 via-indigo-600 to-purple-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold py-4 px-6 rounded-xl transition-all duration-300 flex items-center justify-center gap-2.5 shadow-lg shadow-purple-900/50 hover:scale-[1.02] active:scale-[0.98] text-base"
@@ -416,6 +550,15 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
             <h4 className="text-xl sm:text-2xl font-black text-white mb-2">
               {product.title || 'Produto Oficial'}
             </h4>
+
+            {hasVariations && selectedVariation && (
+              <div className="mb-2 px-3 py-1.5 rounded-lg bg-purple-950/70 border border-purple-700/60 inline-flex items-center gap-2 text-xs font-mono text-purple-200">
+                <span>Versão: <strong className="text-white">{selectedVariation.name}</strong></span>
+                <span className="text-emerald-400 font-bold">
+                  ({selectedVariation.price.startsWith('R$') ? selectedVariation.price : `R$ ${selectedVariation.price}`})
+                </span>
+              </div>
+            )}
 
             <div className="my-5 p-4 rounded-xl bg-slate-950 border border-purple-500/40 shadow-inner">
               <p className="text-lg sm:text-xl font-black text-amber-400 tracking-wide uppercase">

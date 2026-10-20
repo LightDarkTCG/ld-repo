@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { 
   Upload, 
   Image as ImageIcon, 
@@ -78,7 +78,7 @@ export const BatchImageMatcher: React.FC<BatchImageMatcherProps> = ({
   const [targetCollectionMode, setTargetCollectionMode] = useState<'same' | 'custom'>('same');
   const [customCollectionName, setCustomCollectionName] = useState<string>('');
 
-  // Filters
+  // Filters & Pagination
   const [selectedCollection, setSelectedCollection] = useState<string>(() => {
     if (collections.includes('Legado')) return 'Legado';
     return collections[0] || '';
@@ -86,6 +86,10 @@ export const BatchImageMatcher: React.FC<BatchImageMatcherProps> = ({
   const [cardSearchTerm, setCardSearchTerm] = useState('');
   const [imageSearchTerm, setImageSearchTerm] = useState('');
   const [cardStatusFilter, setCardStatusFilter] = useState<'all' | 'pending' | 'assigned'>('all');
+  
+  // UI Pagination for maximum performance and 0ms lag
+  const [cardsPerPage, setCardsPerPage] = useState<number>(24);
+  const [currentPage, setCurrentPage] = useState<number>(1);
 
   // Saving states
   const [isSaving, setIsSaving] = useState(false);
@@ -105,21 +109,67 @@ export const BatchImageMatcher: React.FC<BatchImageMatcherProps> = ({
     return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
   };
 
+  // Cria preview leve (thumbnail em memória) para não congelar o navegador com múltiplos arquivos de alta resolução
+  const createOptimizedPreview = (file: File): Promise<string> => {
+    return new Promise((resolve) => {
+      if (!file.type.startsWith('image/') || file.size < 120000) {
+        resolve(URL.createObjectURL(file));
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+          try {
+            const maxDim = 320;
+            let w = img.width;
+            let h = img.height;
+            if (w > maxDim || h > maxDim) {
+              if (w > h) {
+                h = Math.round((h * maxDim) / w);
+                w = maxDim;
+              } else {
+                w = Math.round((w * maxDim) / h);
+                h = maxDim;
+              }
+            }
+            const canvas = document.createElement('canvas');
+            canvas.width = w;
+            canvas.height = h;
+            const ctx = canvas.getContext('2d');
+            if (ctx) {
+              ctx.drawImage(img, 0, 0, w, h);
+              resolve(canvas.toDataURL('image/webp', 0.8));
+              return;
+            }
+          } catch {}
+          resolve(URL.createObjectURL(file));
+        };
+        img.onerror = () => resolve(URL.createObjectURL(file));
+        img.src = e.target?.result as string;
+      };
+      reader.onerror = () => resolve(URL.createObjectURL(file));
+      reader.readAsDataURL(file);
+    });
+  };
+
   // Add files to staging
-  const handleAddFiles = (files: FileList | File[]) => {
+  const handleAddFiles = async (files: FileList | File[]) => {
     const validFiles = Array.from(files).filter(f => f.type.startsWith('image/'));
     if (validFiles.length === 0) return;
 
-    const newStaged: StagedImage[] = validFiles.map(file => {
+    const newStaged: StagedImage[] = [];
+    for (const file of validFiles) {
       const id = `${Date.now()}_${Math.random().toString(36).substring(2, 9)}_${file.name}`;
-      return {
+      const previewUrl = await createOptimizedPreview(file);
+      newStaged.push({
         id,
         file,
-        previewUrl: URL.createObjectURL(file),
+        previewUrl,
         name: file.name,
         sizeFormatted: formatBytes(file.size)
-      };
-    });
+      });
+    }
 
     setStagedImages(prev => [...prev, ...newStaged]);
     setSaveSuccessMsg(null);
@@ -365,6 +415,18 @@ export const BatchImageMatcher: React.FC<BatchImageMatcherProps> = ({
 
     return filtered.sort((a, b) => compareCardCodes(a.code, b.code));
   }, [baseTargetCards, selectedCollection, cardSearchTerm, cardStatusFilter, assignments]);
+
+  // Reset page when filter or search changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [selectedCollection, cardSearchTerm, cardStatusFilter]);
+
+  const totalPages = Math.max(1, Math.ceil(displayCards.length / (cardsPerPage || 1)));
+  const paginatedCards = useMemo(() => {
+    if (cardsPerPage === 0) return displayCards;
+    const start = (currentPage - 1) * cardsPerPage;
+    return displayCards.slice(start, start + cardsPerPage);
+  }, [displayCards, currentPage, cardsPerPage]);
 
   // Count total variations to save
   const totalVariationsCount = useMemo(() => {
@@ -1049,11 +1111,75 @@ export const BatchImageMatcher: React.FC<BatchImageMatcherProps> = ({
             </div>
           </div>
 
+          {/* Top Pagination Bar */}
+          <div className="flex items-center justify-between flex-wrap gap-2 py-2 px-3 bg-slate-900/90 rounded-xl border border-slate-800 text-xs">
+            <div className="flex items-center gap-2">
+              <span className="text-slate-400">
+                Mostrando <strong className="text-white">{displayCards.length > 0 ? (currentPage - 1) * (cardsPerPage || displayCards.length) + 1 : 0} - {Math.min(displayCards.length, cardsPerPage > 0 ? currentPage * cardsPerPage : displayCards.length)}</strong> de <strong className="text-purple-300">{displayCards.length}</strong> cartas
+              </span>
+              {cardsPerPage > 0 && totalPages > 1 && (
+                <span className="text-[10px] bg-purple-950 text-purple-300 px-2 py-0.5 rounded border border-purple-800/40">
+                  Página {currentPage} de {totalPages}
+                </span>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1">
+                <span className="text-[10px] text-slate-500">Por página:</span>
+                <select
+                  value={cardsPerPage}
+                  onChange={(e) => {
+                    setCardsPerPage(Number(e.target.value));
+                    setCurrentPage(1);
+                  }}
+                  className="bg-slate-950 border border-slate-700 text-slate-300 text-[11px] rounded px-1.5 py-0.5 outline-none"
+                >
+                  <option value={24}>24 (Super Rápido)</option>
+                  <option value={48}>48</option>
+                  <option value={96}>96</option>
+                  <option value={0}>Todas</option>
+                </select>
+              </div>
+
+              {cardsPerPage > 0 && totalPages > 1 && (
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    disabled={currentPage <= 1}
+                    onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                    className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 disabled:hover:bg-slate-800 text-white rounded text-xs font-bold transition"
+                  >
+                    ← Anterior
+                  </button>
+                  <span className="text-xs text-slate-300 px-1 font-mono">
+                    {currentPage}/{totalPages}
+                  </span>
+                  <button
+                    type="button"
+                    disabled={currentPage >= totalPages}
+                    onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                    className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 disabled:hover:bg-slate-800 text-white rounded text-xs font-bold transition"
+                  >
+                    Próxima →
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+
           {/* Instruction banner if in click-select mode */}
           {selectedImageId && (
-            <div className="bg-purple-950/80 border border-purple-500/50 p-2.5 rounded-lg text-xs text-purple-200 flex items-center justify-between animate-pulse">
-              <span>👉 Modo clique ativo: Clique na carta abaixo onde deseja adicionar esta imagem como variação.</span>
-              <button onClick={() => setSelectedImageId(null)} className="text-purple-300 hover:text-white font-bold underline">
+            <div className="bg-purple-950/90 border border-purple-500/60 p-3 rounded-xl text-xs text-purple-200 flex items-center justify-between shadow-lg shadow-purple-950/50 animate-pulse">
+              <div className="flex items-center gap-2">
+                <Sparkles size={16} className="text-amber-400" />
+                <span><strong>Modo clique ativo:</strong> Clique no botão <em>"Vincular Skin"</em> em qualquer carta abaixo para adicioná-la instantaneamente sem arrastar!</span>
+              </div>
+              <button 
+                type="button"
+                onClick={() => setSelectedImageId(null)} 
+                className="text-purple-300 hover:text-white font-bold underline shrink-0 ml-3 bg-purple-900/60 px-2 py-1 rounded"
+              >
                 Cancelar
               </button>
             </div>
@@ -1061,7 +1187,7 @@ export const BatchImageMatcher: React.FC<BatchImageMatcherProps> = ({
 
           {/* Cards List / Multi-Variation Drop Targets */}
           <div className="max-h-[620px] overflow-y-auto custom-scrollbar pr-1 space-y-3">
-            {displayCards.map((card) => {
+            {paginatedCards.map((card) => {
               const assignedList = assignments[card.code] || [];
               const hasAssignments = assignedList.length > 0;
               const isHovered = hoveredCardCode === card.code;
@@ -1073,9 +1199,12 @@ export const BatchImageMatcher: React.FC<BatchImageMatcherProps> = ({
                   onDragOver={(e) => {
                     e.preventDefault();
                     e.dataTransfer.dropEffect = 'copy';
-                    setHoveredCardCode(card.code);
+                    if (hoveredCardCode !== card.code) {
+                      setHoveredCardCode(card.code);
+                    }
                   }}
-                  onDragLeave={() => {
+                  onDragLeave={(e) => {
+                    if (e.currentTarget.contains(e.relatedTarget as Node)) return;
                     if (hoveredCardCode === card.code) setHoveredCardCode(null);
                   }}
                   onDrop={(e) => {
@@ -1176,6 +1305,21 @@ export const BatchImageMatcher: React.FC<BatchImageMatcherProps> = ({
                       </button>
                     )}
                   </div>
+
+                  {/* Quick One-Click Assign Button when an image in the tray is selected */}
+                  {selectedImageId && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        assignImageToCard(card.code, selectedImageId);
+                      }}
+                      className="w-full bg-gradient-to-r from-purple-600 via-fuchsia-600 to-pink-600 hover:brightness-110 text-white font-bold py-2 px-3 rounded-xl text-xs flex items-center justify-center gap-2 shadow-lg shadow-purple-900/40 transition active:scale-98"
+                    >
+                      <Sparkles size={14} className="text-amber-300 animate-pulse" />
+                      <span>✨ Vincular Skin Selecionada a esta Carta</span>
+                    </button>
+                  )}
 
                   {/* Variations Section: List of assigned variations for this card */}
                   {hasAssignments ? (
@@ -1331,6 +1475,33 @@ export const BatchImageMatcher: React.FC<BatchImageMatcherProps> = ({
               </div>
             )}
           </div>
+
+          {/* Bottom Pagination Controls */}
+          {cardsPerPage > 0 && totalPages > 1 && (
+            <div className="flex items-center justify-between flex-wrap gap-2 pt-2 border-t border-slate-800 text-xs">
+              <span className="text-slate-500 text-[11px]">
+                Página {currentPage} de {totalPages} ({displayCards.length} cartas filtradas)
+              </span>
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  disabled={currentPage <= 1}
+                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                  className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 disabled:hover:bg-slate-800 text-white rounded-lg text-xs font-bold transition flex items-center gap-1"
+                >
+                  ← Anterior
+                </button>
+                <button
+                  type="button"
+                  disabled={currentPage >= totalPages}
+                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                  className="px-3 py-1.5 bg-purple-600 hover:bg-purple-500 disabled:opacity-40 disabled:hover:bg-purple-600 text-white rounded-lg text-xs font-bold transition flex items-center gap-1 shadow-md shadow-purple-900/30"
+                >
+                  Próxima →
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
       </div>

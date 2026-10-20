@@ -10,6 +10,7 @@ export interface CardVariationItem {
   code?: string;
   rarity?: string;
   tier?: string;
+  isCatalogCover?: boolean;
 }
 
 export interface CardData {
@@ -35,6 +36,36 @@ export interface CardData {
   parentCode?: string;
   isVariation?: boolean;
   variationType?: string;
+  // Capa do Catálogo
+  isCatalogCover?: boolean;
+  catalogCoverImageUrl?: string;
+  catalogCoverFrame?: 'Legado' | 'Moderno';
+  catalogCoverVariationId?: string;
+  // Tiragens Raras & Verificação Obrigatória no Álbum
+  isRarePrint?: boolean;
+  maxPrintCopies?: number; // Ex: 1 cópia única
+  requiresAdminVerification?: boolean;
+}
+
+export interface AlbumVerificationRequest {
+  id: string;
+  userId: string;
+  userEmail: string;
+  userName: string;
+  userPhoto?: string;
+  cardCode: string;
+  baseCardCode: string;
+  cardName: string;
+  cardImageUrl?: string;
+  cardCollection?: string;
+  cardFrame?: 'Legado' | 'Moderno' | string;
+  maxPrintCopies?: number;
+  proofNote?: string;
+  status: 'pending' | 'approved' | 'rejected';
+  requestedAt: string;
+  resolvedAt?: string;
+  resolvedBy?: string;
+  adminNote?: string;
 }
 
 export interface ArchetypeData {
@@ -53,6 +84,17 @@ export interface ProductMediaItem {
   url: string;
 }
 
+export interface ProductPriceVariation {
+  id?: string;
+  name: string;
+  price: string;
+  description?: string;
+  buttonLink?: string;
+  buttonText?: string;
+  badge?: string;
+  isDefault?: boolean;
+}
+
 export interface ExclusiveProduct {
   title: string;
   description: string;
@@ -62,6 +104,7 @@ export interface ExclusiveProduct {
   cardCodes?: string;
   badge?: string;
   price?: string;
+  priceVariations?: ProductPriceVariation[];
   buttonText?: string;
   buttonLink?: string;
   isActive?: boolean;

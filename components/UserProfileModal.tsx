@@ -22,11 +22,15 @@ import {
   Copy,
   Check,
   ShieldAlert,
-  Award
+  Award,
+  Bell,
+  Clock,
+  CheckCircle,
+  XCircle
 } from 'lucide-react';
 import { User } from 'firebase/auth';
 import { useAuth, isUserAdmin } from '../authService';
-import { useCards } from '../CardContext';
+import { useCards, cleanCardCode } from '../CardContext';
 import { useUserAlbum, FOIL_TYPES, FoilTypeInfo } from '../albumService';
 import { setCollectorAmbassadorStatus } from '../collectorsService';
 import { 
@@ -37,7 +41,15 @@ import {
   aggregateMostWantedCards,
   UserWishlistDoc
 } from '../wishlistService';
-import { CardData } from '../types';
+import { CardData, AlbumVerificationRequest } from '../types';
+import { 
+  subscribePendingVerificationRequests, 
+  subscribeAllVerificationRequests, 
+  subscribeUserVerificationRequests,
+  approveVerificationRequest, 
+  rejectVerificationRequest, 
+  deleteVerificationRequest 
+} from '../rarePrintService';
 import { LazyCardImage } from './LazyCardImage';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../firebase';
@@ -86,7 +98,83 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
   const { album: myAlbum, getQuantity: getMyQuantity } = useUserAlbum(currentUser?.uid);
 
   // Tab ativa
-  const [activeTab, setActiveTab] = useState<'wishlist' | 'most_wanted' | 'stats'>(initialTab);
+  const [activeTab, setActiveTab] = useState<'wishlist' | 'most_wanted' | 'stats' | 'verifications'>(initialTab);
+
+  // Verificações de Tiragem Rara (Admin e Jogador)
+  const [adminPendingRequests, setAdminPendingRequests] = useState<AlbumVerificationRequest[]>([]);
+  const [adminAllRequests, setAdminAllRequests] = useState<AlbumVerificationRequest[]>([]);
+  const [userRequests, setUserRequests] = useState<AlbumVerificationRequest[]>([]);
+  const [verificationsFilter, setVerificationsFilter] = useState<'pending' | 'all'>('pending');
+  const [processingReqId, setProcessingReqId] = useState<string | null>(null);
+  const [rejectPrompt, setRejectPrompt] = useState<{ id: string; cardName: string; userName: string } | null>(null);
+  const [rejectReason, setRejectReason] = useState('');
+  const [verificationFeedback, setVerificationFeedback] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    if (isUserAdmin(currentUser)) {
+      const unsubPending = subscribePendingVerificationRequests((reqs) => {
+        setAdminPendingRequests(reqs);
+      });
+      const unsubAll = subscribeAllVerificationRequests((reqs) => {
+        setAdminAllRequests(reqs);
+      });
+      return () => {
+        unsubPending();
+        unsubAll();
+      };
+    } else if (currentUser?.uid) {
+      const unsubUser = subscribeUserVerificationRequests(currentUser.uid, (reqs) => {
+        setUserRequests(reqs);
+      });
+      return () => unsubUser();
+    }
+  }, [isOpen, currentUser]);
+
+  const handleApproveRequest = async (req: AlbumVerificationRequest) => {
+    try {
+      setProcessingReqId(req.id);
+      await approveVerificationRequest(req, currentUser?.email || 'admin@lightdark.tcg');
+      setVerificationFeedback(`Carta "${req.cardName}" aprovada e adicionada ao álbum de ${req.userName}!`);
+      setTimeout(() => setVerificationFeedback(null), 4000);
+    } catch (e: any) {
+      console.error(e);
+      alert('Erro ao aprovar solicitação: ' + e.message);
+    } finally {
+      setProcessingReqId(null);
+    }
+  };
+
+  const handleRejectRequest = async () => {
+    if (!rejectPrompt) return;
+    try {
+      setProcessingReqId(rejectPrompt.id);
+      await rejectVerificationRequest(rejectPrompt.id, rejectReason, currentUser?.email || 'admin@lightdark.tcg');
+      setVerificationFeedback(`Solicitação de ${rejectPrompt.userName} recusada.`);
+      setTimeout(() => setVerificationFeedback(null), 4000);
+      setRejectPrompt(null);
+      setRejectReason('');
+    } catch (e: any) {
+      console.error(e);
+      alert('Erro ao recusar solicitação: ' + e.message);
+    } finally {
+      setProcessingReqId(null);
+    }
+  };
+
+  const handleDeleteRequest = async (id: string) => {
+    if (!window.confirm('Excluir esta solicitação permanentemente?')) return;
+    try {
+      setProcessingReqId(id);
+      await deleteVerificationRequest(id);
+    } catch (e: any) {
+      console.error(e);
+      alert('Erro ao excluir solicitação: ' + e.message);
+    } finally {
+      setProcessingReqId(null);
+    }
+  };
 
   useEffect(() => {
     if (isOpen) {
@@ -402,6 +490,47 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
             </div>
           </div>
 
+          {/* BANNER DE ALERTA DO ADMINISTRADOR: SOLICITAÇÕES PENDENTES */}
+          {isUserAdmin(currentUser) && isMe && adminPendingRequests.length > 0 && (
+            <div 
+              onClick={() => setActiveTab('verifications')}
+              className="mt-4 p-3.5 rounded-2xl bg-gradient-to-r from-amber-950/90 via-red-950/70 to-purple-950/90 border border-amber-500/60 flex items-center justify-between cursor-pointer hover:border-amber-400 transition shadow-xl group animate-in fade-in"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-amber-500/20 border border-amber-500/60 flex items-center justify-center text-amber-300 shadow-md">
+                  <ShieldAlert size={20} className="animate-pulse" />
+                </div>
+                <div>
+                  <p className="text-xs font-black text-white group-hover:text-amber-200 transition flex items-center gap-1.5">
+                    <span>
+                      {adminPendingRequests.length === 1 
+                        ? '1 solicitação de posse de tiragem rara aguarda sua conferência!' 
+                        : `${adminPendingRequests.length} solicitações de posse de tiragem rara aguardam sua conferência!`}
+                    </span>
+                    <span className="px-1.5 py-0.2 rounded-full bg-red-600 text-white text-[10px] font-mono">
+                      {adminPendingRequests.length}
+                    </span>
+                  </p>
+                  <p className="text-[11px] text-amber-300/80">
+                    Clique aqui para aprovar e ativar as cópias no álbum dos jogadores.
+                  </p>
+                </div>
+              </div>
+              <span className="text-xs font-black text-slate-950 px-3 py-1.5 bg-gradient-to-r from-amber-400 to-amber-500 rounded-xl shadow-md group-hover:brightness-110 transition flex items-center gap-1">
+                <span>Verificar</span>
+                <span>→</span>
+              </span>
+            </div>
+          )}
+
+          {/* Feedback de ação de verificação */}
+          {verificationFeedback && (
+            <div className="mt-3 p-3 rounded-xl bg-emerald-950/80 border border-emerald-500/60 text-emerald-300 text-xs font-bold flex items-center gap-2 animate-in fade-in">
+              <CheckCircle size={16} className="text-emerald-400 shrink-0" />
+              <span>{verificationFeedback}</span>
+            </div>
+          )}
+
           {/* ABAS DO PERFIL */}
           <div className="flex items-center gap-2 mt-5 border-t border-purple-900/30 pt-3 overflow-x-auto custom-scrollbar">
             <button
@@ -433,6 +562,36 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                 Geral
               </span>
             </button>
+
+            {/* ABA DE VERIFICAÇÃO DE TIRAGENS RARAS */}
+            {isMe && (
+              <button
+                onClick={() => setActiveTab('verifications')}
+                className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 transition shrink-0 relative ${
+                  activeTab === 'verifications'
+                    ? 'bg-gradient-to-r from-amber-600 to-yellow-600 text-slate-950 font-black shadow-lg shadow-amber-950/50'
+                    : isUserAdmin(currentUser)
+                    ? 'bg-amber-950/40 hover:bg-amber-900/50 text-amber-300 border border-amber-500/50'
+                    : 'bg-slate-900/80 hover:bg-slate-800 text-slate-300 border border-slate-800'
+                }`}
+              >
+                <ShieldAlert size={15} className={adminPendingRequests.length > 0 ? 'text-amber-300 animate-pulse' : ''} />
+                <span>{isUserAdmin(currentUser) ? 'Verificações de Tiragem Rara' : 'Minhas Verificações'}</span>
+                {isUserAdmin(currentUser) ? (
+                  adminPendingRequests.length > 0 && (
+                    <span className="px-1.5 py-0.2 rounded-full bg-red-600 text-white text-[10px] font-black">
+                      {adminPendingRequests.length}
+                    </span>
+                  )
+                ) : (
+                  userRequests.length > 0 && (
+                    <span className="px-1.5 py-0.2 rounded-full bg-slate-800 text-slate-300 text-[10px]">
+                      {userRequests.length}
+                    </span>
+                  )
+                )}
+              </button>
+            )}
           </div>
         </div>
 
@@ -752,6 +911,248 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
               )}
             </div>
           )}
+
+          {/* TAB 3: VERIFICAÇÕES DE TIRAGEM RARA */}
+          {activeTab === 'verifications' && (
+            <div>
+              {/* Top Banner & Info */}
+              <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                <div>
+                  <h3 className="text-base sm:text-lg font-black text-white flex items-center gap-2">
+                    <ShieldAlert size={20} className="text-amber-400" />
+                    <span>
+                      {isUserAdmin(currentUser) 
+                        ? 'Painel de Verificação de Tiragens Raras (1/1 e Limitadas)' 
+                        : 'Minhas Solicitações de Verificação de Tiragem Rara'}
+                    </span>
+                  </h3>
+                  <p className="text-xs text-slate-400 mt-0.5 max-w-2xl">
+                    {isUserAdmin(currentUser)
+                      ? 'Cartas com tiragem limitada ou cópias únicas (1/1) exigem sua conferência física antes de serem ativadas no álbum dos jogadores. Ao aprovar, a carta é creditada automaticamente no perfil do usuário.'
+                      : 'Cartas com tiragem limitada exigem que o Administrador confirme a posse física antes de liberar as cópias no seu álbum.'}
+                  </p>
+                </div>
+
+                {/* Filtro para Admin: Pendentes vs Todas */}
+                {isUserAdmin(currentUser) && (
+                  <div className="flex items-center gap-1.5 bg-slate-900 border border-slate-800 p-1 rounded-xl">
+                    <button
+                      type="button"
+                      onClick={() => setVerificationsFilter('pending')}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
+                        verificationsFilter === 'pending'
+                          ? 'bg-amber-500 text-slate-950 shadow-md font-black'
+                          : 'text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      <span>Pendentes</span>
+                      <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${
+                        verificationsFilter === 'pending' ? 'bg-slate-950 text-amber-300' : 'bg-slate-800 text-slate-300'
+                      }`}>
+                        {adminPendingRequests.length}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setVerificationsFilter('all')}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
+                        verificationsFilter === 'all'
+                          ? 'bg-amber-500 text-slate-950 shadow-md font-black'
+                          : 'text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      <span>Histórico Geral</span>
+                      <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${
+                        verificationsFilter === 'all' ? 'bg-slate-950 text-amber-300' : 'bg-slate-800 text-slate-300'
+                      }`}>
+                        {adminAllRequests.length}
+                      </span>
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Lista de Requisições */}
+              {(() => {
+                const listToDisplay = isUserAdmin(currentUser)
+                  ? (verificationsFilter === 'pending' ? adminPendingRequests : adminAllRequests)
+                  : userRequests;
+
+                if (listToDisplay.length === 0) {
+                  return (
+                    <div className="py-16 text-center border-2 border-dashed border-slate-800 rounded-3xl bg-slate-900/30 flex flex-col items-center">
+                      <div className="w-14 h-14 rounded-full bg-amber-950/40 border border-amber-600/40 flex items-center justify-center text-amber-400 mb-3 shadow-lg">
+                        <ShieldAlert size={28} />
+                      </div>
+                      <h4 className="text-base font-bold text-white mb-1">
+                        {isUserAdmin(currentUser)
+                          ? (verificationsFilter === 'pending' ? 'Nenhuma solicitação pendente no momento!' : 'Nenhuma solicitação registrada')
+                          : 'Você não tem solicitações de tiragem rara'}
+                      </h4>
+                      <p className="text-xs text-slate-400 max-w-md">
+                        {isUserAdmin(currentUser)
+                          ? 'Quando jogadores tentarem adicionar cartas de tiragem rara ao álbum, a notificação com os dados aparecerá aqui instantaneamente.'
+                          : 'Ao tentar adicionar uma carta com tiragem única ou limitada no catálogo, você poderá solicitar a verificação por aqui.'}
+                      </p>
+                    </div>
+                  );
+                }
+
+                return (
+                  <div className="space-y-3">
+                    {listToDisplay.map((req) => {
+                      const officialCard = allCards.find(c => c.code === req.cardCode || c.id === req.cardCode);
+                      const isPending = req.status === 'pending';
+                      const isApproved = req.status === 'approved';
+                      const isRejected = req.status === 'rejected';
+
+                      return (
+                        <div
+                          key={req.id}
+                          className={`p-4 rounded-2xl border transition flex flex-col md:flex-row items-start md:items-center justify-between gap-4 ${
+                            isPending
+                              ? 'bg-amber-950/20 border-amber-500/50 shadow-lg shadow-amber-950/30'
+                              : isApproved
+                              ? 'bg-emerald-950/20 border-emerald-600/40'
+                              : 'bg-red-950/20 border-red-800/40'
+                          }`}
+                        >
+                          {/* Card & Requester Info */}
+                          <div className="flex items-start sm:items-center gap-3.5 min-w-0 flex-1">
+                            {/* Card Thumbnail */}
+                            <div
+                              className="w-14 h-20 rounded-xl overflow-hidden bg-slate-950 border border-slate-800 shrink-0 cursor-pointer shadow-md relative"
+                              onClick={() => {
+                                if (officialCard && onOpenCardDetail) onOpenCardDetail(officialCard);
+                              }}
+                            >
+                              {req.cardImageUrl ? (
+                                <LazyCardImage src={req.cardImageUrl} alt={req.cardName} className="w-full h-full object-cover" />
+                              ) : (
+                                <div className="w-full h-full flex items-center justify-center text-[10px] text-slate-500 text-center p-1 font-bold">
+                                  {req.cardName}
+                                </div>
+                              )}
+                              <div className="absolute top-1 right-1 bg-amber-500 text-slate-950 text-[9px] font-black px-1 rounded shadow">
+                                {req.maxPrintCopies === 1 ? '1/1' : `${req.maxPrintCopies || 1}ex`}
+                              </div>
+                            </div>
+
+                            {/* Details */}
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <h4
+                                  className="font-bold text-sm sm:text-base text-white hover:text-amber-300 transition cursor-pointer truncate"
+                                  onClick={() => {
+                                    if (officialCard && onOpenCardDetail) onOpenCardDetail(officialCard);
+                                  }}
+                                >
+                                  {req.cardName}
+                                </h4>
+                                <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/20 border border-amber-500/40 text-amber-300 font-bold">
+                                  {req.maxPrintCopies === 1 ? 'Cópia Única Impressa' : `Tiragem Limitada (${req.maxPrintCopies || 1})`}
+                                </span>
+                              </div>
+
+                              <div className="flex items-center gap-2 text-xs text-slate-400 font-mono mt-0.5 flex-wrap">
+                                <span>{req.cardCode}</span>
+                                {req.cardCollection && (
+                                  <span>• <span className="text-slate-300">{req.cardCollection}</span></span>
+                                )}
+                                <span>• Frame {req.cardFrame || 'Moderno'}</span>
+                              </div>
+
+                              {/* Solicitante */}
+                              <div className="mt-2 flex items-center gap-2 text-xs text-slate-300 bg-slate-950/70 px-2.5 py-1.5 rounded-xl border border-slate-800/80 w-fit">
+                                <UserIcon size={12} className="text-purple-400 shrink-0" />
+                                <span>Jogador: <strong className="text-white">{req.userName}</strong> ({req.userEmail})</span>
+                              </div>
+
+                              {/* Prova / Observação */}
+                              {req.proofNote && (
+                                <p className="mt-1.5 text-xs text-amber-200/90 italic bg-amber-950/40 border border-amber-900/50 rounded-lg p-2 max-w-xl">
+                                  <strong>Observação do Jogador:</strong> "{req.proofNote}"
+                                </p>
+                              )}
+
+                              {/* Data de envio */}
+                              <div className="mt-1 flex items-center gap-1.5 text-[10px] text-slate-500">
+                                <Clock size={11} />
+                                <span>Solicitado em: {new Date(req.requestedAt).toLocaleString('pt-BR')}</span>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Status & Action Buttons */}
+                          <div className="shrink-0 flex flex-col sm:flex-row md:flex-col items-end gap-2 w-full md:w-auto">
+                            {/* Status Badge */}
+                            <div>
+                              {isPending && (
+                                <span className="px-3 py-1 rounded-xl bg-amber-500/20 text-amber-300 border border-amber-500/50 text-xs font-bold flex items-center gap-1.5">
+                                  <Clock size={13} className="animate-spin text-amber-400" />
+                                  <span>Aguardando Verificação</span>
+                                </span>
+                              )}
+                              {isApproved && (
+                                <span className="px-3 py-1 rounded-xl bg-emerald-500/20 text-emerald-300 border border-emerald-500/50 text-xs font-bold flex items-center gap-1.5">
+                                  <CheckCircle size={13} />
+                                  <span>Aprovado no Álbum</span>
+                                </span>
+                              )}
+                              {isRejected && (
+                                <span className="px-3 py-1 rounded-xl bg-red-500/20 text-red-300 border border-red-500/50 text-xs font-bold flex items-center gap-1.5" title={req.rejectReason || undefined}>
+                                  <XCircle size={13} />
+                                  <span>Recusado {req.rejectReason ? `(${req.rejectReason})` : ''}</span>
+                                </span>
+                              )}
+                            </div>
+
+                            {/* Admin Actions */}
+                            {isUserAdmin(currentUser) && isPending && (
+                              <div className="flex items-center gap-2 mt-1">
+                                <button
+                                  type="button"
+                                  onClick={() => handleApproveRequest(req)}
+                                  disabled={processingReqId === req.id}
+                                  className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-md shadow-emerald-950/60 transition flex items-center gap-1.5 disabled:opacity-50"
+                                >
+                                  <Check size={14} />
+                                  <span>{processingReqId === req.id ? 'Aprovando...' : 'Aprovar Carta'}</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setRejectPrompt({ id: req.id, cardName: req.cardName, userName: req.userName })}
+                                  disabled={processingReqId === req.id}
+                                  className="px-3 py-1.5 rounded-xl bg-red-950 hover:bg-red-900 text-red-300 border border-red-700/60 text-xs font-bold transition flex items-center gap-1 disabled:opacity-50"
+                                >
+                                  <X size={14} />
+                                  <span>Recusar</span>
+                                </button>
+                              </div>
+                            )}
+
+                            {/* Excluir registro do histórico */}
+                            {isUserAdmin(currentUser) && (
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteRequest(req.id)}
+                                disabled={processingReqId === req.id}
+                                className="text-[11px] text-slate-500 hover:text-red-400 transition flex items-center gap-1 mt-1"
+                                title="Excluir este registro permanentemente"
+                              >
+                                <Trash2 size={12} />
+                                <span>Remover Registro</span>
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+            </div>
+          )}
         </div>
 
         {/* FOOTER */}
@@ -944,6 +1345,57 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
               >
                 <Plus size={14} />
                 <span>{isSubmitting ? 'Salvando...' : 'Adicionar à Lista'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL DE RECUSA COM MOTIVO */}
+      {rejectPrompt && (
+        <div className="fixed inset-0 z-[160] bg-black/85 backdrop-blur-sm flex items-center justify-center p-3 animate-in fade-in">
+          <div className="bg-[#121520] border border-red-500/50 w-full max-w-md rounded-2xl shadow-2xl p-5 flex flex-col gap-4 text-white">
+            <div className="flex items-center gap-3 text-red-400">
+              <div className="w-10 h-10 rounded-xl bg-red-950/80 border border-red-700/50 flex items-center justify-center">
+                <XCircle size={22} />
+              </div>
+              <div>
+                <h4 className="text-base font-black text-white">Recusar Solicitação de Posse</h4>
+                <p className="text-xs text-slate-400">
+                  {rejectPrompt.cardName} para {rejectPrompt.userName}
+                </p>
+              </div>
+            </div>
+
+            <div>
+              <label className="text-xs font-bold text-slate-300 block mb-1">
+                Motivo da recusa (opcional para o jogador):
+              </label>
+              <textarea
+                value={rejectReason}
+                onChange={(e) => setRejectReason(e.target.value)}
+                placeholder="Ex: Foto do card físico não enviada, número de série não confere, etc."
+                className="w-full h-24 bg-slate-900 border border-slate-700 rounded-xl p-3 text-xs text-slate-200 outline-none focus:border-red-500"
+              />
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-800">
+              <button
+                type="button"
+                onClick={() => {
+                  setRejectPrompt(null);
+                  setRejectReason('');
+                }}
+                className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold transition"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleRejectRequest}
+                className="px-4 py-2 rounded-xl bg-red-600 hover:bg-red-500 text-white text-xs font-bold shadow-lg shadow-red-950/60 transition"
+              >
+                Confirmar Recusa
               </button>
             </div>
           </div>

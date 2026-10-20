@@ -22,11 +22,14 @@ import {
 } from 'lucide-react';
 import { CardData } from '../types';
 import { useCards, cleanCardCode, getBaseCardCode, getCardDisplayPriority, resolveModernFrameOnly } from '../CardContext';
-import { useAuth } from '../authService';
+import { useAuth, isUserAdmin } from '../authService';
 import { useUserAlbum, normalizeAlbumKey, FOIL_TYPES, FoilTypeInfo } from '../albumService';
 import { compareCardCodes } from '../deckUtils';
 import { syncUserCollectorStats } from '../collectorsService';
 import { useUserWishlist } from '../wishlistService';
+import { allCards as defaultCards } from '../data';
+import { isCardRarePrint } from '../rarePrintService';
+import { VerificationRequestModal } from './VerificationRequestModal';
 
 interface AlbumModalProps {
   isOpen: boolean;
@@ -70,31 +73,43 @@ export const isLegacyCard = (c: CardData): boolean => {
   return true;
 };
 
-/**
- * Identifica se a carta é Especial (Limitadas, Raras, Muito Raras, Eventos, Promos)
- * Cartas Comuns ou do conjunto base Beta NUNCA são especiais, mesmo que possuam novo frame ou variação visual.
- */
 export const isSpecialCard = (c: CardData): boolean => {
   if (!c) return false;
-  const r = (c.rarity || '').trim().toLowerCase();
+  // Se for explicitamente tiragem rara ou verificação de admin: é especial
+  if (c.isRarePrint || c.requiresAdminVerification || (typeof c.maxPrintCopies === 'number' && c.maxPrintCopies > 0)) {
+    return true;
+  }
 
-  // Cartas Comuns ou Beta NUNCA são especiais
-  if (r === 'comum' || r === 'beta') {
+  // Verifica se a carta base em defaultCards era comum ou beta
+  const baseCode = getBaseCardCode(c.code, c.parentCode);
+  const defMatch = defaultCards.find(d => getBaseCardCode(d.code, d.parentCode) === baseCode);
+  if (defMatch) {
+    const defRarity = (defMatch.rarity || '').trim().toLowerCase();
+    // Se a carta original em defaultCards for Beta ou Comum (ou vazia), ela é uma carta comum!
+    if (defRarity === 'beta' || defRarity === 'comum' || !defRarity) {
+      const col = (c.collection || '').toLowerCase();
+      if (!col.includes('evento especial') && !col.includes('promocional')) {
+        return false;
+      }
+    }
+  }
+
+  const r = (c.rarity || '').trim().toLowerCase();
+  if (r === 'comum' || r === 'beta' || !r) {
     return false;
   }
 
-  // Raridades nobres e especiais
   if (
     r.includes('limitad') ||
     r === 'evento' ||
     r === 'especial' ||
     r === 'promo' ||
-    r.includes('rara')
+    r === 'muito rara' ||
+    r === 'rara'
   ) {
     return true;
   }
 
-  // Coleções especiais exclusivas de evento/promo
   const col = (c.collection || '').toLowerCase();
   if (col.includes('evento especial') || col.includes('promocional')) {
     return true;
@@ -143,6 +158,9 @@ export const AlbumModal: React.FC<AlbumModalProps> = ({ isOpen, onClose, onSelec
   const [bulkTab, setBulkTab] = useState<'all' | 'deck' | 'booster'>('all');
   const [bulkLoadingName, setBulkLoadingName] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // Modal para solicitação de tiragem rara ao tentar adicionar ao álbum
+  const [rareVerificationCard, setRareVerificationCard] = useState<CardData | null>(null);
 
   // Pool de cartas conforme o Álbum selecionado:
   // Agrupa cartas por coleção e código base para que variações (artes alternativas, skins)
@@ -296,11 +314,19 @@ export const AlbumModal: React.FC<AlbumModalProps> = ({ isOpen, onClose, onSelec
 
     setBulkLoadingName(collectionName);
     try {
-      // Passa a lista completa de CardData para manter cada frame independente
-      const count = await addCollectionCards(col.cards, mode, 1);
+      // Jogadores comuns não adicionam cartas de tiragem rara em lote (devem ser verificadas individualmente)
+      const eligibleCards = isUserAdmin(user) 
+        ? col.cards 
+        : col.cards.filter(c => !isCardRarePrint(c));
+
+      const count = await addCollectionCards(eligibleCards, mode, 1);
       const actionText = mode === 'add' ? 'adicionadas (+1 cópia de cada)' : 'completadas com sucesso';
-      setToastMessage(`${count} cartas de "${collectionName}" foram ${actionText}!`);
-      setTimeout(() => setToastMessage(null), 3500);
+      let message = `${count} cartas de "${collectionName}" foram ${actionText}!`;
+      if (col.cards.length > eligibleCards.length) {
+        message += ' (Cartas de tiragem rara requerem aprovação individual do administrador).';
+      }
+      setToastMessage(message);
+      setTimeout(() => setToastMessage(null), 4000);
     } catch (err) {
       console.error('Erro ao adicionar coleção:', err);
       alert('Houve um erro ao atualizar o álbum. Tente novamente.');
@@ -1087,9 +1113,23 @@ export const AlbumModal: React.FC<AlbumModalProps> = ({ isOpen, onClose, onSelec
                       </span>
 
                       <button
-                        onClick={() => incrementCard(card)}
-                        className="flex-1 py-1 rounded-lg flex items-center justify-center transition text-xs font-bold bg-purple-950/70 hover:bg-purple-800 text-purple-200 border border-purple-700/50"
-                        title="Aumentar quantidade"
+                        onClick={() => {
+                          if (!user) {
+                            if (onOpenAuth) onOpenAuth();
+                            return;
+                          }
+                          if (isCardRarePrint(card) && !isUserAdmin(user)) {
+                            setRareVerificationCard(card);
+                            return;
+                          }
+                          incrementCard(card);
+                        }}
+                        className={`flex-1 py-1 rounded-lg flex items-center justify-center transition text-xs font-bold ${
+                          isCardRarePrint(card) && !isUserAdmin(user)
+                            ? 'bg-amber-600 hover:bg-amber-500 text-slate-950 font-black'
+                            : 'bg-purple-950/70 hover:bg-purple-800 text-purple-200 border border-purple-700/50'
+                        }`}
+                        title={isCardRarePrint(card) && !isUserAdmin(user) ? 'Solicitar verificação de posse' : 'Aumentar quantidade'}
                       >
                         <Plus size={13} />
                       </button>
@@ -1514,6 +1554,15 @@ export const AlbumModal: React.FC<AlbumModalProps> = ({ isOpen, onClose, onSelec
           </div>
         </div>
       )}
+
+      {/* Modal de Solicitação de Tiragem Rara */}
+      <VerificationRequestModal
+        isOpen={Boolean(rareVerificationCard)}
+        onClose={() => setRareVerificationCard(null)}
+        card={rareVerificationCard}
+        user={user}
+        onOpenAuth={onOpenAuth}
+      />
 
     </div>
   );
