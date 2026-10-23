@@ -184,18 +184,35 @@ export const AlbumModal: React.FC<AlbumModalProps> = ({ isOpen, onClose, onSelec
         if (candidateCards.length === 0) return;
       } else if (albumEdition === 'moderno') {
         candidateCards = group.filter(c => !isLegacyCard(c));
-        if (candidateCards.length === 0) return;
+        if (candidateCards.length === 0) {
+          const hasModernVar = group.some(c => c.variants?.some(v => v.frame === 'Moderno'));
+          if (!hasModernVar) return;
+        }
       }
 
-      // Escolhe a representação visual prioritária para a edição do álbum ativa:
-      // REGRA: Exibir sempre primeiro o frame moderno das cartas (caso tenha)!
-      const sorted = [...candidateCards].sort((a, b) => {
-        return getCardDisplayPriority(b) - getCardDisplayPriority(a);
-      });
-      let chosenCard = sorted[0];
-
-      if (albumEdition !== 'legado' && chosenCard.frame !== 'Moderno') {
-        chosenCard = resolveModernFrameOnly(chosenCard, allCards);
+      let chosenCard: CardData;
+      if (albumEdition === 'legado') {
+        const legacyBase = candidateCards.find(isLegacyCard) || candidateCards[0];
+        chosenCard = { ...legacyBase, frame: 'Legado' };
+      } else if (albumEdition === 'moderno') {
+        const modernMatch = candidateCards.find(c => !isLegacyCard(c));
+        if (modernMatch) {
+          chosenCard = { ...modernMatch, frame: 'Moderno' };
+        } else {
+          let foundVariant: any = null;
+          for (const c of group) {
+            const v = c.variants?.find(v => v.frame === 'Moderno');
+            if (v) {
+              foundVariant = { ...c, imageUrl: v.imageUrl, frame: 'Moderno', variationType: v.name || 'Novo Frame' };
+              break;
+            }
+          }
+          chosenCard = foundVariant || candidateCards[0];
+        }
+      } else {
+        // albumEdition === 'todos': Cartas de origem Legado NUNCA são substituídas pelo frame moderno!
+        const legacyBase = candidateCards.find(isLegacyCard);
+        chosenCard = legacyBase ? { ...legacyBase, frame: 'Legado' } : candidateCards[0];
       }
 
       // Consolida todas as variações deste grupo dentro de chosenCard.variants

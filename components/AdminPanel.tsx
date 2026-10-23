@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Settings, Lock, Plus, Trash2, X, Image as ImageIcon, Edit2, Check, Layout, Clock, Grid, Palette, ChevronRight, Layers, BookOpen, Database, Box, Upload, Film, Sparkles, Calendar, Loader2, LogIn, ShieldAlert, Copy, Search } from 'lucide-react';
+import { Settings, Lock, Plus, Trash2, X, Image as ImageIcon, Edit2, Check, Layout, Clock, Grid, Palette, ChevronRight, Layers, BookOpen, Database, Box, Upload, Film, Sparkles, Calendar, Loader2, LogIn, ShieldAlert, Copy, Search, Crown } from 'lucide-react';
 import { signInWithEmailAndPassword, onAuthStateChanged, signOut } from 'firebase/auth';
 import { collection, getDocs, addDoc, deleteDoc, updateDoc, doc, setDoc, getDoc } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { auth, db, storage } from '../firebase';
-import { useCards, sanitizeForFirestore } from '../CardContext';
+import { useCards, sanitizeForFirestore, cleanCardCode } from '../CardContext';
 import { ArchetypeData } from '../types';
 import { parseDeckFromCode } from '../deckUtils';
 import { BatchImageMatcher } from './BatchImageMatcher';
@@ -13,7 +13,7 @@ import { isUserAdmin, logout } from '../authService';
 export type AdminType = 'home' | 'catalog' | 'master';
 
 export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => void, adminType?: AdminType }) => {
-  const { archetypes, saveArchetype, collections, saveCollection, deleteCollection, cards, saveCard, deleteCard } = useCards();
+  const { archetypes, saveArchetype, collections, saveCollection, deleteCollection, cards, saveCard, deleteCard, setCardCatalogCover, setCardRarePrintSettings } = useCards();
   const [user, setUser] = useState(auth.currentUser);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -78,6 +78,9 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
   const [cardEditArchetype, setCardEditArchetype] = useState('Desconhecido');
   const [cardEditLore, setCardEditLore] = useState('');
   const [cardEditIsHidden, setCardEditIsHidden] = useState(false);
+  const [cardEditIsRarePrint, setCardEditIsRarePrint] = useState(false);
+  const [cardEditMaxPrintCopies, setCardEditMaxPrintCopies] = useState('1');
+  const [cardEditIsCatalogCover, setCardEditIsCatalogCover] = useState(false);
   const [cardSearchQuery, setCardSearchQuery] = useState('');
   const [cardFilterCollection, setCardFilterCollection] = useState('all');
   const [cardFilterFrame, setCardFilterFrame] = useState('all');
@@ -300,6 +303,9 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
     setCardEditArchetype(c.archetype || '');
     setCardEditLore(c.lore || '');
     setCardEditIsHidden(!!c.isHidden);
+    setCardEditIsRarePrint(Boolean(c.isRarePrint || c.requiresAdminVerification));
+    setCardEditMaxPrintCopies(String(c.maxPrintCopies || 1));
+    setCardEditIsCatalogCover(Boolean(c.isCatalogCover));
   };
 
   const resetForm = () => {
@@ -316,6 +322,9 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
     setTimelineTabId('');
     setTimelineDate('');
     setCardEditIsHidden(false);
+    setCardEditIsRarePrint(false);
+    setCardEditMaxPrintCopies('1');
+    setCardEditIsCatalogCover(false);
     setCardFrame('Legado');
     setCardRarity('Comum');
     setBatchStep(1);
@@ -475,7 +484,9 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
       const finalImg = await handleSaveUpload();
       
       if (editingId && editingId !== cardEditCode) {
-        await deleteCard(editingId as string);
+        // Apenas remove doc customizado anterior se o ID mudou (nunca apaga carta default)
+        const cleanOld = cleanCardCode(editingId).replace(/[\/\s-]/g, '_');
+        await deleteDoc(doc(db, 'customCards', cleanOld)).catch(() => {});
       }
       
       let finalRarity = cardRarity || 'Comum';
@@ -483,7 +494,7 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
         finalRarity = 'Comum';
       }
 
-      await saveCard({
+      const cardPayload = {
         code: cardEditCode,
         name: formName,
         type: cardEditType,
@@ -497,8 +508,22 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
         defense: (cardEditType === 'Herói' || cardEditType === 'Combatente') ? Number(cardEditDefense) : undefined,
         lore: cardEditLore,
         imageUrl: finalImg,
-        isHidden: cardEditIsHidden
-      });
+        isHidden: cardEditIsHidden,
+        isRarePrint: cardEditIsRarePrint,
+        requiresAdminVerification: cardEditIsRarePrint,
+        maxPrintCopies: cardEditIsRarePrint ? (Number(cardEditMaxPrintCopies) || 1) : 0,
+        isCatalogCover: cardEditIsCatalogCover
+      };
+
+      await saveCard(cardPayload);
+
+      if (cardEditIsRarePrint !== undefined) {
+        await setCardRarePrintSettings(cardEditCode, cardEditIsRarePrint, Number(cardEditMaxPrintCopies) || 1);
+      }
+      if (cardEditIsCatalogCover) {
+        await setCardCatalogCover(cardEditCode, { imageUrl: finalImg, frame: cardFrame }, false);
+      }
+
       alert(`Carta "${formName}" salva com sucesso!`);
       resetForm();
       setActiveAdminTab('cards');
@@ -2289,6 +2314,49 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
                         <input type="checkbox" id="cardEditPublic" checked={!cardEditIsHidden} onChange={e => setCardEditIsHidden(!e.target.checked)} className="w-5 h-5 accent-green-600 cursor-pointer" />
                         <label htmlFor="cardEditPublic" className="text-sm font-bold text-green-400 cursor-pointer">Visível para o Público (Habilitar para todos verem)</label>
                       </div>
+
+                      <div className="p-3 bg-amber-950/30 border border-amber-500/40 rounded-xl mb-4 flex flex-col gap-2.5">
+                        <div className="flex items-center justify-between flex-wrap gap-2">
+                          <label className="flex items-center gap-2 cursor-pointer font-bold text-amber-300 text-sm">
+                            <input
+                              type="checkbox"
+                              checked={cardEditIsRarePrint}
+                              onChange={e => setCardEditIsRarePrint(e.target.checked)}
+                              className="w-4 h-4 accent-amber-500 rounded cursor-pointer"
+                            />
+                            <ShieldAlert size={16} />
+                            <span>Tiragem Rara (Verificação Obrigatória no Álbum)</span>
+                          </label>
+                          {cardEditIsRarePrint && (
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs text-slate-300 font-bold">Cópias Máximas:</span>
+                              <input
+                                type="number"
+                                min="1"
+                                max="999"
+                                value={cardEditMaxPrintCopies}
+                                onChange={e => setCardEditMaxPrintCopies(e.target.value)}
+                                className="w-16 bg-slate-900 border border-amber-500/50 rounded px-2 py-1 text-center font-mono font-bold text-xs text-amber-300 outline-none"
+                              />
+                              <span className="text-xs text-amber-400 font-bold">
+                                {cardEditMaxPrintCopies === '1' ? '(1/1 Cópia Única)' : ''}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex items-center justify-between pt-2 border-t border-amber-500/20">
+                          <label className="flex items-center gap-2 cursor-pointer font-bold text-amber-200 text-sm">
+                            <input
+                              type="checkbox"
+                              checked={cardEditIsCatalogCover}
+                              onChange={e => setCardEditIsCatalogCover(e.target.checked)}
+                              className="w-4 h-4 accent-amber-500 rounded cursor-pointer"
+                            />
+                            <Crown size={16} className="text-amber-400" />
+                            <span>Definir esta versão como Capa Principal do Catálogo</span>
+                          </label>
+                        </div>
+                      </div>
                       
                       <div>
                         <label className="text-sm font-bold text-slate-400 block mb-1">ID Código (Lore)</label>
@@ -2451,6 +2519,16 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
                               <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${c.frame === 'Moderno' ? 'bg-emerald-950 text-emerald-400 border border-emerald-800/60' : 'bg-indigo-950 text-indigo-300 border border-indigo-800/60'}`}>
                                 {c.frame || 'Legado'}
                               </span>
+                              {c.isCatalogCover && (
+                                <span className="text-[9px] bg-amber-500 text-slate-950 font-black px-1.5 py-0.5 rounded flex items-center gap-0.5 shadow-sm">
+                                  <Crown size={10} className="fill-current" /> CAPA
+                                </span>
+                              )}
+                              {(c.isRarePrint || c.requiresAdminVerification) && (
+                                <span className="text-[9px] bg-amber-500 text-slate-950 font-black px-1.5 py-0.5 rounded flex items-center gap-0.5 shadow-sm">
+                                  <ShieldAlert size={10} /> {c.maxPrintCopies === 1 ? '1/1 ÚNICA' : `${c.maxPrintCopies || 1} EX`}
+                                </span>
+                              )}
                               {c.isHidden && <span className="text-[9px] bg-red-900/50 text-red-300 font-bold px-1.5 py-0.5 rounded border border-red-800">DRAFT</span>}
                             </div>
                             <div className="flex items-center gap-1.5 text-xs text-purple-400 mt-0.5 truncate">

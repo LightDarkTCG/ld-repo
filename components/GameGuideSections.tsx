@@ -1,0 +1,1411 @@
+import React, { useState, useEffect } from 'react';
+import { 
+  BookOpen, Clock, Layers, Scale, Sparkles, ChevronDown, ChevronUp, 
+  Info, Sword, Crown, Zap, CheckCircle, Ghost, FileText, 
+  Edit2, Save, X, Plus, Trash2, AlertCircle, Eye, EyeOff, Check, Search, Grid
+} from 'lucide-react';
+import { doc, getDoc, setDoc, onSnapshot } from 'firebase/firestore';
+import { db } from '../firebase';
+import { sanitizeForFirestore } from '../CardContext';
+import { GameField } from './GameField';
+import { ArchetypeData } from '../types';
+
+export interface PatchNoteItem {
+  id?: string;
+  title: string;
+  description: string;
+  example?: string;
+}
+
+export interface GameManualData {
+  patchTitle: string;
+  patchDate: string;
+  noveltyMessage: string;
+  isNoveltyActive: boolean;
+  patchNotes: PatchNoteItem[];
+  
+  basico: {
+    deckRules: string[];
+    statusItems: Array<{ label: string; text: string; iconType: string }>;
+    structureObjective: string;
+    structureDuel: string;
+    structureRounds: string;
+    structureStart: string;
+    structureMulligan: string;
+    firstRoundNote: string;
+  };
+
+  cartas: {
+    structureItems: Array<{ label: string; text: string; color: string }>;
+    combatenteText: string;
+    heroiText: string;
+    equipamentoText: string;
+    efeitoText: string;
+  };
+
+  turnos: {
+    roundOverview: string;
+    phases: Array<{ step: string; title: string; description: string; color: string }>;
+    combatRules: string[];
+  };
+
+  regras: {
+    chainsText: string;
+    chainsPriorityText: string;
+    deckOutText: string;
+    observations: string[];
+  };
+
+  lastUpdated?: string;
+}
+
+export const defaultManualData: GameManualData = {
+  patchTitle: 'Patch Atual - Balanceamento & Regras Oficiais',
+  patchDate: '24/10/2026',
+  noveltyMessage: 'Novas diretrizes de Dano Primordial, Correntes e Limite de Reações atualizadas!',
+  isNoveltyActive: true,
+  patchNotes: [
+    {
+      title: '1. Reações Limitadas',
+      description: 'Apenas uma carta de reação a uma ação (desde que tenha mana suficiente).'
+    },
+    {
+      title: '2. Correntes Inquebráveis',
+      description: 'Não é permitido quebrar a corrente de efeitos de cartas após ser iniciada.'
+    },
+    {
+      title: '3. Ordem de Autoridade',
+      description: 'Efeitos com "A Qualquer Momento" (exceto Macroversal) > Dano Primordial > Arquétipo > Efeitos de começo de rodada > Efeitos de começo de turno > Efeitos normais (efeitos condicionais não se aplicam nessa ordem e devem seguir suas condições).',
+      example: 'Exemplo: se a carta causar 5 de dano no começo da rodada, e tiver um Conceito, ele recupera as 5 de vida antes.'
+    },
+    {
+      title: '4. Remoção de Alvo',
+      description: 'Remover um alvo de um ataque durante o combate nega o ataque do atacante; ele não poderá atacar novamente nesse mesmo turno.'
+    },
+    {
+      title: '5. Invocação de Heróis',
+      description: 'Heróis só podem ser invocados por outras cartas de invocação caso não possuam condições de invocação próprias na carta de herói. Nesses casos, deve-se cumprir estritamente a condição de invocação.'
+    },
+    {
+      title: '6. Dano Primordial',
+      description: 'O Dano Primordial se aplica a todas as cartas do jogador inimigo (Deck, mão ou Zonas) e deve ser aplicado quando o Herói ou Combatente é invocado, reduzindo sua vida. Caso ela seja zerada, a carta é enviada diretamente à Zona Morta, ignorando arquétipos e efeitos de campo. Se não morrer, entra em campo com vida reduzida. Cartas mortas pelo Dano Primordial não disparam efeitos de campo nem de eliminação em combate.'
+    },
+    {
+      title: '7. Equipamentos no Inimigo',
+      description: 'Equipamentos podem ser colocados no campo inimigo equipando um combatente dele (exceto se a própria carta especificar o contrário).'
+    },
+    {
+      title: '8. Sinergia de Heróis',
+      description: 'Heróis cujo efeito interaja diretamente com outro herói que possua nome diferente podem ser colocados no mesmo deck (exemplo: Otto e Asmonious).'
+    },
+    {
+      title: '9. Efeitos em Combate',
+      description: 'Somente efeitos de combatentes condicionais ou com "A Qualquer Momento" podem ser usados durante o combate.',
+      example: 'Ex: "Durante o combate esse combatente recebe 8 de ataque" ou "A qualquer momento, retire 3 de ataque deste combatente e remova uma carta".'
+    },
+    {
+      title: '10. Invocação Negada',
+      description: 'Quando um Herói (do tipo que se invoca pelo próprio efeito) tem sua invocação negada, ele fica impossibilitado de ser invocado novamente até a rodada seguinte.'
+    },
+    {
+      title: '11. Resoluções Automáticas',
+      description: 'Não é possível responder a cartas que não foram ativadas por escolha do jogador (exemplo: resolução automática disparada por ação inimiga).'
+    },
+    {
+      title: '12. Efeitos Negados e Invocações',
+      description: 'Cartas com "nega o efeito de carta" não podem negar invocação. Combatentes com efeitos negados perdem todos os efeitos em campo. Cartas com "nega uma carta usada" podem ser usadas para negar invocações.'
+    }
+  ],
+
+  basico: {
+    deckRules: [
+      'Deck Composto por 30 a 35 cartas (contando com os heróis, se houver).',
+      'Não é permitido cartas repetidas em todo o deck.',
+      'O uso de Herói é opcional, mas se usar, apenas 1 Herói e suas variações no Deck (com exceções para heróis que interagem entre si).',
+      'Opcionais: Campo físico, marcadores de status/vida/mana e dados D6/D20 para efeitos.'
+    ],
+    statusItems: [
+      { label: 'Vida Padrão', text: '20 pontos. Se chegar a 0, você perde o duelo.', iconType: 'heart' },
+      { label: 'Mana Padrão', text: '12 pontos por rodada. Se renova no começo de cada rodada.', iconType: 'droplet' },
+      { label: 'Runas & Recursos', text: 'Recursos especiais gerados para ativação de efeitos poderosos.', iconType: 'sparkles' }
+    ],
+    structureObjective: 'Reduzir a vida do oponente a 0.',
+    structureDuel: 'Melhor de 3 jogos (1x1 ou 2x2 cooperativo).',
+    structureRounds: 'Cada rodada possui 2 turnos (Ataque e Defesa) para cada jogador alternadamente.',
+    structureStart: 'Pedra, Papel e Tesoura ou rolagem de Dado para decidir quem começa atacando.',
+    structureMulligan: 'Ambos os jogadores compram 5 cartas. Cada um pode retornar todas e comprar 5 novas uma única vez.',
+    firstRoundNote: 'Nota de Equilíbrio: Na primeira rodada completa de abertura, nenhum combatente causa dano de combate direto.'
+  },
+
+  cartas: {
+    structureItems: [
+      { label: 'Categoria (CT)', text: 'Custo em Cristais de Mana para invocação ou uso da carta.', color: 'text-amber-400' },
+      { label: 'Status', text: 'Ataque (Dano físico/mágico) e Vida (apenas Combatentes e Heróis).', color: 'text-white' },
+      { label: 'Arquétipo', text: 'Afiliações e títulos que concedem habilidades sinérgicas extras.', color: 'text-purple-400' },
+      { label: 'Tipo', text: 'Ícone identificador e moldura cromática correspondente.', color: 'text-blue-400' }
+    ],
+    combatenteText: 'Os "monstros" comuns e auxiliares de cada deck. Não são classificados como Heróis a não ser por efeitos únicos. Lutam na linha de frente e atacam os inimigos.',
+    heroiText: 'Foco principal do deck. Inicialmente ficam fora do deck principal, em sua Zona de Herói dedicada, necessitando de condições específicas para serem invocados. Limite de 1 Herói em campo por jogador (salvo exceções).',
+    equipamentoText: 'Alteram status, adicionam arquétipos ou concedem habilidades únicas ao combatente equipado. Ficam vinculados ao alvo até que ele saia de campo. Caso o herói seja substituído, o equipamento é herdado pelo novo herói.',
+    efeitoText: 'Cartas de intervenção imediata, feitiços de uso único ou contínuos que alteram o rumo do jogo. Possuem custo em Mana e condições de ativação. Ao terminarem, são enviadas à Zona Morta.'
+  },
+
+  turnos: {
+    roundOverview: 'O jogo opera em formato dinâmico de Ação e Reação. Sempre que o jogador atacante realiza uma jogada, o defensor tem direito imediato à Reação com suas cartas disponíveis. Declarar ataque consome a ação de combate. Todas as cartas usadas consomem Mana de acordo com sua Categoria (CT).',
+    phases: [
+      { step: '1', title: 'Início de Rodada', description: 'Ambos os jogadores recuperam Mana para 12. Cada jogador compra 1 carta. Efeitos contínuos de início de rodada ativam em prioridade.', color: 'border-purple-500 bg-purple-500/10' },
+      { step: '2', title: 'Turno de Ataque (Jogador 1)', description: 'Jogador 1 gasta Mana em cartas -> Declara Ataques -> Jogador 2 Reage com cartas -> Resolução de combate -> J1 Encerra seu turno.', color: 'border-blue-500 bg-blue-500/10' },
+      { step: '3', title: 'Turno de Ataque (Jogador 2)', description: 'Jogador 2 gasta Mana em cartas -> Declara Ataques -> Jogador 1 Reage com cartas -> Resolução de combate -> J2 Encerra seu turno.', color: 'border-red-500 bg-red-500/10' },
+      { step: '4', title: 'Fim da Rodada', description: 'Efeitos de fim de rodada encerram. Se nenhum jogador foi derrotado, inicia-se uma nova rodada e os 12 Cristais de Mana são renovados.', color: 'border-emerald-500 bg-emerald-500/10' }
+    ],
+    combatRules: [
+      'Em seu turno de ataque, o jogador pode declarar ataques contra alvos válidos.',
+      'Cada combatente em campo pode atacar 1 vez por rodada por padrão (exceto por efeitos de ataque duplo).',
+      'Alvos Primários: Combatentes ou Heróis na linha de frente inimiga.',
+      'Ataque Direto ao Jogador: Permitido apenas se o campo inimigo estiver desprovido de combatentes e heróis ativos.',
+      'Cálculo de Combate: O Atacante aplica seu ATAQUE contra a VIDA atual do alvo. O alvo deduz sua vida no montante equivalente ao dano.',
+      'Morte por Combate: Quando a vida de um combatente atinge 0, ele é enviado imediatamente à Zona Morta.',
+      'Múltiplos Ataques: Um mesmo combatente inimigo pode ser alvo concentrado de vários ataques no mesmo turno.',
+      'Invocação Pós-Ataque: Combatentes invocados após o início da fase de ataque não podem atacar na mesma rodada (exceto Heróis com invocação rápida).'
+    ]
+  },
+
+  regras: {
+    chainsText: 'Sequência de cartas jogadas em resposta umas às outras. A ordem de resolução obedece à regra LIFO (Last In, First Out — a última carta jogada resolve primeiro). A Reação resolve antes da Ação inicial.',
+    chainsPriorityText: 'Se duas cartas possuírem exatamente o mesmo gatilho temporal, a Categoria (CT) determina a precedência: cartas de CT maior têm prioridade de ativação sobre cartas de menor custo.',
+    deckOutText: 'Caso o deck principal de um jogador chegue ao fim (0 cartas), ele NÃO é derrotado instantaneamente. Em vez disso, sempre que tiver a obrigação de comprar uma carta e seu deck estiver vazio, ele perde 3 pontos de Vida diretamente.',
+    observations: [
+      'O uso de Herói é opcional, mas caso utilize, o limite máximo é de 1 Herói no deck (salvo cartas com texto que autorizem interação mútua).',
+      'Vida reduzida a 0 nem sempre decreta o fim de jogo imediato caso existam cartas ou efeitos de imortalidade/ressurreição em campo.',
+      'Sempre que uma carta for buscada, selecionada ou retornada ao Deck, este deve ser obrigatoriamente reembaralhado.',
+      'Heróis destruídos ou devolvidos retornam para a Zona do Deck de Heróis, e jamais para o Deck Principal.',
+      'Tanto a Vida (20) quanto a Mana (12) podem ultrapassar seus limites iniciais por meio de bônus e feitiços.',
+      'Arquétipos especiais como Lúmen e Darkus possuem linhagens de evolução ativadas por cartas específicas.',
+      'Não existe limite máximo para cartas acumuladas na mão do jogador.'
+    ]
+  }
+};
+
+interface GameGuideSectionsProps {
+  archetypes: ArchetypeData[];
+  onSelectArchetype?: (name: string) => void;
+  isAdmin: boolean;
+  onOpenArchetypeModal?: (archetype: ArchetypeData) => void;
+  ArchetypeCardComponent: React.ComponentType<any>;
+}
+
+export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
+  archetypes,
+  onSelectArchetype,
+  isAdmin,
+  ArchetypeCardComponent
+}) => {
+  const [data, setData] = useState<GameManualData>(defaultManualData);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isEditorOpen, setIsEditorOpen] = useState(false);
+  const [archetypeSearch, setArchetypeSearch] = useState('');
+
+  // Collapsible state for each of the 7 sections
+  // 1: PATCH ATUAL, 2: BASICO, 3: CARTAS, 4: TURNOS, 5: REGRAS, 6: ARQUÉTIPOS, 7: CAMPOS
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>({
+    patch: true,
+    basico: false,
+    cartas: false,
+    turnos: false,
+    regras: false,
+    arquetipos: true,
+    campos: false
+  });
+
+  // Listen to Firestore real-time doc
+  useEffect(() => {
+    const unsub = onSnapshot(doc(db, 'homeSettings', 'gameManual'), (snap) => {
+      if (snap.exists()) {
+        const remoteData = snap.data() as Partial<GameManualData>;
+        setData({
+          ...defaultManualData,
+          ...remoteData,
+          patchNotes: remoteData.patchNotes && remoteData.patchNotes.length > 0 
+            ? remoteData.patchNotes 
+            : defaultManualData.patchNotes,
+          basico: { ...defaultManualData.basico, ...(remoteData.basico || {}) },
+          cartas: { ...defaultManualData.cartas, ...(remoteData.cartas || {}) },
+          turnos: { ...defaultManualData.turnos, ...(remoteData.turnos || {}) },
+          regras: { ...defaultManualData.regras, ...(remoteData.regras || {}) }
+        });
+      }
+      setIsLoading(false);
+    }, (err) => {
+      console.warn('Erro ao carregar manual do Firestore, usando padrões:', err);
+      setIsLoading(false);
+    });
+
+    return () => unsub();
+  }, []);
+
+  const toggleSection = (key: string) => {
+    setOpenSections(prev => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  const expandAll = () => {
+    setOpenSections({
+      patch: true,
+      basico: true,
+      cartas: true,
+      turnos: true,
+      regras: true,
+      arquetipos: true,
+      campos: true
+    });
+  };
+
+  const collapseAll = () => {
+    setOpenSections({
+      patch: false,
+      basico: false,
+      cartas: false,
+      turnos: false,
+      regras: false,
+      arquetipos: false,
+      campos: false
+    });
+  };
+
+  const filteredArchetypes = archetypes.filter(arch => 
+    arch.name.toLowerCase().includes(archetypeSearch.toLowerCase()) ||
+    (arch.description && arch.description.toLowerCase().includes(archetypeSearch.toLowerCase()))
+  );
+
+  return (
+    <section id="manual-regras" className="py-16 md:py-24 bg-[#0a0a0c] relative border-b border-purple-900/20 text-slate-200">
+      <div className="container mx-auto px-4 sm:px-6 max-w-5xl">
+
+        {/* Novelty Alert Banner (Mensagem de novidade com a data do patch) */}
+        {data.isNoveltyActive && (
+          <div className="mb-10 p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-purple-950/80 via-indigo-950/70 to-slate-900/90 border border-purple-500/40 shadow-xl shadow-purple-950/30 relative overflow-hidden backdrop-blur-md">
+            <div className="absolute top-0 right-0 -mr-16 -mt-16 w-44 h-44 bg-purple-600/20 rounded-full blur-2xl pointer-events-none"></div>
+            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 relative z-10">
+              <div className="flex items-start gap-3.5">
+                <div className="p-2.5 rounded-xl bg-purple-600/30 border border-purple-400/40 text-purple-300 shrink-0 mt-0.5 md:mt-0 shadow-[0_0_15px_rgba(168,85,247,0.4)]">
+                  <Sparkles size={22} className="animate-pulse" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap mb-1">
+                    <span className="text-[11px] font-black uppercase tracking-widest px-2.5 py-0.5 rounded-full bg-purple-500/30 text-purple-200 border border-purple-400/50">
+                      Novidade do Patch
+                    </span>
+                    <span className="text-xs font-mono font-bold text-amber-400 bg-amber-950/50 border border-amber-600/40 px-2 py-0.5 rounded">
+                      {data.patchDate || 'Patch Recente'}
+                    </span>
+                  </div>
+                  <h4 className="text-sm sm:text-base font-bold text-white leading-tight">
+                    {data.noveltyMessage || 'O jogo foi atualizado com novos esclarecimentos e regras de combate!'}
+                  </h4>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 self-end md:self-auto shrink-0">
+                <button
+                  onClick={() => {
+                    setOpenSections(prev => ({ ...prev, patch: true }));
+                    const el = document.getElementById('section-patch');
+                    if (el) el.scrollIntoView({ behavior: 'smooth' });
+                  }}
+                  className="px-4 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-xs font-bold rounded-xl shadow-lg shadow-purple-900/40 transition active:scale-95 flex items-center gap-1.5"
+                >
+                  <Eye size={14} /> Ver Patch Notes
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Section Header */}
+        <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-10 pb-6 border-b border-slate-800">
+          <div>
+            <div className="flex items-center gap-2 text-xs font-mono uppercase tracking-widest text-purple-400 mb-2">
+              <BookOpen size={15} /> Compêndio Geral do Jogador
+            </div>
+            <h2 className="text-3xl sm:text-4xl font-black text-white uppercase tracking-tight flex items-center gap-3">
+              Manual & Regras de Duelo
+            </h2>
+            <p className="text-slate-400 text-sm mt-1 max-w-xl">
+              Consulte todas as diretrizes oficiais de jogo, fases de turno, regras avançadas, arquétipos e layout do campo em seções retráteis.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2.5 shrink-0 flex-wrap">
+            <button
+              onClick={expandAll}
+              className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 transition"
+            >
+              Expandir Todos
+            </button>
+            <button
+              onClick={collapseAll}
+              className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 transition"
+            >
+              Recolher Todos
+            </button>
+            
+            {isAdmin && (
+              <button
+                onClick={() => setIsEditorOpen(true)}
+                className="text-xs font-bold px-3.5 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-white shadow-md shadow-purple-900/30 transition flex items-center gap-1.5 active:scale-95"
+                title="Editar todas as seções e patch do manual"
+              >
+                <Edit2 size={13} /> Editar Manual
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Accordion Sections Ordered:
+            1. PATCH ATUAL
+            2. BASICO
+            3. CARTAS
+            4. TURNOS
+            5. REGRAS
+            6. ARQUÉTIPOS
+            7. CAMPOS
+        */}
+        <div className="space-y-4">
+
+          {/* 1. PATCH ATUAL */}
+          <div id="section-patch" className="rounded-2xl border border-amber-600/30 bg-gradient-to-b from-amber-950/20 to-slate-950 overflow-hidden shadow-lg shadow-black/40 transition-all">
+            <button
+              onClick={() => toggleSection('patch')}
+              className="w-full flex items-center justify-between p-4 sm:p-5 text-left hover:bg-amber-950/30 transition group"
+            >
+              <div className="flex items-center gap-3 sm:gap-4 min-w-0">
+                <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400 shrink-0 shadow-[0_0_15px_rgba(245,158,11,0.25)]">
+                  <Scale size={20} />
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-xs font-mono font-bold text-amber-400 uppercase tracking-wider">
+                      Seção 01
+                    </span>
+                    <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                      Data: {data.patchDate || 'Atual'}
+                    </span>
+                  </div>
+                  <h3 className="text-lg sm:text-xl font-black text-white group-hover:text-amber-300 transition-colors tracking-wide">
+                    PATCH ATUAL
+                  </h3>
+                </div>
+              </div>
+              <div className="p-2 rounded-lg bg-slate-900/80 border border-slate-700/60 text-slate-300 group-hover:text-white shrink-0 ml-2">
+                {openSections.patch ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+              </div>
+            </button>
+
+            {openSections.patch && (
+              <div className="p-4 sm:p-6 border-t border-amber-500/20 bg-slate-950/90 space-y-6 animate-in slide-in-from-top-2 duration-200">
+                <div className="bg-gradient-to-r from-amber-950/30 to-slate-900/50 p-4 rounded-xl border border-amber-700/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <h4 className="font-bold text-white text-base sm:text-lg flex items-center gap-2">
+                      <Sparkles size={18} className="text-amber-400" />
+                      {data.patchTitle}
+                    </h4>
+                    <p className="text-xs sm:text-sm text-slate-300 mt-0.5">
+                      Diretrizes oficiais vigentes e esclarecimento de interações no formato competitivo e casual.
+                    </p>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <span className="text-xs text-slate-400 block font-mono">Última Revisão:</span>
+                    <span className="text-sm font-bold font-mono text-amber-400">{data.patchDate}</span>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                  {data.patchNotes.map((note, idx) => (
+                    <div 
+                      key={idx} 
+                      className="bg-slate-900/60 p-4 rounded-xl border border-slate-800 hover:border-amber-600/40 transition hover:bg-slate-900/90"
+                    >
+                      <h5 className="font-bold text-amber-400 text-sm mb-1.5 flex items-start gap-2">
+                        <span>{note.title}</span>
+                      </h5>
+                      <p className="text-xs sm:text-sm text-slate-300 leading-relaxed text-justify">
+                        {note.description}
+                      </p>
+                      {note.example && (
+                        <div className="mt-2 text-xs italic text-slate-400 bg-black/40 p-2 rounded border border-slate-800/80">
+                          {note.example}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* 2. BASICO */}
+          <div id="section-basico" className="rounded-2xl border border-slate-800 bg-slate-950 overflow-hidden shadow-lg shadow-black/40 transition-all hover:border-slate-700">
+            <button
+              onClick={() => toggleSection('basico')}
+              className="w-full flex items-center justify-between p-4 sm:p-5 text-left hover:bg-slate-900/50 transition group"
+            >
+              <div className="flex items-center gap-3 sm:gap-4 min-w-0">
+                <div className="w-10 h-10 rounded-xl bg-purple-500/20 border border-purple-500/40 flex items-center justify-center text-purple-400 shrink-0">
+                  <Info size={20} />
+                </div>
+                <div className="min-w-0">
+                  <span className="text-xs font-mono font-bold text-purple-400 uppercase tracking-wider block">
+                    Seção 02
+                  </span>
+                  <h3 className="text-lg sm:text-xl font-black text-white group-hover:text-purple-300 transition-colors tracking-wide">
+                    BÁSICO
+                  </h3>
+                </div>
+              </div>
+              <div className="p-2 rounded-lg bg-slate-900 border border-slate-700/60 text-slate-300 group-hover:text-white shrink-0 ml-2">
+                {openSections.basico ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+              </div>
+            </button>
+
+            {openSections.basico && (
+              <div className="p-4 sm:p-6 border-t border-slate-800 bg-slate-950/90 space-y-6 animate-in slide-in-from-top-2 duration-200">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* O que é preciso */}
+                  <div className="bg-slate-900/60 p-5 rounded-xl border border-slate-800">
+                    <h4 className="text-base sm:text-lg font-bold text-purple-400 mb-3 flex items-center gap-2">
+                      <CheckCircle size={18} /> Construção & Requisitos do Deck
+                    </h4>
+                    <ul className="space-y-2.5 text-xs sm:text-sm text-slate-300">
+                      {data.basico.deckRules.map((rule, idx) => (
+                        <li key={idx} className="flex items-start gap-2 leading-relaxed">
+                          <span className="text-purple-400 font-bold shrink-0 mt-0.5">•</span>
+                          <span>{rule}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+
+                  {/* Status do Jogo */}
+                  <div className="bg-slate-900/60 p-5 rounded-xl border border-slate-800">
+                    <h4 className="text-base sm:text-lg font-bold text-blue-400 mb-3 flex items-center gap-2">
+                      <Info size={18} /> Status Essenciais do Jogo
+                    </h4>
+                    <div className="space-y-3">
+                      {data.basico.statusItems.map((item, idx) => (
+                        <div key={idx} className="bg-black/30 p-3 rounded-lg border border-slate-800/80">
+                          <strong className="block text-white text-xs sm:text-sm mb-0.5">{item.label}</strong>
+                          <span className="text-xs text-slate-400 leading-relaxed">{item.text}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Estrutura do Duelo */}
+                <div className="bg-slate-900/60 p-5 rounded-xl border border-slate-800">
+                  <h4 className="text-base sm:text-lg font-bold text-white mb-4">
+                    Estrutura & Dinâmica da Partida
+                  </h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs sm:text-sm text-slate-300">
+                    <div className="space-y-2">
+                      <p><strong className="text-purple-400">Objetivo da Vitória:</strong> {data.basico.structureObjective}</p>
+                      <p><strong className="text-purple-400">Formato:</strong> {data.basico.structureDuel}</p>
+                      <p><strong className="text-purple-400">Rodadas:</strong> {data.basico.structureRounds}</p>
+                    </div>
+                    <div className="space-y-2">
+                      <p><strong className="text-purple-400">Início de Jogo:</strong> {data.basico.structureStart}</p>
+                      <p><strong className="text-purple-400">Regra de Mulligan:</strong> {data.basico.structureMulligan}</p>
+                      <p className="text-yellow-400/90 italic font-medium pt-1 border-t border-slate-800/80">
+                        {data.basico.firstRoundNote}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* 3. CARTAS */}
+          <div id="section-cartas" className="rounded-2xl border border-slate-800 bg-slate-950 overflow-hidden shadow-lg shadow-black/40 transition-all hover:border-slate-700">
+            <button
+              onClick={() => toggleSection('cartas')}
+              className="w-full flex items-center justify-between p-4 sm:p-5 text-left hover:bg-slate-900/50 transition group"
+            >
+              <div className="flex items-center gap-3 sm:gap-4 min-w-0">
+                <div className="w-10 h-10 rounded-xl bg-blue-500/20 border border-blue-500/40 flex items-center justify-center text-blue-400 shrink-0">
+                  <Layers size={20} />
+                </div>
+                <div className="min-w-0">
+                  <span className="text-xs font-mono font-bold text-blue-400 uppercase tracking-wider block">
+                    Seção 03
+                  </span>
+                  <h3 className="text-lg sm:text-xl font-black text-white group-hover:text-blue-300 transition-colors tracking-wide">
+                    CARTAS
+                  </h3>
+                </div>
+              </div>
+              <div className="p-2 rounded-lg bg-slate-900 border border-slate-700/60 text-slate-300 group-hover:text-white shrink-0 ml-2">
+                {openSections.cartas ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+              </div>
+            </button>
+
+            {openSections.cartas && (
+              <div className="p-4 sm:p-6 border-t border-slate-800 bg-slate-950/90 space-y-6 animate-in slide-in-from-top-2 duration-200">
+                {/* Anatomia da Carta */}
+                <div className="bg-slate-900/60 p-5 rounded-xl border border-slate-800">
+                  <h4 className="text-base sm:text-lg font-bold text-white mb-3">Anatomia & Estrutura das Cartas</h4>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+                    {data.cartas.structureItems.map((item, idx) => (
+                      <div key={idx} className="p-3 bg-black/40 rounded-lg border border-slate-800">
+                        <strong className={`block ${item.color} mb-1 font-bold`}>{item.label}</strong>
+                        <span className="text-slate-300 leading-snug">{item.text}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* 4 Categorias */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Combatente */}
+                  <div className="bg-slate-900/60 p-4 rounded-xl border-l-4 border-blue-500 border-t border-r border-b border-slate-800 flex gap-3.5">
+                    <div className="p-2.5 rounded-lg bg-blue-950/50 text-blue-400 border border-blue-800/40 shrink-0 h-fit">
+                      <Sword size={22} />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2 mb-1">
+                        <h5 className="font-bold text-blue-400 text-base">Combatente</h5>
+                        <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded bg-blue-950 text-blue-300 border border-blue-800/50">MOLDURA AZUL</span>
+                      </div>
+                      <p className="text-xs sm:text-sm text-slate-300 leading-relaxed text-justify">
+                        {data.cartas.combatenteText}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Herói */}
+                  <div className="bg-slate-900/60 p-4 rounded-xl border-l-4 border-red-500 border-t border-r border-b border-slate-800 flex gap-3.5">
+                    <div className="p-2.5 rounded-lg bg-red-950/50 text-red-400 border border-red-800/40 shrink-0 h-fit">
+                      <Crown size={22} />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2 mb-1">
+                        <h5 className="font-bold text-red-400 text-base">Herói</h5>
+                        <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded bg-red-950 text-red-300 border border-red-800/50">MOLDURA VERMELHA</span>
+                      </div>
+                      <p className="text-xs sm:text-sm text-slate-300 leading-relaxed text-justify">
+                        {data.cartas.heroiText}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Equipamento */}
+                  <div className="bg-slate-900/60 p-4 rounded-xl border-l-4 border-green-500 border-t border-r border-b border-slate-800 flex gap-3.5">
+                    <div className="p-2.5 rounded-lg bg-green-950/50 text-green-400 border border-green-800/40 shrink-0 h-fit">
+                      <Scale size={22} />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2 mb-1">
+                        <h5 className="font-bold text-green-400 text-base">Equipamento</h5>
+                        <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded bg-green-950 text-green-300 border border-green-800/50">MOLDURA VERDE</span>
+                      </div>
+                      <p className="text-xs sm:text-sm text-slate-300 leading-relaxed text-justify">
+                        {data.cartas.equipamentoText}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Efeito */}
+                  <div className="bg-slate-900/60 p-4 rounded-xl border-l-4 border-purple-500 border-t border-r border-b border-slate-800 flex gap-3.5">
+                    <div className="p-2.5 rounded-lg bg-purple-950/50 text-purple-400 border border-purple-800/40 shrink-0 h-fit">
+                      <Zap size={22} />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2 mb-1">
+                        <h5 className="font-bold text-purple-400 text-base">Efeito</h5>
+                        <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded bg-purple-950 text-purple-300 border border-purple-800/50">MOLDURA ROXA</span>
+                      </div>
+                      <p className="text-xs sm:text-sm text-slate-300 leading-relaxed text-justify">
+                        {data.cartas.efeitoText}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* 4. TURNOS */}
+          <div id="section-turnos" className="rounded-2xl border border-slate-800 bg-slate-950 overflow-hidden shadow-lg shadow-black/40 transition-all hover:border-slate-700">
+            <button
+              onClick={() => toggleSection('turnos')}
+              className="w-full flex items-center justify-between p-4 sm:p-5 text-left hover:bg-slate-900/50 transition group"
+            >
+              <div className="flex items-center gap-3 sm:gap-4 min-w-0">
+                <div className="w-10 h-10 rounded-xl bg-red-500/20 border border-red-500/40 flex items-center justify-center text-red-400 shrink-0">
+                  <Clock size={20} />
+                </div>
+                <div className="min-w-0">
+                  <span className="text-xs font-mono font-bold text-red-400 uppercase tracking-wider block">
+                    Seção 04
+                  </span>
+                  <h3 className="text-lg sm:text-xl font-black text-white group-hover:text-red-300 transition-colors tracking-wide">
+                    TURNOS
+                  </h3>
+                </div>
+              </div>
+              <div className="p-2 rounded-lg bg-slate-900 border border-slate-700/60 text-slate-300 group-hover:text-white shrink-0 ml-2">
+                {openSections.turnos ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+              </div>
+            </button>
+
+            {openSections.turnos && (
+              <div className="p-4 sm:p-6 border-t border-slate-800 bg-slate-950/90 space-y-6 animate-in slide-in-from-top-2 duration-200">
+                <div className="bg-slate-900/60 p-5 rounded-xl border border-slate-800">
+                  <h4 className="text-base sm:text-lg font-bold text-white mb-2">Estrutura da Rodada: Ação e Reação</h4>
+                  <p className="text-xs sm:text-sm text-slate-300 leading-relaxed mb-6">
+                    {data.turnos.roundOverview}
+                  </p>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                    {data.turnos.phases.map((phase, idx) => (
+                      <div key={idx} className={`p-4 rounded-xl border ${phase.color} bg-slate-950/80 flex flex-col justify-between`}>
+                        <div>
+                          <div className="w-7 h-7 rounded-full bg-slate-900 flex items-center justify-center text-xs font-black text-white mb-2 border border-slate-700">
+                            {phase.step}
+                          </div>
+                          <h5 className="font-bold text-white text-sm mb-1.5">{phase.title}</h5>
+                          <p className="text-xs text-slate-300 leading-relaxed">{phase.description}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="bg-slate-900/60 p-5 rounded-xl border border-slate-800">
+                  <h4 className="text-base sm:text-lg font-bold text-red-400 mb-3 flex items-center gap-2">
+                    <Sword size={18} /> Regras & Cálculos de Combate
+                  </h4>
+                  <ul className="space-y-2 text-xs sm:text-sm text-slate-300 leading-relaxed">
+                    {data.turnos.combatRules.map((rule, idx) => (
+                      <li key={idx} className="flex items-start gap-2">
+                        <span className="text-red-400 font-bold shrink-0 mt-0.5">•</span>
+                        <span>{rule}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* 5. REGRAS */}
+          <div id="section-regras" className="rounded-2xl border border-slate-800 bg-slate-950 overflow-hidden shadow-lg shadow-black/40 transition-all hover:border-slate-700">
+            <button
+              onClick={() => toggleSection('regras')}
+              className="w-full flex items-center justify-between p-4 sm:p-5 text-left hover:bg-slate-900/50 transition group"
+            >
+              <div className="flex items-center gap-3 sm:gap-4 min-w-0">
+                <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 shrink-0">
+                  <Scale size={20} />
+                </div>
+                <div className="min-w-0">
+                  <span className="text-xs font-mono font-bold text-emerald-400 uppercase tracking-wider block">
+                    Seção 05
+                  </span>
+                  <h3 className="text-lg sm:text-xl font-black text-white group-hover:text-emerald-300 transition-colors tracking-wide">
+                    REGRAS
+                  </h3>
+                </div>
+              </div>
+              <div className="p-2 rounded-lg bg-slate-900 border border-slate-700/60 text-slate-300 group-hover:text-white shrink-0 ml-2">
+                {openSections.regras ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+              </div>
+            </button>
+
+            {openSections.regras && (
+              <div className="p-4 sm:p-6 border-t border-slate-800 bg-slate-950/90 space-y-6 animate-in slide-in-from-top-2 duration-200">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* Correntes */}
+                  <div className="bg-slate-900/60 p-5 rounded-xl border border-slate-800">
+                    <h4 className="text-base sm:text-lg font-bold text-yellow-400 mb-2 flex items-center gap-2">
+                      <Layers size={18} /> Resolução em Corrente (Chains)
+                    </h4>
+                    <p className="text-xs sm:text-sm text-slate-300 leading-relaxed text-justify mb-3">
+                      {data.regras.chainsText}
+                    </p>
+                    <div className="p-3 bg-black/40 rounded-lg border border-slate-800 text-xs text-slate-400 leading-relaxed">
+                      <strong className="text-white block mb-0.5">Precedência por CT:</strong>
+                      {data.regras.chainsPriorityText}
+                    </div>
+                  </div>
+
+                  {/* Sem Deck */}
+                  <div className="bg-slate-900/60 p-5 rounded-xl border border-slate-800">
+                    <h4 className="text-base sm:text-lg font-bold text-purple-400 mb-2 flex items-center gap-2">
+                      <Ghost size={18} /> Esgotamento de Deck (Deck Out)
+                    </h4>
+                    <p className="text-xs sm:text-sm text-slate-300 leading-relaxed text-justify">
+                      {data.regras.deckOutText}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Observações importantes */}
+                <div className="bg-slate-900/60 p-5 rounded-xl border border-slate-800">
+                  <h4 className="text-base sm:text-lg font-bold text-white mb-3 flex items-center gap-2">
+                    <FileText size={18} /> Observações Estratégicas Fundamentais
+                  </h4>
+                  <ul className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs sm:text-sm text-slate-300">
+                    {data.regras.observations.map((obs, idx) => (
+                      <li key={idx} className="flex items-start gap-2 bg-black/20 p-2.5 rounded-lg border border-slate-800/80">
+                        <span className="text-purple-400 font-bold shrink-0 mt-0.5">•</span>
+                        <span className="leading-relaxed">{obs}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* 6. ARQUÉTIPOS */}
+          <div id="section-arquetipos" className="rounded-2xl border border-purple-800/40 bg-slate-950 overflow-hidden shadow-lg shadow-black/40 transition-all hover:border-purple-600/60">
+            <button
+              onClick={() => toggleSection('arquetipos')}
+              className="w-full flex items-center justify-between p-4 sm:p-5 text-left hover:bg-slate-900/50 transition group"
+            >
+              <div className="flex items-center gap-3 sm:gap-4 min-w-0">
+                <div className="w-10 h-10 rounded-xl bg-purple-600/20 border border-purple-500/40 flex items-center justify-center text-purple-400 shrink-0">
+                  <Crown size={20} />
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-xs font-mono font-bold text-purple-400 uppercase tracking-wider">
+                      Seção 06
+                    </span>
+                    <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-purple-950 text-purple-300 border border-purple-800/50">
+                      {archetypes.length} Arquétipos Registrados
+                    </span>
+                  </div>
+                  <h3 className="text-lg sm:text-xl font-black text-white group-hover:text-purple-300 transition-colors tracking-wide">
+                    ARQUÉTIPOS
+                  </h3>
+                </div>
+              </div>
+              <div className="p-2 rounded-lg bg-slate-900 border border-slate-700/60 text-slate-300 group-hover:text-white shrink-0 ml-2">
+                {openSections.arquetipos ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+              </div>
+            </button>
+
+            {openSections.arquetipos && (
+              <div className="p-4 sm:p-6 border-t border-purple-800/30 bg-slate-950/90 space-y-6 animate-in slide-in-from-top-2 duration-200">
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-slate-900/60 p-4 rounded-xl border border-slate-800">
+                  <div>
+                    <h4 className="font-bold text-white text-base">Classificações & Linhagens</h4>
+                    <p className="text-xs text-slate-400">
+                      Pesquise e consulte as habilidades intrínsecas de cada classe do Macroverso.
+                    </p>
+                  </div>
+                  <div className="relative w-full sm:w-64">
+                    <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                    <input
+                      type="text"
+                      value={archetypeSearch}
+                      onChange={(e) => setArchetypeSearch(e.target.value)}
+                      placeholder="Filtrar arquétipo..."
+                      className="w-full bg-slate-950 border border-slate-700 rounded-lg pl-9 pr-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-purple-500"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex flex-col gap-3">
+                  {filteredArchetypes.length > 0 ? (
+                    filteredArchetypes.map((arch, idx) => (
+                      <ArchetypeCardComponent key={idx} {...arch} />
+                    ))
+                  ) : (
+                    <div className="p-8 text-center text-slate-500 text-sm bg-slate-900/30 rounded-xl border border-slate-800">
+                      Nenhum arquétipo encontrado para "{archetypeSearch}".
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* 7. CAMPOS */}
+          <div id="section-campos" className="rounded-2xl border border-cyan-800/40 bg-slate-950 overflow-hidden shadow-lg shadow-black/40 transition-all hover:border-cyan-600/60">
+            <button
+              onClick={() => toggleSection('campos')}
+              className="w-full flex items-center justify-between p-4 sm:p-5 text-left hover:bg-slate-900/50 transition group"
+            >
+              <div className="flex items-center gap-3 sm:gap-4 min-w-0">
+                <div className="w-10 h-10 rounded-xl bg-cyan-600/20 border border-cyan-500/40 flex items-center justify-center text-cyan-400 shrink-0">
+                  <Grid size={20} />
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-xs font-mono font-bold text-cyan-400 uppercase tracking-wider">
+                      Seção 07
+                    </span>
+                    <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-cyan-950 text-cyan-300 border border-cyan-800/50">
+                      Playmat Interativo
+                    </span>
+                  </div>
+                  <h3 className="text-lg sm:text-xl font-black text-white group-hover:text-cyan-300 transition-colors tracking-wide">
+                    CAMPOS
+                  </h3>
+                </div>
+              </div>
+              <div className="p-2 rounded-lg bg-slate-900 border border-slate-700/60 text-slate-300 group-hover:text-white shrink-0 ml-2">
+                {openSections.campos ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+              </div>
+            </button>
+
+            {openSections.campos && (
+              <div className="p-4 sm:p-6 border-t border-cyan-800/30 bg-slate-950/90 space-y-6 animate-in slide-in-from-top-2 duration-200">
+                <div className="bg-slate-900/60 p-4 rounded-xl border border-slate-800 text-center sm:text-left flex flex-col sm:flex-row items-center justify-between gap-3">
+                  <div>
+                    <h4 className="font-bold text-white text-base">Topologia & Zonas do Tabuleiro</h4>
+                    <p className="text-xs text-slate-400">
+                      Clique em qualquer setor abaixo para explorar a função das zonas de combate, heróis, retaguarda, cemitério e mana.
+                    </p>
+                  </div>
+                  <span className="text-[11px] font-mono px-3 py-1 rounded bg-slate-950 border border-slate-800 text-cyan-400">
+                    Toque nas zonas para detalhes
+                  </span>
+                </div>
+
+                <div className="w-full overflow-x-auto pb-4 -mx-2 px-2 sm:mx-0 sm:px-0">
+                  <div className="min-w-[650px] md:min-w-0 w-full">
+                    <GameField />
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+        </div>
+      </div>
+
+      {/* Admin Manual Editor Modal */}
+      {isEditorOpen && isAdmin && (
+        <ManualEditModal
+          data={data}
+          onClose={() => setIsEditorOpen(false)}
+          onSave={async (updatedData) => {
+            await setDoc(doc(db, 'homeSettings', 'gameManual'), sanitizeForFirestore({
+              ...updatedData,
+              lastUpdated: new Date().toISOString()
+            }), { merge: true });
+            setData(updatedData);
+            setIsEditorOpen(false);
+          }}
+        />
+      )}
+    </section>
+  );
+};
+
+// Admin Editor Component
+const ManualEditModal: React.FC<{
+  data: GameManualData;
+  onClose: () => void;
+  onSave: (data: GameManualData) => Promise<void>;
+}> = ({ data, onClose, onSave }) => {
+  const [form, setForm] = useState<GameManualData>(JSON.parse(JSON.stringify(data)));
+  const [activeTab, setActiveTab] = useState<'patch' | 'basico' | 'cartas' | 'turnos' | 'regras'>('patch');
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState(false);
+
+  const handleSave = async () => {
+    setIsSaving(true);
+    try {
+      await onSave(form);
+      setSaveSuccess(true);
+      setTimeout(() => {
+        setSaveSuccess(false);
+        onClose();
+      }, 1000);
+    } catch (err) {
+      console.error('Erro ao salvar manual:', err);
+      alert('Erro ao salvar no Firestore. Verifique as permissões de administrador.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const addPatchNote = () => {
+    setForm(prev => ({
+      ...prev,
+      patchNotes: [
+        ...prev.patchNotes,
+        {
+          title: `${prev.patchNotes.length + 1}. Nova Regra ou Mudança`,
+          description: 'Descreva a alteração ou esclarecimento aqui...'
+        }
+      ]
+    }));
+  };
+
+  const removePatchNote = (index: number) => {
+    setForm(prev => ({
+      ...prev,
+      patchNotes: prev.patchNotes.filter((_, i) => i !== index)
+    }));
+  };
+
+  const updatePatchNote = (index: number, field: keyof PatchNoteItem, val: string) => {
+    setForm(prev => {
+      const copy = [...prev.patchNotes];
+      copy[index] = { ...copy[index], [field]: val };
+      return { ...prev, patchNotes: copy };
+    });
+  };
+
+  return (
+    <div className="fixed inset-0 z-[120] flex items-center justify-center p-3 sm:p-6 bg-black/85 backdrop-blur-md animate-in fade-in duration-200">
+      <div className="bg-[#0e0e12] border border-purple-500/40 rounded-2xl max-w-4xl w-full h-[90vh] flex flex-col shadow-2xl overflow-hidden">
+        
+        {/* Modal Header */}
+        <div className="p-4 sm:p-5 bg-slate-900 border-b border-slate-800 flex items-center justify-between shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-lg bg-purple-600/20 text-purple-400 border border-purple-500/40">
+              <Edit2 size={18} />
+            </div>
+            <div>
+              <h3 className="font-black text-white text-base sm:text-lg">
+                Editar Manual, Regras & Patch
+              </h3>
+              <p className="text-xs text-slate-400">
+                Altere os textos oficiais exibidos na homepage. As mudanças são salvas em tempo real no Firestore.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
+          >
+            <X size={20} />
+          </button>
+        </div>
+
+        {/* Modal Tabs */}
+        <div className="flex border-b border-slate-800 bg-slate-950 px-4 shrink-0 overflow-x-auto gap-2 py-2">
+          {[
+            { id: 'patch', label: '1. Patch Atual & Alerta', icon: Scale },
+            { id: 'basico', label: '2. Básico', icon: Info },
+            { id: 'cartas', label: '3. Cartas', icon: Layers },
+            { id: 'turnos', label: '4. Turnos & Combate', icon: Clock },
+            { id: 'regras', label: '5. Regras Avançadas', icon: Sparkles }
+          ].map(tab => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id as any)}
+              className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-bold transition whitespace-nowrap ${
+                activeTab === tab.id
+                  ? 'bg-purple-600 text-white shadow-md shadow-purple-900/50'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-900'
+              }`}
+            >
+              <tab.icon size={14} />
+              <span>{tab.label}</span>
+            </button>
+          ))}
+        </div>
+
+        {/* Modal Body */}
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6">
+          
+          {/* TAB 1: PATCH */}
+          {activeTab === 'patch' && (
+            <div className="space-y-6 animate-in fade-in">
+              <div className="bg-slate-900/60 p-4 rounded-xl border border-slate-800 space-y-4">
+                <h4 className="font-bold text-amber-400 text-sm flex items-center gap-2">
+                  <Sparkles size={16} /> Configurações Gerais do Patch & Novidade
+                </h4>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">
+                      Título do Patch
+                    </label>
+                    <input
+                      type="text"
+                      value={form.patchTitle}
+                      onChange={e => setForm(prev => ({ ...prev, patchTitle: e.target.value }))}
+                      className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">
+                      Data do Patch (ex: 24/10/2026)
+                    </label>
+                    <input
+                      type="text"
+                      value={form.patchDate}
+                      onChange={e => setForm(prev => ({ ...prev, patchDate: e.target.value }))}
+                      className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-500"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">
+                    Mensagem de Destaque / Novidade (Aparece no banner com a data do patch)
+                  </label>
+                  <textarea
+                    rows={2}
+                    value={form.noveltyMessage}
+                    onChange={e => setForm(prev => ({ ...prev, noveltyMessage: e.target.value }))}
+                    placeholder="Ex: Novo Patch Disponível: Ajustes de combate e regras oficiais atualizadas!"
+                    className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-500"
+                  />
+                </div>
+
+                <div className="flex items-center gap-3 pt-2">
+                  <label className="flex items-center gap-2 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={form.isNoveltyActive}
+                      onChange={e => setForm(prev => ({ ...prev, isNoveltyActive: e.target.checked }))}
+                      className="w-4 h-4 rounded bg-slate-950 border-slate-700 text-purple-600 focus:ring-0"
+                    />
+                    <span className="text-xs font-bold text-white">
+                      Exibir Banner de Novidade do Patch no topo do Manual
+                    </span>
+                  </label>
+                </div>
+              </div>
+
+              {/* Patch Notes Items */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <h4 className="font-bold text-white text-sm">Itens e Notas de Atualização ({form.patchNotes.length})</h4>
+                  <button
+                    onClick={addPatchNote}
+                    className="px-3 py-1 bg-amber-600 hover:bg-amber-500 text-white rounded-lg text-xs font-bold flex items-center gap-1 transition"
+                  >
+                    <Plus size={14} /> Adicionar Item
+                  </button>
+                </div>
+
+                {form.patchNotes.map((note, idx) => (
+                  <div key={idx} className="bg-slate-900/60 p-4 rounded-xl border border-slate-800 space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <input
+                        type="text"
+                        value={note.title}
+                        onChange={e => updatePatchNote(idx, 'title', e.target.value)}
+                        placeholder="Título do item..."
+                        className="w-full font-bold text-amber-400 bg-transparent border-b border-slate-800 px-1 py-1 text-xs focus:outline-none focus:border-amber-500"
+                      />
+                      <button
+                        onClick={() => removePatchNote(idx)}
+                        className="text-red-400 hover:text-red-300 p-1 rounded hover:bg-red-950/40 transition shrink-0"
+                        title="Remover item"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+
+                    <div>
+                      <textarea
+                        rows={2}
+                        value={note.description}
+                        onChange={e => updatePatchNote(idx, 'description', e.target.value)}
+                        placeholder="Descrição da regra / alteração..."
+                        className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-xs text-slate-300 focus:outline-none focus:border-purple-500"
+                      />
+                    </div>
+
+                    <div>
+                      <input
+                        type="text"
+                        value={note.example || ''}
+                        onChange={e => updatePatchNote(idx, 'example', e.target.value)}
+                        placeholder="Exemplo prático (opcional)..."
+                        className="w-full bg-slate-950/50 border border-slate-800/80 rounded-lg px-2.5 py-1 text-[11px] text-slate-400 focus:outline-none focus:border-purple-500"
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* TAB 2: BASICO */}
+          {activeTab === 'basico' && (
+            <div className="space-y-6 animate-in fade-in">
+              <div className="bg-slate-900/60 p-4 rounded-xl border border-slate-800 space-y-4">
+                <h4 className="font-bold text-purple-400 text-sm">Regras de Deck (Uma por linha)</h4>
+                <textarea
+                  rows={4}
+                  value={form.basico.deckRules.join('\n')}
+                  onChange={e => {
+                    const lines = e.target.value.split('\n');
+                    setForm(prev => ({
+                      ...prev,
+                      basico: { ...prev.basico, deckRules: lines }
+                    }));
+                  }}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 text-xs text-white focus:outline-none focus:border-purple-500 leading-relaxed font-mono"
+                />
+              </div>
+
+              <div className="bg-slate-900/60 p-4 rounded-xl border border-slate-800 space-y-4">
+                <h4 className="font-bold text-white text-sm">Estrutura da Partida</h4>
+                
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">Objetivo da Vitória</label>
+                    <input
+                      type="text"
+                      value={form.basico.structureObjective}
+                      onChange={e => setForm(prev => ({
+                        ...prev,
+                        basico: { ...prev.basico, structureObjective: e.target.value }
+                      }))}
+                      className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">Formato do Duelo</label>
+                    <input
+                      type="text"
+                      value={form.basico.structureDuel}
+                      onChange={e => setForm(prev => ({
+                        ...prev,
+                        basico: { ...prev.basico, structureDuel: e.target.value }
+                      }))}
+                      className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">Regra de Início</label>
+                    <input
+                      type="text"
+                      value={form.basico.structureStart}
+                      onChange={e => setForm(prev => ({
+                        ...prev,
+                        basico: { ...prev.basico, structureStart: e.target.value }
+                      }))}
+                      className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">Regra de Mulligan</label>
+                    <input
+                      type="text"
+                      value={form.basico.structureMulligan}
+                      onChange={e => setForm(prev => ({
+                        ...prev,
+                        basico: { ...prev.basico, structureMulligan: e.target.value }
+                      }))}
+                      className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-500"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">Nota da Primeira Rodada</label>
+                  <input
+                    type="text"
+                    value={form.basico.firstRoundNote}
+                    onChange={e => setForm(prev => ({
+                      ...prev,
+                      basico: { ...prev.basico, firstRoundNote: e.target.value }
+                    }))}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-500"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 3: CARTAS */}
+          {activeTab === 'cartas' && (
+            <div className="space-y-4 animate-in fade-in">
+              <div className="bg-slate-900/60 p-4 rounded-xl border border-slate-800 space-y-3">
+                <h4 className="font-bold text-blue-400 text-sm">Descrição: Combatente (Azul)</h4>
+                <textarea
+                  rows={3}
+                  value={form.cartas.combatenteText}
+                  onChange={e => setForm(prev => ({
+                    ...prev,
+                    cartas: { ...prev.cartas, combatenteText: e.target.value }
+                  }))}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-xs text-white focus:outline-none focus:border-purple-500"
+                />
+              </div>
+
+              <div className="bg-slate-900/60 p-4 rounded-xl border border-slate-800 space-y-3">
+                <h4 className="font-bold text-red-400 text-sm">Descrição: Herói (Vermelho)</h4>
+                <textarea
+                  rows={3}
+                  value={form.cartas.heroiText}
+                  onChange={e => setForm(prev => ({
+                    ...prev,
+                    cartas: { ...prev.cartas, heroiText: e.target.value }
+                  }))}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-xs text-white focus:outline-none focus:border-purple-500"
+                />
+              </div>
+
+              <div className="bg-slate-900/60 p-4 rounded-xl border border-slate-800 space-y-3">
+                <h4 className="font-bold text-green-400 text-sm">Descrição: Equipamento (Verde)</h4>
+                <textarea
+                  rows={3}
+                  value={form.cartas.equipamentoText}
+                  onChange={e => setForm(prev => ({
+                    ...prev,
+                    cartas: { ...prev.cartas, equipamentoText: e.target.value }
+                  }))}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-xs text-white focus:outline-none focus:border-purple-500"
+                />
+              </div>
+
+              <div className="bg-slate-900/60 p-4 rounded-xl border border-slate-800 space-y-3">
+                <h4 className="font-bold text-purple-400 text-sm">Descrição: Efeito (Roxo)</h4>
+                <textarea
+                  rows={3}
+                  value={form.cartas.efeitoText}
+                  onChange={e => setForm(prev => ({
+                    ...prev,
+                    cartas: { ...prev.cartas, efeitoText: e.target.value }
+                  }))}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-xs text-white focus:outline-none focus:border-purple-500"
+                />
+              </div>
+            </div>
+          )}
+
+          {/* TAB 4: TURNOS */}
+          {activeTab === 'turnos' && (
+            <div className="space-y-4 animate-in fade-in">
+              <div className="bg-slate-900/60 p-4 rounded-xl border border-slate-800 space-y-3">
+                <h4 className="font-bold text-white text-sm">Visão Geral da Rodada (Ação e Reação)</h4>
+                <textarea
+                  rows={3}
+                  value={form.turnos.roundOverview}
+                  onChange={e => setForm(prev => ({
+                    ...prev,
+                    turnos: { ...prev.turnos, roundOverview: e.target.value }
+                  }))}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-xs text-white focus:outline-none focus:border-purple-500"
+                />
+              </div>
+
+              <div className="bg-slate-900/60 p-4 rounded-xl border border-slate-800 space-y-3">
+                <h4 className="font-bold text-red-400 text-sm">Regras de Combate (Uma por linha)</h4>
+                <textarea
+                  rows={8}
+                  value={form.turnos.combatRules.join('\n')}
+                  onChange={e => {
+                    const lines = e.target.value.split('\n');
+                    setForm(prev => ({
+                      ...prev,
+                      turnos: { ...prev.turnos, combatRules: lines }
+                    }));
+                  }}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 text-xs text-white font-mono leading-relaxed focus:outline-none focus:border-purple-500"
+                />
+              </div>
+            </div>
+          )}
+
+          {/* TAB 5: REGRAS */}
+          {activeTab === 'regras' && (
+            <div className="space-y-4 animate-in fade-in">
+              <div className="bg-slate-900/60 p-4 rounded-xl border border-slate-800 space-y-3">
+                <h4 className="font-bold text-yellow-400 text-sm">Correntes (Chains - LIFO)</h4>
+                <textarea
+                  rows={3}
+                  value={form.regras.chainsText}
+                  onChange={e => setForm(prev => ({
+                    ...prev,
+                    regras: { ...prev.regras, chainsText: e.target.value }
+                  }))}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-xs text-white focus:outline-none focus:border-purple-500"
+                />
+                <label className="block text-xs font-semibold text-slate-300">Prioridade por CT</label>
+                <textarea
+                  rows={2}
+                  value={form.regras.chainsPriorityText}
+                  onChange={e => setForm(prev => ({
+                    ...prev,
+                    regras: { ...prev.regras, chainsPriorityText: e.target.value }
+                  }))}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-xs text-white focus:outline-none focus:border-purple-500"
+                />
+              </div>
+
+              <div className="bg-slate-900/60 p-4 rounded-xl border border-slate-800 space-y-3">
+                <h4 className="font-bold text-purple-400 text-sm">Sem Deck (Deck Out)</h4>
+                <textarea
+                  rows={3}
+                  value={form.regras.deckOutText}
+                  onChange={e => setForm(prev => ({
+                    ...prev,
+                    regras: { ...prev.regras, deckOutText: e.target.value }
+                  }))}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-xs text-white focus:outline-none focus:border-purple-500"
+                />
+              </div>
+
+              <div className="bg-slate-900/60 p-4 rounded-xl border border-slate-800 space-y-3">
+                <h4 className="font-bold text-white text-sm">Observações Importantes (Uma por linha)</h4>
+                <textarea
+                  rows={6}
+                  value={form.regras.observations.join('\n')}
+                  onChange={e => {
+                    const lines = e.target.value.split('\n');
+                    setForm(prev => ({
+                      ...prev,
+                      regras: { ...prev.regras, observations: lines }
+                    }));
+                  }}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 text-xs text-white font-mono leading-relaxed focus:outline-none focus:border-purple-500"
+                />
+              </div>
+            </div>
+          )}
+
+        </div>
+
+        {/* Modal Footer */}
+        <div className="p-4 bg-slate-900 border-t border-slate-800 flex items-center justify-between shrink-0">
+          <div className="text-xs text-slate-400">
+            {saveSuccess ? (
+              <span className="text-emerald-400 font-bold flex items-center gap-1">
+                <Check size={14} /> Alterações salvas com sucesso no Firestore!
+              </span>
+            ) : (
+              <span>Salvando no documento oficial <code className="text-purple-400">homeSettings/gameManual</code></span>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={onClose}
+              disabled={isSaving}
+              className="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition"
+            >
+              Cancelar
+            </button>
+            <button
+              onClick={handleSave}
+              disabled={isSaving}
+              className="px-5 py-2 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-md shadow-purple-900/40 disabled:opacity-50"
+            >
+              <Save size={14} /> {isSaving ? 'Salvando...' : 'Salvar Alterações'}
+            </button>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  );
+};

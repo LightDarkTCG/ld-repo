@@ -11,6 +11,9 @@ export interface CardVariationItem {
   rarity?: string;
   tier?: string;
   isCatalogCover?: boolean;
+  isRarePrint?: boolean;
+  requiresAdminVerification?: boolean;
+  maxPrintCopies?: number;
 }
 
 export interface CardData {

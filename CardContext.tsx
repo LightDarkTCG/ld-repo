@@ -72,104 +72,40 @@ export const getBaseCardCode = (rawCode?: string, parentCode?: string): string =
 };
 
 /**
- * Priority order for displaying cards in the catalog and album:
- * 1º Moderno - Base / Novo Frame (highest priority: 4)
- * 2º Moderno - Arte Alternativa / Skin (priority: 3)
- * 3º Legado - Base (priority: 2)
- * 4º Legado - Arte Alternativa / Skin (priority: 1)
- * REGRA ABSOLUTA: FRAME MODERNO SEMPRE PRIMEIRO, SE NÃO TIVER, FRAME LEGADO
+ * Identifica se a carta pertence ao formato / era Legado
+ */
+export const isLegacyCard = (c: CardData): boolean => {
+  if (!c) return false;
+  if (c.frame === 'Moderno') return false;
+  if (c.code && c.code.endsWith('-M')) return false;
+  if (c.collection === 'Invasão do Caos' || c.collection === 'Booster Invasão do Caos' || c.collection === 'Reforço Macroversal' || c.collection === 'LOUCURAS CAÓTICAS') return false;
+  if (c.code && c.code.startsWith('2026')) return false;
+  return true;
+};
+
+/**
+ * Prioridade de exibição: cartas base têm precedência sobre skins/artes alternativas.
+ * Cartas de Frame Legado mantêm sua autenticidade de Frame Legado.
  */
 export const getCardDisplayPriority = (card: CardData): number => {
   if (!card) return 0;
-  const isModernDirect = card.frame === 'Moderno' || (card.code && card.code.endsWith('-M'));
-  const hasModernVariant = Boolean(card.variants && card.variants.some(v => v.frame === 'Moderno'));
-  const isModern = isModernDirect || hasModernVariant;
-
   const typeLower = (card.variationType || '').toLowerCase();
   const isSkinOrAA = typeLower.includes('skin') || 
                      typeLower.includes('arte alternativa') || 
                      typeLower.includes('aa') || 
-                     (card.isVariation && !typeLower.includes('novo frame') && !typeLower.includes('moderno'));
+                     (card.isVariation && !typeLower.includes('base') && !typeLower.includes('legado') && !typeLower.includes('novo frame') && !typeLower.includes('moderno'));
 
-  // 1º Moderno Puro / Novo Frame
-  if (isModern && !isSkinOrAA) return 4;
-  // 2º Moderno Arte Alternativa / Skin
-  if (isModern && isSkinOrAA) return 3;
-  // 3º Legado Base
-  if (!isModern && !isSkinOrAA) return 2;
-  // 4º Legado Arte Alternativa / Skin
+  // 1º Carta Base (Legado ou Moderna)
+  if (!isSkinOrAA) return 2;
+  // 2º Variação / Skin / Arte Alternativa
   return 1;
 };
 
 /**
- * Regra: Quando a carta tiver frame legado e frame moderno, usar somente moderno.
- * Converte a carta para sua versão ou variante moderna caso exista no catálogo ou em suas variantes.
+ * Retorna a carta preservando seu frame autêntico.
+ * Cartas com frame Legado NUNCA são forçadas para frame Moderno.
  */
-export const resolveModernFrameOnly = (card: CardData, allCardsList: CardData[]): CardData => {
-  if (!card) return card;
-  const baseCode = getBaseCardCode(card.code, card.parentCode).toLowerCase();
-
-  // 1. Se a carta já tem frame Moderno:
-  if (card.frame === 'Moderno' || (card.code && card.code.endsWith('-M'))) {
-    const modernOnlyVariants = card.variants?.filter(
-      v => v.frame === 'Moderno' || (v.frame !== 'Legado' && !(v.name || '').toLowerCase().includes('legado'))
-    );
-    return {
-      ...card,
-      frame: 'Moderno',
-      variants: modernOnlyVariants && modernOnlyVariants.length > 0 ? modernOnlyVariants : undefined
-    };
-  }
-
-  // 2. Se a carta possui variante com frame Moderno dentro do seu próprio array de variantes:
-  const modernVariant = card.variants?.find(v => v.frame === 'Moderno');
-  if (modernVariant) {
-    const modernOnlyVariants = card.variants?.filter(
-      v => v.frame === 'Moderno' || (v.frame !== 'Legado' && !(v.name || '').toLowerCase().includes('legado'))
-    );
-    return {
-      ...card,
-      frame: 'Moderno',
-      imageUrl: modernVariant.imageUrl || card.imageUrl,
-      variationType: modernVariant.name || 'Novo Frame',
-      variants: modernOnlyVariants && modernOnlyVariants.length > 0 ? modernOnlyVariants : undefined
-    };
-  }
-
-  // 3. Se no catálogo geral allCardsList existe uma carta com o mesmo código base que tem frame Moderno:
-  if (allCardsList && allCardsList.length > 0) {
-    const matchingModern = allCardsList.find(c =>
-      c &&
-      (c.frame === 'Moderno' || (c.code && c.code.endsWith('-M')) || c.variants?.some(v => v.frame === 'Moderno')) &&
-      getBaseCardCode(c.code, c.parentCode).toLowerCase() === baseCode
-    );
-
-    if (matchingModern) {
-      if (matchingModern.frame === 'Moderno') {
-        const modernOnlyVariants = matchingModern.variants?.filter(
-          v => v.frame === 'Moderno' || (v.frame !== 'Legado' && !(v.name || '').toLowerCase().includes('legado'))
-        );
-        return {
-          ...card,
-          imageUrl: matchingModern.imageUrl || card.imageUrl,
-          frame: 'Moderno',
-          variationType: matchingModern.variationType || 'Novo Frame',
-          variants: modernOnlyVariants && modernOnlyVariants.length > 0 ? modernOnlyVariants : undefined
-        };
-      }
-      const matchModVar = matchingModern.variants?.find(v => v.frame === 'Moderno');
-      if (matchModVar) {
-        return {
-          ...card,
-          imageUrl: matchModVar.imageUrl || card.imageUrl,
-          frame: 'Moderno',
-          variationType: matchModVar.name || 'Novo Frame',
-          variants: matchingModern.variants?.filter(v => v.frame === 'Moderno')
-        };
-      }
-    }
-  }
-
+export const resolveModernFrameOnly = (card: CardData, allCardsList?: CardData[]): CardData => {
   return card;
 };
 
@@ -249,7 +185,9 @@ export const CardProvider = ({ children }: { children: ReactNode }) => {
       snapshot.forEach(docSnap => {
         const d = docSnap.data() as any;
         const base = getBaseCardCode(d.code, d.parentCode);
-        if (d.deleted) {
+        // SÓ considera carta como deletada se foi uma exclusão explícita pelo admin (isExplicitlyDeleted ou 'Carta Excluída' sem dados de carta ativos)
+        const isActuallyDeleted = d.deleted === true && (d.isExplicitlyDeleted === true || (d.name === 'Carta Excluída' && !d.imageUrl && !d.archetype && !d.isRarePrint));
+        if (isActuallyDeleted) {
           deletedBaseCodes.add(base);
         }
         if (Array.isArray(d.deletedVariantImages)) {
@@ -278,7 +216,8 @@ export const CardProvider = ({ children }: { children: ReactNode }) => {
         const cleanedCode = cleanCardCode(originalCode);
         const base = getBaseCardCode(cleanedCode, rawData.parentCode);
 
-        if (rawData.deleted || deletedBaseCodes.has(base)) return;
+        const isActuallyDeleted = (rawData as any).deleted === true && ((rawData as any).isExplicitlyDeleted === true || (rawData.name === 'Carta Excluída' && !rawData.imageUrl && !rawData.archetype && !rawData.isRarePrint));
+        if (isActuallyDeleted || deletedBaseCodes.has(base)) return;
         if (rawData.imageUrl && deletedVariantImages.has(rawData.imageUrl)) return;
 
         let effectiveRarity = rawData.rarity;
@@ -331,34 +270,65 @@ export const CardProvider = ({ children }: { children: ReactNode }) => {
           }
         }
 
-        // Prioriza documento do Firestore salvo pelo Administrador
-        const firestoreCard = group.find(c => Boolean(c.id && (!c.isVariation || cleanCardCode(c.code) === baseCode))) ||
-                              group.find(c => Boolean(c.id));
+        // Identifica se a carta é originalmente do formato Legado (era 2025):
+        const defaultMatch = defaultCards.find(d => getBaseCardCode(d.code, d.parentCode) === baseCode);
+        const isBaseLegacy = defaultMatch ? isLegacyCard(defaultMatch) : group.some(isLegacyCard);
 
-        // PRIORIDADE 2: REGRA ABSOLUTA: FRAME MODERNO SEMPRE PRIMEIRO, SE NÃO TIVER, FRAME LEGADO
-        // Se a prioridade de frame for igual, a versão customizada salva no Firestore SEMPRE tem prioridade sobre o default estático!
+        // PRIORIDADE 1: Se o Admin definiu uma capa específica para o catálogo:
+        if (coverImageUrl) {
+          chosenCard = group.find(c => c.imageUrl === coverImageUrl);
+          if (!chosenCard) {
+            for (const c of group) {
+              const v = c.variants?.find(v => v.imageUrl === coverImageUrl);
+              if (v) {
+                chosenCard = {
+                  ...c,
+                  id: v.id || `var_${v.code || baseCode}`,
+                  imageUrl: v.imageUrl,
+                  frame: v.frame || coverFrame || (isBaseLegacy ? 'Legado' : 'Moderno'),
+                  variationType: v.name || c.variationType || 'Capa do Catálogo',
+                  isVariation: true
+                };
+                break;
+              }
+            }
+          }
+        }
+
+        // Prioriza documento do Firestore salvo pelo Administrador
+        const firestoreBaseCard = group.find(c => Boolean(c.id && !c.isVariation && (!c.frame || (isBaseLegacy ? c.frame === 'Legado' : c.frame === 'Moderno'))));
+        const firestoreCard = firestoreBaseCard || group.find(c => Boolean(c.id && !c.isVariation)) || group.find(c => Boolean(c.id));
+
+        // PRIORIDADE 2: Carta base autêntica (cartas Legado mantêm frame Legado)
         if (!chosenCard) {
           const nonDeletedGroup = group.filter(c => !c.imageUrl || !deletedVariantImages.has(c.imageUrl));
-          const candidateGroup = nonDeletedGroup.length > 0 ? nonDeletedGroup : group;
-          const sorted = [...candidateGroup].sort((a, b) => {
-            const pDiff = getCardDisplayPriority(b) - getCardDisplayPriority(a);
-            if (pDiff !== 0) return pDiff;
-            const aIsFirestore = Boolean(a.id);
-            const bIsFirestore = Boolean(b.id);
-            if (aIsFirestore !== bIsFirestore) {
-              return bIsFirestore ? 1 : -1;
-            }
-            return 0;
-          });
-          chosenCard = sorted[0];
+          const withImages = nonDeletedGroup.filter(c => Boolean(c.imageUrl));
+          const candidateGroup = withImages.length > 0 ? withImages : (nonDeletedGroup.length > 0 ? nonDeletedGroup : group);
 
-          if (chosenCard.frame !== 'Moderno') {
-            chosenCard = resolveModernFrameOnly(chosenCard, defaultCards);
+          if (isBaseLegacy) {
+            // A CARTA É NATIVAMENTE LEGADO: Mantém frame 'Legado' e sua imagem original Legado!
+            const legacyDefault = defaultMatch && isLegacyCard(defaultMatch) ? defaultMatch : null;
+            const legacyFirestore = candidateGroup.find(c => isLegacyCard(c) && !c.isVariation);
+            const legacyAny = candidateGroup.find(isLegacyCard);
+
+            chosenCard = legacyFirestore || legacyDefault || legacyAny || candidateGroup[0];
+            chosenCard = {
+              ...chosenCard,
+              frame: 'Legado'
+            };
+          } else {
+            // Carta moderna de origem (ex: Invasão do Caos / 2026):
+            const modernFirestore = candidateGroup.find(c => !isLegacyCard(c) && !c.isVariation);
+            const modernAny = candidateGroup.find(c => !isLegacyCard(c));
+            chosenCard = modernFirestore || modernAny || candidateGroup[0];
+            chosenCard = {
+              ...chosenCard,
+              frame: 'Moderno'
+            };
           }
         }
 
         // Determina a raridade oficial da carta base: respeita edição do Admin no Firestore
-        const defaultMatch = defaultCards.find(d => getBaseCardCode(d.code, d.parentCode) === baseCode);
         let finalRarity = firestoreCard?.rarity || chosenCard.rarity || 'Comum';
         if (!firestoreCard?.rarity && defaultMatch) {
           const dRarity = (defaultMatch.rarity || '').toLowerCase();
@@ -377,36 +347,47 @@ export const CardProvider = ({ children }: { children: ReactNode }) => {
             item.variants.forEach(v => {
               if (!v.imageUrl || seenVarImages.has(v.imageUrl) || deletedVariantImages.has(v.imageUrl)) return;
               seenVarImages.add(v.imageUrl);
+              const vFrame = v.frame || (v.name?.toLowerCase().includes('moderno') ? 'Moderno' : (isBaseLegacy ? 'Moderno' : 'Legado'));
               allVariants.push({
                 id: v.id || `var_${v.code || baseCode}_${allVariants.length}`,
                 code: cleanCardCode(v.code) || cleanCardCode(baseCode),
-                name: v.name || (v.frame === 'Moderno' ? 'Novo Frame' : 'Legado'),
+                name: v.name || (vFrame === 'Moderno' ? 'Novo Frame' : 'Legado'),
                 imageUrl: v.imageUrl,
-                frame: v.frame || 'Moderno',
-                rarity: v.frame === 'Moderno' && v.rarity === 'Beta' ? 'Comum' : (v.rarity || 'Comum'),
+                frame: vFrame,
+                rarity: vFrame === 'Moderno' && v.rarity === 'Beta' ? 'Comum' : (v.rarity || 'Comum'),
                 tier: v.tier,
-                isCatalogCover: coverImageUrl ? v.imageUrl === coverImageUrl : false
+                isCatalogCover: coverImageUrl ? v.imageUrl === coverImageUrl : false,
+                isRarePrint: Boolean(v.isRarePrint ?? anyRarePrint),
+                requiresAdminVerification: Boolean(v.requiresAdminVerification ?? anyRarePrint),
+                maxPrintCopies: v.maxPrintCopies ?? maxCopies
               });
             });
           }
 
           if (item.imageUrl && !seenVarImages.has(item.imageUrl) && !deletedVariantImages.has(item.imageUrl)) {
             seenVarImages.add(item.imageUrl);
+            const itemFrame = item.frame || (isLegacyCard(item) ? 'Legado' : 'Moderno');
             allVariants.push({
               id: item.id || `var_${item.code || baseCode}_${allVariants.length}`,
               code: cleanCardCode(item.code) || cleanCardCode(baseCode),
-              name: item.variationType || (item.frame === 'Moderno' ? 'Novo Frame' : 'Legado'),
+              name: item.variationType || (itemFrame === 'Moderno' ? 'Novo Frame' : 'Legado'),
               imageUrl: item.imageUrl,
-              frame: item.frame || 'Legado',
-              rarity: item.frame === 'Moderno' && item.rarity === 'Beta' ? 'Comum' : (item.rarity || 'Comum'),
+              frame: itemFrame,
+              rarity: itemFrame === 'Moderno' && item.rarity === 'Beta' ? 'Comum' : (item.rarity || 'Comum'),
               tier: item.tier,
-              isCatalogCover: coverImageUrl ? item.imageUrl === coverImageUrl : false
+              isCatalogCover: coverImageUrl ? item.imageUrl === coverImageUrl : false,
+              isRarePrint: Boolean(item.isRarePrint ?? anyRarePrint),
+              requiresAdminVerification: Boolean(item.requiresAdminVerification ?? anyRarePrint),
+              maxPrintCopies: item.maxPrintCopies ?? maxCopies
             });
           }
         });
 
         // Metadados editados pelo Admin no Firestore sempre prevalecem sobre valores estáticos default
+        const effectiveFrame = coverImageUrl ? (coverFrame || chosenCard.frame) : (isBaseLegacy ? 'Legado' : (chosenCard.frame || 'Moderno'));
+
         const customProps = firestoreCard ? {
+          id: firestoreCard.id,
           name: firestoreCard.name || chosenCard.name,
           archetype: firestoreCard.archetype !== undefined ? firestoreCard.archetype : chosenCard.archetype,
           type: firestoreCard.type || chosenCard.type,
@@ -417,8 +398,10 @@ export const CardProvider = ({ children }: { children: ReactNode }) => {
           defense: firestoreCard.defense !== undefined ? firestoreCard.defense : chosenCard.defense,
           lore: firestoreCard.lore !== undefined ? firestoreCard.lore : chosenCard.lore,
           isHidden: firestoreCard.isHidden !== undefined ? firestoreCard.isHidden : chosenCard.isHidden,
-          ...(firestoreCard.frame ? { frame: firestoreCard.frame } : {})
-        } : {};
+          frame: effectiveFrame
+        } : {
+          frame: effectiveFrame
+        };
 
         canonicalCards.push({
           ...chosenCard,
@@ -482,6 +465,8 @@ export const CardProvider = ({ children }: { children: ReactNode }) => {
   const saveCard = async (card: CardData) => {
     if (!card.code) return;
     const cleanCode = cleanCardCode(card.code);
+    const baseCode = getBaseCardCode(cleanCode, card.parentCode);
+    const cleanDocId = cleanCardCode(baseCode).replace(/[\/\s-]/g, '_');
 
     // If card frame is Moderno and rarity is Beta, convert to Comum
     let effectiveRarity = card.rarity || 'Comum';
@@ -501,13 +486,34 @@ export const CardProvider = ({ children }: { children: ReactNode }) => {
       ...card,
       code: cleanCode,
       rarity: effectiveRarity,
+      deleted: false,
       ...(card.parentCode ? { parentCode: cleanCardCode(card.parentCode) } : {}),
       ...(cleanedVariants ? { variants: cleanedVariants } : {})
     };
 
-    // Determine target docId: if card has an explicit id, use it; otherwise use sanitized cleanCode
-    const docId = card.id ? card.id.replace(/\//g, '_') : cleanCode.replace(/\//g, '_');
-    await setDoc(doc(db, 'customCards', docId), sanitizeForFirestore({ ...cleanedCard, id: docId }));
+    // Determine target docId: if editing a specific variation doc with an explicit variation id, preserve it; otherwise use canonical cleanDocId
+    const docId = card.id && card.id !== cleanDocId && card.isVariation
+      ? card.id.replace(/\//g, '_')
+      : cleanDocId;
+
+    await setDoc(doc(db, 'customCards', docId), sanitizeForFirestore({ ...cleanedCard, id: docId, deleted: false }), { merge: true });
+
+    // Always synchronize core metadata to the canonical base card document in Firestore
+    // This ensures archetype, name, stats, and effect edits ALWAYS persist to the base card
+    if (docId !== cleanDocId) {
+      await setDoc(doc(db, 'customCards', cleanDocId), sanitizeForFirestore({
+        name: cleanedCard.name,
+        archetype: cleanedCard.archetype !== undefined ? cleanedCard.archetype : '',
+        type: cleanedCard.type,
+        collection: cleanedCard.collection,
+        description: cleanedCard.description,
+        ct: cleanedCard.ct,
+        attack: cleanedCard.attack,
+        defense: cleanedCard.defense,
+        lore: cleanedCard.lore,
+        deleted: false
+      }), { merge: true });
+    }
 
     // If saving a variation that has a parentCode, also keep parent's variants array up-to-date
     if (cleanedCard.isVariation && cleanedCard.parentCode) {
@@ -629,16 +635,29 @@ export const CardProvider = ({ children }: { children: ReactNode }) => {
         const coverData = {
           catalogCoverImageUrl: coverVariant.imageUrl,
           catalogCoverFrame: coverVariant.frame || 'Moderno',
-          catalogCoverVariationId: coverVariant.id || ''
+          catalogCoverVariationId: coverVariant.id || '',
+          deleted: false
         };
         if (snap.exists()) {
           await updateDoc(baseRef, coverData);
         } else {
-          await setDoc(baseRef, {
+          const defaultMatch = defaultCards.find(d => getBaseCardCode(d.code, d.parentCode) === baseCode);
+          const fullData: any = typeof cardOrCode === 'object' ? { ...(defaultMatch || {}), ...cardOrCode } : (defaultMatch || {});
+          await setDoc(baseRef, sanitizeForFirestore({
+            ...fullData,
             code: cleanCardCode(baseCode),
-            name: typeof cardOrCode === 'object' ? cardOrCode.name : 'Carta',
+            name: fullData.name || (typeof cardOrCode === 'object' ? cardOrCode.name : 'Carta'),
             ...coverData
-          }, { merge: true });
+          }), { merge: true });
+        }
+
+        // Se a variante possui ID próprio de documento no Firestore, atualiza-a também
+        if (coverVariant.id && coverVariant.id !== cleanDocId) {
+          try {
+            await setDoc(doc(db, 'customCards', coverVariant.id), { isCatalogCover: true, deleted: false }, { merge: true });
+          } catch (e) {
+            console.warn('Could not flag variation doc as cover:', e);
+          }
         }
       }
     } catch (err: any) {
@@ -663,17 +682,30 @@ export const CardProvider = ({ children }: { children: ReactNode }) => {
       const rareData = {
         isRarePrint: Boolean(isRare),
         requiresAdminVerification: Boolean(isRare),
-        maxPrintCopies: isRare ? (Number(maxCopies) || 1) : 0
+        maxPrintCopies: isRare ? (Number(maxCopies) || 1) : 0,
+        deleted: false
       };
 
       if (snap.exists()) {
         await updateDoc(baseRef, rareData);
       } else {
-        await setDoc(baseRef, {
+        const defaultMatch = defaultCards.find(d => getBaseCardCode(d.code, d.parentCode) === baseCode);
+        const fullData: any = typeof cardOrCode === 'object' ? { ...(defaultMatch || {}), ...cardOrCode } : (defaultMatch || {});
+        await setDoc(baseRef, sanitizeForFirestore({
+          ...fullData,
           code: cleanCardCode(baseCode),
-          name: typeof cardOrCode === 'object' ? cardOrCode.name : 'Carta',
+          name: fullData.name || (typeof cardOrCode === 'object' ? cardOrCode.name : 'Carta'),
           ...rareData
-        }, { merge: true });
+        }), { merge: true });
+      }
+
+      // Se for uma variação com ID específico no Firestore, grava também nela diretamente
+      if (typeof cardOrCode === 'object' && cardOrCode.id && cardOrCode.id !== cleanDocId) {
+        try {
+          await setDoc(doc(db, 'customCards', cardOrCode.id), rareData, { merge: true });
+        } catch (e) {
+          console.warn('Could not update specific variation doc for rare print:', e);
+        }
       }
     } catch (err: any) {
       console.error('Erro ao definir tiragem rara:', err);
@@ -732,6 +764,7 @@ export const CardProvider = ({ children }: { children: ReactNode }) => {
           await setDoc(doc(db, 'customCards', cleanDocId), { 
             code: cleanCode, 
             deleted: true, 
+            isExplicitlyDeleted: true,
             name: cardObj?.name || 'Carta Excluída' 
           });
         }
@@ -816,15 +849,11 @@ export const CardProvider = ({ children }: { children: ReactNode }) => {
 
         await setDoc(baseDocRef, updatePayload, { merge: true });
       } else {
-        // APAGA A CARTA BASE COMPLETA
-        console.log('Apagando carta base:', { cleanDocId, isDefault });
-        if (isDefault) {
-          await setDoc(doc(db, 'customCards', cleanDocId), { 
-            code: cleanCode, 
-            deleted: true, 
-            name: cardObj?.name || 'Carta Excluída' 
-          });
-        } else {
+        // Exclusão pontual sem flag deleteAll:
+        // NUNCA marca carta default do sistema como deletada!
+        // Apenas remove documentos customizados órfãos do Firestore se existirem e não forem default
+        console.log('Limpeza segura sem flag deleteAll:', { cleanDocId, isDefault });
+        if (!isDefault) {
           for (const docSnap of relatedDocs) {
             await deleteDoc(docSnap.ref);
           }

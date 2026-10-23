@@ -196,15 +196,9 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
 
     const poolCards: CardData[] = [];
     groupedByCard.forEach((group) => {
-      // Priorizar a versão moderna para a carta (Moderno sempre primeiro)
-      const sorted = [...group].sort((a, b) => {
-        return getCardDisplayPriority(b) - getCardDisplayPriority(a);
-      });
-      let chosenCard = sorted[0];
-
-      if (chosenCard.frame !== 'Moderno') {
-        chosenCard = resolveModernFrameOnly(chosenCard, allCards);
-      }
+      // Preserva a identidade canônica da carta: cartas de origem Legado aparecem com frame Legado!
+      const legacyBase = group.find(c => (c.frame || 'Legado') === 'Legado' && !c.code?.endsWith('-M'));
+      let chosenCard = legacyBase || group[0];
 
       // Consolida variantes
       const allVariants: any[] = [];

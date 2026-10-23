@@ -32,6 +32,7 @@ import { useCards, cleanCardCode, getBaseCardCode, getCardDisplayPriority, resol
 import { CardData, CardType, ArchetypeData, ExclusiveProduct } from './types';
 import { NovidadesSection } from './components/NovidadesSection';
 import { ProductDetailModal } from './components/ProductDetailModal';
+import { GameGuideSections } from './components/GameGuideSections';
 
 // --- SUB-COMPONENTS ---
 
@@ -688,12 +689,38 @@ const CatalogModal = ({
       );
 
       if (filters.frame === 'Legado') {
-        const legacyOptions = group.filter(c => (c.frame || 'Legado') === 'Legado' && !c.code?.endsWith('-M'));
-        chosenCard = legacyOptions.length > 0 ? legacyOptions[0] : group[0];
+        const legacyMatch = group.find(c => (c.frame || 'Legado') === 'Legado' && !c.code?.endsWith('-M'));
+        if (legacyMatch) {
+          chosenCard = { ...legacyMatch, frame: 'Legado' };
+        } else {
+          let foundVariant: any = null;
+          for (const c of group) {
+            const v = c.variants?.find(v => (v.frame || 'Legado') === 'Legado');
+            if (v) {
+              foundVariant = { ...c, imageUrl: v.imageUrl, frame: 'Legado', variationType: v.name };
+              break;
+            }
+          }
+          chosenCard = foundVariant || group[0];
+        }
+      } else if (filters.frame === 'Moderno') {
+        const modernMatch = group.find(c => c.frame === 'Moderno' || (c.code && c.code.endsWith('-M')));
+        if (modernMatch) {
+          chosenCard = { ...modernMatch, frame: 'Moderno' };
+        } else {
+          let foundVariant: any = null;
+          for (const c of group) {
+            const v = c.variants?.find(v => v.frame === 'Moderno');
+            if (v) {
+              foundVariant = { ...c, imageUrl: v.imageUrl, frame: 'Moderno', variationType: v.name || 'Novo Frame' };
+              break;
+            }
+          }
+          chosenCard = foundVariant || group[0];
+        }
       } else if (manualCover && filters.collection === 'Todos') {
         chosenCard = manualCover;
       } else {
-        // Se houver filtro específico de coleção, dá preferência às opções pertencentes a essa coleção
         let candidates = group;
         if (filters.collection !== 'Todos') {
           const colMatches = group.filter(c => c.collection === filters.collection);
@@ -705,14 +732,13 @@ const CatalogModal = ({
         if (manualCover && candidates.some(c => c.imageUrl === manualCover.imageUrl)) {
           chosenCard = manualCover;
         } else {
-          // REGRA ABSOLUTA: FRAME MODERNO, SE NÃO TIVER, FRAME LEGADO
-          // Ordena por prioridade: Moderno Puro (4) > Moderno AA (3) > Legado Base (2) > Legado AA (1)
-          const sorted = [...candidates].sort((a, b) => getCardDisplayPriority(b) - getCardDisplayPriority(a));
-          chosenCard = sorted[0];
-
-          // Se a carta escolhida não for Moderno, mas houver qualquer variante moderna no grupo ou no catálogo:
-          if (chosenCard.frame !== 'Moderno') {
-            chosenCard = resolveModernFrameOnly(chosenCard, allCards);
+          // Quando filters.frame === 'Todos':
+          // Cartas de origem Legado NUNCA são substituídas pelo frame moderno quando possuem variação!
+          const legacyBase = candidates.find(c => (c.frame || 'Legado') === 'Legado' && !c.code?.endsWith('-M'));
+          if (legacyBase) {
+            chosenCard = { ...legacyBase, frame: 'Legado' };
+          } else {
+            chosenCard = candidates[0];
           }
         }
       }
@@ -1491,7 +1517,25 @@ export default function App() {
             />
           </div>
 
-          <div className="hidden md:flex items-center gap-1.5 lg:gap-2.5">
+          <div className="hidden md:flex items-center gap-1.5 lg:gap-2">
+            <a 
+              href="#manual-regras" 
+              className="bg-purple-600 hover:bg-purple-500 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 flex items-center gap-1.5 shadow-sm shadow-purple-900/40 active:scale-95 whitespace-nowrap"
+            >
+              <BookOpen size={14} /> Manual Completo
+            </a>
+            <button 
+              onClick={() => setIsCatalogOpen(true)}
+              className="bg-slate-100 hover:bg-white text-slate-950 px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 flex items-center gap-1.5 shadow-sm active:scale-95 whitespace-nowrap"
+            >
+              <Search size={14} className="text-purple-600" /> Catálogo
+            </button>
+            <button 
+              onClick={() => setIsLoreOpen(true)}
+              className="bg-slate-100 hover:bg-white text-slate-950 px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 flex items-center gap-1.5 shadow-sm active:scale-95 whitespace-nowrap"
+            >
+              <BookOpen size={14} className="text-blue-600" /> Lore
+            </button>
             <button 
               onClick={() => setIsGameOpen(true)}
               className="bg-slate-100 hover:bg-white text-slate-950 px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 flex items-center gap-1.5 shadow-sm active:scale-95 whitespace-nowrap"
@@ -1515,17 +1559,11 @@ export default function App() {
               className="bg-slate-100 hover:bg-white text-slate-950 px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 flex items-center gap-1.5 shadow-sm active:scale-95 whitespace-nowrap"
               title="Cartas Populares da Comunidade (Meta)"
             >
-              <Flame size={14} className="text-red-500 fill-red-500/20" /> Cartas Populares
+              <Flame size={14} className="text-red-500 fill-red-500/20" /> Populares
             </button>
-            <a 
-              href="#arquetipos" 
-              className="bg-slate-100 hover:bg-white text-slate-950 px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 flex items-center gap-1.5 shadow-sm active:scale-95 whitespace-nowrap"
-            >
-              <BookOpen size={14} className="text-indigo-600" /> Sobre o Jogo
-            </a>
             <button 
               onClick={() => setIsBuyModalOpen(true)}
-              className="bg-slate-100 hover:bg-white text-slate-950 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 flex items-center gap-1.5 shadow-sm active:scale-95 whitespace-nowrap"
+              className="bg-slate-100 hover:bg-white text-slate-950 px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 flex items-center gap-1.5 shadow-sm active:scale-95 whitespace-nowrap"
             >
               <ShoppingCart size={14} className="text-slate-900" /> Comprar
             </button>
@@ -1695,6 +1733,25 @@ export default function App() {
         {/* Mobile Menu */}
         {isMenuOpen && (
              <div className="md:hidden absolute top-full left-0 w-full bg-[#0a0a0c] border-b border-slate-800 p-4 flex flex-col gap-2.5 shadow-2xl animate-in slide-in-from-top-2">
+                <a 
+                  href="#manual-regras" 
+                  className="bg-purple-600 hover:bg-purple-500 text-white px-3.5 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 shadow-sm shadow-purple-900/40" 
+                  onClick={()=>setIsMenuOpen(false)}
+                >
+                  <BookOpen size={15} /> Ler Manual Completo
+                </a>
+                <button 
+                  onClick={() => { setIsCatalogOpen(true); setIsMenuOpen(false); }}
+                  className="bg-slate-100 hover:bg-white text-slate-950 px-3.5 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 shadow-sm"
+                >
+                  <Search size={15} className="text-purple-600" /> Catálogo de Cartas
+                </button>
+                <button 
+                  onClick={() => { setIsLoreOpen(true); setIsMenuOpen(false); }}
+                  className="bg-slate-100 hover:bg-white text-slate-950 px-3.5 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 shadow-sm"
+                >
+                  <BookOpen size={15} className="text-blue-600" /> Lore & Universo
+                </button>
                 <button 
                   onClick={() => { setIsGameOpen(true); setIsMenuOpen(false); }}
                   className="bg-slate-100 hover:bg-white text-slate-950 px-3.5 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 shadow-sm"
@@ -1719,13 +1776,6 @@ export default function App() {
                 >
                   <Flame size={15} className="text-red-500 fill-red-500/20" /> Cartas Populares (Meta)
                 </button>
-                <a 
-                  href="#arquetipos" 
-                  className="bg-slate-100 hover:bg-white text-slate-950 px-3.5 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 shadow-sm" 
-                  onClick={()=>setIsMenuOpen(false)}
-                >
-                  <BookOpen size={15} className="text-indigo-600" /> Sobre o Jogo
-                </a>
                 <button 
                   onClick={() => { setIsBuyModalOpen(true); setIsMenuOpen(false); }}
                   className="bg-slate-100 hover:bg-white text-slate-950 px-3.5 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 shadow-sm"
@@ -1878,30 +1928,9 @@ export default function App() {
               {homeSettings?.sideText || '1/5'}
             </span>
           </div>
-          <p className="text-lg text-slate-200 mb-10 max-w-2xl mx-auto drop-shadow-lg font-medium">
+          <p className="text-lg text-slate-200 max-w-2xl mx-auto drop-shadow-lg font-medium">
             {homeSettings?.synopsis || 'O Caos começou a invadir, Escolhidos, Arautos, precisamos de vocês! Monte seu deck, escolha seu Herói e domine os duelos neste TCG frenético.'}
           </p>
-          
-          <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <button 
-              onClick={() => setIsManualOpen(true)}
-              className="bg-purple-600 hover:bg-purple-500 text-white px-8 py-4 rounded font-bold transition flex items-center justify-center gap-2 shadow-lg shadow-purple-900/50"
-            >
-              Ler Manual Completo <BookOpen size={18} />
-            </button>
-            <button 
-              onClick={() => setIsCatalogOpen(true)}
-              className="px-8 py-4 rounded font-bold border border-slate-400/50 bg-black/30 hover:bg-slate-800 transition text-slate-200 flex items-center gap-2 justify-center backdrop-blur-sm"
-            >
-              <Search size={18} /> Catálogo
-            </button>
-            <button 
-              onClick={() => setIsLoreOpen(true)}
-              className="px-8 py-4 rounded font-bold border border-slate-400/50 bg-black/30 hover:bg-slate-800 transition text-slate-200 flex items-center gap-2 justify-center backdrop-blur-sm"
-            >
-              <BookOpen size={18} /> Lore
-            </button>
-          </div>
         </div>
       </header>
 
@@ -1940,40 +1969,12 @@ export default function App() {
         </div>
       </section>
 
-      {/* Archetypes List */}
-      <section id="arquetipos" className="py-20 bg-slate-950 border-t border-purple-900/20">
-        <div className="container mx-auto px-6 max-w-4xl">
-          <div className="text-center mb-12">
-            <h3 className="text-3xl sm:text-4xl font-black text-white uppercase tracking-wider">Arquétipos</h3>
-            <div className="w-16 h-1 bg-purple-600 mx-auto mt-3 rounded-full"></div>
-            <p className="text-slate-400 text-sm md:text-base mt-3">Conheça os arquétipos e mecânicas fundamentais do jogo.</p>
-          </div>
-          <div className="flex flex-col gap-3 md:gap-4">
-            {archetypes.map((arch, idx) => (
-              <ArchetypeCard key={idx} {...arch} />
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* Field Structure Section - Updated to GameField */}
-      <section id="estrutura" className="py-16 md:py-24 relative overflow-hidden bg-slate-900/20">
-        <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-5 pointer-events-none"></div>
-        <div className="container mx-auto px-4 sm:px-6 relative z-10">
-          <div className="max-w-6xl mx-auto">
-            <div className="text-center mb-8 md:mb-10">
-              <h2 className="text-3xl sm:text-4xl font-bold text-white mb-3">Estrutura do Campo</h2>
-              <p className="text-slate-400 text-sm sm:text-base">Clique em qualquer área do campo para visualizar a explicação interativa no próprio local.</p>
-            </div>
-
-            <div className="w-full overflow-x-auto pb-4 -mx-4 px-4 sm:mx-0 sm:px-0">
-              <div className="min-w-[650px] md:min-w-0 w-full">
-                <GameField />
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
+      {/* Manual de Regras Oficial (7 Seções Retráteis) */}
+      <GameGuideSections 
+        archetypes={archetypes} 
+        isAdmin={isAdmin} 
+        ArchetypeCardComponent={ArchetypeCard} 
+      />
 
       {/* Footer */}
       <footer className="bg-black py-12 border-t border-slate-900">

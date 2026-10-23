@@ -4,6 +4,7 @@ import { db } from './firebase';
 import { UserAlbumMap, normalizeAlbumKey } from './albumService';
 import { CardData } from './types';
 import { isLegacyCard, isSpecialCard } from './components/AlbumModal';
+import { cleanCardCode } from './CardContext';
 
 export interface CollectorRankEntry {
   userId: string;
@@ -53,22 +54,56 @@ export function getCatalogueUniverse(allCards: CardData[]): CatalogueStats {
   for (const card of allCards || []) {
     if (!card) continue;
     const codeKey = normalizeAlbumKey(card);
-    if (!codeKey || seen.has(codeKey)) continue;
-    seen.add(codeKey);
+    if (codeKey && !seen.has(codeKey)) {
+      seen.add(codeKey);
+      cardsList.push(card);
+      cardMap.set(codeKey, card);
 
-    cardsList.push(card);
-    cardMap.set(codeKey, card);
+      if (isSpecialCard(card)) {
+        specialCount++;
+      }
+      if (card.isVariation) {
+        variationCount++;
+      }
+      if (isLegacyCard(card)) {
+        legacyCount++;
+      } else {
+        modernCount++;
+      }
+    }
 
-    if (isSpecialCard(card)) {
-      specialCount++;
-    }
-    if (card.isVariation) {
-      variationCount++;
-    }
-    if (isLegacyCard(card)) {
-      legacyCount++;
-    } else {
-      modernCount++;
+    // Se a carta possui variações (como versão Moderna de carta Legado, ou skins):
+    if (card.variants && card.variants.length > 0) {
+      for (const v of card.variants) {
+        if (!v.imageUrl) continue;
+        const vFrame = v.frame || (isLegacyCard(card) ? 'Moderno' : 'Legado');
+        const varCard: CardData = {
+          ...card,
+          id: v.id || `var_${v.code || card.code}`,
+          code: cleanCardCode(v.code) || cleanCardCode(card.code),
+          imageUrl: v.imageUrl,
+          frame: vFrame,
+          rarity: v.rarity || card.rarity,
+          variationType: v.name,
+          isVariation: true
+        };
+        const varKey = normalizeAlbumKey(varCard, vFrame);
+        if (varKey && !seen.has(varKey)) {
+          seen.add(varKey);
+          cardsList.push(varCard);
+          cardMap.set(varKey, varCard);
+
+          if (isSpecialCard(varCard)) {
+            specialCount++;
+          }
+          variationCount++;
+          if (isLegacyCard(varCard)) {
+            legacyCount++;
+          } else {
+            modernCount++;
+          }
+        }
+      }
     }
   }
 
