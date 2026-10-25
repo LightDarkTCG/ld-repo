@@ -154,7 +154,7 @@ export const ChampionshipHistoryModal: React.FC<ChampionshipHistoryModalProps> =
               </p>
               {onOpenAuth && (
                 <button
-                  onClick={() => { onClose(); onOpenAuth(); }}
+                  onClick={() => { onOpenAuth(); }}
                   className="px-6 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs transition shadow-lg shadow-purple-950/60 active:scale-95"
                 >
                   Entrar na Minha Conta
@@ -256,7 +256,7 @@ export const ChampionshipHistoryModal: React.FC<ChampionshipHistoryModalProps> =
                   {/* Ação */}
                   {onOpenTournament && (
                     <button
-                      onClick={() => { onClose(); onOpenTournament(entry.tournamentId); }}
+                      onClick={() => { onOpenTournament(entry.tournamentId); }}
                       className="self-end sm:self-center px-3.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold transition flex items-center gap-1.5 border border-slate-700 shrink-0"
                     >
                       <ExternalLink size={13} />

@@ -277,7 +277,6 @@ export const CollectorsRankingModal: React.FC<CollectorsRankingModalProps> = ({
             {onOpenMostWanted && (
               <button
                 onClick={() => {
-                  onClose();
                   onOpenMostWanted();
                 }}
                 className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-amber-600 to-red-600 hover:from-amber-500 hover:to-red-500 text-white border border-amber-400/80 text-xs font-bold transition flex items-center gap-1.5 shadow-md shadow-amber-950/40"
@@ -481,7 +480,7 @@ export const CollectorsRankingModal: React.FC<CollectorsRankingModalProps> = ({
                   </p>
                   {onOpenAlbum && (
                     <button
-                      onClick={() => { onClose(); onOpenAlbum(); }}
+                      onClick={() => { onOpenAlbum(); }}
                       className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-amber-600 to-yellow-600 text-slate-950 font-black text-xs transition shadow-lg shadow-amber-950/60 active:scale-95"
                     >
                       Abrir Meu Álbum Agora
@@ -539,7 +538,6 @@ export const CollectorsRankingModal: React.FC<CollectorsRankingModalProps> = ({
                           {onOpenUserProfile && (
                             <button
                               onClick={() => {
-                                onClose();
                                 onOpenUserProfile({
                                   userId: top2.userId,
                                   displayName: top2.displayName,
@@ -639,7 +637,6 @@ export const CollectorsRankingModal: React.FC<CollectorsRankingModalProps> = ({
                           {onOpenUserProfile && (
                             <button
                               onClick={() => {
-                                onClose();
                                 onOpenUserProfile({
                                   userId: top1.userId,
                                   displayName: top1.displayName,
@@ -722,7 +719,6 @@ export const CollectorsRankingModal: React.FC<CollectorsRankingModalProps> = ({
                           {onOpenUserProfile && (
                             <button
                               onClick={() => {
-                                onClose();
                                 onOpenUserProfile({
                                   userId: top3.userId,
                                   displayName: top3.displayName,
@@ -837,7 +833,6 @@ export const CollectorsRankingModal: React.FC<CollectorsRankingModalProps> = ({
                                 {onOpenUserProfile && (
                                   <button
                                     onClick={() => {
-                                      onClose();
                                       onOpenUserProfile({
                                         userId: entry.userId,
                                         displayName: entry.displayName,
@@ -1044,7 +1039,6 @@ export const CollectorsRankingModal: React.FC<CollectorsRankingModalProps> = ({
                           {onOpenUserProfile && (
                             <button
                               onClick={() => {
-                                onClose();
                                 onOpenUserProfile({
                                   userId: ambassador.userId,
                                   displayName: ambassador.displayName,
@@ -1125,7 +1119,7 @@ export const CollectorsRankingModal: React.FC<CollectorsRankingModalProps> = ({
           <div className="flex items-center gap-2">
             {!user && onOpenAuth && (
               <button
-                onClick={() => { onClose(); onOpenAuth(); }}
+                onClick={() => { onOpenAuth(); }}
                 className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold transition shadow-sm"
               >
                 Entrar na Conta
@@ -1134,7 +1128,7 @@ export const CollectorsRankingModal: React.FC<CollectorsRankingModalProps> = ({
 
             {onOpenAlbum && (
               <button
-                onClick={() => { onClose(); onOpenAlbum(); }}
+                onClick={() => { onOpenAlbum(); }}
                 className="px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold transition flex items-center gap-1.5 shadow-md shadow-emerald-950/40"
               >
                 <BookmarkCheck size={15} />

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { doc, onSnapshot, setDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from './firebase';
-import { cleanCardCode } from './CardContext';
+import { cleanCardCode, getBaseCardCode } from './CardContext';
 import { CardData } from './types';
 
 export interface AlbumEntry {
@@ -152,11 +152,32 @@ export const FOIL_TYPES: FoilTypeInfo[] = [
 export type UserAlbumMap = Record<string, AlbumEntry>;
 
 /**
- * Normaliza a chave do álbum para que cada carta seja INDEPENDENTE.
- * - Versões Modernas de cartas Legado (ex: Asmonious Moderno) recebem chave com sufixo _MOD.
- * - Versões Legado mantêm sua chave original (ex: 2025_0001_00152).
- * - Cartas nativas de coleções modernas (ex: Invasão do Caos) possuem código próprio.
- * - Desta forma, adicionar a versão Legado NUNCA adiciona a versão Moderna automaticamente.
+ * Gera um hash estável e determinístico de 6-7 caracteres a partir da URL da imagem ou identificador da variação.
+ */
+export const getVariationArtHash = (cardOrStr: CardData | string): string => {
+  const seed = typeof cardOrStr === 'string' 
+    ? cardOrStr 
+    : (cardOrStr.imageUrl || cardOrStr.id || cardOrStr.variationType || '');
+  if (!seed) return 'alt';
+  let hash = 0;
+  for (let i = 0; i < seed.length; i++) {
+    hash = ((hash << 5) - hash) + seed.charCodeAt(i);
+    hash |= 0;
+  }
+  return Math.abs(hash).toString(36).substring(0, 7);
+};
+
+/**
+ * Normaliza a chave do álbum para que cada carta e CADA VARIAÇÃO seja 100% INDEPENDENTE.
+ * - Versão Legado base: ex: 2025_0001_00152
+ * - Versão Moderna base de carta Legado ("Novo Frame"): ex: 2025_0001_00152_MOD
+ * - Carta nativa de coleção moderna (ex: Invasão do Caos): ex: 2026_0001_00301
+ * - Artes Alternativas, Skins e Variações:
+ *   - Se o código impresso tem letra distintiva (ex: 2025/0001/B0152): ex: 2025_0001_B0152
+ *   - Se compartilha o mesmo código numérico mas é uma Arte Alternativa / Skin com imagem própria:
+ *     ex: 2026_0001_00301_VAR_xyz123 ou 2025_0001_00152_MOD_VAR_xyz123
+ * Desta forma, marcar uma arte alternativa NUNCA adiciona a versão base moderna,
+ * e cada variação conta individualmente tanto no Álbum quanto no Hall da Fama.
  */
 export const normalizeAlbumKey = (
   cardOrCode?: CardData | string | null,
@@ -167,6 +188,11 @@ export const normalizeAlbumKey = (
 
   if (typeof cardOrCode === 'string') {
     const raw = cardOrCode.trim();
+    // Se já é uma chave de variação normalizada, preserva-a
+    if (raw.includes('_VAR_')) {
+      return raw;
+    }
+
     const isExplicitModern = frame === 'Moderno' || 
                              raw.endsWith('-MOD') || 
                              raw.endsWith('-M') || 
@@ -175,6 +201,9 @@ export const normalizeAlbumKey = (
 
     const base = cleanCardCode(raw).replace(/[\/\s-]/g, '_');
     if (isExplicitModern) {
+      if (base.startsWith('2026_')) {
+        return base;
+      }
       return base.endsWith('_MOD') ? base : `${base}_MOD`;
     }
     return base;
@@ -182,24 +211,63 @@ export const normalizeAlbumKey = (
 
   // CardData
   const card = cardOrCode;
-  const isModern = card.frame === 'Moderno' || 
-                   (card.code && (card.code.endsWith('-MOD') || card.code.endsWith('-M'))) || 
-                   (card.id && card.id.includes('-MOD')) ||
-                   (card.variationType && card.variationType.toLowerCase().includes('moderno'));
+  const rawCode = card.code || card.id || '';
+  const cleanCode = cleanCardCode(rawCode);
+  const baseCode = getBaseCardCode(cleanCode, card.parentCode);
 
-  const baseKey = cleanCardCode(card.code || card.id || '').replace(/[\/\s-]/g, '_');
+  // Se o código possui letras que indicam uma skin específica (ex: '2025/0001/B0152' vs '2025/0001/00152')
+  const isSkinCode = Boolean(cleanCode && baseCode && cleanCode !== baseCode);
+
+  const baseKey = isSkinCode
+    ? cleanCode.replace(/[\/\s-]/g, '_')
+    : cleanCardCode(baseCode || cleanCode).replace(/[\/\s-]/g, '_');
+
+  const effectiveFrame = frame || card.frame;
+  const isModern = effectiveFrame === 'Moderno' || 
+                   (rawCode && (rawCode.endsWith('-MOD') || rawCode.endsWith('-M'))) || 
+                   (card.id && card.id.includes('-MOD')) ||
+                   (id && id.includes('-MOD')) ||
+                   (card.variationType && card.variationType.toLowerCase().includes('moderno'));
 
   // Coleções criadas originalmente na era moderna já possuem código exclusivo (ex: Invasão do Caos 2026/0001/00301)
   const isModernNativeSet = card.collection === 'Invasão do Caos' || 
                             card.collection === 'Booster Invasão do Caos' || 
                             card.collection === 'Reforço Macroversal' ||
-                            (card.code && card.code.startsWith('2026/'));
+                            baseKey.startsWith('2026_');
 
+  let standardKey = baseKey;
   if (isModern && !isModernNativeSet) {
-    return baseKey.endsWith('_MOD') ? baseKey : `${baseKey}_MOD`;
+    standardKey = baseKey.endsWith('_MOD') ? baseKey : `${baseKey}_MOD`;
   }
 
-  return baseKey;
+  // Identifica se a carta é uma variação / skin / arte alternativa
+  const vt = (card.variationType || '').trim().toLowerCase();
+  const isBaseFrameName = vt === 'novo frame' || 
+                          vt === 'moderno' || 
+                          vt === 'frame moderno' || 
+                          vt === 'legado' || 
+                          vt === 'frame legado' || 
+                          vt === 'base' || 
+                          vt === 'padrão';
+
+  const isVariation = Boolean(
+    isSkinCode ||
+    (vt && !isBaseFrameName) ||
+    (card.isVariation && !isBaseFrameName) ||
+    (card.id && (card.id.startsWith('var_') || card.id.startsWith('custom_var_')) && !isBaseFrameName)
+  );
+
+  if (isVariation) {
+    // Se o próprio código já é uma chave única de skin (ex: 2025_0001_B0152), standardKey já é único!
+    if (isSkinCode) {
+      return standardKey;
+    }
+    // Caso contrário, gera uma chave individual baseada na imagem da arte alternativa
+    const varHash = getVariationArtHash(card);
+    return `${standardKey}_VAR_${varHash}`;
+  }
+
+  return standardKey;
 };
 
 /**

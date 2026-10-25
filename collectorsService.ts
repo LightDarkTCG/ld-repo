@@ -1,7 +1,7 @@
 import { collection, doc, getDoc, getDocs, onSnapshot, serverTimestamp, setDoc } from 'firebase/firestore';
 import { User } from 'firebase/auth';
 import { db } from './firebase';
-import { UserAlbumMap, normalizeAlbumKey } from './albumService';
+import { UserAlbumMap, normalizeAlbumKey, getVariationArtHash } from './albumService';
 import { CardData } from './types';
 import { isLegacyCard, isSpecialCard } from './components/AlbumModal';
 import { cleanCardCode } from './CardContext';
@@ -43,6 +43,7 @@ export interface CatalogueStats {
  */
 export function getCatalogueUniverse(allCards: CardData[]): CatalogueStats {
   const seen = new Set<string>();
+  const seenImages = new Set<string>();
   const cardMap = new Map<string, CardData>();
   const cardsList: CardData[] = [];
 
@@ -56,6 +57,7 @@ export function getCatalogueUniverse(allCards: CardData[]): CatalogueStats {
     const codeKey = normalizeAlbumKey(card);
     if (codeKey && !seen.has(codeKey)) {
       seen.add(codeKey);
+      if (card.imageUrl) seenImages.add(card.imageUrl);
       cardsList.push(card);
       cardMap.set(codeKey, card);
 
@@ -75,8 +77,9 @@ export function getCatalogueUniverse(allCards: CardData[]): CatalogueStats {
     // Se a carta possui variações (como versão Moderna de carta Legado, ou skins):
     if (card.variants && card.variants.length > 0) {
       for (const v of card.variants) {
-        if (!v.imageUrl) continue;
+        if (!v.imageUrl || seenImages.has(v.imageUrl)) continue;
         const vFrame = v.frame || (isLegacyCard(card) ? 'Moderno' : 'Legado');
+        const varRare = Boolean(v.isRarePrint || v.requiresAdminVerification || v.rarity === 'Moderno Macroversal' || v.rarity === 'Macroversal');
         const varCard: CardData = {
           ...card,
           id: v.id || `var_${v.code || card.code}`,
@@ -85,11 +88,20 @@ export function getCatalogueUniverse(allCards: CardData[]): CatalogueStats {
           frame: vFrame,
           rarity: v.rarity || card.rarity,
           variationType: v.name,
-          isVariation: true
+          collection: v.collection || card.collection,
+          isVariation: true,
+          isCatalogCover: Boolean(v.isCatalogCover),
+          isRarePrint: varRare,
+          requiresAdminVerification: varRare,
+          maxPrintCopies: varRare ? (v.maxPrintCopies || 1) : 0
         };
-        const varKey = normalizeAlbumKey(varCard, vFrame);
+        let varKey = normalizeAlbumKey(varCard, vFrame);
+        if (varKey && seen.has(varKey)) {
+          varKey = `${varKey}_VAR_${getVariationArtHash(varCard)}`;
+        }
         if (varKey && !seen.has(varKey)) {
           seen.add(varKey);
+          seenImages.add(v.imageUrl);
           cardsList.push(varCard);
           cardMap.set(varKey, varCard);
 

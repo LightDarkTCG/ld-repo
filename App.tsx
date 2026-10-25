@@ -5,7 +5,7 @@ import {
   ShoppingCart, ExternalLink, Search, Filter, Box, ArrowDownAZ,
   Menu, X, ChevronRight, ChevronDown, ChevronUp, Scale, Ghost, Instagram, MessageCircle, Mail, Music, Info,
   Sword, Shield, Clock, AlertTriangle, Users, FileText, CheckCircle, Crown, Youtube, Settings, Sparkles,
-  LogIn, LogOut, BookmarkCheck, Cloud, User as UserIcon, Edit2, Check, Flame, Trophy, Award
+  LogIn, LogOut, BookmarkCheck, Cloud, User as UserIcon, Edit2, Check, Flame, Trophy, Award, Package, Truck
 } from 'lucide-react';
 import { Card } from './components/Card';
 import { GameField } from './components/GameField';
@@ -24,15 +24,16 @@ import { TournamentManager } from './components/TournamentManager';
 import { AdminPanel } from './components/AdminPanel';
 import { LoreView } from './components/LoreView';
 import { compareCardCodes } from './deckUtils';
-import { db } from './firebase';
-import { doc, getDoc, onSnapshot } from 'firebase/firestore';
+import { db, storage, readBrowserCache, writeBrowserCache } from './firebase';
+import { doc, onSnapshot } from 'firebase/firestore';
 import { ref, listAll, getDownloadURL } from 'firebase/storage';
-import { storage } from './firebase';
-import { useCards, cleanCardCode, getBaseCardCode, getCardDisplayPriority, resolveModernFrameOnly } from './CardContext';
-import { CardData, CardType, ArchetypeData, ExclusiveProduct } from './types';
+import { useCards, cleanCardCode, getBaseCardCode, getCardDisplayPriority, resolveModernFrameOnly, isLegacyCard } from './CardContext';
+import { CardData, CardType, ArchetypeData, ExclusiveProduct, LEGADO_RARITIES, MODERNO_RARITIES } from './types';
 import { NovidadesSection } from './components/NovidadesSection';
 import { ProductDetailModal } from './components/ProductDetailModal';
 import { GameGuideSections } from './components/GameGuideSections';
+import { StoreModal } from './components/StoreModal';
+import { addToCart, getCartItems } from './storeService';
 
 // --- SUB-COMPONENTS ---
 
@@ -632,6 +633,7 @@ const CatalogModal = ({
   });
 
   const [visibleCount, setVisibleCount] = useState(24);
+  const [expandVariations, setExpandVariations] = useState(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
 
@@ -641,7 +643,7 @@ const CatalogModal = ({
     if (scrollContainerRef.current) {
       scrollContainerRef.current.scrollTop = 0;
     }
-  }, [searchTerm, filters, isOpen]);
+  }, [searchTerm, filters, isOpen, expandVariations]);
 
   const handleCardClick = (card: CardData) => {
     setSelectedCard(card);
@@ -663,6 +665,27 @@ const CatalogModal = ({
     }
   };
 
+  const checkRarityMatch = (cRarityRaw?: string, cFrameRaw?: string, targetRarity?: string): boolean => {
+    if (!targetRarity || targetRarity === "Todos") return true;
+    const cRarity = (cRarityRaw || '').trim();
+    const cFrame = cFrameRaw || 'Legado';
+    if (cRarity === targetRarity) return true;
+    if (targetRarity === 'Moderno Comum' && cFrame === 'Moderno' && (cRarity === 'Comum' || cRarity === 'Beta' || !cRarity)) return true;
+    if (targetRarity === 'Legado Comum' && cFrame === 'Legado' && (cRarity === 'Comum' || cRarity === 'Beta' || !cRarity)) return true;
+    if (targetRarity === 'Legado Incomum' && cFrame === 'Legado' && cRarity === 'Incomum') return true;
+    if (targetRarity === 'Moderno Incomum' && cFrame === 'Moderno' && cRarity === 'Incomum') return true;
+    if (targetRarity === 'Legado Rara' && cFrame === 'Legado' && cRarity === 'Rara') return true;
+    if (targetRarity === 'Moderno Rara' && cFrame === 'Moderno' && cRarity === 'Rara') return true;
+    if (targetRarity === 'Legado Muito Rara' && cFrame === 'Legado' && cRarity === 'Muito Rara') return true;
+    if (targetRarity === 'Moderno Muito Rara' && cFrame === 'Moderno' && cRarity === 'Muito Rara') return true;
+    if (targetRarity === 'Legado Lendária' && cFrame === 'Legado' && cRarity === 'Lendária') return true;
+    if (targetRarity === 'Moderno Lendária' && cFrame === 'Moderno' && cRarity === 'Lendária') return true;
+    if (targetRarity === 'Legado Limitada' && cFrame === 'Legado' && (cRarity === 'Limitada' || cRarity === 'Limitadas')) return true;
+    if (targetRarity === 'Moderno Limitada' && cFrame === 'Moderno' && (cRarity === 'Limitada' || cRarity === 'Limitadas')) return true;
+    if (targetRarity === 'Moderno Macroversal' && (cRarity === 'Macroversal' || cRarity === 'Moderno Macroversal')) return true;
+    return false;
+  };
+
   const filteredCards = useMemo(() => {
     // Agrupa allCards estritamente pelo código base para que variações (skins, artes alternativas,
     // mesmo de outras coleções como LOUCURAS CAÓTICAS) usem o MESMO ESPAÇO no catálogo como variação!
@@ -681,12 +704,35 @@ const CatalogModal = ({
     groupedByCard.forEach((group) => {
       let chosenCard: CardData;
 
+      const anyCoverUrl = group.find(c => c.catalogCoverImageUrl)?.catalogCoverImageUrl;
+      const anyCoverFrame = group.find(c => c.catalogCoverFrame)?.catalogCoverFrame;
+
       // 1. PRIORIDADE MÁXIMA: Capa manual definida pelo Administrador
-      const manualCover = group.find(c => 
+      let manualCover: CardData | undefined = group.find(c => 
         c.isCatalogCover || 
-        (c.catalogCoverImageUrl && c.imageUrl === c.catalogCoverImageUrl) ||
-        group.some(parent => parent.catalogCoverImageUrl && c.imageUrl === parent.catalogCoverImageUrl)
+        (anyCoverUrl && c.imageUrl === anyCoverUrl)
       );
+      if (!manualCover && anyCoverUrl) {
+        for (const c of group) {
+          const v = c.variants?.find(v => v.imageUrl === anyCoverUrl);
+          if (v) {
+            const vRare = Boolean(v.isRarePrint || v.requiresAdminVerification);
+            manualCover = {
+              ...c,
+              id: v.id || c.id,
+              imageUrl: v.imageUrl,
+              frame: v.frame || anyCoverFrame || c.frame || 'Moderno',
+              variationType: v.name || c.variationType,
+              rarity: v.rarity || c.rarity,
+              isCatalogCover: true,
+              isRarePrint: vRare,
+              requiresAdminVerification: vRare,
+              maxPrintCopies: vRare ? (v.maxPrintCopies || 1) : 0
+            };
+            break;
+          }
+        }
+      }
 
       if (filters.frame === 'Legado') {
         const legacyMatch = group.find(c => (c.frame || 'Legado') === 'Legado' && !c.code?.endsWith('-M'));
@@ -697,7 +743,17 @@ const CatalogModal = ({
           for (const c of group) {
             const v = c.variants?.find(v => (v.frame || 'Legado') === 'Legado');
             if (v) {
-              foundVariant = { ...c, imageUrl: v.imageUrl, frame: 'Legado', variationType: v.name };
+              const vRare = Boolean(v.isRarePrint || v.requiresAdminVerification);
+              foundVariant = {
+                ...c,
+                imageUrl: v.imageUrl,
+                frame: 'Legado',
+                variationType: v.name,
+                rarity: v.rarity || c.rarity,
+                isRarePrint: vRare,
+                requiresAdminVerification: vRare,
+                maxPrintCopies: vRare ? (v.maxPrintCopies || 1) : 0
+              };
               break;
             }
           }
@@ -712,13 +768,23 @@ const CatalogModal = ({
           for (const c of group) {
             const v = c.variants?.find(v => v.frame === 'Moderno');
             if (v) {
-              foundVariant = { ...c, imageUrl: v.imageUrl, frame: 'Moderno', variationType: v.name || 'Novo Frame' };
+              const vRare = Boolean(v.isRarePrint || v.requiresAdminVerification);
+              foundVariant = {
+                ...c,
+                imageUrl: v.imageUrl,
+                frame: 'Moderno',
+                variationType: v.name || 'Novo Frame',
+                rarity: v.rarity || c.rarity,
+                isRarePrint: vRare,
+                requiresAdminVerification: vRare,
+                maxPrintCopies: vRare ? (v.maxPrintCopies || 1) : 0
+              };
               break;
             }
           }
           chosenCard = foundVariant || group[0];
         }
-      } else if (manualCover && filters.collection === 'Todos') {
+      } else if (manualCover) {
         chosenCard = manualCover;
       } else {
         let candidates = group;
@@ -729,62 +795,106 @@ const CatalogModal = ({
           }
         }
 
-        if (manualCover && candidates.some(c => c.imageUrl === manualCover.imageUrl)) {
-          chosenCard = manualCover;
-        } else {
-          // Quando filters.frame === 'Todos':
-          // Cartas de origem Legado NUNCA são substituídas pelo frame moderno quando possuem variação!
-          const legacyBase = candidates.find(c => (c.frame || 'Legado') === 'Legado' && !c.code?.endsWith('-M'));
-          if (legacyBase) {
-            chosenCard = { ...legacyBase, frame: 'Legado' };
-          } else {
-            chosenCard = candidates[0];
+        // Quando filters.frame === 'Todos' e não há capa manual:
+        // No catálogo geral, se a carta possui versão moderna (ou variação moderna), exibe o Frame Moderno na capa por padrão!
+        const modernBase = candidates.find(c => c.frame === 'Moderno' || (c.code && c.code.endsWith('-M')));
+        let modernVariant: any = null;
+        if (!modernBase) {
+          for (const c of candidates) {
+            const v = c.variants?.find(v => v.frame === 'Moderno' || v.name?.toLowerCase().includes('moderno') || v.name?.toLowerCase().includes('novo frame'));
+            if (v) {
+              const vRare = Boolean(v.isRarePrint || v.requiresAdminVerification);
+              modernVariant = {
+                ...c,
+                imageUrl: v.imageUrl,
+                frame: 'Moderno',
+                variationType: v.name || 'Novo Frame',
+                rarity: v.rarity || c.rarity,
+                isRarePrint: vRare,
+                requiresAdminVerification: vRare,
+                maxPrintCopies: vRare ? (v.maxPrintCopies || 1) : 0
+              };
+              break;
+            }
+          }
+        }
+        const legacyBase = candidates.find(c => (c.frame || 'Legado') === 'Legado' && !c.code?.endsWith('-M'));
+
+        chosenCard = modernBase || modernVariant || legacyBase || candidates[0];
+      }
+
+      // Se um filtro de raridade ou coleção específico está ativo e a capa escolhida não corresponde,
+      // mas existe uma variação que corresponde ao filtro, destaca a variação correspondente na capa!
+      if (filters.rarity !== 'Todos' && !checkRarityMatch(chosenCard.rarity, chosenCard.frame, filters.rarity)) {
+        for (const c of group) {
+          const v = c.variants?.find(v =>
+            checkRarityMatch(v.rarity || c.rarity, v.frame || c.frame, filters.rarity) &&
+            (filters.frame === 'Todos' || (v.frame || 'Legado') === filters.frame)
+          );
+          if (v) {
+            const vRare = Boolean(v.isRarePrint || v.requiresAdminVerification);
+            chosenCard = {
+              ...c,
+              imageUrl: v.imageUrl,
+              frame: v.frame || c.frame || 'Moderno',
+              variationType: v.name || c.variationType,
+              rarity: v.rarity || c.rarity,
+              collection: v.collection || c.collection,
+              isRarePrint: vRare,
+              requiresAdminVerification: vRare,
+              maxPrintCopies: vRare ? (v.maxPrintCopies || 1) : 0
+            };
+            break;
           }
         }
       }
 
-      // Consolida todas as variações deste grupo dentro de chosenCard.variants
+      // Consolida todas as variações deste grupo dentro de chosenCard.variants (sem perder nenhuma skin/variação)
       const allVariants: any[] = [];
-      const baseGroupCode = getBaseCardCode(chosenCard.code, chosenCard.parentCode);
       group.forEach(item => {
         if (item.variants && item.variants.length > 0) {
           item.variants.forEach(v => {
-            const vBase = getBaseCardCode(v.code || item.code);
-            if (vBase === baseGroupCode && !allVariants.some(existing => existing.imageUrl === v.imageUrl)) {
+            if (v.imageUrl && v.imageUrl !== chosenCard.imageUrl && !allVariants.some(existing => existing.imageUrl === v.imageUrl)) {
               allVariants.push({
                 ...v,
-                code: cleanCardCode(v.code)
+                code: cleanCardCode(v.code || item.code)
               });
             }
           });
         }
         if (item.imageUrl && item.imageUrl !== chosenCard.imageUrl) {
           if (!allVariants.some(existing => existing.imageUrl === item.imageUrl)) {
+            const itemRare = Boolean(item.isRarePrint || item.requiresAdminVerification);
             allVariants.push({
               id: item.id || `var_${item.code}`,
               name: item.variationType || (item.frame === 'Moderno' ? 'Novo Frame' : 'Legado'),
               imageUrl: item.imageUrl,
-              frame: item.frame || 'Legado',
+              frame: item.frame || (isLegacyCard(item) ? 'Legado' : 'Moderno'),
               code: cleanCardCode(item.code),
               collection: item.collection,
               rarity: item.rarity,
-              tier: item.tier
+              tier: item.tier,
+              isCatalogCover: Boolean(anyCoverUrl && item.imageUrl === anyCoverUrl),
+              isRarePrint: itemRare,
+              requiresAdminVerification: itemRare,
+              maxPrintCopies: itemRare ? (item.maxPrintCopies || 1) : 0
             });
           }
         }
       });
 
-      const anyCover = group.find(c => c.catalogCoverImageUrl)?.catalogCoverImageUrl;
-      const anyRequiresVerification = group.some(c => c.requiresAdminVerification || c.isRarePrint);
-      const anyMaxCopies = group.find(c => typeof c.maxPrintCopies === 'number')?.maxPrintCopies;
+      const chosenRare = Boolean(chosenCard.isRarePrint || chosenCard.requiresAdminVerification);
 
       const cardWithVariants: CardData = {
         ...chosenCard,
-        catalogCoverImageUrl: anyCover || chosenCard.catalogCoverImageUrl,
-        requiresAdminVerification: anyRequiresVerification || chosenCard.requiresAdminVerification,
-        maxPrintCopies: anyMaxCopies ?? chosenCard.maxPrintCopies,
+        catalogCoverImageUrl: anyCoverUrl || chosenCard.catalogCoverImageUrl,
+        catalogCoverFrame: anyCoverFrame || chosenCard.catalogCoverFrame,
+        isCatalogCover: Boolean(anyCoverUrl && chosenCard.imageUrl === anyCoverUrl),
+        isRarePrint: chosenRare,
+        requiresAdminVerification: chosenRare,
+        maxPrintCopies: chosenRare ? (chosenCard.maxPrintCopies || 1) : 0,
         code: cleanCardCode(chosenCard.code),
-        variants: allVariants.length > 0 ? allVariants : chosenCard.variants
+        variants: allVariants
       };
 
       catalogCards.push(cardWithVariants);
@@ -792,11 +902,16 @@ const CatalogModal = ({
 
     return catalogCards.filter(card => {
       const searchLower = (searchTerm || "").toLowerCase();
-      const matchesSearch = 
+      const matchesSearch = !searchLower ||
         (card.name || "").toLowerCase().includes(searchLower) || 
         (card.code || "").toLowerCase().includes(searchLower) ||
         (card.description || "").toLowerCase().includes(searchLower) ||
-        (card.collection || "").toLowerCase().includes(searchLower);
+        (card.collection || "").toLowerCase().includes(searchLower) ||
+        Boolean(card.variants && card.variants.some((v: any) =>
+          (v.name || "").toLowerCase().includes(searchLower) ||
+          (v.code || "").toLowerCase().includes(searchLower) ||
+          (v.collection || "").toLowerCase().includes(searchLower)
+        ));
 
       const matchesType = filters.type === "Todos" || card.type === filters.type;
       const matchesArchetype = filters.archetype === "Todos" || (card.archetype || "").includes(filters.archetype);
@@ -806,8 +921,14 @@ const CatalogModal = ({
         card.collection === filters.collection ||
         Boolean(card.variants && card.variants.some((v: any) => v.collection === filters.collection));
 
-      const matchesFrame = filters.frame === "Todos" || (card.frame || "Legado") === filters.frame;
-      const matchesRarity = filters.rarity === "Todos" || (card.rarity || "Comum") === filters.rarity;
+      const matchesFrame = filters.frame === "Todos" ||
+        (card.frame || "Legado") === filters.frame ||
+        Boolean(card.variants && card.variants.some((v: any) => (v.frame || "Legado") === filters.frame));
+
+      const matchesRarity = filters.rarity === "Todos" ||
+        checkRarityMatch(card.rarity, card.frame, filters.rarity) ||
+        Boolean(card.variants && card.variants.some((v: any) => checkRarityMatch(v.rarity || card.rarity, v.frame || card.frame, filters.rarity)));
+
       const matchesCt = filters.minCt === "" || card.ct === parseInt(filters.minCt);
       
       // Exact match for ATK and DEF
@@ -838,6 +959,61 @@ const CatalogModal = ({
     });
   }, [allCards, searchTerm, filters]);
 
+  // Lista expandida com todas as variações correspondentes aos filtros ativos (para soma total exata e opção de visualização expandida)
+  const expandedFilteredCards = useMemo(() => {
+    const list: CardData[] = [];
+    for (const card of filteredCards) {
+      const seenUrls = new Set<string>();
+      const candidateVersions: CardData[] = [];
+
+      if (card.imageUrl) {
+        seenUrls.add(card.imageUrl);
+        candidateVersions.push(card);
+      }
+
+      if (card.variants && card.variants.length > 0) {
+        for (const v of card.variants) {
+          if (!v.imageUrl || seenUrls.has(v.imageUrl)) continue;
+          seenUrls.add(v.imageUrl);
+          const vFrame = v.frame || (isLegacyCard(card) ? 'Moderno' : 'Legado');
+          const vRare = Boolean(v.isRarePrint || v.requiresAdminVerification);
+          candidateVersions.push({
+            ...card,
+            id: v.id || `var_${v.code || card.code}_${candidateVersions.length}`,
+            code: cleanCardCode(v.code || card.code),
+            imageUrl: v.imageUrl,
+            frame: vFrame,
+            variationType: v.name,
+            collection: v.collection || card.collection,
+            rarity: v.rarity || card.rarity,
+            isVariation: true,
+            isCatalogCover: Boolean(v.isCatalogCover),
+            isRarePrint: vRare,
+            requiresAdminVerification: vRare,
+            maxPrintCopies: vRare ? (v.maxPrintCopies || 1) : 0
+          });
+        }
+      }
+
+      const matchingVersions = candidateVersions.filter(ver => {
+        const verFrameMatch = filters.frame === "Todos" || (ver.frame || "Legado") === filters.frame;
+        const verColMatch = filters.collection === "Todos" || (ver.collection || card.collection) === filters.collection;
+        const verRarityMatch = filters.rarity === "Todos" || checkRarityMatch(ver.rarity, ver.frame, filters.rarity);
+        return verFrameMatch && verColMatch && verRarityMatch;
+      });
+
+      if (matchingVersions.length > 0) {
+        list.push(...matchingVersions);
+      } else {
+        list.push(card);
+      }
+    }
+    return list;
+  }, [filteredCards, filters.frame, filters.collection, filters.rarity]);
+
+  const totalVariationsCount = expandedFilteredCards.length;
+  const activeGridCards = expandVariations ? expandedFilteredCards : filteredCards;
+
   // Infinite scroll intersection observer for ultra-fast progressive card loading
   useEffect(() => {
     if (!isOpen) return;
@@ -847,7 +1023,7 @@ const CatalogModal = ({
     const observer = new IntersectionObserver(
       (entries) => {
         if (entries[0].isIntersecting) {
-          setVisibleCount((prev) => Math.min(prev + 20, filteredCards.length));
+          setVisibleCount((prev) => Math.min(prev + 20, activeGridCards.length));
         }
       },
       {
@@ -859,9 +1035,9 @@ const CatalogModal = ({
 
     observer.observe(sentinel);
     return () => observer.disconnect();
-  }, [isOpen, filteredCards.length]);
+  }, [isOpen, activeGridCards.length]);
 
-  const displayedCards = filteredCards.slice(0, visibleCount);
+  const displayedCards = activeGridCards.slice(0, visibleCount);
 
   if (!isOpen) return null;
 
@@ -905,12 +1081,34 @@ const CatalogModal = ({
         </div>
       )}
 
-      <div className="bg-slate-900 border-b border-slate-800 p-4 flex justify-between items-center shadow-lg z-20">
-        <div className="flex items-center gap-3">
-          <BookOpen className="text-purple-500" />
-          <h2 className="text-xl font-bold text-white">Catálogo de Cartas <span className="text-slate-500 text-sm ml-2">({filteredCards.length} encontradas)</span></h2>
+      <div className="bg-slate-900 border-b border-slate-800 p-4 flex flex-wrap justify-between items-center gap-3 shadow-lg z-20">
+        <div className="flex flex-wrap items-center gap-3">
+          <BookOpen className="text-purple-500 shrink-0" />
+          <h2 className="text-xl font-bold text-white flex flex-wrap items-center gap-2">
+            Catálogo de Cartas
+            <span className="text-purple-300 text-sm font-semibold bg-purple-950/60 border border-purple-800/50 px-2.5 py-0.5 rounded-full">
+              {totalVariationsCount} encontradas
+            </span>
+            {!expandVariations && totalVariationsCount !== filteredCards.length && (
+              <span className="text-slate-500 text-xs font-normal">
+                ({filteredCards.length} cartas base agrupadas)
+              </span>
+            )}
+          </h2>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3">
+          <button
+            onClick={() => setExpandVariations(prev => !prev)}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition flex items-center gap-1.5 ${
+              expandVariations
+                ? 'bg-purple-600/20 border-purple-500 text-purple-200 shadow-[0_0_12px_rgba(168,85,247,0.3)]'
+                : 'bg-slate-800/80 border-slate-700 text-slate-300 hover:text-white hover:border-slate-600'
+            }`}
+            title={expandVariations ? 'Agrupar variações na mesma carta usando a Capa do Catálogo' : 'Mostrar todas as variações individualmente na grade'}
+          >
+            <Layers size={14} className={expandVariations ? 'text-purple-400' : 'text-slate-400'} />
+            {expandVariations ? 'Agrupar Variações' : 'Mostrar Todas as Variações'}
+          </button>
           <button 
             onClick={onOpenAdmin} 
             className="p-2 hover:bg-slate-800 rounded-full text-slate-400 hover:text-white transition"
@@ -967,18 +1165,25 @@ const CatalogModal = ({
             <div className="flex items-center gap-2 bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 flex-1 md:flex-none">
               <span className="text-xs text-slate-500 uppercase font-bold">Raridade</span>
               <select 
-                className="bg-purple-950 text-sm text-white outline-none cursor-pointer rounded px-2 w-full md:w-32"
+                className="bg-purple-950 text-sm text-white outline-none cursor-pointer rounded px-2 w-full md:w-44"
                 value={filters.rarity}
                 onChange={(e) => setFilters({...filters, rarity: e.target.value})}
               >
-                <option className="bg-purple-950" value="Todos">Todas</option>
-                <option className="bg-purple-950" value="Comum">Comum</option>
-                <option className="bg-purple-950" value="Incomum">Incomum</option>
-                <option className="bg-purple-950" value="Rara">Rara</option>
-                <option className="bg-purple-950" value="Muito Rara">Muito Rara</option>
-                <option className="bg-purple-950" value="Limitadas">Limitadas</option>
-                <option className="bg-purple-950" value="Beta">Beta</option>
-                <option className="bg-purple-950" value="Evento">Evento</option>
+                <option className="bg-purple-950" value="Todos">Todas as Raridades</option>
+                <optgroup label="Frame Moderno" className="bg-purple-950 font-bold text-amber-300">
+                  {MODERNO_RARITIES.map(r => (
+                    <option key={r} value={r} className="bg-purple-950 text-white font-normal">
+                      {r} {r === 'Moderno Macroversal' ? '★ (1/ano)' : ''}
+                    </option>
+                  ))}
+                </optgroup>
+                <optgroup label="Frame Legado" className="bg-purple-950 font-bold text-cyan-300">
+                  {LEGADO_RARITIES.map(r => (
+                    <option key={r} value={r} className="bg-purple-950 text-white font-normal">
+                      {r}
+                    </option>
+                  ))}
+                </optgroup>
               </select>
             </div>
 
@@ -1069,21 +1274,21 @@ const CatalogModal = ({
       </div>
 
       <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-4 md:p-8 bg-[#0a0a0c]">
-        {filteredCards.length > 0 ? (
+        {activeGridCards.length > 0 ? (
           <>
             <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-2 md:gap-8 justify-items-center">
               {displayedCards.map((card, idx) => (
-                <div key={`${card.code || card.name}_${card.collection || ''}_${card.frame || ''}_${idx}`} className="scale-[0.65] md:scale-90 origin-top w-full flex justify-center -mb-24 md:mb-0" onClick={() => handleCardClick(card)}>
+                <div key={`${card.code || card.name}_${card.imageUrl || ''}_${card.frame || ''}_${idx}`} className="scale-[0.65] md:scale-90 origin-top w-full flex justify-center -mb-24 md:mb-0" onClick={() => handleCardClick(card)}>
                    <Card {...card} priority={idx < 28} />
                 </div>
               ))}
             </div>
 
-            {visibleCount < filteredCards.length && (
+            {visibleCount < activeGridCards.length && (
               <div ref={sentinelRef} className="h-20 w-full flex items-center justify-center pt-8 pb-4">
                 <div className="flex items-center gap-2 text-xs font-mono text-purple-400/80 bg-slate-900/80 px-4 py-1.5 rounded-full border border-purple-900/30">
                   <div className="w-2 h-2 rounded-full bg-purple-500 animate-ping" />
-                  Carregando mais cartas ({displayedCards.length} de {filteredCards.length})...
+                  Carregando mais cartas ({displayedCards.length} de {activeGridCards.length})...
                 </div>
               </div>
             )}
@@ -1208,6 +1413,11 @@ export default function App() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isManualOpen, setIsManualOpen] = useState(false);
   const [isBuyModalOpen, setIsBuyModalOpen] = useState(false);
+  const [storeInitialTab, setStoreInitialTab] = useState<'vitrine' | 'carrinho'>('vitrine');
+  const [storeInitialOrderId, setStoreInitialOrderId] = useState<string | null>(null);
+  const [cartCount, setCartCount] = useState<number>(() => {
+    return getCartItems().reduce((sum, i) => sum + i.quantity, 0);
+  });
   const [isCatalogOpen, setIsCatalogOpen] = useState(false);
   const [isLoreOpen, setIsLoreOpen] = useState(false);
   const [isDeckBuilderOpen, setIsDeckBuilderOpen] = useState(false);
@@ -1223,21 +1433,160 @@ export default function App() {
   const [isChampionshipHistoryOpen, setIsChampionshipHistoryOpen] = useState(false);
   const [isUserProfileOpen, setIsUserProfileOpen] = useState(false);
   const [targetUserProfile, setTargetUserProfile] = useState<TargetUserProfile | null>(null);
-  const [userProfileInitialTab, setUserProfileInitialTab] = useState<'wishlist' | 'most_wanted' | 'stats'>('wishlist');
+  const [userProfileInitialTab, setUserProfileInitialTab] = useState<'wishlist' | 'most_wanted' | 'stats' | 'verifications' | 'orders'>('wishlist');
 
-  const openUserProfile = (profile?: TargetUserProfile | null, tab: 'wishlist' | 'most_wanted' | 'stats' = 'wishlist') => {
+  const openUserProfile = (profile?: TargetUserProfile | null, tab: 'wishlist' | 'most_wanted' | 'stats' | 'verifications' | 'orders' = 'wishlist') => {
     setTargetUserProfile(profile || null);
     setUserProfileInitialTab(tab);
     setIsUserProfileOpen(true);
   };
-  const [adminMode, setAdminMode] = useState<'none' | 'home' | 'catalog' | 'master'>('none');
+  const [adminMode, setAdminMode] = useState<'none' | 'home' | 'catalog' | 'master' | 'store'>('none');
   const [selectedType, setSelectedType] = useState<string | null>(null);
   const [scrolled, setScrolled] = useState(false);
   const [currentVideoIndex, setCurrentVideoIndex] = useState(0);
-  const [showcaseCards, setShowcaseCards] = useState<CardData[]>(defaultModernShowcase);
+  const [showcaseCards, setShowcaseCards] = useState<CardData[]>(() => {
+    return readBrowserCache<CardData[]>('ld_cache_showcaseCards_v2') || [];
+  });
   const [selectedProduct, setSelectedProduct] = useState<ExclusiveProduct | null>(null);
   const [selectedProductVariationIndex, setSelectedProductVariationIndex] = useState<number | undefined>(undefined);
   const [inspectedDeckCard, setInspectedDeckCard] = useState<CardData | null>(null);
+
+  interface ModalSnapshot {
+    isManualOpen: boolean;
+    isBuyModalOpen: boolean;
+    storeInitialTab: 'vitrine' | 'carrinho';
+    storeInitialOrderId: string | null;
+    isCatalogOpen: boolean;
+    isLoreOpen: boolean;
+    isDeckBuilderOpen: boolean;
+    isAlbumOpen: boolean;
+    isSavedDecksOpen: boolean;
+    isPopularCardsOpen: boolean;
+    isCollectorsRankingOpen: boolean;
+    isGameOpen: boolean;
+    isTournamentOpen: boolean;
+    activeTournamentId: string | undefined;
+    isChampionshipHistoryOpen: boolean;
+    isUserProfileOpen: boolean;
+    targetUserProfile: TargetUserProfile | null;
+    userProfileInitialTab: 'wishlist' | 'most_wanted' | 'stats' | 'verifications' | 'orders';
+    adminMode: 'none' | 'home' | 'catalog' | 'master' | 'store';
+    selectedType: string | null;
+    selectedProduct: ExclusiveProduct | null;
+    selectedProductVariationIndex: number | undefined;
+  }
+
+  const [modalHistory, setModalHistory] = useState<ModalSnapshot[]>([]);
+
+  const getCurrentModalSnapshot = (): ModalSnapshot => ({
+    isManualOpen,
+    isBuyModalOpen,
+    storeInitialTab,
+    storeInitialOrderId,
+    isCatalogOpen,
+    isLoreOpen,
+    isDeckBuilderOpen,
+    isAlbumOpen,
+    isSavedDecksOpen,
+    isPopularCardsOpen,
+    isCollectorsRankingOpen,
+    isGameOpen,
+    isTournamentOpen,
+    activeTournamentId,
+    isChampionshipHistoryOpen,
+    isUserProfileOpen,
+    targetUserProfile,
+    userProfileInitialTab,
+    adminMode,
+    selectedType,
+    selectedProduct,
+    selectedProductVariationIndex
+  });
+
+  const hasAnyActiveModal = (s: ModalSnapshot): boolean =>
+    s.isManualOpen ||
+    s.isBuyModalOpen ||
+    s.isCatalogOpen ||
+    s.isLoreOpen ||
+    s.isDeckBuilderOpen ||
+    s.isAlbumOpen ||
+    s.isSavedDecksOpen ||
+    s.isPopularCardsOpen ||
+    s.isCollectorsRankingOpen ||
+    s.isGameOpen ||
+    s.isTournamentOpen ||
+    s.isChampionshipHistoryOpen ||
+    s.isUserProfileOpen ||
+    s.adminMode !== 'none' ||
+    s.selectedType !== null ||
+    s.selectedProduct !== null;
+
+  const clearAllActiveModals = () => {
+    setIsManualOpen(false);
+    setIsBuyModalOpen(false);
+    setStoreInitialOrderId(null);
+    setIsCatalogOpen(false);
+    setIsLoreOpen(false);
+    setIsDeckBuilderOpen(false);
+    setIsAlbumOpen(false);
+    setIsSavedDecksOpen(false);
+    setIsPopularCardsOpen(false);
+    setIsCollectorsRankingOpen(false);
+    setIsGameOpen(false);
+    setIsTournamentOpen(false);
+    setActiveTournamentId(undefined);
+    setIsChampionshipHistoryOpen(false);
+    setIsUserProfileOpen(false);
+    setTargetUserProfile(null);
+    setAdminMode('none');
+    setSelectedType(null);
+    setSelectedProduct(null);
+    setSelectedProductVariationIndex(undefined);
+  };
+
+  const restoreModalSnapshot = (s: ModalSnapshot) => {
+    setIsManualOpen(s.isManualOpen);
+    setIsBuyModalOpen(s.isBuyModalOpen);
+    setStoreInitialTab(s.storeInitialTab);
+    setStoreInitialOrderId(s.storeInitialOrderId);
+    setIsCatalogOpen(s.isCatalogOpen);
+    setIsLoreOpen(s.isLoreOpen);
+    setIsDeckBuilderOpen(s.isDeckBuilderOpen);
+    setIsAlbumOpen(s.isAlbumOpen);
+    setIsSavedDecksOpen(s.isSavedDecksOpen);
+    setIsPopularCardsOpen(s.isPopularCardsOpen);
+    setIsCollectorsRankingOpen(s.isCollectorsRankingOpen);
+    setIsGameOpen(s.isGameOpen);
+    setIsTournamentOpen(s.isTournamentOpen);
+    setActiveTournamentId(s.activeTournamentId);
+    setIsChampionshipHistoryOpen(s.isChampionshipHistoryOpen);
+    setIsUserProfileOpen(s.isUserProfileOpen);
+    setTargetUserProfile(s.targetUserProfile);
+    setUserProfileInitialTab(s.userProfileInitialTab);
+    setAdminMode(s.adminMode);
+    setSelectedType(s.selectedType);
+    setSelectedProduct(s.selectedProduct);
+    setSelectedProductVariationIndex(s.selectedProductVariationIndex);
+  };
+
+  const navigateToModal = (openFn: () => void) => {
+    const snap = getCurrentModalSnapshot();
+    if (hasAnyActiveModal(snap)) {
+      setModalHistory((prev) => [...prev, snap]);
+      clearAllActiveModals();
+    }
+    openFn();
+  };
+
+  const closeCurrentModal = () => {
+    clearAllActiveModals();
+    setModalHistory((prev) => {
+      if (prev.length === 0) return prev;
+      const last = prev[prev.length - 1];
+      restoreModalSnapshot(last);
+      return prev.slice(0, -1);
+    });
+  };
 
   // Alteração de nome de usuário
   const [isEditingDisplayName, setIsEditingDisplayName] = useState(false);
@@ -1260,27 +1609,40 @@ export default function App() {
 
   // Check for game mode in URL
   const [isGameMode, setIsGameMode] = useState(false);
-  const [homeSettings, setHomeSettings] = useState<any>({
-    title: 'LIGHT DARK',
-    topSubtitle: 'Invasão do Caos',
-    sideText: '1/5',
-    titleEffect: 'glitch',
-    primaryColor: '#a855f7',
-    titleShadowColor: '#a855f7',
-    titleShadowIntensity: 15,
-    sideTextColor: '#a855f7',
-    sideTextShadowColor: '#a855f7',
-    sideTextShadowIntensity: 10,
-    videos: [],
-    videoTransition: 'fade', // 'fade' | 'none'
-    exclusiveProducts: defaultExclusiveProducts
+  // Inicializa exclusivamente do cache do navegador (sincronizado com o Firebase) sem textos fixos antigos
+  const [homeSettings, setHomeSettings] = useState<any>(() => {
+    return readBrowserCache<any>('ld_cache_homeSettings_v2');
   });
 
   useEffect(() => {
+    const syncCartCount = () => {
+      setCartCount(getCartItems().reduce((sum, i) => sum + i.quantity, 0));
+    };
+    window.addEventListener('ld-cart-updated', syncCartCount);
+    window.addEventListener('storage', syncCartCount);
+    return () => {
+      window.removeEventListener('ld-cart-updated', syncCartCount);
+      window.removeEventListener('storage', syncCartCount);
+    };
+  }, []);
+
+  useEffect(() => {
+    // Limpa qualquer hash residual (#manual-regras, etc.) da URL para manter o link do site limpo
+    if (window.location.hash) {
+      window.history.replaceState(null, '', window.location.pathname + window.location.search);
+    }
+
     const params = new URLSearchParams(window.location.search);
     if (params.get('mode') === 'game') {
       setIsGameMode(true);
       setIsGameOpen(true);
+    }
+
+    const mpOrderParam = params.get('mp_order');
+    if (mpOrderParam) {
+      setStoreInitialOrderId(mpOrderParam);
+      setStoreInitialTab('carrinho');
+      setIsBuyModalOpen(true);
     }
 
     const tournamentParam = params.get('torneio') || params.get('tournament');
@@ -1289,24 +1651,21 @@ export default function App() {
       setIsTournamentOpen(true);
     }
 
-    const fetchHomeSettings = async () => {
-      try {
-        const snap = await getDoc(doc(db, 'homeSettings', 'global'));
-        if (snap.exists()) {
-          const data = snap.data();
-          setHomeSettings((prev: any) => ({
-            ...prev,
-            ...data,
-            exclusiveProducts: (data.exclusiveProducts && data.exclusiveProducts.length > 0)
-              ? data.exclusiveProducts
-              : prev.exclusiveProducts || defaultExclusiveProducts
-          }));
-        }
-      } catch(e) {
-        console.error(e);
+    const unsubHomeSettings = onSnapshot(doc(db, 'homeSettings', 'global'), (snap) => {
+      if (snap.exists()) {
+        const data = snap.data();
+        const nextSettings = {
+          ...data,
+          exclusiveProducts: Array.isArray(data.exclusiveProducts) ? data.exclusiveProducts : []
+        };
+        setHomeSettings(nextSettings);
+        writeBrowserCache('ld_cache_homeSettings_v2', nextSettings);
       }
-    };
-    fetchHomeSettings();
+    }, (err) => {
+      console.error('Erro ao escutar homeSettings:', err);
+    });
+
+    return () => unsubHomeSettings();
   }, []);
 
   useEffect(() => {
@@ -1320,7 +1679,9 @@ export default function App() {
     };
   }, []);
 
-  const [fetchedVideos, setFetchedVideos] = useState<string[]>([]);
+  const [fetchedVideos, setFetchedVideos] = useState<string[]>(() => {
+    return readBrowserCache<string[]>('ld_cache_homeVideos_v2') || [];
+  });
   useEffect(() => {
     const fetchVideos = async () => {
       try {
@@ -1329,6 +1690,7 @@ export default function App() {
         if (res.items.length > 0) {
           const urls = await Promise.all(res.items.map(item => getDownloadURL(item)));
           setFetchedVideos(urls);
+          writeBrowserCache('ld_cache_homeVideos_v2', urls);
         }
       } catch (err: any) {
         if (err.code !== 'storage/quota-exceeded') {
@@ -1378,14 +1740,13 @@ export default function App() {
   allCardsRef.current = allCards;
 
   useEffect(() => {
-    // Dynamic Showcase Rotation - EXCLUSIVELY Modern Frame Cards
+    // Dynamic Showcase Rotation - EXCLUSIVELY Modern Frame Cards from Firebase
     const rotateShowcase = () => {
       const modernCards = (allCardsRef.current || []).filter(c => c.frame === 'Moderno');
       if (modernCards.length === 0) return;
 
       const getModernByType = (cardType: CardType) => {
         const matching = modernCards.filter(c => c.type === cardType);
-        // Prefer cards with images
         const withImg = matching.filter(c => !!c.imageUrl);
         const pool = withImg.length > 0 ? withImg : matching;
         return pool.length > 0 ? pool[Math.floor(Math.random() * pool.length)] : null;
@@ -1397,14 +1758,16 @@ export default function App() {
       const equipment = getModernByType('Equipamento');
 
       if (hero && combatant && effect && equipment) {
-        setShowcaseCards([hero, combatant, effect, equipment]);
+        const nextShowcase = [hero, combatant, effect, equipment];
+        setShowcaseCards(nextShowcase);
+        writeBrowserCache('ld_cache_showcaseCards_v2', nextShowcase);
       }
     };
 
     if (allCards.some(c => c.frame === 'Moderno')) {
       rotateShowcase();
     }
-    const interval = setInterval(rotateShowcase, 12000); // Rotate every 12 seconds
+    const interval = setInterval(rotateShowcase, 12000);
 
     return () => clearInterval(interval);
   }, [allCards.length]);
@@ -1416,63 +1779,109 @@ export default function App() {
   return (
     <div className="min-h-screen bg-[#0a0a0c] text-slate-200 font-sans selection:bg-purple-500 selection:text-white overflow-x-hidden">
       
-      <ManualModal isOpen={isManualOpen} onClose={() => setIsManualOpen(false)} />
-      <BuyModal isOpen={isBuyModalOpen} onClose={() => setIsBuyModalOpen(false)} />
-      <CatalogModal isOpen={isCatalogOpen} onClose={() => setIsCatalogOpen(false)} onOpenAdmin={() => { 
+      <ManualModal isOpen={isManualOpen} onClose={closeCurrentModal} />
+      <StoreModal
+        isOpen={isBuyModalOpen}
+        onClose={closeCurrentModal}
+        products={homeSettings?.exclusiveProducts || []}
+        onOpenProductDetail={(product, variationIdx) => {
+          navigateToModal(() => {
+            setSelectedProduct(product);
+            setSelectedProductVariationIndex(variationIdx);
+          });
+        }}
+        user={user}
+        isAdmin={isAdmin}
+        onOpenAuth={() => setIsAuthModalOpen(true)}
+        onOpenAdminStore={() => {
+          if (isAdmin) {
+            navigateToModal(() => {
+              setAdminMode('store');
+            });
+          }
+        }}
+        onOpenUserOrders={() => {
+          navigateToModal(() => {
+            openUserProfile(null, 'orders');
+          });
+        }}
+        initialTab={storeInitialTab}
+        initialOrderId={storeInitialOrderId}
+      />
+      <CatalogModal isOpen={isCatalogOpen} onClose={closeCurrentModal} onOpenAdmin={() => { 
         if (isAdmin) {
-          setIsCatalogOpen(false); 
-          setAdminMode('catalog'); 
+          navigateToModal(() => {
+            setAdminMode('catalog');
+          });
         } else {
           alert('Acesso restrito ao administrador.');
         }
       }} onOpenAuth={() => setIsAuthModalOpen(true)} />
-      {isLoreOpen && <LoreView onClose={() => setIsLoreOpen(false)} />}
-      <DeckBuilderModal isOpen={isDeckBuilderOpen} onClose={() => setIsDeckBuilderOpen(false)} />
+      {isLoreOpen && <LoreView onClose={closeCurrentModal} />}
+      <DeckBuilderModal isOpen={isDeckBuilderOpen} onClose={closeCurrentModal} />
       <AlbumModal 
         isOpen={isAlbumOpen} 
-        onClose={() => setIsAlbumOpen(false)} 
+        onClose={closeCurrentModal} 
         onSelectCard={(c) => {
           setInspectedDeckCard(c);
         }} 
         onOpenAuth={() => setIsAuthModalOpen(true)}
-        onOpenRanking={() => setIsCollectorsRankingOpen(true)}
-        onOpenWishlist={() => openUserProfile(null, 'wishlist')}
+        onOpenRanking={() => {
+          navigateToModal(() => setIsCollectorsRankingOpen(true));
+        }}
+        onOpenWishlist={() => {
+          navigateToModal(() => openUserProfile(null, 'wishlist'));
+        }}
       />
       <SavedDecksModal
         isOpen={isSavedDecksOpen}
-        onClose={() => setIsSavedDecksOpen(false)}
+        onClose={closeCurrentModal}
         allCards={allCards}
         onLoadDeck={(main, side) => {
-          setIsDeckBuilderOpen(true);
+          navigateToModal(() => setIsDeckBuilderOpen(true));
         }}
         onOpenAuth={() => setIsAuthModalOpen(true)}
       />
       <PopularCardsModal
         isOpen={isPopularCardsOpen}
-        onClose={() => setIsPopularCardsOpen(false)}
+        onClose={closeCurrentModal}
         allCards={allCards}
         onSelectCard={(c) => setInspectedDeckCard(c)}
-        onOpenDeckBuilder={() => setIsDeckBuilderOpen(true)}
+        onOpenDeckBuilder={() => {
+          navigateToModal(() => setIsDeckBuilderOpen(true));
+        }}
       />
       <CollectorsRankingModal
         isOpen={isCollectorsRankingOpen}
-        onClose={() => setIsCollectorsRankingOpen(false)}
-        onOpenAlbum={() => setIsAlbumOpen(true)}
+        onClose={closeCurrentModal}
+        onOpenAlbum={() => {
+          navigateToModal(() => setIsAlbumOpen(true));
+        }}
         onOpenAuth={() => setIsAuthModalOpen(true)}
-        onOpenUserProfile={(target) => openUserProfile(target, 'wishlist')}
-        onOpenMostWanted={() => openUserProfile(null, 'most_wanted')}
+        onOpenUserProfile={(target) => {
+          navigateToModal(() => openUserProfile(target, 'wishlist'));
+        }}
+        onOpenMostWanted={() => {
+          navigateToModal(() => openUserProfile(null, 'most_wanted'));
+        }}
       />
       <UserProfileModal
         isOpen={isUserProfileOpen}
-        onClose={() => {
-          setIsUserProfileOpen(false);
-          setTargetUserProfile(null);
-        }}
+        onClose={closeCurrentModal}
         targetProfile={targetUserProfile}
         initialTab={userProfileInitialTab}
         onOpenCardDetail={(c) => setInspectedDeckCard(c)}
-        onOpenAlbum={() => setIsAlbumOpen(true)}
+        onOpenAlbum={() => {
+          navigateToModal(() => setIsAlbumOpen(true));
+        }}
         onOpenAuth={() => setIsAuthModalOpen(true)}
+        onOpenOrderPayment={(orderId) => {
+          navigateToModal(() => {
+            setStoreInitialOrderId(orderId);
+            setStoreInitialTab('carrinho');
+            setIsBuyModalOpen(true);
+          });
+        }}
       />
       <AuthModal 
         isOpen={isAuthModalOpen} 
@@ -1481,35 +1890,32 @@ export default function App() {
       {isTournamentOpen && (
         <TournamentManager 
           initialTournamentId={activeTournamentId}
-          onClose={() => {
-            setIsTournamentOpen(false);
-            setActiveTournamentId(undefined);
-          }}
+          onClose={closeCurrentModal}
           onOpenAuth={() => setIsAuthModalOpen(true)}
         />
       )}
       <ChampionshipHistoryModal
         isOpen={isChampionshipHistoryOpen}
-        onClose={() => setIsChampionshipHistoryOpen(false)}
+        onClose={closeCurrentModal}
         onOpenTournament={(tId) => {
-          setActiveTournamentId(tId);
-          setIsTournamentOpen(true);
+          navigateToModal(() => {
+            setActiveTournamentId(tId);
+            setIsTournamentOpen(true);
+          });
         }}
         onOpenAuth={() => setIsAuthModalOpen(true)}
       />
-      <TypeModal type={selectedType} onClose={() => setSelectedType(null)} />
-      {isGameOpen && <GameBoard onClose={() => setIsGameOpen(false)} />}
-      {adminMode !== 'none' && isAdmin && <AdminPanel adminType={adminMode} onClose={() => {
-        if (adminMode === 'catalog') {
-          setIsCatalogOpen(true);
-        }
-        setAdminMode('none');
-      }} />}
+      <TypeModal type={selectedType} onClose={closeCurrentModal} />
+      {isGameOpen && <GameBoard onClose={closeCurrentModal} />}
+      {adminMode !== 'none' && isAdmin && <AdminPanel adminType={adminMode} onClose={closeCurrentModal} />}
 
       {/* Navbar */}
       <nav className={`fixed w-full z-50 transition-all duration-300 border-b ${scrolled ? 'bg-[#0a0a0c]/95 border-slate-800 py-3' : 'bg-transparent border-transparent py-6'}`}>
         <div className="container mx-auto px-6 flex justify-between items-center">
-          <div className="flex items-center gap-2">
+          <div 
+            className="flex items-center gap-2 cursor-pointer"
+            onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+          >
             <img 
               src="https://i.imgur.com/cDLxOtO.png" 
               alt="Light Dark TCG" 
@@ -1518,12 +1924,15 @@ export default function App() {
           </div>
 
           <div className="hidden md:flex items-center gap-1.5 lg:gap-2">
-            <a 
-              href="#manual-regras" 
+            <button 
+              type="button"
+              onClick={() => {
+                document.getElementById('manual-regras')?.scrollIntoView({ behavior: 'smooth' });
+              }}
               className="bg-purple-600 hover:bg-purple-500 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 flex items-center gap-1.5 shadow-sm shadow-purple-900/40 active:scale-95 whitespace-nowrap"
             >
               <BookOpen size={14} /> Manual Completo
-            </a>
+            </button>
             <button 
               onClick={() => setIsCatalogOpen(true)}
               className="bg-slate-100 hover:bg-white text-slate-950 px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 flex items-center gap-1.5 shadow-sm active:scale-95 whitespace-nowrap"
@@ -1561,12 +1970,34 @@ export default function App() {
             >
               <Flame size={14} className="text-red-500 fill-red-500/20" /> Populares
             </button>
-            <button 
-              onClick={() => setIsBuyModalOpen(true)}
-              className="bg-slate-100 hover:bg-white text-slate-950 px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 flex items-center gap-1.5 shadow-sm active:scale-95 whitespace-nowrap"
-            >
-              <ShoppingCart size={14} className="text-slate-900" /> Comprar
-            </button>
+            <div className="flex items-center gap-1.5">
+              <button 
+                onClick={() => {
+                  setStoreInitialOrderId(null);
+                  setStoreInitialTab('vitrine');
+                  setIsBuyModalOpen(true);
+                }}
+                className="relative bg-emerald-500 hover:bg-emerald-400 text-slate-950 px-3.5 py-1.5 rounded-lg text-xs font-black transition-all duration-200 flex items-center gap-1.5 shadow-sm shadow-emerald-900/40 active:scale-95 whitespace-nowrap"
+              >
+                <Package size={14} className="text-slate-950" /> Loja Oficial
+              </button>
+              <button
+                onClick={() => {
+                  setStoreInitialOrderId(null);
+                  setStoreInitialTab('carrinho');
+                  setIsBuyModalOpen(true);
+                }}
+                title="Abrir Carrinho & Calcular Frete"
+                className="relative p-1.5 rounded-lg bg-slate-900/90 hover:bg-slate-800 border border-emerald-500/40 text-emerald-400 transition-all active:scale-95 flex items-center justify-center"
+              >
+                <ShoppingCart size={16} />
+                {cartCount > 0 && (
+                  <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 rounded-full bg-emerald-500 text-slate-950 text-[10px] font-black flex items-center justify-center shadow">
+                    {cartCount}
+                  </span>
+                )}
+              </button>
+            </div>
 
             {/* Conta / Perfil */}
             {!user ? (
@@ -1711,6 +2142,30 @@ export default function App() {
                       <span>Histórico de Campeonatos</span>
                     </button>
 
+                    <button
+                      onClick={() => {
+                        openUserProfile(null, 'orders');
+                        setIsUserMenuOpen(false);
+                      }}
+                      className="px-3 py-2 text-left text-xs text-emerald-300 hover:text-white hover:bg-emerald-900/30 flex items-center gap-2 transition font-bold"
+                    >
+                      <Truck size={14} className="text-emerald-400" />
+                      <span>Meus Pedidos & Rastreio</span>
+                    </button>
+
+                    {isAdmin && (
+                      <button
+                        onClick={() => {
+                          setAdminMode('store');
+                          setIsUserMenuOpen(false);
+                        }}
+                        className="px-3 py-2 text-left text-xs text-amber-300 hover:text-white hover:bg-amber-900/30 flex items-center gap-2 transition font-bold"
+                      >
+                        <Package size={14} className="text-amber-400" />
+                        <span>Painel de Vendas & Frete (Admin)</span>
+                      </button>
+                    )}
+
                     <div className="border-t border-slate-800/80 my-1"></div>
 
                     <button
@@ -1733,13 +2188,16 @@ export default function App() {
         {/* Mobile Menu */}
         {isMenuOpen && (
              <div className="md:hidden absolute top-full left-0 w-full bg-[#0a0a0c] border-b border-slate-800 p-4 flex flex-col gap-2.5 shadow-2xl animate-in slide-in-from-top-2">
-                <a 
-                  href="#manual-regras" 
+                <button 
+                  type="button"
                   className="bg-purple-600 hover:bg-purple-500 text-white px-3.5 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 shadow-sm shadow-purple-900/40" 
-                  onClick={()=>setIsMenuOpen(false)}
+                  onClick={() => {
+                    setIsMenuOpen(false);
+                    document.getElementById('manual-regras')?.scrollIntoView({ behavior: 'smooth' });
+                  }}
                 >
                   <BookOpen size={15} /> Ler Manual Completo
-                </a>
+                </button>
                 <button 
                   onClick={() => { setIsCatalogOpen(true); setIsMenuOpen(false); }}
                   className="bg-slate-100 hover:bg-white text-slate-950 px-3.5 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 shadow-sm"
@@ -1776,12 +2234,35 @@ export default function App() {
                 >
                   <Flame size={15} className="text-red-500 fill-red-500/20" /> Cartas Populares (Meta)
                 </button>
-                <button 
-                  onClick={() => { setIsBuyModalOpen(true); setIsMenuOpen(false); }}
-                  className="bg-slate-100 hover:bg-white text-slate-950 px-3.5 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 shadow-sm"
-                >
-                  <ShoppingCart size={15} className="text-slate-900" /> Comprar
-                </button>
+                <div className="flex items-center gap-2">
+                  <button 
+                    onClick={() => {
+                      setStoreInitialOrderId(null);
+                      setStoreInitialTab('vitrine');
+                      setIsBuyModalOpen(true);
+                      setIsMenuOpen(false);
+                    }}
+                    className="flex-1 bg-emerald-500 hover:bg-emerald-400 text-slate-950 px-3.5 py-2 rounded-lg text-xs font-black transition flex items-center justify-center gap-2 shadow-sm"
+                  >
+                    <Package size={15} className="text-slate-950" /> Loja Oficial
+                  </button>
+                  <button
+                    onClick={() => {
+                      setStoreInitialOrderId(null);
+                      setStoreInitialTab('carrinho');
+                      setIsBuyModalOpen(true);
+                      setIsMenuOpen(false);
+                    }}
+                    className="relative px-3.5 py-2 rounded-lg bg-slate-900 border border-emerald-500/40 text-emerald-400 text-xs font-black flex items-center gap-1.5"
+                  >
+                    <ShoppingCart size={15} />
+                    {cartCount > 0 && (
+                      <span className="px-1.5 py-0.5 rounded-full bg-emerald-500 text-slate-950 text-[10px] font-black">
+                        {cartCount}
+                      </span>
+                    )}
+                  </button>
+                </div>
 
                 {!user ? (
                   <button 
@@ -1850,6 +2331,16 @@ export default function App() {
                     </button>
 
                     <button 
+                      onClick={() => {
+                        openUserProfile(null, 'orders');
+                        setIsMenuOpen(false);
+                      }}
+                      className="bg-emerald-950/60 hover:bg-emerald-900/60 text-emerald-300 hover:text-white px-3.5 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 border border-emerald-800/60"
+                    >
+                      <Truck size={14} className="text-emerald-400" /> Meus Pedidos & Rastreio
+                    </button>
+
+                    <button 
                       onClick={() => { logout(); setIsMenuOpen(false); }}
                       className="bg-red-950/80 border border-red-800 text-red-300 hover:text-white px-3.5 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 shadow-sm"
                     >
@@ -1863,10 +2354,18 @@ export default function App() {
 
       {/* Novidades Section */}
       <NovidadesSection 
-        products={homeSettings?.exclusiveProducts || defaultExclusiveProducts} 
+        products={homeSettings?.exclusiveProducts || []} 
         onOpenProductModal={(product, variationIndex) => {
           setSelectedProduct(product);
           setSelectedProductVariationIndex(variationIndex);
+        }}
+        onOpenStoreCheckout={(product, variationIdx) => {
+          if (product && typeof product === 'object') {
+            addToCart(product, variationIdx, 1);
+          }
+          setStoreInitialOrderId(null);
+          setStoreInitialTab('carrinho');
+          setIsBuyModalOpen(true);
         }}
         allCards={allCards}
       />
@@ -1903,34 +2402,46 @@ export default function App() {
         </div>
 
         <div className="container mx-auto px-6 relative z-10 text-center">
-          <h2 className="font-mono text-xs sm:text-sm tracking-[0.3em] uppercase mb-4 animate-pulse drop-shadow-md" style={{ color: homeSettings?.primaryColor || '#c084fc' }}>
-            {homeSettings?.topSubtitle || 'Invasão do Caos'}
-          </h2>
-          <div className="relative inline-block mb-6">
-            <h1 
-              className={`text-4xl sm:text-6xl md:text-8xl font-black tracking-tighter whitespace-nowrap ${homeSettings?.titleEffect === 'glitch' ? 'glitch-text' : homeSettings?.titleEffect === 'pulse' ? 'animate-pulse' : ''}`} 
-              data-text={homeSettings?.title || 'LIGHT DARK'}
-              style={{
-                color: homeSettings?.primaryColor || '#9333ea',
-                filter: `drop-shadow(0 0 ${homeSettings?.titleShadowIntensity ?? 15}px ${homeSettings?.titleShadowColor || homeSettings?.primaryColor || '#9333ea'})`
-              }}
-            >
-              {homeSettings?.title || 'LIGHT DARK'}
-            </h1>
-            <span 
-              className={`absolute top-1/2 -translate-y-1/2 left-[102%] text-3xl sm:text-5xl md:text-7xl font-mono tracking-normal pointer-events-none ${homeSettings?.sideTextEffect === 'flicker' ? 'animate-flicker-rare' : homeSettings?.sideTextEffect === 'pulse' ? 'animate-pulse' : homeSettings?.sideTextEffect === 'glitch' ? 'glitch-text' : ''}`} 
-              data-text={homeSettings?.sideText || '1/5'}
-              style={{ 
-                color: homeSettings?.sideTextColor || '#a855f7',
-                filter: `drop-shadow(0 0 ${homeSettings?.sideTextShadowIntensity ?? 10}px ${homeSettings?.sideTextShadowColor || homeSettings?.sideTextColor || '#a855f7'})`
-              }}
-            >
-              {homeSettings?.sideText || '1/5'}
-            </span>
-          </div>
-          <p className="text-lg text-slate-200 max-w-2xl mx-auto drop-shadow-lg font-medium">
-            {homeSettings?.synopsis || 'O Caos começou a invadir, Escolhidos, Arautos, precisamos de vocês! Monte seu deck, escolha seu Herói e domine os duelos neste TCG frenético.'}
-          </p>
+          {homeSettings ? (
+            <>
+              <h2 className="font-mono text-xs sm:text-sm tracking-[0.3em] uppercase mb-4 animate-pulse drop-shadow-md" style={{ color: homeSettings.primaryColor || '#c084fc' }}>
+                {homeSettings.topSubtitle ?? ''}
+              </h2>
+              <div className="relative inline-block mb-6">
+                <h1 
+                  className={`text-4xl sm:text-6xl md:text-8xl font-black tracking-tighter whitespace-nowrap ${homeSettings.titleEffect === 'glitch' ? 'glitch-text' : homeSettings.titleEffect === 'pulse' ? 'animate-pulse' : ''}`} 
+                  data-text={homeSettings.title ?? ''}
+                  style={{
+                    color: homeSettings.primaryColor || '#9333ea',
+                    filter: `drop-shadow(0 0 ${homeSettings.titleShadowIntensity ?? 15}px ${homeSettings.titleShadowColor || homeSettings.primaryColor || '#9333ea'})`
+                  }}
+                >
+                  {homeSettings.title ?? ''}
+                </h1>
+                {homeSettings.sideText && (
+                  <span 
+                    className={`absolute top-1/2 -translate-y-1/2 left-[102%] text-3xl sm:text-5xl md:text-7xl font-mono tracking-normal pointer-events-none ${homeSettings.sideTextEffect === 'flicker' ? 'animate-flicker-rare' : homeSettings.sideTextEffect === 'pulse' ? 'animate-pulse' : homeSettings.sideTextEffect === 'glitch' ? 'glitch-text' : ''}`} 
+                    data-text={homeSettings.sideText}
+                    style={{ 
+                      color: homeSettings.sideTextColor || '#a855f7',
+                      filter: `drop-shadow(0 0 ${homeSettings.sideTextShadowIntensity ?? 10}px ${homeSettings.sideTextShadowColor || homeSettings.sideTextColor || '#a855f7'})`
+                    }}
+                  >
+                    {homeSettings.sideText}
+                  </span>
+                )}
+              </div>
+              <p className="text-lg text-slate-200 max-w-2xl mx-auto drop-shadow-lg font-medium">
+                {homeSettings.synopsis ?? ''}
+              </p>
+            </>
+          ) : (
+            <div className="flex flex-col items-center justify-center gap-5 py-6 animate-pulse">
+              <div className="h-4 w-56 rounded-full bg-slate-800/70" />
+              <div className="h-16 sm:h-20 w-72 sm:w-96 rounded-2xl bg-slate-800/60" />
+              <div className="h-4 w-80 sm:w-[28rem] rounded-full bg-slate-800/50" />
+            </div>
+          )}
         </div>
       </header>
 
@@ -2026,12 +2537,19 @@ export default function App() {
         <ProductDetailModal 
           product={selectedProduct}
           initialVariationIndex={selectedProductVariationIndex}
-          onClose={() => {
-            setSelectedProduct(null);
-            setSelectedProductVariationIndex(undefined);
-          }}
+          onClose={closeCurrentModal}
           allCards={allCards}
           onSelectCard={(c) => setInspectedDeckCard(c)}
+          onAddToCart={(prod, varIdx) => {
+            addToCart(prod, varIdx, 1);
+          }}
+          onBuyNow={(prod, varIdx) => {
+            addToCart(prod, varIdx, 1);
+            navigateToModal(() => {
+              setStoreInitialTab('carrinho');
+              setIsBuyModalOpen(true);
+            });
+          }}
         />
       )}
 

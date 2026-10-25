@@ -82,6 +82,32 @@
         "updatedAt": { "type": "string", "description": "Timestamp of ranking sync" }
       },
       "required": ["userId", "displayName", "uniqueCards"]
+    },
+    "StoreOrder": {
+      "title": "Store Order",
+      "description": "Physical product or pre-order purchase made in the official Light Dark TCG store.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Order ID" },
+        "orderNumber": { "type": "string", "description": "Readable order code (e.g. LD-2026-1234)" },
+        "userId": { "type": "string", "description": "Firebase UID of the buyer if logged in" },
+        "buyerName": { "type": "string", "description": "Full name of the buyer" },
+        "buyerEmail": { "type": "string", "description": "Buyer email" },
+        "buyerCpf": { "type": "string", "description": "Buyer CPF for shipping/PIX" },
+        "buyerPhone": { "type": "string", "description": "Buyer WhatsApp phone" },
+        "items": { "type": "array", "description": "Cart items purchased" },
+        "subtotal": { "type": "number", "description": "Items subtotal in BRL" },
+        "discountTotal": { "type": "number", "description": "Discount amount in BRL" },
+        "shippingPrice": { "type": "number", "description": "Shipping cost in BRL" },
+        "totalAmount": { "type": "number", "description": "Final order amount in BRL" },
+        "paymentMethod": { "type": "string", "description": "pix or checkout_pro" },
+        "paymentStatus": { "type": "string", "description": "pending, approved, rejected, or cancelled" },
+        "orderStatus": { "type": "string", "description": "aguardando_pagamento, pago_preparando, pre_venda_reservado, enviado, entregue, cancelado" },
+        "trackingCode": { "type": "string", "description": "Correios tracking code" },
+        "createdAt": { "type": "string", "description": "ISO creation timestamp" },
+        "updatedAt": { "type": "string", "description": "ISO update timestamp" }
+      },
+      "required": ["id", "orderNumber", "buyerName", "buyerEmail", "totalAmount", "paymentStatus", "orderStatus", "createdAt"]
     }
   },
   "firestore": {
@@ -108,6 +134,10 @@
     "collectorsRanking": {
       "schema": { "$ref": "#/entities/CollectorRankEntry" },
       "description": "Public community ranking of top card collectors."
+    },
+    "storeOrders": {
+      "schema": { "$ref": "#/entities/StoreOrder" },
+      "description": "Official Light Dark TCG store orders, shipping calculations, and tracking codes."
     }
   }
 }

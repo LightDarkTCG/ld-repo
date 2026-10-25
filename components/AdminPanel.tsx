@@ -1,44 +1,47 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Settings, Lock, Plus, Trash2, X, Image as ImageIcon, Edit2, Check, Layout, Clock, Grid, Palette, ChevronRight, Layers, BookOpen, Database, Box, Upload, Film, Sparkles, Calendar, Loader2, LogIn, ShieldAlert, Copy, Search, Crown } from 'lucide-react';
+import { Settings, Lock, Plus, Trash2, X, Image as ImageIcon, Edit2, Check, Layout, Clock, Grid, Palette, ChevronRight, Layers, BookOpen, Database, Box, Upload, Film, Sparkles, Calendar, Loader2, LogIn, ShieldAlert, Copy, Search, Crown, ShoppingCart, Truck } from 'lucide-react';
 import { signInWithEmailAndPassword, onAuthStateChanged, signOut } from 'firebase/auth';
 import { collection, getDocs, addDoc, deleteDoc, updateDoc, doc, setDoc, getDoc } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { auth, db, storage } from '../firebase';
+import { auth, db, storage, readBrowserCache, writeBrowserCache } from '../firebase';
 import { useCards, sanitizeForFirestore, cleanCardCode } from '../CardContext';
-import { ArchetypeData } from '../types';
+import { ArchetypeData, LEGADO_RARITIES, MODERNO_RARITIES } from '../types';
 import { parseDeckFromCode } from '../deckUtils';
 import { BatchImageMatcher } from './BatchImageMatcher';
+import { AdminStoreManager } from './AdminStoreManager';
 import { isUserAdmin, logout } from '../authService';
 
-export type AdminType = 'home' | 'catalog' | 'master';
+export type AdminType = 'home' | 'catalog' | 'master' | 'store';
 
 export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => void, adminType?: AdminType }) => {
-  const { archetypes, saveArchetype, collections, saveCollection, deleteCollection, cards, saveCard, deleteCard, setCardCatalogCover, setCardRarePrintSettings } = useCards();
+  const { archetypes, saveArchetype, collections, saveCollection, deleteCollection, cards, saveCard, deleteCard, setCardCatalogCover, setCardRarePrintSettings, isCodeMigrated, migrateCodeDataToFirebase } = useCards();
   const [user, setUser] = useState(auth.currentUser);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [uploadingProductMedia, setUploadingProductMedia] = useState<string | null>(null);
+  const [migrationStatusMsg, setMigrationStatusMsg] = useState<string | null>(null);
 
-  const [activeAdminTab, setActiveAdminTab] = useState<'settings' | 'tabs' | 'items' | 'timeline' | 'archetypes' | 'collections' | 'cards' | 'batch_cards' | 'batch_images' | 'apendices' | 'add_card'>(() => {
+  const [activeAdminTab, setActiveAdminTab] = useState<'settings' | 'store_orders' | 'tabs' | 'items' | 'timeline' | 'archetypes' | 'collections' | 'cards' | 'batch_cards' | 'batch_images' | 'apendices' | 'add_card'>(() => {
+    if (adminType === 'store') return 'store_orders';
     if (adminType === 'home') return 'settings';
     if (adminType === 'catalog') return 'add_card';
     return 'settings'; // Default for master
   });
 
-  // Data
-  const [wbSettings, setWbSettings] = useState<any>({
+  // Data hydrated from Browser Cache + Firebase
+  const [wbSettings, setWbSettings] = useState<any>(() => readBrowserCache<any>('ld_cache_wbSettings_v2') || {
     mainTitle: 'ARCHIVUM',
     subtitle: 'Secretum · Archivum · Imperii',
     description: 'Um grande compêndio contendo universos esquecidos, personagens lendários e a cronologia dos mundos.',
     primaryColor: '#d4af37'
   });
-  const [homeSettings, setHomeSettings] = useState<any>({
-    synopsis: 'O Caos começou a invadir, Escolhidos, Arautos, precisamos de vocês! Monte seu deck, escolha seu Herói e domine os duelos neste TCG frenético.',
-    title: 'LIGHT DARK',
-    topSubtitle: 'Invasão do Caos',
-    sideText: '1/5',
+  const [homeSettings, setHomeSettings] = useState<any>(() => readBrowserCache<any>('ld_cache_homeSettings_v2') || {
+    synopsis: '',
+    title: '',
+    topSubtitle: '',
+    sideText: '',
     titleEffect: 'glitch', 
     primaryColor: '#a855f7',
     titleShadowColor: '#a855f7',
@@ -50,9 +53,9 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
     videoTransition: 'fade',
     exclusiveProducts: []
   });
-  const [wbTabs, setWbTabs] = useState<any[]>([]);
-  const [wbItems, setWbItems] = useState<any[]>([]);
-  const [wbTimelineEvents, setWbTimelineEvents] = useState<any[]>([]);
+  const [wbTabs, setWbTabs] = useState<any[]>(() => readBrowserCache<any[]>('ld_cache_wbTabs_v2') || []);
+  const [wbItems, setWbItems] = useState<any[]>(() => readBrowserCache<any[]>('ld_cache_wbItems_v2') || []);
+  const [wbTimelineEvents, setWbTimelineEvents] = useState<any[]>(() => readBrowserCache<any[]>('ld_cache_wbTimeline_v2') || []);
 
   // Form States
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -140,28 +143,35 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
     try {
       const gSnap = await getDoc(doc(db, 'wbSettings', 'global'));
       if (gSnap.exists()) {
-        setWbSettings((prev: any) => ({...prev, ...gSnap.data()}));
+        const mergedWb = { ...wbSettings, ...gSnap.data() };
+        setWbSettings(mergedWb);
+        writeBrowserCache('ld_cache_wbSettings_v2', mergedWb);
       }
 
       const hSnap = await getDoc(doc(db, 'homeSettings', 'global'));
       if (hSnap.exists()) {
-        setHomeSettings((prev: any) => ({...prev, ...hSnap.data()}));
+        const mergedHome = { ...homeSettings, ...hSnap.data() };
+        setHomeSettings(mergedHome);
+        writeBrowserCache('ld_cache_homeSettings_v2', mergedHome);
       }
 
       const tabsSnap = await getDocs(collection(db, 'wbTabs'));
       let tbs = tabsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
       tbs.sort((a: any, b: any) => (a.orderIndex || 0) - (b.orderIndex || 0));
       setWbTabs(tbs);
+      writeBrowserCache('ld_cache_wbTabs_v2', tbs);
 
       const itemsSnap = await getDocs(collection(db, 'wbItems'));
       let itms = itemsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
       itms.sort((a: any, b: any) => (a.orderIndex || 0) - (b.orderIndex || 0));
       setWbItems(itms);
+      writeBrowserCache('ld_cache_wbItems_v2', itms);
 
       const timeSnap = await getDocs(collection(db, 'wbTimelineEvents'));
       let times = timeSnap.docs.map(d => ({ id: d.id, ...d.data() }));
       times.sort((a: any, b: any) => (a.orderIndex || 0) - (b.orderIndex || 0));
       setWbTimelineEvents(times);
+      writeBrowserCache('ld_cache_wbTimeline_v2', times);
 
     } catch (e: any) {
       console.error(e);
@@ -400,10 +410,14 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
   const saveSettings = async () => {
     setLoading(true);
     try {
-      if (adminType === 'home') {
-        await setDoc(doc(db, 'homeSettings', 'global'), sanitizeForFirestore(homeSettings));
+      if (adminType === 'home' || adminType === 'store') {
+        const cleanHome = sanitizeForFirestore(homeSettings);
+        await setDoc(doc(db, 'homeSettings', 'global'), cleanHome);
+        writeBrowserCache('ld_cache_homeSettings_v2', cleanHome);
       } else {
-        await setDoc(doc(db, 'wbSettings', 'global'), sanitizeForFirestore(wbSettings));
+        const cleanWb = sanitizeForFirestore(wbSettings);
+        await setDoc(doc(db, 'wbSettings', 'global'), cleanWb);
+        writeBrowserCache('ld_cache_wbSettings_v2', cleanWb);
       }
       alert('Configurações salvas!');
     } catch(e:any) {
@@ -518,10 +532,10 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
       await saveCard(cardPayload);
 
       if (cardEditIsRarePrint !== undefined) {
-        await setCardRarePrintSettings(cardEditCode, cardEditIsRarePrint, Number(cardEditMaxPrintCopies) || 1);
+        await setCardRarePrintSettings(cardPayload, cardEditIsRarePrint, Number(cardEditMaxPrintCopies) || 1);
       }
       if (cardEditIsCatalogCover) {
-        await setCardCatalogCover(cardEditCode, { imageUrl: finalImg, frame: cardFrame }, false);
+        await setCardCatalogCover(cardPayload, { id: cardEditCode, name: formName, imageUrl: finalImg, frame: cardFrame }, false);
       }
 
       alert(`Carta "${formName}" salva com sucesso!`);
@@ -642,7 +656,8 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
         <div className="bg-slate-950 p-4 border-b border-slate-800 flex justify-between items-center shrink-0">
           <h2 className="text-2xl font-bold text-white flex items-center gap-2">
             <Settings className="text-purple-500" /> 
-            {adminType === 'home' && 'Admin da Tela Inicial'}
+            {adminType === 'home' && 'Admin da Tela Inicial & Produtos'}
+            {adminType === 'store' && 'Gerenciar Loja Oficial, Pedidos & Produtos'}
             {adminType === 'catalog' && 'Admin do Catálogo'}
             {adminType === 'master' && 'Área do Mestre'}
           </h2>
@@ -718,9 +733,9 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
             <div className="flex flex-col md:flex-row gap-6">
               {/* Sidebar */}
               <div className="w-full md:w-56 shrink-0 flex flex-col gap-2">
-                {(adminType === 'home' || adminType === 'master') && (
+                {(adminType === 'home' || adminType === 'store' || adminType === 'master') && (
                   <button onClick={() => { setActiveAdminTab('settings'); resetForm(); }} className={`text-left p-3 rounded font-bold transition flex items-center gap-2 ${activeAdminTab === 'settings' ? 'bg-purple-600 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}>
-                    <Palette size={18}/> Aparência & Global
+                    <Palette size={18}/> {adminType === 'store' ? 'Produtos & Vitrine' : 'Aparência & Produtos'}
                   </button>
                 )}
                 
@@ -739,6 +754,12 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
                       <BookOpen size={18}/> Apêndices
                     </button>
                   </>
+                )}
+
+                {(adminType === 'home' || adminType === 'store' || adminType === 'master') && (
+                  <button onClick={() => { setActiveAdminTab('store_orders'); resetForm(); }} className={`text-left p-3 rounded font-bold transition flex items-center gap-2 ${activeAdminTab === 'store_orders' ? 'bg-emerald-600 text-white shadow-md shadow-emerald-950/40' : 'bg-slate-800 text-emerald-300 hover:bg-slate-700'}`}>
+                    <ShoppingCart size={18}/> Loja, Pedidos & Frete
+                  </button>
                 )}
 
                 {adminType === 'home' && (
@@ -778,14 +799,19 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
               <div className="flex-1 min-w-0 pb-12">
                 {error && <div className="bg-red-900/50 border border-red-500 text-red-200 p-3 rounded mb-4">{error}</div>}
 
+                {/* STORE, ORDERS & SHIPPING TAB */}
+                {activeAdminTab === 'store_orders' && (
+                  <AdminStoreManager />
+                )}
+
                 {/* SETTINGS TAB */}
                 {activeAdminTab === 'settings' && (
                   <div className="bg-slate-800 p-6 rounded-lg border border-slate-700 mb-8 shadow-inner">
                     <h3 className="text-xl font-bold text-white mb-6 border-b border-slate-700 pb-2">
-                      {adminType === 'home' ? 'Configurações da Tela Inicial' : 'Configurações de Lore'}
+                      {(adminType === 'home' || adminType === 'store') ? 'Configurações da Tela Inicial & Produtos da Loja' : 'Configurações de Lore'}
                     </h3>
                     
-                    {adminType === 'home' ? (
+                    {(adminType === 'home' || adminType === 'store') ? (
                       <div className="space-y-4">
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           <div className="space-y-4 border border-slate-700 p-4 rounded bg-slate-900/50">
@@ -1004,8 +1030,8 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
                                   </div>
                                 </div>
 
-                                {/* Title & Badge */}
-                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 w-full">
+                                {/* Title, Category & Badge */}
+                                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 w-full">
                                   <div className="md:col-span-2">
                                     <label className="text-xs text-slate-400 block mb-1">Título do Produto</label>
                                     <input 
@@ -1019,6 +1045,37 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
                                       className="w-full bg-slate-950 border border-slate-700 rounded p-2.5 text-white text-sm" 
                                       placeholder="Ex: Deck Halloween - Invasão das Sombras" 
                                     />
+                                  </div>
+                                  <div>
+                                    <label className="text-xs text-purple-300 font-bold block mb-1">Categoria na Loja Oficial</label>
+                                    <select
+                                      value={prod.storeCategory || 'decks'}
+                                      onChange={e => {
+                                        const np = [...(homeSettings.exclusiveProducts || [])];
+                                        const val = e.target.value as any;
+                                        np[i].storeCategory = val;
+                                        const labels: Record<string, string> = {
+                                          decks: 'Decks',
+                                          cartas_avulsas: 'Cartas Avulsas',
+                                          playmats: 'Playmats',
+                                          promocoes: 'Promoções',
+                                          pre_venda: 'Pré-venda',
+                                          kits: 'Kits'
+                                        };
+                                        np[i].category = labels[val] || 'Decks';
+                                        if (val === 'pre_venda') np[i].isPreOrder = true;
+                                        if (val === 'promocoes') np[i].isPromotion = true;
+                                        setHomeSettings({...homeSettings, exclusiveProducts: np});
+                                      }}
+                                      className="w-full bg-slate-950 border border-purple-500/60 rounded p-2.5 text-white text-sm font-bold outline-none focus:border-purple-400"
+                                    >
+                                      <option value="decks">Decks</option>
+                                      <option value="cartas_avulsas">Cartas Avulsas</option>
+                                      <option value="playmats">Playmats</option>
+                                      <option value="promocoes">Promoções</option>
+                                      <option value="pre_venda">Pré-venda</option>
+                                      <option value="kits">Kits</option>
+                                    </select>
                                   </div>
                                   <div>
                                     <label className="text-xs text-slate-400 block mb-1">Etiqueta / Badge</label>
@@ -1278,7 +1335,7 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
                                   );
                                 })()}
 
-                                {/* Button Info */}
+                                {/* Button Info & Configurações de Pré-Venda / Frete */}
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 w-full">
                                   <div>
                                     <label className="text-xs text-slate-400 block mb-1">Texto do Botão de Compra</label>
@@ -1291,11 +1348,11 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
                                         setHomeSettings({...homeSettings, exclusiveProducts: np});
                                       }} 
                                       className="w-full bg-slate-950 border border-slate-700 rounded p-2 text-white text-sm" 
-                                      placeholder="Comprar Agora" 
+                                      placeholder="Comprar Agora ou Garantir Pré-Venda" 
                                     />
                                   </div>
                                   <div>
-                                    <label className="text-xs text-slate-400 block mb-1">Link de Venda (Mercado Pago, Loja, etc.)</label>
+                                    <label className="text-xs text-slate-400 block mb-1">Link Externo Opcional (deixe vazio p/ usar Carrinho Interno + Mercado Pago)</label>
                                     <input 
                                       type="text" 
                                       value={prod.buttonLink !== undefined ? prod.buttonLink : ''} 
@@ -1305,13 +1362,119 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
                                         setHomeSettings({...homeSettings, exclusiveProducts: np});
                                       }} 
                                       className="w-full bg-slate-950 border border-slate-700 rounded p-2 text-white text-sm" 
-                                      placeholder="Deixe em branco caso não tenha link" 
+                                      placeholder="Vazio = Checkout Interno Automático (PIX, Cartão e Frete)" 
                                     />
-                                    <span className="text-[10px] text-slate-500 mt-1 block">
-                                      {prod.buttonLink && prod.buttonLink.trim() !== '' 
-                                        ? '✓ Link configurado para compra direta.' 
-                                        : 'ℹ️ Sem link: o botão ativará mensagem de pré-venda na tela.'}
+                                    <span className="text-[10px] text-emerald-400 mt-1 block">
+                                      ✓ Integrado ao Carrinho Interno da Loja Oficial (PIX Instantâneo, Cartão até 12x e Cálculo de Frete Correios).
                                     </span>
+                                  </div>
+                                </div>
+
+                                {/* Configurações de Pré-Venda, Promoção, Peso para Frete e Estoque */}
+                                <div className="w-full bg-slate-950/80 border border-purple-800/40 rounded-xl p-4 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3">
+                                  <div className="flex flex-col justify-center gap-2">
+                                    <label className="flex items-center gap-2 text-xs font-bold text-amber-300 cursor-pointer">
+                                      <input
+                                        type="checkbox"
+                                        checked={Boolean(prod.isPreOrder)}
+                                        onChange={e => {
+                                          const np = [...(homeSettings.exclusiveProducts || [])];
+                                          np[i].isPreOrder = e.target.checked;
+                                          setHomeSettings({ ...homeSettings, exclusiveProducts: np });
+                                        }}
+                                        className="accent-amber-500 w-4 h-4"
+                                      />
+                                      <span>Produto em Pré-Venda</span>
+                                    </label>
+                                    <label className="flex items-center gap-2 text-xs font-bold text-pink-300 cursor-pointer">
+                                      <input
+                                        type="checkbox"
+                                        checked={Boolean(prod.isPromotion)}
+                                        onChange={e => {
+                                          const np = [...(homeSettings.exclusiveProducts || [])];
+                                          np[i].isPromotion = e.target.checked;
+                                          setHomeSettings({ ...homeSettings, exclusiveProducts: np });
+                                        }}
+                                        className="accent-pink-500 w-4 h-4"
+                                      />
+                                      <span>Em Promoção / Oferta</span>
+                                    </label>
+                                    <label className="flex items-center gap-2 text-xs font-bold text-emerald-300 cursor-pointer">
+                                      <input
+                                        type="checkbox"
+                                        checked={Boolean(prod.freeShipping)}
+                                        onChange={e => {
+                                          const np = [...(homeSettings.exclusiveProducts || [])];
+                                          np[i].freeShipping = e.target.checked;
+                                          setHomeSettings({ ...homeSettings, exclusiveProducts: np });
+                                        }}
+                                        className="accent-emerald-500 w-4 h-4"
+                                      />
+                                      <span>Frete Grátis neste item</span>
+                                    </label>
+                                  </div>
+
+                                  <div>
+                                    <label className="text-[11px] text-slate-400 block mb-1">Preço Antigo Riscado (Promo)</label>
+                                    <input
+                                      type="text"
+                                      value={prod.originalPrice || ''}
+                                      onChange={e => {
+                                        const np = [...(homeSettings.exclusiveProducts || [])];
+                                        np[i].originalPrice = e.target.value;
+                                        setHomeSettings({ ...homeSettings, exclusiveProducts: np });
+                                      }}
+                                      placeholder="Ex: R$ 119,90"
+                                      className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-xs text-pink-300 font-mono"
+                                    />
+                                  </div>
+
+                                  <div>
+                                    <label className="text-[11px] text-slate-400 block mb-1">Previsão de Envio / Lote</label>
+                                    <input
+                                      type="text"
+                                      value={prod.preOrderReleaseDate || ''}
+                                      onChange={e => {
+                                        const np = [...(homeSettings.exclusiveProducts || [])];
+                                        np[i].preOrderReleaseDate = e.target.value;
+                                        setHomeSettings({ ...homeSettings, exclusiveProducts: np });
+                                      }}
+                                      placeholder="Ex: Envios a partir de 05/11"
+                                      className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-xs text-amber-300 font-semibold"
+                                    />
+                                  </div>
+
+                                  <div>
+                                    <label className="text-[11px] text-slate-400 block mb-1">Peso p/ Frete (gramas)</label>
+                                    <input
+                                      type="number"
+                                      min="50"
+                                      step="50"
+                                      value={prod.weightGrams || 250}
+                                      onChange={e => {
+                                        const np = [...(homeSettings.exclusiveProducts || [])];
+                                        np[i].weightGrams = Number(e.target.value) || 250;
+                                        setHomeSettings({ ...homeSettings, exclusiveProducts: np });
+                                      }}
+                                      placeholder="250"
+                                      className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-xs text-white font-mono"
+                                    />
+                                  </div>
+
+                                  <div>
+                                    <label className="text-[11px] text-slate-400 block mb-1">Estoque / Vagas (vazio = livre)</label>
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      value={prod.stock !== undefined ? prod.stock : ''}
+                                      onChange={e => {
+                                        const np = [...(homeSettings.exclusiveProducts || [])];
+                                        np[i].stock = e.target.value === '' ? undefined : Number(e.target.value);
+                                        setHomeSettings({ ...homeSettings, exclusiveProducts: np });
+                                      }}
+                                      placeholder="Ilimitado"
+                                      className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-xs text-white font-mono"
+                                    />
                                   </div>
                                 </div>
 
@@ -2424,28 +2587,46 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
                     </div>
 
                     <div className="bg-slate-800 p-6 rounded-lg border border-slate-700 mb-8 shadow-inner">
-                      <h4 className="font-bold text-slate-300 mb-2">Restaurar Cartas Padrão Excluídas</h4>
-                      <p className="text-sm text-slate-400 mb-4">Caso alguma das cartas padrão (como as de Legado ou Booster Pack) tenha sumido por uma exclusão acidental ou sobrescrita, você pode limpá-las da lixeira interna e restaurá-las para que fiquem visíveis de novo.</p>
-                      <button onClick={async () => {
-                        if(confirm('Tem certeza? Isso fará com que qualquer carta padrão que foi oculta ou sobrescrita volte ao normal.')) {
-                          import('firebase/firestore').then(async ({ collection, getDocs, deleteDoc }) => {
-                            const snap = await getDocs(collection(db, 'customCards'));
-                            let c = 0;
-                            const deletePromises: any[] = [];
-                            snap.forEach(d => {
-                              if(!d.id.startsWith('CUST-') && !d.id.startsWith('C-')) {
-                                deletePromises.push(deleteDoc(d.ref));
-                                c++;
-                              }
-                            });
-                            await Promise.all(deletePromises);
-                            alert(`Operação concluída. ${c} carta(s) padrão restauradas! A lista será recarregada.`);
-                            window.location.reload();
-                          });
-                        }
-                      }} className="bg-orange-600 hover:bg-orange-500 text-white font-bold py-2 px-4 rounded text-sm transition">
-                        Restaurar Cartões Padrão
-                      </button>
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-2">
+                        <h4 className="font-bold text-slate-200 flex items-center gap-2">
+                          <Database size={18} className="text-purple-400" />
+                          Banco Unificado no Firebase + Memória do Navegador (Cache)
+                        </h4>
+                        <span className={`text-xs font-bold px-2.5 py-1 rounded-full border ${isCodeMigrated ? 'bg-emerald-950/80 text-emerald-300 border-emerald-600/50' : 'bg-amber-950/80 text-amber-300 border-amber-600/50'}`}>
+                          {isCodeMigrated ? '✓ 100% Sincronizado no Firebase' : 'Sincronização Pendente'}
+                        </span>
+                      </div>
+                      <p className="text-sm text-slate-400 mb-4">
+                        Todas as cartas, skins/variações, arquétipos e coleções agora residem diretamente no Firebase Firestore com cache instantâneo no navegador, sem depender de pré-configurações fixas no código e preservando todas as edições, capas e tiragens únicas feitas no Admin.
+                      </p>
+                      <div className="flex flex-wrap items-center gap-3">
+                        <button
+                          onClick={async () => {
+                            setLoading(true);
+                            setMigrationStatusMsg(null);
+                            try {
+                              const res = await migrateCodeDataToFirebase();
+                              setMigrationStatusMsg(
+                                `Sincronização concluída! Novas cartas base migradas: ${res.migratedCards} • Novas variações/skins migradas: ${res.migratedVariations} • Arquétipos: ${res.migratedArchetypes} • Coleções: ${res.migratedCollections}.`
+                              );
+                            } catch (err: any) {
+                              setError(err.message || 'Erro ao migrar cartas para o Firebase.');
+                            } finally {
+                              setLoading(false);
+                            }
+                          }}
+                          disabled={loading}
+                          className="bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white font-bold py-2 px-4 rounded text-sm transition flex items-center gap-2"
+                        >
+                          <Sparkles size={15} />
+                          {loading ? 'Verificando e Migrando...' : 'Verificar / Migrar Cartas do Código para o Firebase'}
+                        </button>
+                        {migrationStatusMsg && (
+                          <span className="text-xs text-emerald-400 font-medium">
+                            {migrationStatusMsg}
+                          </span>
+                        )}
+                      </div>
                     </div>
 
                     {/* Barra de Pesquisa e Filtros de Cartas */}
@@ -2639,8 +2820,10 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
                               onChange={e => {
                                 const newFrame = e.target.value as any;
                                 setBatchFrame(newFrame);
-                                if (newFrame === 'Moderno' && batchRarity === 'Beta') {
-                                  setBatchRarity('Comum');
+                                if (newFrame === 'Moderno' && (!batchRarity || batchRarity.startsWith('Legado') || batchRarity === 'Beta' || batchRarity === 'Comum')) {
+                                  setBatchRarity('Moderno Comum');
+                                } else if (newFrame === 'Legado' && (!batchRarity || batchRarity.startsWith('Moderno'))) {
+                                  setBatchRarity('Legado Comum');
                                 }
                               }} 
                               className="w-full bg-slate-950 border border-slate-700 rounded p-2 text-white"
@@ -2656,13 +2839,15 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
                               onChange={e => setBatchRarity(e.target.value)} 
                               className="w-full bg-slate-950 border border-slate-700 rounded p-2 text-amber-300 font-bold"
                             >
-                              <option value="Comum">Comum</option>
-                              <option value="Incomum">Incomum</option>
-                              <option value="Rara">Rara</option>
-                              <option value="Muito Rara">Muito Rara</option>
-                              <option value="Limitadas">Limitadas</option>
-                              <option value="Beta">Beta</option>
-                              <option value="Evento">Evento</option>
+                              {batchFrame === 'Moderno' ? (
+                                MODERNO_RARITIES.map(r => (
+                                  <option key={r} value={r}>{r}</option>
+                                ))
+                              ) : (
+                                LEGADO_RARITIES.map(r => (
+                                  <option key={r} value={r}>{r}</option>
+                                ))
+                              )}
                             </select>
                           </div>
                         </div>
@@ -2686,8 +2871,10 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
                                         if (idx > -1) {
                                           const val = e.target.value === '' ? undefined : e.target.value;
                                           newCards[idx].frame = val;
-                                          if (val === 'Moderno' && newCards[idx].rarity === 'Beta') {
-                                            newCards[idx].rarity = 'Comum';
+                                          if (val === 'Moderno' && (!newCards[idx].rarity || newCards[idx].rarity?.startsWith('Legado') || newCards[idx].rarity === 'Beta' || newCards[idx].rarity === 'Comum')) {
+                                            newCards[idx].rarity = 'Moderno Comum';
+                                          } else if (val === 'Legado' && (!newCards[idx].rarity || newCards[idx].rarity?.startsWith('Moderno'))) {
+                                            newCards[idx].rarity = 'Legado Comum';
                                           }
                                           setParsedBatchCards(newCards);
                                         }
@@ -2701,7 +2888,7 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
                                   <div>
                                     <label className="text-[10px] font-bold text-slate-400 block mb-1 uppercase">Raridade</label>
                                     <select 
-                                      className="bg-slate-900 border border-slate-700 rounded p-1 text-amber-300 font-bold text-xs w-36"
+                                      className="bg-slate-900 border border-slate-700 rounded p-1 text-amber-300 font-bold text-xs w-44"
                                       value={c.rarity || ''}
                                       onChange={(e) => {
                                         const newCards = [...parsedBatchCards];
@@ -2713,13 +2900,15 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
                                       }}
                                     >
                                       <option value="">Padrão ({batchRarity})</option>
-                                      <option value="Comum">Comum</option>
-                                      <option value="Incomum">Incomum</option>
-                                      <option value="Rara">Rara</option>
-                                      <option value="Muito Rara">Muito Rara</option>
-                                      <option value="Limitadas">Limitadas</option>
-                                      <option value="Beta">Beta</option>
-                                      <option value="Evento">Evento</option>
+                                      {(c.frame || batchFrame) === 'Moderno' ? (
+                                        MODERNO_RARITIES.map(r => (
+                                          <option key={r} value={r}>{r}</option>
+                                        ))
+                                      ) : (
+                                        LEGADO_RARITIES.map(r => (
+                                          <option key={r} value={r}>{r}</option>
+                                        ))
+                                      )}
                                     </select>
                                   </div>
                                 </div>

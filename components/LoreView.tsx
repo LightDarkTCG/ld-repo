@@ -1,23 +1,23 @@
 import React, { useState, useEffect } from 'react';
 import { collection, getDocs, doc, getDoc } from 'firebase/firestore';
-import { db } from '../firebase';
+import { db, readBrowserCache, writeBrowserCache } from '../firebase';
 import { X, Clock, Grid, Feather, ChevronRight, Layers } from 'lucide-react';
 import { AdminPanel } from './AdminPanel';
 
 export const LoreView = ({ onClose }: { onClose: () => void }) => {
   const [isAdminOpen, setIsAdminOpen] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => !readBrowserCache<any>('ld_cache_wbSettings_v2'));
   
-  // Data
-  const [wbSettings, setWbSettings] = useState<any>({
+  // Data hydrated from Browser Cache + Firebase
+  const [wbSettings, setWbSettings] = useState<any>(() => readBrowserCache<any>('ld_cache_wbSettings_v2') || {
     mainTitle: 'ARCHIVUM',
     subtitle: 'Secretum · Archivum · Imperii',
     description: 'Um grande compêndio contendo universos esquecidos, personagens lendários e a cronologia dos mundos.',
     primaryColor: '#d4af37'
   });
-  const [wbTabs, setWbTabs] = useState<any[]>([]);
-  const [wbItems, setWbItems] = useState<any[]>([]);
-  const [wbTimelineEvents, setWbTimelineEvents] = useState<any[]>([]);
+  const [wbTabs, setWbTabs] = useState<any[]>(() => readBrowserCache<any[]>('ld_cache_wbTabs_v2') || []);
+  const [wbItems, setWbItems] = useState<any[]>(() => readBrowserCache<any[]>('ld_cache_wbItems_v2') || []);
+  const [wbTimelineEvents, setWbTimelineEvents] = useState<any[]>(() => readBrowserCache<any[]>('ld_cache_wbTimeline_v2') || []);
 
   // Navigation State
   const [currentView, setCurrentView] = useState<'home' | 'tab_view' | 'item_detail'>('home');
@@ -29,27 +29,34 @@ export const LoreView = ({ onClose }: { onClose: () => void }) => {
   }, [isAdminOpen]);
 
   const loadData = async () => {
-    setLoading(true);
+    if (!readBrowserCache<any>('ld_cache_wbSettings_v2')) {
+      setLoading(true);
+    }
     try {
       const gSnap = await getDoc(doc(db, 'wbSettings', 'global'));
       if (gSnap.exists()) {
-        setWbSettings(gSnap.data());
+        const data = gSnap.data();
+        setWbSettings(data);
+        writeBrowserCache('ld_cache_wbSettings_v2', data);
       }
 
       const tabsSnap = await getDocs(collection(db, 'wbTabs'));
       const tbs = tabsSnap.docs.map(d => ({ id: d.id, ...d.data() })) as any[];
       tbs.sort((a, b) => (a.orderIndex || 0) - (b.orderIndex || 0));
       setWbTabs(tbs);
+      writeBrowserCache('ld_cache_wbTabs_v2', tbs);
 
       const itemsSnap = await getDocs(collection(db, 'wbItems'));
       const itms = itemsSnap.docs.map(d => ({ id: d.id, ...d.data() })) as any[];
       itms.sort((a, b) => (a.orderIndex || 0) - (b.orderIndex || 0));
       setWbItems(itms);
+      writeBrowserCache('ld_cache_wbItems_v2', itms);
 
       const timeSnap = await getDocs(collection(db, 'wbTimelineEvents'));
       const times = timeSnap.docs.map(d => ({ id: d.id, ...d.data() })) as any[];
       times.sort((a, b) => (a.orderIndex || 0) - (b.orderIndex || 0));
       setWbTimelineEvents(times);
+      writeBrowserCache('ld_cache_wbTimeline_v2', times);
 
     } catch (e) {
       console.error(e);
@@ -115,8 +122,20 @@ export const LoreView = ({ onClose }: { onClose: () => void }) => {
         </div>
       </div>
       <div>
-        <button onClick={onClose} className="text-[#a8a29e] hover:text-white transition flex items-center gap-2 text-xs tracking-widest uppercase font-bold border border-[rgba(var(--primary-rgb),0.3)] px-4 py-2 hover:bg-[rgba(var(--primary-rgb),0.1)] shrink-0">
-          <X size={16} /> Fechar
+        <button
+          onClick={() => {
+            if (currentView === 'item_detail') {
+              setSelectedItem(null);
+              setCurrentView('tab_view');
+            } else if (currentView === 'tab_view') {
+              setCurrentView('home');
+            } else {
+              onClose();
+            }
+          }}
+          className="text-[#a8a29e] hover:text-white transition flex items-center gap-2 text-xs tracking-widest uppercase font-bold border border-[rgba(var(--primary-rgb),0.3)] px-4 py-2 hover:bg-[rgba(var(--primary-rgb),0.1)] shrink-0"
+        >
+          <X size={16} /> {currentView !== 'home' ? 'Voltar' : 'Fechar'}
         </button>
       </div>
     </nav>

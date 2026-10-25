@@ -143,5 +143,18 @@ service cloud.firestore {
       allow read: if true;
       allow write: if isAdmin();
     }
+
+    // Pedidos da Loja Oficial Light Dark TCG
+    match /storeOrders/{orderId} {
+      allow read: if true;
+      allow create: if request.resource.data.buyerName is string
+                    && request.resource.data.buyerEmail is string
+                    && request.resource.data.totalAmount is number;
+      allow update: if isAdmin() || (
+        request.resource.data.totalAmount == resource.data.totalAmount &&
+        request.resource.data.orderNumber == resource.data.orderNumber
+      );
+      allow delete: if isAdmin();
+    }
   }
 }

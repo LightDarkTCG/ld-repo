@@ -22,7 +22,7 @@ import {
 } from 'lucide-react';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { storage } from '../firebase';
-import { CardData, CardVariationItem } from '../types';
+import { CardData, CardVariationItem, LEGADO_RARITIES, MODERNO_RARITIES } from '../types';
 import { compareCardCodes } from '../deckUtils';
 import { useCards, cleanCardCode } from '../CardContext';
 
@@ -778,16 +778,19 @@ export const BatchImageMatcher: React.FC<BatchImageMatcherProps> = ({
                 onChange={(e) => setDefaultRarity(e.target.value)}
                 className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-2 text-amber-300 font-bold text-xs focus:border-amber-500 outline-none"
               >
-                <option value="Comum">Comum</option>
-                <option value="Incomum">Incomum</option>
-                <option value="Rara">Rara</option>
-                <option value="Muito Rara">Muito Rara</option>
-                <option value="Limitadas">Limitadas</option>
-                <option value="Beta">Beta</option>
-                <option value="Evento">Evento</option>
+                <optgroup label="Frame Moderno">
+                  {MODERNO_RARITIES.map(r => (
+                    <option key={r} value={r}>{r}</option>
+                  ))}
+                </optgroup>
+                <optgroup label="Frame Legado">
+                  {LEGADO_RARITIES.map(r => (
+                    <option key={r} value={r}>{r}</option>
+                  ))}
+                </optgroup>
               </select>
               <p className="text-[10px] text-slate-400">
-                Versões modernas de cartas legado são do tier <strong>Comum</strong> (não Beta).
+                Selecione a raridade oficial correspondente ao frame da variação.
               </p>
             </div>
 

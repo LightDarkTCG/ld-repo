@@ -21,15 +21,14 @@ import {
   CheckCircle2,
   AlertTriangle
 } from 'lucide-react';
-import { CardData, CardVariationItem } from '../types';
+import { CardData, CardVariationItem, LEGADO_RARITIES, MODERNO_RARITIES } from '../types';
 import { Card } from './Card';
-import { useCards, cleanCardCode, getBaseCardCode, getCardDisplayPriority, resolveModernFrameOnly } from '../CardContext';
+import { useCards, cleanCardCode, getBaseCardCode, getCardDisplayPriority, defaultCardsByBaseCode, defaultCardsGroupByBaseCode, getVersionRareKey, isLegacyCard } from '../CardContext';
 import { compareCardCodes } from '../deckUtils';
 import { auth, storage } from '../firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { useAuth, isUserAdmin } from '../authService';
 import { useUserAlbum } from '../albumService';
-import { allCards as defaultCards } from '../data';
 import { isCardRarePrint } from '../rarePrintService';
 import { VerificationRequestModal } from './VerificationRequestModal';
 
@@ -59,36 +58,68 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card: initialC
   const [adminActionFeedback, setAdminActionFeedback] = useState<string | null>(null);
   const [isSavingRareSettings, setIsSavingRareSettings] = useState(false);
 
-  const allCardsRef = React.useRef(allCards);
-  allCardsRef.current = allCards;
-
   const baseCardCode = initialCard ? getBaseCardCode(initialCard.code, initialCard.parentCode) : '';
-  const canonicalBase = allCards.find(c => getBaseCardCode(c.code, c.parentCode) === baseCardCode) || initialCard;
-  const currentCoverUrl = canonicalBase?.catalogCoverImageUrl || initialCard?.catalogCoverImageUrl;
+  const canonicalBase = useMemo(
+    () => allCards.find(c => getBaseCardCode(c.code, c.parentCode) === baseCardCode) || initialCard,
+    [allCards, baseCardCode, initialCard]
+  );
+  const currentCoverUrl = canonicalBase?.catalogCoverImageUrl;
 
-  // Find all variations (alternate arts, skins, frames) for this card
-  // Inherits canonical metadata (archetype, name, stats, etc.) so admin edits apply consistently
+  // Find all variations (alternate arts, skins, frames) for this card in O(1) without scanning allCards+defaultCards repeatedly
+  // Preserves individual rare print settings per version/image so marking 1 version never marks all versions!
   const cardVariations = useMemo(() => {
     if (!initialCard) return [];
     const baseCode = getBaseCardCode(initialCard.code, initialCard.parentCode);
-    const canonicalCard = allCards.find(c => getBaseCardCode(c.code, c.parentCode) === baseCode) || initialCard;
+    const canonicalCard = canonicalBase || initialCard;
     const coverUrl = canonicalCard.catalogCoverImageUrl;
-    const baseRare = Boolean(canonicalCard.isRarePrint || canonicalCard.requiresAdminVerification);
-    const baseMaxCopies = canonicalCard.maxPrintCopies;
-    
-    // Combine allCards with defaultCards so classic Legado versions and all variants are always discoverable
-    const allSearchCards = [...allCards, ...defaultCards];
+    const rareMap = canonicalCard.rarePrintByImage;
+    const hasExplicitRareMap = Boolean(rareMap && typeof rareMap === 'object' && Object.keys(rareMap).length > 0);
 
-    // Find matching cards in search pool that belong to this card
-    const matches = allSearchCards.filter(c => {
-      const cBase = getBaseCardCode(c.code, c.parentCode);
-      return cBase === baseCode;
-    });
+    const resolveVarRare = (
+      imgUrl?: string,
+      frame?: string,
+      explicitRare?: boolean,
+      explicitReqVer?: boolean,
+      explicitMax?: number,
+      rarity?: string
+    ) => {
+      if (rarity === 'Moderno Macroversal' || rarity === 'Macroversal') {
+        return { isRarePrint: true, requiresAdminVerification: true, maxPrintCopies: 1 };
+      }
+      const vKey = getVersionRareKey(imgUrl, frame);
+      if (rareMap && rareMap[vKey] !== undefined) {
+        const entry = rareMap[vKey];
+        return {
+          isRarePrint: Boolean(entry.isRarePrint),
+          requiresAdminVerification: Boolean(entry.isRarePrint),
+          maxPrintCopies: entry.isRarePrint ? (entry.maxPrintCopies || 1) : 0
+        };
+      }
+      if (rareMap && imgUrl && rareMap[imgUrl] !== undefined) {
+        const entry = rareMap[imgUrl];
+        return {
+          isRarePrint: Boolean(entry.isRarePrint),
+          requiresAdminVerification: Boolean(entry.isRarePrint),
+          maxPrintCopies: entry.isRarePrint ? (entry.maxPrintCopies || 1) : 0
+        };
+      }
+      if (hasExplicitRareMap) {
+        return { isRarePrint: false, requiresAdminVerification: false, maxPrintCopies: 0 };
+      }
+      const isRare = Boolean(explicitRare || explicitReqVer);
+      return {
+        isRarePrint: isRare,
+        requiresAdminVerification: isRare,
+        maxPrintCopies: isRare ? (explicitMax || 1) : 0
+      };
+    };
+
+    const defaultCardMatches = defaultCardsGroupByBaseCode.get(baseCode) || [];
 
     const list: CardData[] = [];
     const seenImages = new Set<string>();
 
-    const addVersion = (c: CardData, defaultFrame?: string, defaultVarType?: string) => {
+    const addVersion = (c?: CardData | null, defaultFrame?: string, defaultVarType?: string) => {
       if (!c || !c.imageUrl) return;
       const frame = c.frame || defaultFrame || 'Legado';
       const isMod = frame === 'Moderno' || (c.code && c.code.endsWith('-M'));
@@ -104,14 +135,18 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card: initialC
         cRarity = 'Comum';
       }
 
-      const isVarCover = Boolean(
-        c.isCatalogCover || 
-        (c.imageUrl && coverUrl && c.imageUrl === coverUrl)
+      const isVarCover = Boolean(coverUrl && c.imageUrl === coverUrl);
+      const rareStatus = resolveVarRare(
+        c.imageUrl,
+        effectiveFrame,
+        c.isRarePrint,
+        c.requiresAdminVerification,
+        c.maxPrintCopies,
+        cRarity
       );
 
       list.push({
         ...c,
-        // Canonical shared attributes MUST come from canonicalCard (so admin edits to archetype/name/stats apply to all versions!)
         name: canonicalCard.name || c.name,
         archetype: canonicalCard.archetype !== undefined ? canonicalCard.archetype : c.archetype,
         type: canonicalCard.type || c.type,
@@ -123,15 +158,15 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card: initialC
         lore: canonicalCard.lore !== undefined ? canonicalCard.lore : c.lore,
         isHidden: canonicalCard.isHidden !== undefined ? canonicalCard.isHidden : c.isHidden,
 
-        // Specific visual variation attributes:
         code: cleanCardCode(c.code) || cleanCardCode(baseCode),
+        parentCode: baseCode,
         imageUrl: c.imageUrl,
         frame: effectiveFrame,
         variationType,
         rarity: cRarity || 'Comum',
-        isRarePrint: Boolean(c.isRarePrint ?? baseRare),
-        requiresAdminVerification: Boolean(c.requiresAdminVerification ?? baseRare),
-        maxPrintCopies: c.maxPrintCopies ?? baseMaxCopies,
+        isRarePrint: rareStatus.isRarePrint,
+        requiresAdminVerification: rareStatus.requiresAdminVerification,
+        maxPrintCopies: rareStatus.maxPrintCopies,
         catalogCoverImageUrl: coverUrl,
         isCatalogCover: isVarCover
       });
@@ -143,22 +178,24 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card: initialC
     // 2. Initial card if different
     addVersion(initialCard, initialCard.frame, initialCard.variationType);
 
-    // 3. Matches from allCards and defaultCards
-    for (const c of matches) {
-      addVersion(c, c.frame, c.variationType);
-    }
+    // 3. All default cards for this baseCode (including skins and Moderno defaults)
+    defaultCardMatches.forEach((d, idx) => {
+      const dFrame = d.frame || (isLegacyCard(d) ? 'Legado' : 'Moderno');
+      const isSkin = cleanCardCode(d.code) !== cleanCardCode(baseCode) || d.rarity === 'Evento';
+      const dVarType = d.variationType || (isSkin ? 'Evento / Skin' : (idx > 0 && dFrame === 'Legado' ? 'Arte Alternativa' : dFrame));
+      addVersion(d, dFrame, dVarType);
+    });
 
-    // 4. Candidate variants from canonicalCard.variants, initialCard.variants, and matches
+    // 4. Candidate variants from canonicalCard.variants and initialCard.variants
     const allCandidateVariants: CardVariationItem[] = [];
     if (canonicalCard.variants) allCandidateVariants.push(...canonicalCard.variants);
     if (initialCard.variants) allCandidateVariants.push(...initialCard.variants);
-    matches.forEach(m => {
-      if (m.variants) allCandidateVariants.push(...m.variants);
+    defaultCardMatches.forEach(d => {
+      if (d.variants) allCandidateVariants.push(...d.variants);
     });
 
     allCandidateVariants.forEach(v => {
-      const vBase = getBaseCardCode(v.code || baseCode);
-      if (vBase === baseCode && v.imageUrl) {
+      if (v && v.imageUrl) {
         const vFrame = v.frame || 'Moderno';
         const vVarType = v.name || (vFrame === 'Moderno' ? 'Novo Frame' : 'Legado');
         const imgKey = `${vFrame}_${v.imageUrl}`;
@@ -170,33 +207,35 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card: initialC
           vRarity = 'Comum';
         }
 
-        const isVarCover = Boolean(
-          v.isCatalogCover || 
-          (v.imageUrl && coverUrl && v.imageUrl === coverUrl)
+        const isVarCover = Boolean(coverUrl && v.imageUrl === coverUrl);
+        const rareStatus = resolveVarRare(
+          v.imageUrl,
+          vFrame,
+          v.isRarePrint,
+          v.requiresAdminVerification,
+          v.maxPrintCopies,
+          vRarity
         );
 
         list.push({
           ...canonicalCard,
           id: v.id || `var_${v.code || baseCode}_${list.length}`,
           code: cleanCardCode(v.code) || cleanCardCode(baseCode),
+          parentCode: baseCode,
           imageUrl: v.imageUrl,
           frame: vFrame,
           variationType: vVarType,
           isVariation: true,
           rarity: vRarity || 'Comum',
-          isRarePrint: Boolean(v.isRarePrint ?? baseRare),
-          requiresAdminVerification: Boolean(v.requiresAdminVerification ?? baseRare),
-          maxPrintCopies: v.maxPrintCopies ?? baseMaxCopies,
+          isRarePrint: rareStatus.isRarePrint,
+          requiresAdminVerification: rareStatus.requiresAdminVerification,
+          maxPrintCopies: rareStatus.maxPrintCopies,
           catalogCoverImageUrl: coverUrl,
           isCatalogCover: isVarCover
         });
       }
     });
 
-    // Ordenação de variações:
-    // 1º Novo Frame (Moderno)
-    // 2º Artes Alternativas e Skins
-    // 3º Legado
     return list.sort((a, b) => {
       const pDiff = getCardDisplayPriority(b) - getCardDisplayPriority(a);
       if (pDiff !== 0) return pDiff;
@@ -204,7 +243,7 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card: initialC
       if (codeDiff !== 0) return codeDiff;
       return (a.imageUrl || '').localeCompare(b.imageUrl || '');
     });
-  }, [initialCard, allCards]);
+  }, [initialCard, canonicalBase]);
 
   useEffect(() => {
     if (!initialCard) {
@@ -214,10 +253,8 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card: initialC
       setSelectedVarKey(null);
       return;
     }
-    // Não sobrescreve se o administrador estiver editando ativamente a carta
     if (isEditing) return;
 
-    // Se o usuário selecionou uma variação específica, mantém aquela variação atualizada com os novos dados
     if (selectedVarKey) {
       const found = cardVariations.find(v => (v.imageUrl || v.id || v.code) === selectedVarKey);
       if (found) {
@@ -227,25 +264,28 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card: initialC
       }
     }
 
-    // Pega a versão canônica mais recente da lista de cards do catálogo
-    const baseCode = getBaseCardCode(initialCard.code, initialCard.parentCode);
-    const freshCanonical = allCards.find(c => getBaseCardCode(c.code, c.parentCode) === baseCode) || initialCard;
-    
-    // Se a capa oficial estiver definida, usa a capa
-    const activeVersion = cardVariations.find(v => v.isCatalogCover) || 
+    const freshCanonical = canonicalBase || initialCard;
+    const initialMatch = initialCard ? cardVariations.find(v => 
+      (initialCard.imageUrl && v.imageUrl === initialCard.imageUrl) || 
+      (initialCard.id && v.id === initialCard.id)
+    ) : null;
+    const activeVersion = initialMatch || cardVariations.find(v => v.isCatalogCover) || 
       (cardVariations.length > 0 ? cardVariations[0] : freshCanonical);
 
     setCard(activeVersion);
     setOriginalCode(activeVersion.code);
-  }, [initialCard?.code, allCards, isEditing, selectedVarKey, cardVariations]);
+  }, [initialCard?.code, canonicalBase, isEditing, selectedVarKey, cardVariations]);
 
+  // --- Logic to find related cards (memoized on stable text/type fields to avoid lag while editing or toggling) ---
+  const cardCode = card?.code;
+  const cardName = card?.name;
+  const cardType = card?.type;
+  const cardArchetype = card?.archetype;
+  const cardDescription = card?.description;
 
-
-  // --- Logic to find related cards ---
   const relatedCards = useMemo(() => {
-    if (!card) return [];
+    if (!cardCode || isEditing) return [];
 
-    // Helper: Extrai termos entre « » que são muito usados no jogo para referenciar grupos
     const extractQuotedTerms = (text?: string): string[] => {
       if (!text) return [];
       const matches = text.match(/«(.*?)»/g);
@@ -253,90 +293,72 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card: initialC
       return matches.map(m => m.replace(/[«»]/g, '').toLowerCase().trim());
     };
 
-    // Helper: Valida restrições de equipamentos baseadas na descrição
-    const isEquipmentValid = (equip: CardData, target: CardData): boolean => {
-      const desc = (equip.description || "").toLowerCase();
-      
-      // 1. Restrição de Herói
+    const isEquipmentValid = (equipDesc: string, targetType?: string, targetName?: string): boolean => {
+      const desc = (equipDesc || "").toLowerCase();
       if (desc.includes('só pode ser equipada em heróis') || desc.includes('only equip to heroes')) {
-        if (target.type !== 'Herói') return false;
+        if (targetType !== 'Herói') return false;
       }
-
-      // 2. Restrição de Nome (Ex: "Só pode equipar um combatente com «Spear»")
       if (desc.includes('só pode equipar') || desc.includes('can only equip')) {
         const restrictions = extractQuotedTerms(desc);
         if (restrictions.length > 0) {
-          // O alvo deve ter pelo menos UM dos termos restritos em seu nome
-          const matchesRestriction = restrictions.some(term => (target.name || "").toLowerCase().includes(term));
+          const matchesRestriction = restrictions.some(term => (targetName || "").toLowerCase().includes(term));
           if (!matchesRestriction) return false;
         }
       }
-
       return true;
     };
 
+    const cDesc = (cardDescription || "").toLowerCase();
+    const cName = (cardName || "").toLowerCase().trim();
+    const cQuoted = extractQuotedTerms(cDesc);
+    const cardArchetypes = (cardArchetype || "").toLowerCase().split(' / ').map(a => a.trim()).filter(a => a.length > 2);
+
     const scoredCards = allCards
-      .filter(c => c && c.code && card && c.code !== card.code) // Exclui a própria carta
+      .filter(c => c && c.code && c.code !== cardCode)
       .map(candidate => {
         let score = 0;
-        const cDesc = (card.description || "").toLowerCase();
         const candDesc = (candidate.description || "").toLowerCase();
-        const cName = (card.name || "").toLowerCase().trim();
         const candName = (candidate.name || "").toLowerCase().trim();
 
-        // --- 1. VALIDAÇÃO DE REGRAS DE EQUIPAMENTO ---
-        // Se a carta atual é equip, o candidato deve ser válido
-        if (card.type === 'Equipamento') {
-          if (!isEquipmentValid(card, candidate)) return { card: candidate, score: 0 };
+        if (cardType === 'Equipamento') {
+          if (!isEquipmentValid(cDesc, candidate.type, candName)) return { card: candidate, score: 0 };
         }
-        // Se o candidato é equip, a carta atual deve ser válida para ele
         if (candidate.type === 'Equipamento') {
-          if (!isEquipmentValid(candidate, card)) return { card: candidate, score: 0 };
+          if (!isEquipmentValid(candDesc, cardType, cName)) return { card: candidate, score: 0 };
         }
 
-        // --- 2. MENÇÃO DIRETA DE NOME (Sinergia Forte) ---
-        // A carta menciona o nome exato do candidato?
         if (candName.length > 2 && cDesc.includes(candName)) score += 50;
-        // O candidato menciona o nome exato da carta?
         if (cName.length > 2 && candDesc.includes(cName)) score += 50;
 
-        // --- 3. MENÇÃO DE GRUPO/FAMÍLIA (via « ») ---
-        // Ex: Carta diz "Buffa cartas «Spear»". Candidato tem "Spear" no nome.
-        const cQuoted = extractQuotedTerms(cDesc);
         cQuoted.forEach(term => {
           if (term.length > 2 && candName.includes(term)) score += 30;
         });
 
-        const candQuoted = extractQuotedTerms(candDesc);
-        candQuoted.forEach(term => {
-          if (term.length > 2 && cName.includes(term)) score += 30;
-        });
+        if (candDesc.includes('«')) {
+          const candQuoted = extractQuotedTerms(candDesc);
+          candQuoted.forEach(term => {
+            if (term.length > 2 && cName.includes(term)) score += 30;
+          });
+        }
 
-        // --- 4. SINERGIA DE ARQUÉTIPO (Contextual) ---
-        // Só pontua se a descrição mencionar o arquétipo explicitamente.
-        // Isso evita que todos os "Lúmen" apareçam como relacionados sem motivo.
         const candArchetypes = (candidate.archetype || "").toLowerCase().split(' / ');
         candArchetypes.forEach(arch => {
-           const aTrim = arch.trim();
-           // Verifica se a descrição da carta menciona o arquétipo do candidato
-           if (aTrim.length > 2 && cDesc.includes(aTrim)) score += 15;
+          const aTrim = arch.trim();
+          if (aTrim.length > 2 && cDesc.includes(aTrim)) score += 15;
         });
 
-        // Vice-versa
-        const cardArchetypes = (card.archetype || "").toLowerCase().split(' / ');
-        cardArchetypes.forEach(arch => {
-           const aTrim = arch.trim();
-           if (aTrim.length > 2 && candDesc.includes(aTrim)) score += 15;
+        cardArchetypes.forEach(aTrim => {
+          if (candDesc.includes(aTrim)) score += 15;
         });
 
         return { card: candidate, score };
       })
-      .filter(item => item.score > 0) // Só retorna se tiver pontuação real
+      .filter(item => item.score > 0)
       .sort((a, b) => b.score - a.score)
-      .slice(0, 5); // Top 5 recomendações
+      .slice(0, 5);
 
     return scoredCards.map(item => item.card);
-  }, [card, allCards]);
+  }, [cardCode, cardName, cardType, cardArchetype, cardDescription, allCards, isEditing]);
 
   if (!card) return null;
 
@@ -398,10 +420,14 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card: initialC
         const finalCard = sanitizeCardStats(await processImageUpload(card));
         await saveCard(finalCard);
         if (finalCard.isRarePrint !== undefined) {
-          await setCardRarePrintSettings(finalCard, !!finalCard.isRarePrint, finalCard.maxPrintCopies || 1);
+          await setCardRarePrintSettings(
+            { ...finalCard, parentCode: baseCardCode || finalCard.parentCode },
+            Boolean(finalCard.isRarePrint),
+            finalCard.maxPrintCopies || 1
+          );
         }
         if (finalCard.isCatalogCover) {
-          await setCardCatalogCover(finalCard, finalCard, false);
+          await setCardCatalogCover({ ...finalCard, parentCode: baseCardCode || finalCard.parentCode }, finalCard, false);
         }
         setOriginalCode(finalCard.code);
         setCard(finalCard);
@@ -416,45 +442,67 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card: initialC
   };
 
   const isCurrentCover = Boolean(
-    card && (
-      card.isCatalogCover ||
-      (currentCoverUrl && card.imageUrl === currentCoverUrl)
-    )
+    card && currentCoverUrl && card.imageUrl === currentCoverUrl
   );
 
   const handleToggleCatalogCover = async (targetCard?: CardData | CardVariationItem) => {
     const cardToUse = targetCard || card;
     if (!cardToUse || !card) return;
     const isTargetCover = Boolean(
-      cardToUse.isCatalogCover ||
-      (currentCoverUrl && cardToUse.imageUrl === currentCoverUrl)
+      currentCoverUrl && cardToUse.imageUrl === currentCoverUrl
     );
     try {
-      await setCardCatalogCover(card, cardToUse, isTargetCover);
-      setCard(prev => prev ? ({
-        ...prev,
-        catalogCoverImageUrl: isTargetCover ? undefined : cardToUse.imageUrl,
-        isCatalogCover: !isTargetCover
-      }) : null);
-      setAdminActionFeedback(isTargetCover ? 'Capa automática restaurada!' : 'Definida como capa do catálogo!');
+      await setCardCatalogCover(
+        { ...(canonicalBase || card), code: baseCardCode || card.code, parentCode: baseCardCode },
+        cardToUse,
+        isTargetCover
+      );
+      if (cardToUse.imageUrl === card.imageUrl) {
+        setCard(prev => prev ? ({
+          ...prev,
+          catalogCoverImageUrl: isTargetCover ? undefined : cardToUse.imageUrl,
+          isCatalogCover: !isTargetCover
+        }) : null);
+      }
+      setAdminActionFeedback(isTargetCover ? 'Capa automática restaurada!' : `Definida "${(cardToUse as any).variationType || (cardToUse as any).name || cardToUse.frame || 'Versão'}" como capa do catálogo!`);
       setTimeout(() => setAdminActionFeedback(null), 3500);
     } catch (err: any) {
       console.error(err);
     }
   };
 
-  const handleSaveRarePrintSettings = async (isRare: boolean, maxCopies: number = 1) => {
-    if (!card) return;
+  const handleSaveRarePrintSettings = async (
+    isRare: boolean,
+    maxCopies: number = 1,
+    targetVersion?: CardData | CardVariationItem
+  ) => {
+    const versionToUse = targetVersion || card;
+    if (!versionToUse || !card) return;
     try {
       setIsSavingRareSettings(true);
-      await setCardRarePrintSettings(card, isRare, maxCopies);
-      setCard(prev => prev ? ({
-        ...prev,
-        isRarePrint: isRare,
-        requiresAdminVerification: isRare,
-        maxPrintCopies: isRare ? maxCopies : 0
-      }) : null);
-      setAdminActionFeedback(isRare ? (maxCopies === 1 ? '1/1 Tiragem Única configurada com sucesso!' : `Tiragem rara configurada (${maxCopies} cópia(s))!`) : 'Tiragem padrão restaurada!');
+      const targetPayload: CardData = {
+        ...card,
+        id: versionToUse.id,
+        code: cleanCardCode(versionToUse.code || card.code),
+        parentCode: baseCardCode || card.parentCode,
+        imageUrl: versionToUse.imageUrl,
+        frame: versionToUse.frame || card.frame
+      };
+      await setCardRarePrintSettings(targetPayload, isRare, maxCopies);
+      if (versionToUse.imageUrl === card.imageUrl) {
+        setCard(prev => prev ? ({
+          ...prev,
+          isRarePrint: isRare,
+          requiresAdminVerification: isRare,
+          maxPrintCopies: isRare ? maxCopies : 0
+        }) : null);
+      }
+      const label = (versionToUse as any).variationType || (versionToUse as any).name || versionToUse.frame || 'Versão';
+      setAdminActionFeedback(
+        isRare
+          ? (maxCopies === 1 ? `1/1 Tiragem Única ativada apenas em "${label}"!` : `Tiragem rara (${maxCopies}x) ativada em "${label}"!`)
+          : `Tiragem padrão restaurada em "${label}"!`
+      );
       setTimeout(() => setAdminActionFeedback(null), 3500);
     } catch (err: any) {
       console.error(err);
@@ -858,8 +906,7 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card: initialC
                     )
                   );
                   const isVarCover = Boolean(
-                    v.isCatalogCover ||
-                    (currentCoverUrl && v.imageUrl === currentCoverUrl)
+                    currentCoverUrl && v.imageUrl === currentCoverUrl
                   );
 
                   return (
@@ -915,27 +962,28 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card: initialC
                                 ? 'bg-amber-500 text-slate-950 hover:bg-amber-400 font-black'
                                 : 'bg-slate-900 text-amber-300 hover:bg-slate-800 border border-amber-500/30'
                             }`}
-                            title={isVarCover ? 'Capa atual do catálogo' : 'Definir esta variação como capa'}
+                            title={isVarCover ? 'Capa atual do catálogo (Clique para restaurar padrão)' : 'Definir esta variação como capa'}
                           >
                             <Crown size={11} className={isVarCover ? 'fill-current' : ''} />
                             <span>{isVarCover ? 'Capa Oficial' : 'Definir Capa'}</span>
                           </button>
                           <button
                             type="button"
+                            disabled={isSavingRareSettings}
                             onClick={(e) => {
                               e.stopPropagation();
-                              const newRare = !v.isRarePrint;
-                              handleSaveRarePrintSettings(newRare, 1);
+                              const newRare = !Boolean(v.isRarePrint || v.requiresAdminVerification);
+                              handleSaveRarePrintSettings(newRare, 1, v);
                             }}
                             className={`py-1 px-2 rounded text-[10px] font-bold flex items-center justify-center gap-1 transition border ${
-                              v.isRarePrint
+                              Boolean(v.isRarePrint || v.requiresAdminVerification)
                                 ? 'bg-amber-500 text-slate-950 border-amber-300 font-black'
                                 : 'bg-slate-900 text-slate-400 hover:text-amber-300 border-slate-800 hover:border-amber-500/30'
                             }`}
-                            title="Alternar Tiragem Única 1/1"
+                            title="Alternar Tiragem Única 1/1 apenas nesta versão"
                           >
                             <ShieldAlert size={11} />
-                            <span>{v.isRarePrint ? '1/1' : 'Tiragem'}</span>
+                            <span>{Boolean(v.isRarePrint || v.requiresAdminVerification) ? '1/1' : 'Tiragem'}</span>
                           </button>
                         </div>
                       )}
@@ -1089,8 +1137,10 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card: initialC
                    onChange={(e) => {
                      const newFrame = e.target.value as 'Legado' | 'Moderno';
                      let newRarity = card.rarity;
-                     if (newFrame === 'Moderno' && (!newRarity || newRarity === 'Beta')) {
-                       newRarity = 'Comum';
+                     if (newFrame === 'Moderno' && (!newRarity || newRarity.startsWith('Legado') || newRarity === 'Beta' || newRarity === 'Comum')) {
+                       newRarity = 'Moderno Comum';
+                     } else if (newFrame === 'Legado' && (!newRarity || newRarity.startsWith('Moderno'))) {
+                       newRarity = 'Legado Comum';
                      }
                      setCard({ ...card, frame: newFrame, rarity: newRarity });
                    }} 
@@ -1104,17 +1154,46 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card: initialC
               )}
               
               {isEditing ? (
-                 <select value={card.rarity || 'Comum'} onChange={(e) => setCard({...card, rarity: e.target.value})} className="px-3 py-1.5 bg-yellow-900/10 rounded text-yellow-300 border border-yellow-800/50 outline-none">
-                    <option value="Comum">Comum</option>
-                    <option value="Incomum">Incomum</option>
-                    <option value="Rara">Rara</option>
-                    <option value="Muito Rara">Muito Rara</option>
-                    <option value="Limitadas">Limitadas</option>
-                    <option value="Beta">Beta</option>
-                    <option value="Evento">Evento</option>
+                 <select 
+                   value={card.rarity || (card.frame === 'Moderno' ? 'Moderno Comum' : 'Legado Comum')} 
+                   onChange={(e) => {
+                     const newRarity = e.target.value;
+                     const isMacro = newRarity === 'Moderno Macroversal';
+                     setCard({
+                       ...card, 
+                       rarity: newRarity,
+                       ...(isMacro ? { isRarePrint: true, maxPrintCopies: 1, requiresAdminVerification: true } : {})
+                     });
+                   }} 
+                   className="px-3 py-1.5 bg-yellow-900/10 rounded text-yellow-300 border border-yellow-800/50 outline-none font-bold"
+                 >
+                    {card.frame === 'Moderno' ? (
+                      MODERNO_RARITIES.map(r => (
+                        <option key={r} value={r}>
+                          {r} {r === 'Moderno Macroversal' ? '★ (Tiragem Única • 1/ano)' : ''}
+                        </option>
+                      ))
+                    ) : (
+                      LEGADO_RARITIES.map(r => (
+                        <option key={r} value={r}>{r}</option>
+                      ))
+                    )}
                  </select>
               ) : (
-                 card.rarity ? <span className="px-3 py-1 bg-yellow-900/30 rounded text-yellow-300 border border-yellow-800/50 text-xs font-bold">{card.rarity}</span> : null
+                 card.rarity ? (
+                   <span className={`px-3 py-1 rounded text-xs font-bold border flex items-center gap-1.5 ${
+                     card.rarity === 'Moderno Macroversal'
+                       ? 'bg-gradient-to-r from-amber-500/25 via-purple-500/20 to-cyan-500/25 text-amber-300 border-amber-500/70 shadow-[0_0_15px_rgba(245,158,11,0.35)] animate-pulse'
+                       : 'bg-yellow-900/30 text-yellow-300 border-yellow-800/50'
+                   }`}>
+                     {card.rarity}
+                     {card.rarity === 'Moderno Macroversal' && (
+                       <span className="text-[10px] font-black uppercase tracking-wider text-amber-300 bg-amber-950/90 px-1.5 py-0.5 rounded border border-amber-500/60 shadow-sm">
+                         Tiragem Única (1 por ano)
+                       </span>
+                     )}
+                   </span>
+                 ) : null
               )}
             </div>
             

@@ -6,12 +6,14 @@ import { parseDeckFromCode } from '../deckUtils';
 interface NovidadesSectionProps {
   products: ExclusiveProduct[];
   onOpenProductModal: (product: ExclusiveProduct, variationIndex?: number) => void;
+  onOpenStoreCheckout?: (product: ExclusiveProduct, variationIndex?: number) => void;
   allCards: CardData[];
 }
 
 export const NovidadesSection: React.FC<NovidadesSectionProps> = ({
   products,
   onOpenProductModal,
+  onOpenStoreCheckout,
   allCards
 }) => {
   const activeProducts = useMemo(() => {
@@ -205,7 +207,7 @@ export const NovidadesSection: React.FC<NovidadesSectionProps> = ({
                         })}
                       </div>
                     ) : (
-                      hasLink && product.price && product.price.trim() !== '' && (
+                      product.price && product.price.trim() !== '' && (
                         <div className="inline-flex items-center gap-1.5 bg-emerald-950/80 border border-emerald-500/50 px-3 py-1.5 rounded-lg text-emerald-300 font-mono font-black text-sm shadow-md">
                           <span className="text-[10px] text-emerald-400 font-bold uppercase tracking-wider">Preço:</span>
                           <span>{product.price.startsWith('R$') ? product.price : `R$ ${product.price}`}</span>
@@ -225,37 +227,51 @@ export const NovidadesSection: React.FC<NovidadesSectionProps> = ({
                   </button>
 
                   {isButtonEnabled && (
-                    hasLink ? (
-                      product.priceVariations && product.priceVariations.length > 0 ? (
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onOpenProductModal(product);
-                          }}
-                          className="w-full sm:flex-1 bg-gradient-to-r from-purple-600 via-indigo-600 to-purple-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold py-3.5 px-6 rounded-xl transition-all duration-300 flex items-center justify-center gap-2 shadow-lg shadow-purple-900/40 hover:scale-[1.02] active:scale-[0.98] text-sm md:text-base cursor-pointer"
-                        >
-                          <ShoppingCart size={18} />
-                          <span>Escolher Versão & Comprar</span>
-                        </button>
-                      ) : (
-                        <a 
-                          href={buttonLink} 
-                          target="_blank" 
-                          rel="noopener noreferrer"
-                          onClick={(e) => e.stopPropagation()}
-                          className="w-full sm:flex-1 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold py-3.5 px-6 rounded-xl transition-all duration-300 flex items-center justify-center gap-2 shadow-lg shadow-purple-900/40 hover:scale-[1.02] active:scale-[0.98] text-sm md:text-base"
-                        >
-                          <ShoppingCart size={18} />
-                          <span>{buttonText}</span>
-                        </a>
-                      )
+                    product.priceVariations && product.priceVariations.length > 0 ? (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onOpenProductModal(product);
+                        }}
+                        className="w-full sm:flex-1 bg-gradient-to-r from-purple-600 via-indigo-600 to-purple-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold py-3.5 px-6 rounded-xl transition-all duration-300 flex items-center justify-center gap-2 shadow-lg shadow-purple-900/40 hover:scale-[1.02] active:scale-[0.98] text-sm md:text-base cursor-pointer"
+                      >
+                        <ShoppingCart size={18} />
+                        <span>Escolher Versão & Comprar</span>
+                      </button>
+                    ) : onOpenStoreCheckout && product.allowInternalCheckout !== false ? (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onOpenStoreCheckout(product, 0);
+                        }}
+                        className="w-full sm:flex-1 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold py-3.5 px-6 rounded-xl transition-all duration-300 flex items-center justify-center gap-2 shadow-lg shadow-purple-900/40 hover:scale-[1.02] active:scale-[0.98] text-sm md:text-base cursor-pointer"
+                      >
+                        <ShoppingCart size={18} />
+                        <span>{buttonText}</span>
+                      </button>
+                    ) : hasLink ? (
+                      <a 
+                        href={buttonLink} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        onClick={(e) => e.stopPropagation()}
+                        className="w-full sm:flex-1 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold py-3.5 px-6 rounded-xl transition-all duration-300 flex items-center justify-center gap-2 shadow-lg shadow-purple-900/40 hover:scale-[1.02] active:scale-[0.98] text-sm md:text-base"
+                      >
+                        <ShoppingCart size={18} />
+                        <span>{buttonText}</span>
+                      </a>
                     ) : (
                       <button 
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation();
-                          setNoticeProduct(product);
+                          if (onOpenStoreCheckout) {
+                            onOpenStoreCheckout(product, 0);
+                          } else {
+                            setNoticeProduct(product);
+                          }
                         }}
                         className="w-full sm:flex-1 bg-gradient-to-r from-amber-600 via-purple-600 to-indigo-600 hover:from-amber-500 hover:via-purple-500 hover:to-indigo-500 text-white font-bold py-3.5 px-6 rounded-xl transition-all duration-300 flex items-center justify-center gap-2 shadow-lg shadow-purple-900/40 hover:scale-[1.02] active:scale-[0.98] text-sm md:text-base cursor-pointer"
                       >
@@ -478,7 +494,7 @@ export const NovidadesSection: React.FC<NovidadesSectionProps> = ({
                         })}
                       </div>
                     ) : (
-                      hasLink && currentProduct.price && currentProduct.price.trim() !== '' && (
+                      currentProduct.price && currentProduct.price.trim() !== '' && (
                         <div className="inline-flex items-center gap-1.5 bg-emerald-950/80 border border-emerald-500/50 px-3 py-1.5 rounded-lg text-emerald-300 font-mono font-black text-sm shadow-md">
                           <span className="text-[10px] text-emerald-400 font-bold uppercase tracking-wider">Preço:</span>
                           <span>{currentProduct.price.startsWith('R$') ? currentProduct.price : `R$ ${currentProduct.price}`}</span>
@@ -498,37 +514,51 @@ export const NovidadesSection: React.FC<NovidadesSectionProps> = ({
                   </button>
 
                   {isButtonEnabled && (
-                    hasLink ? (
-                      currentProduct.priceVariations && currentProduct.priceVariations.length > 0 ? (
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onOpenProductModal(currentProduct);
-                          }}
-                          className="w-full sm:flex-1 bg-gradient-to-r from-purple-600 via-indigo-600 to-purple-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold py-3.5 px-6 rounded-xl transition-all duration-300 flex items-center justify-center gap-2 shadow-lg shadow-purple-900/40 hover:scale-[1.02] active:scale-[0.98] text-sm md:text-base cursor-pointer"
-                        >
-                          <ShoppingCart size={18} />
-                          <span>Escolher Versão & Comprar</span>
-                        </button>
-                      ) : (
-                        <a 
-                          href={buttonLink} 
-                          target="_blank" 
-                          rel="noopener noreferrer"
-                          onClick={(e) => e.stopPropagation()}
-                          className="w-full sm:flex-1 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold py-3.5 px-6 rounded-xl transition-all duration-300 flex items-center justify-center gap-2 shadow-lg shadow-purple-900/40 hover:scale-[1.02] active:scale-[0.98] text-sm md:text-base"
-                        >
-                          <ShoppingCart size={18} />
-                          <span>{buttonText}</span>
-                        </a>
-                      )
+                    currentProduct.priceVariations && currentProduct.priceVariations.length > 0 ? (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onOpenProductModal(currentProduct);
+                        }}
+                        className="w-full sm:flex-1 bg-gradient-to-r from-purple-600 via-indigo-600 to-purple-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold py-3.5 px-6 rounded-xl transition-all duration-300 flex items-center justify-center gap-2 shadow-lg shadow-purple-900/40 hover:scale-[1.02] active:scale-[0.98] text-sm md:text-base cursor-pointer"
+                      >
+                        <ShoppingCart size={18} />
+                        <span>Escolher Versão & Comprar</span>
+                      </button>
+                    ) : onOpenStoreCheckout && currentProduct.allowInternalCheckout !== false ? (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onOpenStoreCheckout(currentProduct, 0);
+                        }}
+                        className="w-full sm:flex-1 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold py-3.5 px-6 rounded-xl transition-all duration-300 flex items-center justify-center gap-2 shadow-lg shadow-purple-900/40 hover:scale-[1.02] active:scale-[0.98] text-sm md:text-base cursor-pointer"
+                      >
+                        <ShoppingCart size={18} />
+                        <span>{buttonText}</span>
+                      </button>
+                    ) : hasLink ? (
+                      <a 
+                        href={buttonLink} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        onClick={(e) => e.stopPropagation()}
+                        className="w-full sm:flex-1 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold py-3.5 px-6 rounded-xl transition-all duration-300 flex items-center justify-center gap-2 shadow-lg shadow-purple-900/40 hover:scale-[1.02] active:scale-[0.98] text-sm md:text-base"
+                      >
+                        <ShoppingCart size={18} />
+                        <span>{buttonText}</span>
+                      </a>
                     ) : (
                       <button 
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation();
-                          setNoticeProduct(currentProduct);
+                          if (onOpenStoreCheckout) {
+                            onOpenStoreCheckout(currentProduct, 0);
+                          } else {
+                            setNoticeProduct(currentProduct);
+                          }
                         }}
                         className="w-full sm:flex-1 bg-gradient-to-r from-amber-600 via-purple-600 to-indigo-600 hover:from-amber-500 hover:via-purple-500 hover:to-indigo-500 text-white font-bold py-3.5 px-6 rounded-xl transition-all duration-300 flex items-center justify-center gap-2 shadow-lg shadow-purple-900/40 hover:scale-[1.02] active:scale-[0.98] text-sm md:text-base cursor-pointer"
                       >

@@ -9,6 +9,8 @@ interface ProductDetailModalProps {
   allCards: CardData[];
   onSelectCard?: (card: CardData) => void;
   initialVariationIndex?: number;
+  onAddToCart?: (product: ExclusiveProduct, variationIndex: number) => void;
+  onBuyNow?: (product: ExclusiveProduct, variationIndex: number) => void;
 }
 
 export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
@@ -16,11 +18,14 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
   onClose,
   allCards,
   onSelectCard,
-  initialVariationIndex
+  initialVariationIndex,
+  onAddToCart,
+  onBuyNow
 }) => {
   const [activeMediaIndex, setActiveMediaIndex] = useState(0);
   const [copiedCode, setCopiedCode] = useState(false);
   const [showNotice, setShowNotice] = useState(false);
+  const [addedToCartFeedback, setAddedToCartFeedback] = useState(false);
 
   // Extract all media items
   const mediaList: ProductMediaItem[] = useMemo(() => {
@@ -382,19 +387,66 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                   </div>
                 )}
 
-                {/* Se não houver link de venda, mostra o status de lançamento */}
-                {!hasLink && (
+                {/* Aviso de Pré-Venda / Lançamento */}
+                {(product.isPreOrder || product.preOrderReleaseDate || (!hasLink && product.noLinkMessage)) && (
                   <div className="p-3.5 rounded-xl bg-purple-950/60 border border-purple-800/60 flex items-center gap-3 text-left">
                     <Calendar size={22} className="text-amber-400 shrink-0" />
                     <div>
-                      <div className="text-[11px] font-bold uppercase tracking-wider text-purple-300">Status de Lançamento</div>
-                      <div className="text-sm font-black text-amber-400">{product.noLinkMessage || 'PRÉ VENDA ABRE EM 15/10'}</div>
+                      <div className="text-[11px] font-bold uppercase tracking-wider text-purple-300">
+                        {product.isPreOrder ? 'Lote Oficial de Pré-Venda' : 'Previsão de Envio / Lançamento'}
+                      </div>
+                      <div className="text-sm font-black text-amber-400">
+                        {product.preOrderReleaseDate || product.noLinkMessage || 'Reserva Garantida · Envio via Correios c/ Rastreio'}
+                      </div>
                     </div>
                   </div>
                 )}
 
                 {isButtonEnabled ? (
-                  hasLink ? (
+                  onBuyNow && product.allowInternalCheckout !== false ? (
+                    <div className="flex flex-col sm:flex-row gap-2.5">
+                      {onAddToCart && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            onAddToCart(product, activeVariationIndex);
+                            setAddedToCartFeedback(true);
+                            setTimeout(() => setAddedToCartFeedback(false), 1800);
+                          }}
+                          className={`py-3.5 px-4 rounded-xl font-bold text-xs transition flex items-center justify-center gap-2 border cursor-pointer ${
+                            addedToCartFeedback
+                              ? 'bg-emerald-600 text-white border-emerald-500'
+                              : 'bg-slate-800 hover:bg-slate-700 text-white border-slate-700'
+                          }`}
+                        >
+                          {addedToCartFeedback ? (
+                            <>
+                              <Check size={16} />
+                              <span>No Carrinho!</span>
+                            </>
+                          ) : (
+                            <>
+                              <ShoppingCart size={16} />
+                              <span>Por no Carrinho</span>
+                            </>
+                          )}
+                        </button>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={() => onBuyNow(product, activeVariationIndex)}
+                        className="flex-1 bg-gradient-to-r from-purple-600 via-indigo-600 to-purple-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold py-4 px-6 rounded-xl transition-all duration-300 flex items-center justify-center gap-2.5 shadow-lg shadow-purple-900/50 hover:scale-[1.02] active:scale-[0.98] text-sm sm:text-base cursor-pointer"
+                      >
+                        <ShoppingCart size={20} />
+                        <span>
+                          {hasVariations
+                            ? `Comprar ${selectedVariation?.name} (PIX / Cartão)`
+                            : buttonText}
+                        </span>
+                      </button>
+                    </div>
+                  ) : hasLink ? (
                     <a 
                       href={currentLink}
                       target="_blank"

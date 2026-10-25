@@ -2,13 +2,177 @@ import React, { useState, useEffect } from 'react';
 import { 
   BookOpen, Clock, Layers, Scale, Sparkles, ChevronDown, ChevronUp, 
   Info, Sword, Crown, Zap, CheckCircle, Ghost, FileText, 
-  Edit2, Save, X, Plus, Trash2, AlertCircle, Eye, EyeOff, Check, Search, Grid
+  Edit2, Save, X, Plus, Trash2, AlertCircle, Eye, EyeOff, Check, Search, Grid,
+  Trophy, Award, Upload, Loader2, Image as ImageIcon, Flame, Filter
 } from 'lucide-react';
 import { doc, getDoc, setDoc, onSnapshot } from 'firebase/firestore';
-import { db } from '../firebase';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { db, storage, readBrowserCache, writeBrowserCache } from '../firebase';
 import { sanitizeForFirestore } from '../CardContext';
 import { GameField } from './GameField';
-import { ArchetypeData } from '../types';
+import { ArchetypeData, TierGuideItem, RarityGuideItem } from '../types';
+
+export const defaultRarityItems: RarityGuideItem[] = [
+  // --- FRAME MODERNO (11) ---
+  {
+    id: 'rarity-mod-comum',
+    name: 'Moderno Comum',
+    frame: 'Moderno',
+    badge: 'Base do Formato',
+    iconUrl: '',
+    description: 'A raridade fundamental do formato Moderno. Representa a espinha dorsal dos decks e combatentes essenciais para qualquer estratégia.',
+    color: 'slate'
+  },
+  {
+    id: 'rarity-mod-incomum',
+    name: 'Moderno Incomum',
+    frame: 'Moderno',
+    badge: 'Suporte Tático',
+    iconUrl: '',
+    description: 'Cartas com utilidade estratégica intermediária, oferecendo suporte consistente e ferramentas de controle para arquétipos modernos.',
+    color: 'emerald'
+  },
+  {
+    id: 'rarity-mod-rara',
+    name: 'Moderno Rara',
+    frame: 'Moderno',
+    badge: 'Alto Impacto',
+    iconUrl: '',
+    description: 'Cartas com impacto elevado e habilidades singulares, fundamentais para a curva de poder dos decks competitivos.',
+    color: 'blue'
+  },
+  {
+    id: 'rarity-mod-muito-rara',
+    name: 'Moderno Muito Rara',
+    frame: 'Moderno',
+    badge: 'Efeito Decisivo',
+    iconUrl: '',
+    description: 'Combatentes e cartas de efeito com grande capacidade de alterar o ritmo do jogo e criar viradas táticas impressionantes.',
+    color: 'purple'
+  },
+  {
+    id: 'rarity-mod-super-rara',
+    name: 'Moderno Super Rara',
+    frame: 'Moderno',
+    badge: 'Potência Superior',
+    iconUrl: '',
+    description: 'Cartas de prestígio superior, combinando grande poder em campo com acabamento refinado e alta procura competitiva.',
+    color: 'indigo'
+  },
+  {
+    id: 'rarity-mod-lendaria',
+    name: 'Moderno Lendária',
+    frame: 'Moderno',
+    badge: 'Lenda do Macroverso',
+    iconUrl: '',
+    description: 'Heróis e cartas lendárias de grande relevância na história do jogo, possuindo mecânicas de alto impacto nos duelos.',
+    color: 'amber'
+  },
+  {
+    id: 'rarity-mod-super-lendaria',
+    name: 'Moderno Super Lendária',
+    frame: 'Moderno',
+    badge: 'Poder Máximo',
+    iconUrl: '',
+    description: 'As lendas mais imponentes e poderosas do Macroverso moderno, com habilidades extraordinárias e presença dominante.',
+    color: 'yellow'
+  },
+  {
+    id: 'rarity-mod-exclusiva',
+    name: 'Moderno Exclusiva',
+    frame: 'Moderno',
+    badge: 'Edição Especial',
+    iconUrl: '',
+    description: 'Versões e artes exclusivas de tiragem selecionada, distribuídas em produtos especiais e expansões de destaque.',
+    color: 'cyan'
+  },
+  {
+    id: 'rarity-mod-super-exclusiva',
+    name: 'Moderno Super Exclusiva',
+    frame: 'Moderno',
+    badge: 'Item de Colecionador',
+    iconUrl: '',
+    description: 'Cartas extremamente cobiçadas com tratamentos visuais nobres e disponibilidade restrita para colecionadores exigentes.',
+    color: 'pink'
+  },
+  {
+    id: 'rarity-mod-limitada',
+    name: 'Moderno Limitada',
+    frame: 'Moderno',
+    badge: 'Tiragem Limitada',
+    iconUrl: '',
+    description: 'Cartas com tiragem rigorosamente limitada e numerada, criadas para eventos marcantes e comemorações especiais.',
+    color: 'rose'
+  },
+  {
+    id: 'rarity-mod-macroversal',
+    name: 'Moderno Macroversal',
+    frame: 'Moderno',
+    badge: 'Tiragem Única • 1 por Ano',
+    iconUrl: '',
+    description: 'A raridade suprema do jogo. Possui tiragem única absoluta: sai apenas 1 carta por ano em todo o mundo. A joia máxima do Light Dark TCG.',
+    color: 'amber',
+    isUniquePerYear: true
+  },
+
+  // --- FRAME LEGADO (6) ---
+  {
+    id: 'rarity-leg-comum',
+    name: 'Legado Comum',
+    frame: 'Legado',
+    badge: 'Fundação Clássica',
+    iconUrl: '',
+    description: 'A base clássica da era inicial (2025). As cartas que deram início à história e às primeiras batalhas do Macroverso.',
+    color: 'slate'
+  },
+  {
+    id: 'rarity-leg-incomum',
+    name: 'Legado Incomum',
+    frame: 'Legado',
+    badge: 'Tática Histórica',
+    iconUrl: '',
+    description: 'Cartas táticas da era original de Light Dark, fornecendo recursos e mecânicas clássicas de grande nostalgia.',
+    color: 'emerald'
+  },
+  {
+    id: 'rarity-leg-rara',
+    name: 'Legado Rara',
+    frame: 'Legado',
+    badge: 'Raridade Clássica',
+    iconUrl: '',
+    description: 'Cartas raras dos primeiros boosters e coleções clássicas, preservando a essência e o design icônico do Frame Legado.',
+    color: 'blue'
+  },
+  {
+    id: 'rarity-leg-muito-rara',
+    name: 'Legado Muito Rara',
+    frame: 'Legado',
+    badge: 'Grande Prestígio',
+    iconUrl: '',
+    description: 'Poderosas cartas da primeira era de difícil obtenção, reverenciadas pelos veteranos e colecionadores do formato clássico.',
+    color: 'purple'
+  },
+  {
+    id: 'rarity-leg-lendaria',
+    name: 'Legado Lendária',
+    frame: 'Legado',
+    badge: 'Lendas da Origem',
+    iconUrl: '',
+    description: 'Os Heróis e monstros lendários que moldaram a primeira era do Macroverso, com artes e molduras clássicas inconfundíveis.',
+    color: 'amber'
+  },
+  {
+    id: 'rarity-leg-limitada',
+    name: 'Legado Limitada',
+    frame: 'Legado',
+    badge: 'Tiragem Histórica',
+    iconUrl: '',
+    description: 'Tiragens limitadas e especiais de eventos clássicos de 2025, altamente protegidas e valorizadas na comunidade.',
+    color: 'rose'
+  }
+];
+
+export const defaultTierItems = defaultRarityItems;
 
 export interface PatchNoteItem {
   id?: string;
@@ -36,7 +200,8 @@ export interface GameManualData {
   };
 
   cartas: {
-    structureItems: Array<{ label: string; text: string; color: string }>;
+    structureTitle?: string;
+    structureItems: Array<{ label: string; text: string; color?: string }>;
     combatenteText: string;
     heroiText: string;
     equipamentoText: string;
@@ -138,6 +303,7 @@ export const defaultManualData: GameManualData = {
   },
 
   cartas: {
+    structureTitle: 'Anatomia & Estrutura das Cartas',
     structureItems: [
       { label: 'Categoria (CT)', text: 'Custo em Cristais de Mana para invocação ou uso da carta.', color: 'text-amber-400' },
       { label: 'Status', text: 'Ataque (Dano físico/mágico) e Vida (apenas Combatentes e Heróis).', color: 'text-white' },
@@ -200,13 +366,13 @@ export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
   isAdmin,
   ArchetypeCardComponent
 }) => {
-  const [data, setData] = useState<GameManualData>(defaultManualData);
+  const [data, setData] = useState<GameManualData>(() => readBrowserCache<GameManualData>('ld_cache_gameManual_v2') || defaultManualData);
   const [isLoading, setIsLoading] = useState(true);
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [archetypeSearch, setArchetypeSearch] = useState('');
 
-  // Collapsible state for each of the 7 sections
-  // 1: PATCH ATUAL, 2: BASICO, 3: CARTAS, 4: TURNOS, 5: REGRAS, 6: ARQUÉTIPOS, 7: CAMPOS
+  // Collapsible state for each of the 8 sections
+  // 1: PATCH ATUAL, 2: BASICO, 3: CARTAS, 4: TURNOS, 5: REGRAS, 6: ARQUÉTIPOS, 7: CAMPOS, 8: RARIDADES
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
     patch: true,
     basico: false,
@@ -214,25 +380,43 @@ export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
     turnos: false,
     regras: false,
     arquetipos: true,
-    campos: false
+    campos: false,
+    raridades: true
   });
 
-  // Listen to Firestore real-time doc
+  // Raridades data & state (Frame Moderno & Frame Legado)
+  const [rarityItems, setRarityItems] = useState<RarityGuideItem[]>(() => readBrowserCache<RarityGuideItem[]>('ld_cache_rarities_v2') || defaultRarityItems);
+  const [selectedRarityFrame, setSelectedRarityFrame] = useState<'all' | 'Moderno' | 'Legado'>('all');
+  const [isEditingRarities, setIsEditingRarities] = useState(false);
+  const [uploadingRarityId, setUploadingRarityId] = useState<string | null>(null);
+  const [isSavingRarities, setIsSavingRarities] = useState(false);
+  const [rarityFeedback, setRarityFeedback] = useState<string | null>(null);
+
+  // Listen to Firestore real-time doc for game manual
   useEffect(() => {
     const unsub = onSnapshot(doc(db, 'homeSettings', 'gameManual'), (snap) => {
       if (snap.exists()) {
         const remoteData = snap.data() as Partial<GameManualData>;
-        setData({
+        const nextManual: GameManualData = {
           ...defaultManualData,
           ...remoteData,
           patchNotes: remoteData.patchNotes && remoteData.patchNotes.length > 0 
             ? remoteData.patchNotes 
             : defaultManualData.patchNotes,
           basico: { ...defaultManualData.basico, ...(remoteData.basico || {}) },
-          cartas: { ...defaultManualData.cartas, ...(remoteData.cartas || {}) },
+          cartas: { 
+            ...defaultManualData.cartas, 
+            ...(remoteData.cartas || {}),
+            structureTitle: remoteData.cartas?.structureTitle || defaultManualData.cartas.structureTitle || 'Anatomia & Estrutura das Cartas',
+            structureItems: (remoteData.cartas?.structureItems && remoteData.cartas.structureItems.length > 0)
+              ? remoteData.cartas.structureItems
+              : defaultManualData.cartas.structureItems
+          },
           turnos: { ...defaultManualData.turnos, ...(remoteData.turnos || {}) },
           regras: { ...defaultManualData.regras, ...(remoteData.regras || {}) }
-        });
+        };
+        setData(nextManual);
+        writeBrowserCache('ld_cache_gameManual_v2', nextManual);
       }
       setIsLoading(false);
     }, (err) => {
@@ -240,8 +424,128 @@ export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
       setIsLoading(false);
     });
 
-    return () => unsub();
+    // Real-time listener for Raridades
+    const unsubRarities = onSnapshot(doc(db, 'homeSettings', 'raritySettings'), (snap) => {
+      if (snap.exists()) {
+        const d = snap.data();
+        if (Array.isArray(d.items) && d.items.length > 0) {
+          setRarityItems(d.items);
+          writeBrowserCache('ld_cache_rarities_v2', d.items);
+          return;
+        }
+      }
+      // Check legacy tierSettings if raritySettings is empty
+      getDoc(doc(db, 'homeSettings', 'tierSettings')).then(tierSnap => {
+        if (tierSnap.exists()) {
+          const td = tierSnap.data();
+          if (Array.isArray(td.items) && Array.isArray(td.items) && td.items.length > 0) {
+            setRarityItems(td.items);
+            writeBrowserCache('ld_cache_rarities_v2', td.items);
+          }
+        }
+      }).catch(() => {});
+    }, (err) => {
+      console.warn('Erro ao carregar raridades do Firestore:', err);
+    });
+
+    return () => {
+      unsub();
+      unsubRarities();
+    };
   }, []);
+
+  const handleUploadRarityIcon = async (rarityId: string, file: File) => {
+    if (!file) return;
+    try {
+      setUploadingRarityId(rarityId);
+      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+      const fileRef = ref(storage, `rarity_icons/${rarityId}_${Date.now()}_${safeName}`);
+      await uploadBytes(fileRef, file);
+      const url = await getDownloadURL(fileRef);
+      
+      const updated = rarityItems.map(r => r.id === rarityId ? { ...r, iconUrl: url } : r);
+      setRarityItems(updated);
+      
+      const payload = sanitizeForFirestore({
+        items: updated,
+        updatedAt: new Date().toISOString()
+      });
+      await setDoc(doc(db, 'homeSettings', 'raritySettings'), payload, { merge: true });
+      await setDoc(doc(db, 'homeSettings', 'tierSettings'), payload, { merge: true });
+      
+      setRarityFeedback('Ícone PNG da raridade anexado e salvo com sucesso!');
+      setTimeout(() => setRarityFeedback(null), 3500);
+    } catch (err) {
+      console.error('Erro ao anexar ícone da raridade:', err);
+      alert('Erro ao anexar o ícone PNG. Tente novamente.');
+    } finally {
+      setUploadingRarityId(null);
+    }
+  };
+
+  const handleSaveRarities = async (itemsToSave: RarityGuideItem[]) => {
+    try {
+      setIsSavingRarities(true);
+      const payload = sanitizeForFirestore({
+        items: itemsToSave,
+        updatedAt: new Date().toISOString()
+      });
+      await setDoc(doc(db, 'homeSettings', 'raritySettings'), payload, { merge: true });
+      await setDoc(doc(db, 'homeSettings', 'tierSettings'), payload, { merge: true });
+      
+      setRarityFeedback('Raridades das Cartas salvas com sucesso!');
+      setIsEditingRarities(false);
+      setTimeout(() => setRarityFeedback(null), 3500);
+    } catch (err) {
+      console.error('Erro ao salvar raridades:', err);
+      alert('Erro ao salvar as configurações de raridades.');
+    } finally {
+      setIsSavingRarities(false);
+    }
+  };
+
+  const handleResetDefaultRarities = async () => {
+    if (!window.confirm('Deseja restaurar todas as 17 raridades oficiais padrão (11 Moderno + 6 Legado)?')) return;
+    try {
+      setIsSavingRarities(true);
+      setRarityItems(defaultRarityItems);
+      const payload = sanitizeForFirestore({
+        items: defaultRarityItems,
+        updatedAt: new Date().toISOString()
+      });
+      await setDoc(doc(db, 'homeSettings', 'raritySettings'), payload, { merge: true });
+      await setDoc(doc(db, 'homeSettings', 'tierSettings'), payload, { merge: true });
+      setRarityFeedback('17 Raridades Oficiais restauradas com sucesso!');
+      setIsEditingRarities(false);
+      setTimeout(() => setRarityFeedback(null), 3500);
+    } catch (err) {
+      console.error('Erro ao restaurar raridades padrão:', err);
+    } finally {
+      setIsSavingRarities(false);
+    }
+  };
+
+  const handleAddRarity = () => {
+    const nextNum = rarityItems.length + 1;
+    const newRarity: RarityGuideItem = {
+      id: `rarity-${Date.now()}`,
+      name: `Nova Raridade ${nextNum}`,
+      frame: 'Moderno',
+      badge: 'Nova Classificação',
+      iconUrl: '',
+      description: 'Breve explicação sobre as características visuais, prestígio e tiragem desta raridade no jogo.',
+      color: 'slate'
+    };
+    setRarityItems(prev => [...prev, newRarity]);
+  };
+
+  const handleDeleteRarity = (id: string) => {
+    if (rarityItems.length <= 1) {
+      alert('É necessário manter pelo menos uma raridade cadastrada.');
+      return;
+    }
+    setRarityItems(prev => prev.filter(r => r.id !== id));
+  };
 
   const toggleSection = (key: string) => {
     setOpenSections(prev => ({ ...prev, [key]: !prev[key] }));
@@ -255,7 +559,8 @@ export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
       turnos: true,
       regras: true,
       arquetipos: true,
-      campos: true
+      campos: true,
+      raridades: true
     });
   };
 
@@ -267,7 +572,8 @@ export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
       turnos: false,
       regras: false,
       arquetipos: false,
-      campos: false
+      campos: false,
+      raridades: false
     });
   };
 
@@ -552,11 +858,13 @@ export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
               <div className="p-4 sm:p-6 border-t border-slate-800 bg-slate-950/90 space-y-6 animate-in slide-in-from-top-2 duration-200">
                 {/* Anatomia da Carta */}
                 <div className="bg-slate-900/60 p-5 rounded-xl border border-slate-800">
-                  <h4 className="text-base sm:text-lg font-bold text-white mb-3">Anatomia & Estrutura das Cartas</h4>
+                  <h4 className="text-base sm:text-lg font-bold text-white mb-3">
+                    {data.cartas.structureTitle || 'Anatomia & Estrutura das Cartas'}
+                  </h4>
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
-                    {data.cartas.structureItems.map((item, idx) => (
+                    {(data.cartas.structureItems || defaultManualData.cartas.structureItems).map((item, idx) => (
                       <div key={idx} className="p-3 bg-black/40 rounded-lg border border-slate-800">
-                        <strong className={`block ${item.color} mb-1 font-bold`}>{item.label}</strong>
+                        <strong className={`block ${item.color || 'text-amber-400'} mb-1 font-bold`}>{item.label}</strong>
                         <span className="text-slate-300 leading-snug">{item.text}</span>
                       </div>
                     ))}
@@ -884,6 +1192,389 @@ export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
             )}
           </div>
 
+          {/* 8. RARIDADE DAS CARTAS */}
+          <div id="section-raridades" className="rounded-2xl border border-amber-500/40 bg-slate-950 overflow-hidden shadow-lg shadow-black/40 transition-all hover:border-amber-500/60">
+            <button
+              onClick={() => toggleSection('raridades')}
+              className="w-full flex items-center justify-between p-4 sm:p-5 text-left hover:bg-slate-900/50 transition group"
+            >
+              <div className="flex items-center gap-3 sm:gap-4 min-w-0">
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-500/20 via-purple-600/20 to-cyan-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400 shrink-0 shadow-[0_0_15px_rgba(245,158,11,0.25)]">
+                  <Award size={20} />
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-xs font-mono font-bold text-amber-400 uppercase tracking-wider">
+                      Seção 08
+                    </span>
+                    <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-amber-950/80 text-amber-300 border border-amber-800/50">
+                      Oficial • 17 Raridades
+                    </span>
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-900 text-slate-300 border border-slate-700 hidden sm:inline-block">
+                      Frame Moderno (11) & Frame Legado (6)
+                    </span>
+                  </div>
+                  <h3 className="text-lg sm:text-xl font-black text-white group-hover:text-amber-300 transition-colors tracking-wide">
+                    RARIDADE DAS CARTAS
+                  </h3>
+                </div>
+              </div>
+              <div className="p-2 rounded-lg bg-slate-900 border border-slate-700/60 text-slate-300 group-hover:text-white shrink-0 ml-2">
+                {openSections.raridades ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+              </div>
+            </button>
+
+            {openSections.raridades && (
+              <div className="p-4 sm:p-6 border-t border-amber-500/30 bg-slate-950/90 space-y-6 animate-in slide-in-from-top-2 duration-200">
+                {/* Header informativo */}
+                <div className="bg-slate-900/60 p-4 rounded-xl border border-slate-800 flex flex-col md:flex-row items-center justify-between gap-4">
+                  <div>
+                    <h4 className="font-bold text-white text-base flex items-center gap-2">
+                      <Sparkles size={16} className="text-amber-400" />
+                      Raridades Oficiais: Frame Moderno & Frame Legado
+                    </h4>
+                    <p className="text-xs text-slate-400 mt-0.5 max-w-2xl">
+                      Consulte todas as 17 raridades de Light Dark TCG com seus ícones característicos, regras de tiragem e prestígio de colecionador. As cartas de raridade <strong className="text-amber-300">Moderno Macroversal</strong> possuem tiragem única absoluta de apenas 1 por ano.
+                    </p>
+                  </div>
+                  {isAdmin && (
+                    <div className="flex items-center gap-2 shrink-0 flex-wrap">
+                      <button
+                        onClick={handleResetDefaultRarities}
+                        disabled={isSavingRarities}
+                        className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 transition active:scale-95"
+                        title="Restaurar a lista padrão com as 17 raridades oficiais"
+                      >
+                        Restaurar 17 Padrões
+                      </button>
+                      <button
+                        onClick={() => setIsEditingRarities(!isEditingRarities)}
+                        className="text-xs font-bold px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 shadow-md transition flex items-center gap-1.5 active:scale-95"
+                      >
+                        <Edit2 size={13} /> {isEditingRarities ? 'Fechar Edição' : 'Editar Raridades'}
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* Filtros por Frame (Todas, Moderno, Legado) */}
+                <div className="flex items-center justify-between gap-2 flex-wrap border-b border-slate-800/80 pb-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-mono font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5 mr-1">
+                      <Filter size={13} className="text-amber-400" /> Filtrar:
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedRarityFrame('all')}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
+                        selectedRarityFrame === 'all'
+                          ? 'bg-amber-500 text-slate-950 shadow-md'
+                          : 'bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800'
+                      }`}
+                    >
+                      Todas as Raridades
+                      <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${
+                        selectedRarityFrame === 'all' ? 'bg-slate-950/30 text-slate-950 font-black' : 'bg-slate-800 text-slate-400'
+                      }`}>
+                        {rarityItems.length}
+                      </span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setSelectedRarityFrame('Moderno')}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
+                        selectedRarityFrame === 'Moderno'
+                          ? 'bg-cyan-500 text-slate-950 shadow-md'
+                          : 'bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800'
+                      }`}
+                    >
+                      Frame Moderno
+                      <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${
+                        selectedRarityFrame === 'Moderno' ? 'bg-slate-950/30 text-slate-950 font-black' : 'bg-cyan-950 text-cyan-300'
+                      }`}>
+                        {rarityItems.filter(r => r.frame === 'Moderno').length}
+                      </span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setSelectedRarityFrame('Legado')}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
+                        selectedRarityFrame === 'Legado'
+                          ? 'bg-amber-600 text-white shadow-md'
+                          : 'bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800'
+                      }`}
+                    >
+                      Frame Legado
+                      <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${
+                        selectedRarityFrame === 'Legado' ? 'bg-slate-950/30 text-white font-black' : 'bg-amber-950 text-amber-300'
+                      }`}>
+                        {rarityItems.filter(r => r.frame === 'Legado').length}
+                      </span>
+                    </button>
+                  </div>
+
+                  <span className="text-[11px] text-slate-500 font-mono">
+                    Exibindo {rarityItems.filter(r => selectedRarityFrame === 'all' ? true : r.frame === selectedRarityFrame).length} de {rarityItems.length} raridades
+                  </span>
+                </div>
+
+                {rarityFeedback && (
+                  <div className="p-3 bg-emerald-950/70 border border-emerald-500 text-emerald-300 rounded-xl text-xs font-bold flex items-center gap-2 animate-in fade-in">
+                    <Check size={16} />
+                    {rarityFeedback}
+                  </div>
+                )}
+
+                {/* Grid das Raridades */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {rarityItems
+                    .filter(item => selectedRarityFrame === 'all' || item.frame === selectedRarityFrame)
+                    .map((rarity, idx) => {
+                      const realIndex = rarityItems.findIndex(r => r.id === rarity.id);
+                      const isMacroversal = rarity.isUniquePerYear || rarity.name.toLowerCase().includes('macroversal');
+                      
+                      return (
+                        <div 
+                          key={rarity.id || idx}
+                          className={`p-4 rounded-xl transition-all flex flex-col justify-between gap-3 relative group overflow-hidden shadow-lg ${
+                            isMacroversal
+                              ? 'bg-gradient-to-br from-amber-950/40 via-slate-900 to-purple-950/30 border-2 border-amber-400/80 shadow-amber-950/40 ring-1 ring-amber-400/50'
+                              : rarity.frame === 'Legado'
+                              ? 'bg-slate-900/75 border border-amber-900/40 hover:border-amber-500/60'
+                              : 'bg-slate-900/75 border border-slate-800 hover:border-cyan-500/50'
+                          }`}
+                        >
+                          {/* Destaque para Moderno Macroversal */}
+                          {isMacroversal && (
+                            <div className="absolute top-0 right-0 bg-gradient-to-l from-amber-400 to-yellow-500 text-slate-950 text-[9px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded-bl-lg shadow-sm">
+                              Tiragem Única • 1/Ano
+                            </div>
+                          )}
+
+                          <div>
+                            <div className="flex items-start gap-3 mb-2">
+                              {/* Ícone PNG da Raridade */}
+                              <div className={`w-14 h-14 rounded-xl bg-slate-950 flex items-center justify-center shrink-0 p-1 relative overflow-hidden transition-colors shadow-inner ${
+                                isMacroversal 
+                                  ? 'border-2 border-amber-400 shadow-[0_0_12px_rgba(245,158,11,0.4)]'
+                                  : rarity.frame === 'Legado'
+                                  ? 'border border-amber-600/40 group-hover:border-amber-400'
+                                  : 'border border-cyan-500/40 group-hover:border-cyan-400'
+                              }`}>
+                                {rarity.iconUrl ? (
+                                  <img 
+                                    src={rarity.iconUrl} 
+                                    alt={rarity.name} 
+                                    className="w-full h-full object-contain drop-shadow-[0_0_8px_rgba(245,158,11,0.35)] select-none"
+                                  />
+                                ) : (
+                                  <div className="flex flex-col items-center justify-center text-center p-1">
+                                    {isMacroversal ? (
+                                      <Sparkles size={20} className="text-amber-400 animate-pulse" />
+                                    ) : (
+                                      <Award size={18} className={rarity.frame === 'Legado' ? 'text-amber-400' : 'text-cyan-400'} />
+                                    )}
+                                    <span className="text-[9px] font-black uppercase tracking-tighter text-slate-400 mt-0.5 truncate max-w-[48px]">
+                                      {rarity.frame === 'Legado' ? 'LEG' : 'MOD'}
+                                    </span>
+                                  </div>
+                                )}
+
+                                {uploadingRarityId === rarity.id && (
+                                  <div className="absolute inset-0 bg-slate-950/85 flex items-center justify-center">
+                                    <Loader2 size={18} className="animate-spin text-amber-400" />
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Título, Frame & Badge */}
+                              <div className="flex-1 min-w-0 pr-1">
+                                <div className="flex items-center gap-1.5 flex-wrap mb-1">
+                                  <span className={`text-[9px] font-mono font-black uppercase tracking-wider px-1.5 py-0.5 rounded ${
+                                    rarity.frame === 'Legado'
+                                      ? 'bg-amber-950/90 text-amber-300 border border-amber-800/60'
+                                      : 'bg-cyan-950/90 text-cyan-300 border border-cyan-800/60'
+                                  }`}>
+                                    Frame {rarity.frame}
+                                  </span>
+
+                                  {rarity.badge && (
+                                    <span className="text-[9px] font-bold text-slate-300 bg-slate-800 px-1.5 py-0.5 rounded border border-slate-700 truncate max-w-[130px]">
+                                      {rarity.badge}
+                                    </span>
+                                  )}
+                                </div>
+
+                                {isEditingRarities && isAdmin ? (
+                                  <div className="space-y-1.5 mt-1">
+                                    <input 
+                                      type="text"
+                                      value={rarity.name}
+                                      onChange={(e) => {
+                                        const updated = [...rarityItems];
+                                        updated[realIndex].name = e.target.value;
+                                        setRarityItems(updated);
+                                      }}
+                                      placeholder="Nome da Raridade"
+                                      className="w-full bg-slate-950 border border-slate-700 rounded px-2 py-1 text-xs text-white font-bold"
+                                    />
+                                    <div className="flex gap-1.5">
+                                      <select
+                                        value={rarity.frame}
+                                        onChange={(e) => {
+                                          const updated = [...rarityItems];
+                                          updated[realIndex].frame = e.target.value as 'Moderno' | 'Legado';
+                                          setRarityItems(updated);
+                                        }}
+                                        className="bg-slate-950 border border-slate-700 rounded px-1.5 py-1 text-[11px] text-slate-300 font-bold"
+                                      >
+                                        <option value="Moderno">Moderno</option>
+                                        <option value="Legado">Legado</option>
+                                      </select>
+                                      <input 
+                                        type="text"
+                                        value={rarity.badge || ''}
+                                        onChange={(e) => {
+                                          const updated = [...rarityItems];
+                                          updated[realIndex].badge = e.target.value;
+                                          setRarityItems(updated);
+                                        }}
+                                        placeholder="Badge (ex: Alto Impacto)"
+                                        className="flex-1 bg-slate-950 border border-slate-700 rounded px-2 py-1 text-[11px] text-amber-300 font-bold"
+                                      />
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div>
+                                    <h5 className="font-black text-white text-base tracking-wide flex items-center gap-1.5 truncate">
+                                      {rarity.name}
+                                    </h5>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Explicação breve */}
+                            {isEditingRarities && isAdmin ? (
+                              <div className="mt-2">
+                                <label className="text-[10px] font-bold text-slate-400 block mb-1 uppercase tracking-wider">
+                                  Breve Explicação:
+                                </label>
+                                <textarea
+                                  rows={3}
+                                  value={rarity.description}
+                                  onChange={(e) => {
+                                    const updated = [...rarityItems];
+                                    updated[realIndex].description = e.target.value;
+                                    setRarityItems(updated);
+                                  }}
+                                  placeholder="Breve explicação sobre as características e tiragem desta raridade..."
+                                  className="w-full bg-slate-950 border border-slate-700 rounded p-2 text-xs text-slate-200 outline-none focus:border-amber-500"
+                                />
+                              </div>
+                            ) : (
+                              <p className="text-xs text-slate-300 leading-relaxed mt-2 text-justify">
+                                {rarity.description}
+                              </p>
+                            )}
+                          </div>
+
+                          {/* Ações de Admin para anexar PNG e editar */}
+                          {isAdmin && (
+                            <div className="pt-2 border-t border-slate-800/80 flex flex-col gap-2">
+                              <div className="flex items-center justify-between gap-2">
+                                <label className="cursor-pointer bg-slate-950 hover:bg-slate-900 border border-slate-700 hover:border-amber-500/60 px-2.5 py-1.5 rounded-lg text-xs font-bold text-slate-300 hover:text-white flex items-center gap-1.5 transition flex-1 justify-center active:scale-95 shadow-sm">
+                                  <Upload size={13} className="text-amber-400 shrink-0" />
+                                  <span className="truncate">
+                                    {rarity.iconUrl ? 'Trocar Ícone PNG' : 'Anexar Ícone PNG'}
+                                  </span>
+                                  <input 
+                                    type="file" 
+                                    accept="image/png,image/webp,image/svg+xml,image/jpeg"
+                                    className="hidden"
+                                    onChange={(e) => {
+                                      if (e.target.files?.[0]) {
+                                        handleUploadRarityIcon(rarity.id, e.target.files[0]);
+                                      }
+                                    }}
+                                  />
+                                </label>
+
+                                {isEditingRarities && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteRarity(rarity.id)}
+                                    className="p-1.5 rounded-lg bg-red-950/60 hover:bg-red-900 border border-red-800 text-red-300 hover:text-white transition"
+                                    title="Excluir esta Raridade"
+                                  >
+                                    <Trash2 size={13} />
+                                  </button>
+                                )}
+                              </div>
+
+                              {isEditingRarities && (
+                                <div className="flex items-center gap-1.5">
+                                  <input 
+                                    type="text"
+                                    value={rarity.iconUrl || ''}
+                                    onChange={(e) => {
+                                      const updated = [...rarityItems];
+                                      updated[realIndex].iconUrl = e.target.value;
+                                      setRarityItems(updated);
+                                    }}
+                                    placeholder="Ou cole a URL direta do PNG..."
+                                    className="flex-1 bg-slate-950 border border-slate-800 rounded px-2 py-1 text-[11px] text-slate-300 font-mono"
+                                  />
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                </div>
+
+                {/* Controles de Admin gerais para Raridades */}
+                {isAdmin && isEditingRarities && (
+                  <div className="pt-4 border-t border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-3">
+                    <div className="flex items-center gap-2 w-full sm:w-auto">
+                      <button
+                        type="button"
+                        onClick={handleAddRarity}
+                        className="w-full sm:w-auto px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 font-bold text-xs flex items-center justify-center gap-2 transition"
+                      >
+                        <Plus size={14} className="text-amber-400" />
+                        Adicionar Nova Raridade
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={handleResetDefaultRarities}
+                        className="w-full sm:w-auto px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 font-semibold text-xs flex items-center justify-center gap-2 transition"
+                      >
+                        Restaurar Padrões
+                      </button>
+                    </div>
+
+                    <div className="flex items-center gap-2 w-full sm:w-auto">
+                      <button
+                        type="button"
+                        onClick={() => handleSaveRarities(rarityItems)}
+                        disabled={isSavingRarities}
+                        className="w-full sm:w-auto px-6 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs flex items-center justify-center gap-2 shadow-lg shadow-amber-950/50 transition disabled:opacity-50"
+                      >
+                        {isSavingRarities ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                        Salvar Raridades & Explicações
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
         </div>
       </div>
 
@@ -912,10 +1603,36 @@ const ManualEditModal: React.FC<{
   onClose: () => void;
   onSave: (data: GameManualData) => Promise<void>;
 }> = ({ data, onClose, onSave }) => {
-  const [form, setForm] = useState<GameManualData>(JSON.parse(JSON.stringify(data)));
+  const [form, setForm] = useState<GameManualData>(() => {
+    const cloned: GameManualData = JSON.parse(JSON.stringify(data));
+    if (!cloned.cartas) {
+      cloned.cartas = { ...defaultManualData.cartas };
+    }
+    if (!cloned.cartas.structureTitle) {
+      cloned.cartas.structureTitle = defaultManualData.cartas.structureTitle || 'Anatomia & Estrutura das Cartas';
+    }
+    if (!cloned.cartas.structureItems || cloned.cartas.structureItems.length === 0) {
+      cloned.cartas.structureItems = JSON.parse(JSON.stringify(defaultManualData.cartas.structureItems));
+    }
+    return cloned;
+  });
   const [activeTab, setActiveTab] = useState<'patch' | 'basico' | 'cartas' | 'turnos' | 'regras'>('patch');
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
+
+  const updateStructureItem = (index: number, field: 'label' | 'text' | 'color', val: string) => {
+    setForm(prev => {
+      const items = [...(prev.cartas.structureItems || defaultManualData.cartas.structureItems)];
+      items[index] = { ...items[index], [field]: val };
+      return {
+        ...prev,
+        cartas: {
+          ...prev.cartas,
+          structureItems: items
+        }
+      };
+    });
+  };
 
   const handleSave = async () => {
     setIsSaving(true);
@@ -1228,7 +1945,72 @@ const ManualEditModal: React.FC<{
 
           {/* TAB 3: CARTAS */}
           {activeTab === 'cartas' && (
-            <div className="space-y-4 animate-in fade-in">
+            <div className="space-y-5 animate-in fade-in">
+              {/* Anatomia & Estrutura das Cartas */}
+              <div className="bg-slate-900/60 p-4 sm:p-5 rounded-xl border border-purple-500/30 space-y-4">
+                <div className="border-b border-slate-800 pb-3">
+                  <h4 className="font-bold text-amber-400 text-sm flex items-center gap-2">
+                    <Layers size={16} /> Anatomia & Estrutura das Cartas
+                  </h4>
+                  <p className="text-xs text-slate-400 mt-1">
+                    Edite o título da seção e os 4 campos explicativos da anatomia das cartas (Categoria, Status, Arquétipo, Tipo).
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">
+                    Título da Seção de Estrutura
+                  </label>
+                  <input
+                    type="text"
+                    value={form.cartas.structureTitle || 'Anatomia & Estrutura das Cartas'}
+                    onChange={e => setForm(prev => ({
+                      ...prev,
+                      cartas: { ...prev.cartas, structureTitle: e.target.value }
+                    }))}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-500"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 pt-1">
+                  {(form.cartas.structureItems || defaultManualData.cartas.structureItems).map((item, idx) => (
+                    <div key={idx} className="bg-slate-950/90 p-3.5 rounded-lg border border-slate-800 space-y-2.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] font-bold text-slate-400">
+                          Estrutura #{idx + 1}
+                        </span>
+                        <span className={`text-[11px] font-semibold px-2 py-0.5 rounded bg-slate-900 border border-slate-800 ${item.color || 'text-slate-300'}`}>
+                          {item.label}
+                        </span>
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-medium text-slate-400 mb-1">
+                          Nome / Rótulo
+                        </label>
+                        <input
+                          type="text"
+                          value={item.label}
+                          onChange={e => updateStructureItem(idx, 'label', e.target.value)}
+                          className="w-full bg-slate-900 border border-slate-700/80 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-purple-500 font-semibold"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-medium text-slate-400 mb-1">
+                          Texto Descritivo
+                        </label>
+                        <textarea
+                          rows={2}
+                          value={item.text}
+                          onChange={e => updateStructureItem(idx, 'text', e.target.value)}
+                          className="w-full bg-slate-900 border border-slate-700/80 rounded-lg p-2 text-xs text-slate-200 focus:outline-none focus:border-purple-500"
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Categorias de Cartas */}
               <div className="bg-slate-900/60 p-4 rounded-xl border border-slate-800 space-y-3">
                 <h4 className="font-bold text-blue-400 text-sm">Descrição: Combatente (Azul)</h4>
                 <textarea

@@ -18,14 +18,17 @@ import {
   Check,
   Trash2,
   Trophy,
-  Heart
+  Heart,
+  Filter,
+  SlidersHorizontal,
+  BarChart2
 } from 'lucide-react';
 import { CardData } from '../types';
 import { useCards, cleanCardCode, getBaseCardCode, getCardDisplayPriority, resolveModernFrameOnly } from '../CardContext';
 import { useAuth, isUserAdmin } from '../authService';
 import { useUserAlbum, normalizeAlbumKey, FOIL_TYPES, FoilTypeInfo } from '../albumService';
 import { compareCardCodes } from '../deckUtils';
-import { syncUserCollectorStats } from '../collectorsService';
+import { syncUserCollectorStats, getCatalogueUniverse } from '../collectorsService';
 import { useUserWishlist } from '../wishlistService';
 import { allCards as defaultCards } from '../data';
 import { isCardRarePrint } from '../rarePrintService';
@@ -162,98 +165,30 @@ export const AlbumModal: React.FC<AlbumModalProps> = ({ isOpen, onClose, onSelec
   // Modal para solicitação de tiragem rara ao tentar adicionar ao álbum
   const [rareVerificationCard, setRareVerificationCard] = useState<CardData | null>(null);
 
+  // Estados exclusivos para a interface mobile compacta
+  const [showMobileFilters, setShowMobileFilters] = useState(false);
+  const [showMobileStats, setShowMobileStats] = useState(false);
+
+  const activeFilterCount = useMemo(() => {
+    let count = 0;
+    if (selectedCollection !== 'Todas') count++;
+    if (selectedFoilFilter !== 'all') count++;
+    if (onlySpecials) count++;
+    return count;
+  }, [selectedCollection, selectedFoilFilter, onlySpecials]);
+
   // Pool de cartas conforme o Álbum selecionado:
-  // Agrupa cartas por coleção e código base para que variações (artes alternativas, skins)
-  // fiquem agrupadas DENTRO da carta principal, garantindo 1 único slot por carta no álbum!
+  // Inclui todas as cartas e variações (artes alternativas, skins e frames) de forma 100% individual,
+  // exatamente em sincronia com o Hall da Fama e as regras do catálogo.
   const albumPoolCards = useMemo(() => {
-    const groupedByCard = new Map<string, CardData[]>();
-    for (const card of allCards) {
-      const baseCode = getBaseCardCode(card.code, card.parentCode);
-      const key = baseCode;
-      if (!groupedByCard.has(key)) {
-        groupedByCard.set(key, []);
-      }
-      groupedByCard.get(key)!.push(card);
+    const universe = getCatalogueUniverse(allCards);
+    let pool = universe.cardsList;
+    if (albumEdition === 'legado') {
+      pool = pool.filter(isLegacyCard);
+    } else if (albumEdition === 'moderno') {
+      pool = pool.filter(c => !isLegacyCard(c));
     }
-
-    const poolCards: CardData[] = [];
-    groupedByCard.forEach((group) => {
-      let candidateCards = group;
-      if (albumEdition === 'legado') {
-        candidateCards = group.filter(isLegacyCard);
-        if (candidateCards.length === 0) return;
-      } else if (albumEdition === 'moderno') {
-        candidateCards = group.filter(c => !isLegacyCard(c));
-        if (candidateCards.length === 0) {
-          const hasModernVar = group.some(c => c.variants?.some(v => v.frame === 'Moderno'));
-          if (!hasModernVar) return;
-        }
-      }
-
-      let chosenCard: CardData;
-      if (albumEdition === 'legado') {
-        const legacyBase = candidateCards.find(isLegacyCard) || candidateCards[0];
-        chosenCard = { ...legacyBase, frame: 'Legado' };
-      } else if (albumEdition === 'moderno') {
-        const modernMatch = candidateCards.find(c => !isLegacyCard(c));
-        if (modernMatch) {
-          chosenCard = { ...modernMatch, frame: 'Moderno' };
-        } else {
-          let foundVariant: any = null;
-          for (const c of group) {
-            const v = c.variants?.find(v => v.frame === 'Moderno');
-            if (v) {
-              foundVariant = { ...c, imageUrl: v.imageUrl, frame: 'Moderno', variationType: v.name || 'Novo Frame' };
-              break;
-            }
-          }
-          chosenCard = foundVariant || candidateCards[0];
-        }
-      } else {
-        // albumEdition === 'todos': Cartas de origem Legado NUNCA são substituídas pelo frame moderno!
-        const legacyBase = candidateCards.find(isLegacyCard);
-        chosenCard = legacyBase ? { ...legacyBase, frame: 'Legado' } : candidateCards[0];
-      }
-
-      // Consolida todas as variações deste grupo dentro de chosenCard.variants
-      const allVariants: any[] = [];
-      const baseGroupCode = getBaseCardCode(chosenCard.code, chosenCard.parentCode);
-      group.forEach(item => {
-        if (item.variants && item.variants.length > 0) {
-          item.variants.forEach(v => {
-            const vBase = getBaseCardCode(v.code || item.code);
-            if (vBase === baseGroupCode && !allVariants.some(existing => existing.imageUrl === v.imageUrl)) {
-              allVariants.push({
-                ...v,
-                code: cleanCardCode(v.code)
-              });
-            }
-          });
-        }
-        if (item.imageUrl && item.imageUrl !== chosenCard.imageUrl) {
-          if (!allVariants.some(existing => existing.imageUrl === item.imageUrl)) {
-            allVariants.push({
-              id: item.id || `var_${item.code}`,
-              name: item.variationType || (item.frame === 'Moderno' ? 'Novo Frame' : 'Legado'),
-              imageUrl: item.imageUrl,
-              frame: item.frame || 'Legado',
-              code: cleanCardCode(item.code),
-              collection: item.collection,
-              rarity: item.rarity,
-              tier: item.tier
-            });
-          }
-        }
-      });
-
-      poolCards.push({
-        ...chosenCard,
-        code: cleanCardCode(chosenCard.code),
-        variants: allVariants.length > 0 ? allVariants : chosenCard.variants
-      });
-    });
-
-    return poolCards.sort((a, b) => compareCardCodes(a.code, b.code));
+    return [...pool].sort((a, b) => compareCardCodes(a.code, b.code));
   }, [allCards, albumEdition]);
 
   // Lista estruturada de coleções disponíveis com contagem de posse baseada nas cartas do álbum ativo
@@ -473,11 +408,265 @@ export const AlbumModal: React.FC<AlbumModalProps> = ({ isOpen, onClose, onSelec
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center p-2 sm:p-4 bg-black/85 backdrop-blur-md animate-in fade-in duration-200">
-      <div className="bg-[#0b0f19] w-full max-w-7xl h-[94vh] rounded-2xl border border-purple-900/40 shadow-2xl flex flex-col overflow-hidden relative">
+    <div className="fixed inset-0 z-[70] flex items-center justify-center p-0 sm:p-4 bg-black/85 backdrop-blur-md animate-in fade-in duration-200">
+      <div className="bg-[#0b0f19] w-full max-w-7xl h-full sm:h-[94vh] rounded-none sm:rounded-2xl border-0 sm:border border-purple-900/40 shadow-2xl flex flex-col overflow-hidden relative">
         
-        {/* HEADER */}
-        <div className="p-4 sm:p-5 border-b border-slate-800/80 bg-gradient-to-r from-purple-950/40 via-slate-900/60 to-slate-950 flex flex-wrap items-center justify-between gap-4 shrink-0">
+        {/* ============================================================== */}
+        {/* INTERFACE EXCLUSIVA PARA CELULAR (COMPACTA, RÁPIDA E DIRETA)   */}
+        {/* ============================================================== */}
+        <div className="sm:hidden flex flex-col shrink-0 bg-[#0a0d17] border-b border-slate-800/80">
+          {/* TOPO: Título, Progresso rápido e Ações */}
+          <div className="px-3 py-2 bg-gradient-to-r from-purple-950/80 via-slate-900 to-slate-950 border-b border-slate-800/80 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 min-w-0">
+              <div className="w-8 h-8 rounded-lg bg-purple-600/20 border border-purple-500/40 flex items-center justify-center text-purple-400 shrink-0">
+                <BookOpen size={16} />
+              </div>
+              <div className="min-w-0">
+                <h2 className="text-sm font-black text-white truncate tracking-tight leading-none">
+                  Meu Álbum
+                </h2>
+                <button
+                  type="button"
+                  onClick={() => setShowMobileStats(true)}
+                  className="flex items-center gap-1.5 mt-0.5 text-[10px] text-slate-400 font-mono active:scale-95"
+                >
+                  <span className="text-purple-400 font-black">{stats.percent}%</span>
+                  <span>•</span>
+                  <span>{stats.totalUniqueOwned}/{stats.totalCards} un.</span>
+                  <span className="text-[9px] px-1 py-0.2 rounded bg-purple-950 border border-purple-700/50 text-purple-300">📊</span>
+                </button>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-1.5 shrink-0">
+              {/* Inserir Coleção Rápido */}
+              <button
+                type="button"
+                onClick={() => setShowBulkModal(true)}
+                className="px-2 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold flex items-center gap-1 active:scale-95 shadow-sm"
+                title="Inserir Coleção ou Deck Completo"
+              >
+                <PackagePlus size={13} />
+                <span>+ Deck</span>
+              </button>
+
+              {/* Ranking Hall da Fama */}
+              {onOpenRanking && (
+                <button
+                  type="button"
+                  onClick={onOpenRanking}
+                  className="p-1.5 rounded-lg bg-amber-500/15 border border-amber-500/40 text-amber-300 active:scale-95"
+                  title="Hall da Fama dos Colecionadores"
+                >
+                  <Trophy size={14} />
+                </button>
+              )}
+
+              {/* Usuário / Auth */}
+              {!user ? (
+                <button
+                  type="button"
+                  onClick={onOpenAuth}
+                  className="p-1.5 rounded-lg bg-purple-600 text-white active:scale-95"
+                  title="Entrar na Conta"
+                >
+                  <LogIn size={14} />
+                </button>
+              ) : (
+                <div className="w-7 h-7 rounded-full bg-purple-900/60 border border-purple-500/40 flex items-center justify-center text-[10px] text-purple-200 font-bold overflow-hidden">
+                  {user.photoURL ? (
+                    <img src={user.photoURL} alt="" className="w-full h-full object-cover" />
+                  ) : (
+                    (user.displayName || 'U')[0]
+                  )}
+                </div>
+              )}
+
+              {/* Fechar Álbum */}
+              <button
+                type="button"
+                onClick={onClose}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-white bg-slate-900 border border-slate-800 active:scale-95 ml-0.5"
+                title="Fechar Álbum"
+              >
+                <X size={17} />
+              </button>
+            </div>
+          </div>
+
+          {/* LINHA 1: Seletor de Edição (Completo / Moderno / Legado) */}
+          <div className="px-2.5 py-1.5 bg-slate-950/95 border-b border-slate-800/80 flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => {
+                setAlbumEdition('all');
+                setSelectedCollection('Todas');
+                setOnlySpecials(false);
+              }}
+              className={`flex-1 py-1 rounded-lg text-[11px] font-bold transition flex items-center justify-center gap-1 ${
+                albumEdition === 'all'
+                  ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-sm'
+                  : 'bg-slate-900/80 text-slate-400 border border-slate-800'
+              }`}
+            >
+              <Sparkles size={11} className={albumEdition === 'all' ? 'text-purple-200' : 'text-slate-500'} />
+              <span>Completo</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setAlbumEdition('moderno');
+                setSelectedCollection('Todas');
+                setOnlySpecials(false);
+              }}
+              className={`flex-1 py-1 rounded-lg text-[11px] font-bold transition flex items-center justify-center gap-1 ${
+                albumEdition === 'moderno'
+                  ? 'bg-gradient-to-r from-purple-700 to-indigo-700 text-white shadow-sm'
+                  : 'bg-slate-900/80 text-slate-400 border border-slate-800'
+              }`}
+            >
+              <Sparkles size={11} className={albumEdition === 'moderno' ? 'text-purple-200' : 'text-slate-500'} />
+              <span>Moderno</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setAlbumEdition('legado');
+                setSelectedCollection('Todas');
+                setOnlySpecials(false);
+              }}
+              className={`flex-1 py-1 rounded-lg text-[11px] font-bold transition flex items-center justify-center gap-1 ${
+                albumEdition === 'legado'
+                  ? 'bg-gradient-to-r from-amber-600 to-purple-600 text-white shadow-sm'
+                  : 'bg-slate-900/80 text-slate-400 border border-slate-800'
+              }`}
+            >
+              <Shield size={11} className={albumEdition === 'legado' ? 'text-amber-200' : 'text-slate-500'} />
+              <span>Legado</span>
+            </button>
+          </div>
+
+          {/* LINHA 2: Busca Rápida + Botão de Filtros */}
+          <div className="px-2.5 py-1.5 bg-slate-900/60 border-b border-slate-800/80 flex items-center gap-2">
+            <div className="flex-1 flex items-center gap-1.5 bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-1 focus-within:border-purple-500 transition">
+              <Search size={14} className="text-slate-400 shrink-0" />
+              <input
+                type="text"
+                placeholder="Buscar card por nome, cód..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="bg-transparent text-xs text-white placeholder-slate-500 outline-none w-full"
+              />
+              {searchTerm && (
+                <button type="button" onClick={() => setSearchTerm('')} className="text-slate-400 hover:text-white p-0.5">
+                  <X size={12} />
+                </button>
+              )}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setShowMobileFilters(true)}
+              className={`px-2.5 py-1 rounded-xl text-xs font-bold border flex items-center gap-1.5 transition active:scale-95 shrink-0 ${
+                activeFilterCount > 0
+                  ? 'bg-purple-600 text-white border-purple-400 shadow-sm'
+                  : 'bg-slate-950 text-slate-300 border-slate-800 hover:border-slate-700'
+              }`}
+            >
+              <SlidersHorizontal size={13} />
+              <span>Filtros</span>
+              {activeFilterCount > 0 && (
+                <span className="w-4 h-4 rounded-full bg-amber-400 text-slate-950 text-[9px] font-black flex items-center justify-center">
+                  {activeFilterCount}
+                </span>
+              )}
+            </button>
+          </div>
+
+          {/* LINHA 3: Abas de Posse (Todas / Tenho / Faltam) & Chips Rápidos */}
+          <div className="px-2.5 py-1.5 bg-slate-950 flex items-center gap-1.5 overflow-x-auto scrollbar-none">
+            <div className="flex items-center bg-slate-900 p-0.5 rounded-lg border border-slate-800 shrink-0">
+              <button
+                type="button"
+                onClick={() => setFilterMode('all')}
+                className={`px-2 py-0.5 rounded-md text-[11px] font-bold transition whitespace-nowrap ${
+                  filterMode === 'all' ? 'bg-purple-600 text-white shadow-xs' : 'text-slate-400'
+                }`}
+              >
+                Todas ({albumPoolCards.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setFilterMode('owned')}
+                className={`px-2 py-0.5 rounded-md text-[11px] font-bold transition whitespace-nowrap ${
+                  filterMode === 'owned' ? 'bg-emerald-600 text-white shadow-xs' : 'text-slate-400'
+                }`}
+              >
+                Tenho ({stats.totalUniqueOwned})
+              </button>
+              <button
+                type="button"
+                onClick={() => setFilterMode('missing')}
+                className={`px-2 py-0.5 rounded-md text-[11px] font-bold transition whitespace-nowrap ${
+                  filterMode === 'missing' ? 'bg-amber-600 text-white shadow-xs' : 'text-slate-400'
+                }`}
+              >
+                Faltam ({stats.totalCards - stats.totalUniqueOwned})
+              </button>
+            </div>
+
+            {/* Especiais chip */}
+            {specialCardsCount > 0 && (
+              <button
+                type="button"
+                onClick={() => setOnlySpecials(prev => !prev)}
+                className={`px-2 py-0.5 rounded-md text-[10px] font-bold border transition whitespace-nowrap shrink-0 flex items-center gap-1 ${
+                  onlySpecials
+                    ? 'bg-amber-500 text-slate-950 border-amber-300 font-black'
+                    : 'bg-slate-900 text-amber-300 border-amber-600/40'
+                }`}
+              >
+                <Crown size={11} className={onlySpecials ? 'fill-slate-950' : 'fill-amber-400'} />
+                <span>★ Especiais ({specialCardsCount})</span>
+              </button>
+            )}
+
+            {/* Active Collection Chip */}
+            {selectedCollection !== 'Todas' && (
+              <button
+                type="button"
+                onClick={() => { setSelectedCollection('Todas'); setOnlySpecials(false); }}
+                className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-purple-950 border border-purple-500/60 text-purple-200 flex items-center gap-1 shrink-0 whitespace-nowrap"
+              >
+                <span className="truncate max-w-[100px]">{selectedCollection}</span>
+                <X size={10} />
+              </button>
+            )}
+
+            {/* Active Foil Chip */}
+            {selectedFoilFilter !== 'all' && (
+              <button
+                type="button"
+                onClick={() => setSelectedFoilFilter('all')}
+                className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-yellow-950 border border-yellow-500/60 text-yellow-200 flex items-center gap-1 shrink-0 whitespace-nowrap"
+              >
+                <span className="truncate max-w-[90px]">
+                  {selectedFoilFilter === 'any_foil' ? 'Foils' : FOIL_TYPES.find(f => f.id === selectedFoilFilter)?.shortName || 'Foil'}
+                </span>
+                <X size={10} />
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* ============================================================== */}
+        {/* INTERFACE DESKTOP (MANTIDA 100% INTACTA PARA TELAS MAIORES)    */}
+        {/* ============================================================== */}
+        <div className="hidden sm:block shrink-0">
+          {/* HEADER */}
+          <div className="p-4 sm:p-5 border-b border-slate-800/80 bg-gradient-to-r from-purple-950/40 via-slate-900/60 to-slate-950 flex flex-wrap items-center justify-between gap-4 shrink-0">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-purple-600/20 border border-purple-500/40 flex items-center justify-center text-purple-400 shadow-lg shadow-purple-950">
               <BookOpen size={22} />
@@ -801,7 +990,6 @@ export const AlbumModal: React.FC<AlbumModalProps> = ({ isOpen, onClose, onSelec
             {onOpenWishlist && (
               <button
                 onClick={() => {
-                  onClose();
                   onOpenWishlist();
                 }}
                 className="px-3 py-1.5 rounded-xl bg-pink-950/70 hover:bg-pink-900 border border-pink-700/60 text-pink-200 text-xs font-bold transition flex items-center gap-1.5 shadow-sm active:scale-95 shrink-0"
@@ -862,15 +1050,16 @@ export const AlbumModal: React.FC<AlbumModalProps> = ({ isOpen, onClose, onSelec
             );
           })}
         </div>
+      </div> {/* Fim de INTERFACE DESKTOP */}
 
         {/* LISTA / GRID DE CARTAS */}
-        <div className="flex-1 overflow-y-auto p-4 sm:p-6 bg-[#070a12]">
+        <div className="flex-1 overflow-y-auto p-2 sm:p-6 bg-[#070a12]">
           {/* BANNER DE INSERÇÃO RÁPIDA QUANDO UMA COLEÇÃO ESPECÍFICA ESTÁ SELECIONADA */}
           {currentCollectionData && (
-            <div className="mb-4 p-3.5 sm:p-4 rounded-2xl bg-gradient-to-r from-purple-950/70 via-slate-900 to-slate-950 border border-purple-500/40 flex flex-wrap items-center justify-between gap-3 shadow-lg">
+            <div className="mb-3 sm:mb-4 p-2.5 sm:p-4 rounded-xl sm:rounded-2xl bg-gradient-to-r from-purple-950/70 via-slate-900 to-slate-950 border border-purple-500/40 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-lg">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-purple-900/60 border border-purple-500/50 flex items-center justify-center text-purple-300 shrink-0">
-                  <PackagePlus size={20} />
+                <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-purple-900/60 border border-purple-500/50 flex items-center justify-center text-purple-300 shrink-0">
+                  <PackagePlus size={18} />
                 </div>
                 <div>
                   <div className="flex items-center gap-2 flex-wrap">
@@ -878,7 +1067,7 @@ export const AlbumModal: React.FC<AlbumModalProps> = ({ isOpen, onClose, onSelec
                       Coleção: {currentCollectionData.name}
                     </h4>
                     <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-purple-300 font-semibold border border-purple-700/40">
-                      {currentCollectionData.ownedCount}/{currentCollectionData.totalCards} no seu álbum ({currentCollectionData.percent}%)
+                      {currentCollectionData.ownedCount}/{currentCollectionData.totalCards} ({currentCollectionData.percent}%)
                     </span>
                     {currentCollectionData.ownedCount >= currentCollectionData.totalCards && (
                       <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-300 font-semibold border border-emerald-500/40 flex items-center gap-1">
@@ -886,43 +1075,43 @@ export const AlbumModal: React.FC<AlbumModalProps> = ({ isOpen, onClose, onSelec
                       </span>
                     )}
                   </div>
-                  <p className="text-[11px] text-slate-400 mt-0.5">
-                    {currentCollectionData.subtitle} • Já possui esse deck ou coleção física? Insira todas as {currentCollectionData.totalCards} cartas de uma vez sem precisar clicar uma a uma.
+                  <p className="text-[10px] sm:text-[11px] text-slate-400 mt-0.5 line-clamp-1 sm:line-clamp-none">
+                    {currentCollectionData.subtitle}
                   </p>
                 </div>
               </div>
 
-              <div className="flex items-center gap-2 flex-wrap">
+              <div className="flex items-center gap-2 w-full sm:w-auto">
                 <button
                   onClick={() => handleAddCollection(currentCollectionData.name, 'add')}
                   disabled={bulkLoadingName === currentCollectionData.name}
-                  className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 transition shadow-lg shadow-emerald-950/40 active:scale-95 disabled:opacity-50"
+                  className="flex-1 sm:flex-initial px-3 py-1.5 sm:px-3.5 sm:py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition shadow-lg shadow-emerald-950/40 active:scale-95 disabled:opacity-50"
                   title="Adicionar 1 cópia de cada carta desta coleção ao seu álbum"
                 >
                   {bulkLoadingName === currentCollectionData.name ? (
-                    <RefreshCw size={14} className="animate-spin text-white" />
+                    <RefreshCw size={13} className="animate-spin text-white" />
                   ) : (
-                    <Plus size={14} />
+                    <Plus size={13} />
                   )}
-                  <span>Inserir Deck Completo (+1 cada)</span>
+                  <span>+1 Todas</span>
                 </button>
 
                 <button
                   onClick={() => handleAddCollection(currentCollectionData.name, 'ensure_at_least')}
                   disabled={bulkLoadingName === currentCollectionData.name}
-                  className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs flex items-center gap-1.5 transition shadow-lg shadow-indigo-950/40 active:scale-95 disabled:opacity-50"
+                  className="flex-1 sm:flex-initial px-3 py-1.5 sm:px-3.5 sm:py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition shadow-lg shadow-indigo-950/40 active:scale-95 disabled:opacity-50"
                   title="Preencher as cartas faltantes desta coleção"
                 >
-                  <CheckCircle2 size={14} />
-                  <span>Completar Faltantes</span>
+                  <CheckCircle2 size={13} />
+                  <span>Completar</span>
                 </button>
               </div>
             </div>
           )}
 
-          {/* BANNER PROMINENTE PARA INSERIR COLEÇÕES COMPLETAS QUANDO EM TODAS */}
+          {/* BANNER PROMINENTE PARA INSERIR COLEÇÕES COMPLETAS QUANDO EM TODAS (APENAS DESKTOP) */}
           {!currentCollectionData && (
-            <div className="mb-4 p-3.5 sm:p-4 rounded-2xl bg-gradient-to-r from-purple-950/60 via-slate-900 to-slate-950 border border-purple-500/30 flex flex-wrap items-center justify-between gap-3 shadow-lg">
+            <div className="hidden sm:flex mb-4 p-3.5 sm:p-4 rounded-2xl bg-gradient-to-r from-purple-950/60 via-slate-900 to-slate-950 border border-purple-500/30 flex-wrap items-center justify-between gap-3 shadow-lg">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-xl bg-emerald-950/80 border border-emerald-500/40 flex items-center justify-center text-emerald-400 shrink-0">
                   <PackagePlus size={20} />
@@ -1069,8 +1258,15 @@ export const AlbumModal: React.FC<AlbumModalProps> = ({ isOpen, onClose, onSelec
 
                     {/* INFORMAÇÕES DA CARTA */}
                     <div className="w-full mt-2 text-left">
-                      <div className="truncate text-xs font-bold text-slate-200 group-hover:text-purple-300 transition" title={card.name}>
-                        {card.name}
+                      <div className="flex items-center justify-between gap-1">
+                        <span className="truncate text-xs font-bold text-slate-200 group-hover:text-purple-300 transition" title={card.name}>
+                          {card.name}
+                        </span>
+                        {card.isVariation && card.variationType && (
+                          <span className="text-[9px] px-1.5 py-0.2 rounded bg-purple-950/80 text-purple-300 border border-purple-700/50 shrink-0 font-bold max-w-[85px] truncate" title={card.variationType}>
+                            {card.variationType}
+                          </span>
+                        )}
                       </div>
                       <div className="flex items-center justify-between text-[10px] text-slate-400 mt-0.5 font-mono">
                         <span>{card.code}</span>
@@ -1115,14 +1311,14 @@ export const AlbumModal: React.FC<AlbumModalProps> = ({ isOpen, onClose, onSelec
                       <button
                         onClick={() => decrementCard(card)}
                         disabled={qty <= 0}
-                        className={`flex-1 py-1 rounded-lg flex items-center justify-center transition text-xs font-bold ${
+                        className={`flex-1 py-2 sm:py-1 min-h-[36px] sm:min-h-0 rounded-lg flex items-center justify-center transition text-xs font-bold active:scale-95 ${
                           qty > 0 
                             ? 'bg-slate-800 hover:bg-red-950/80 hover:text-red-400 text-slate-300 border border-slate-700/60' 
                             : 'bg-slate-900/40 text-slate-600 cursor-not-allowed border border-transparent'
                         }`}
                         title="Diminuir quantidade"
                       >
-                        <Minus size={13} />
+                        <Minus size={14} />
                       </button>
 
                       <span className="px-2 font-mono font-bold text-xs text-slate-200">
@@ -1141,14 +1337,14 @@ export const AlbumModal: React.FC<AlbumModalProps> = ({ isOpen, onClose, onSelec
                           }
                           incrementCard(card);
                         }}
-                        className={`flex-1 py-1 rounded-lg flex items-center justify-center transition text-xs font-bold ${
+                        className={`flex-1 py-2 sm:py-1 min-h-[36px] sm:min-h-0 rounded-lg flex items-center justify-center transition text-xs font-bold active:scale-95 ${
                           isCardRarePrint(card) && !isUserAdmin(user)
                             ? 'bg-amber-600 hover:bg-amber-500 text-slate-950 font-black'
                             : 'bg-purple-950/70 hover:bg-purple-800 text-purple-200 border border-purple-700/50'
                         }`}
                         title={isCardRarePrint(card) && !isUserAdmin(user) ? 'Solicitar verificação de posse' : 'Aumentar quantidade'}
                       >
-                        <Plus size={13} />
+                        <Plus size={14} />
                       </button>
                     </div>
                   </div>
@@ -1158,8 +1354,8 @@ export const AlbumModal: React.FC<AlbumModalProps> = ({ isOpen, onClose, onSelec
           )}
         </div>
 
-        {/* FOOTER */}
-        <div className="p-3 sm:p-4 bg-slate-950 border-t border-slate-800/80 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-400">
+        {/* FOOTER (APENAS DESKTOP) */}
+        <div className="hidden sm:flex p-3 sm:p-4 bg-slate-950 border-t border-slate-800/80 flex-wrap items-center justify-between gap-3 text-xs text-slate-400">
           <div className="flex items-center gap-2">
             <Sparkles size={14} className="text-purple-400" />
             <span>
@@ -1177,6 +1373,213 @@ export const AlbumModal: React.FC<AlbumModalProps> = ({ isOpen, onClose, onSelec
             Fechar Álbum
           </button>
         </div>
+
+        {/* DRAWER / MODAL MOBILE: FILTROS & ESTATÍSTICAS */}
+        {(showMobileFilters || showMobileStats) && (
+          <div className="sm:hidden fixed inset-0 z-[120] flex flex-col justify-end bg-black/80 backdrop-blur-xs animate-in fade-in duration-150">
+            <div 
+              className="absolute inset-0" 
+              onClick={() => { setShowMobileFilters(false); setShowMobileStats(false); }}
+            />
+            <div className="relative z-10 bg-[#0d1222] border-t border-purple-500/40 rounded-t-3xl max-h-[85vh] flex flex-col shadow-2xl animate-in slide-in-from-bottom duration-200">
+              {/* Handle */}
+              <div className="w-12 h-1.5 rounded-full bg-slate-700 mx-auto mt-3 mb-1" />
+
+              {/* Header do Drawer */}
+              <div className="px-4 py-2.5 border-b border-slate-800/80 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="p-1.5 rounded-lg bg-purple-600/20 text-purple-400">
+                    {showMobileStats ? <BarChart2 size={16} /> : <SlidersHorizontal size={16} />}
+                  </div>
+                  <h3 className="font-bold text-white text-base">
+                    {showMobileStats ? 'Estatísticas do Álbum' : 'Filtros & Opções'}
+                  </h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => { setShowMobileFilters(false); setShowMobileStats(false); }}
+                  className="p-1.5 rounded-lg bg-slate-900 border border-slate-800 text-slate-400 hover:text-white"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              {/* Conteúdo rolável */}
+              <div className="p-4 space-y-4 overflow-y-auto max-h-[60vh]">
+                {/* Estatísticas Detalhadas */}
+                <div className="p-3.5 rounded-xl bg-slate-900/90 border border-slate-800 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold uppercase text-slate-400">
+                      {albumEdition === 'legado' ? 'Progresso Álbum Legado' : albumEdition === 'moderno' ? 'Progresso Álbum Moderno' : 'Progresso Total'}
+                    </span>
+                    <span className="text-base font-black text-purple-400 font-mono">{stats.percent}%</span>
+                  </div>
+
+                  <div className="w-full bg-slate-800 rounded-full h-2 overflow-hidden border border-slate-700/50">
+                    <div 
+                      className="bg-gradient-to-r from-purple-600 to-emerald-400 h-2 rounded-full transition-all" 
+                      style={{ width: `${stats.percent}%` }}
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-2 pt-1 text-center">
+                    <div className="p-2 rounded-lg bg-slate-950 border border-slate-800/80">
+                      <span className="text-[9px] uppercase font-bold text-slate-500 block">Únicas</span>
+                      <span className="text-xs font-black text-purple-300 font-mono">{stats.totalUniqueOwned}/{stats.totalCards}</span>
+                    </div>
+                    <div className="p-2 rounded-lg bg-slate-950 border border-slate-800/80">
+                      <span className="text-[9px] uppercase font-bold text-slate-500 block">Cópias</span>
+                      <span className="text-xs font-black text-emerald-400 font-mono">{stats.totalCopies}</span>
+                    </div>
+                    <div className="p-2 rounded-lg bg-slate-950 border border-slate-800/80">
+                      <span className="text-[9px] uppercase font-bold text-slate-500 block">Faltam</span>
+                      <span className="text-xs font-black text-amber-400 font-mono">{stats.totalCards - stats.totalUniqueOwned}</span>
+                    </div>
+                  </div>
+
+                  {specialCardsCount > 0 && (
+                    <div className="p-2 rounded-lg bg-amber-950/40 border border-amber-600/30 flex items-center justify-between text-xs">
+                      <span className="text-amber-300 font-bold flex items-center gap-1">
+                        <Crown size={12} className="fill-amber-400 text-amber-400" />
+                        Cartas Especiais:
+                      </span>
+                      <span className="font-mono font-black text-amber-300">
+                        {albumPoolCards.filter(c => isSpecialCard(c) && getQuantity(c) > 0).length}/{specialCardsCount} no álbum
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Filtro de Coleção */}
+                <div>
+                  <label className="text-xs font-bold text-slate-300 block mb-1.5 flex items-center gap-1.5">
+                    <Layers size={13} className="text-purple-400" />
+                    Filtrar por Coleção ou Deck:
+                  </label>
+                  <select
+                    value={selectedCollection}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setSelectedCollection(val);
+                      if (val === '★ Especiais') setOnlySpecials(true);
+                      else setOnlySpecials(false);
+                    }}
+                    className="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-xs text-white font-medium outline-none focus:border-purple-500"
+                  >
+                    <option value="Todas">
+                      {albumEdition === 'legado' ? 'Todas do Álbum Legado' : albumEdition === 'moderno' ? 'Todas do Álbum Moderno' : 'Todas as Coleções'} ({albumPoolCards.length})
+                    </option>
+                    {specialCardsCount > 0 && (
+                      <optgroup label="Especiais do Álbum" className="text-amber-400 font-bold">
+                        <option value="★ Especiais">★ Todas as Especiais ({specialCardsCount})</option>
+                        <option value="★ Limitadas">★ Limitadas ({albumPoolCards.filter(c => (c.rarity || '').toLowerCase().includes('limitad')).length})</option>
+                        <option value="★ Raras">★ Raras ({albumPoolCards.filter(c => (c.rarity || '').toLowerCase().includes('rara')).length})</option>
+                        <option value="★ Eventos">★ Eventos ({albumPoolCards.filter(c => (c.rarity || '').toLowerCase().includes('evento')).length})</option>
+                      </optgroup>
+                    )}
+                    <optgroup label="Coleções & Decks" className="text-purple-300">
+                      {availableCollections.map(col => (
+                        <option key={col} value={col}>{col}</option>
+                      ))}
+                    </optgroup>
+                  </select>
+                </div>
+
+                {/* Filtro de Foil */}
+                <div>
+                  <label className="text-xs font-bold text-slate-300 block mb-1.5 flex items-center gap-1.5">
+                    <Sparkles size={13} className="text-yellow-400" />
+                    Filtrar por Acabamento Foil:
+                  </label>
+                  <select
+                    value={selectedFoilFilter}
+                    onChange={(e) => setSelectedFoilFilter(e.target.value)}
+                    className="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-xs text-white font-medium outline-none focus:border-purple-500"
+                  >
+                    <option value="all">Todos os Acabamentos</option>
+                    <option value="any_foil">✨ Apenas Cartas Foil</option>
+                    <optgroup label="11 Tipos de Foil">
+                      {FOIL_TYPES.map(foil => (
+                        <option key={foil.id} value={foil.id}>Foil {foil.name}</option>
+                      ))}
+                    </optgroup>
+                  </select>
+                </div>
+
+                {/* Ações Rápidas */}
+                <div className="pt-2 border-t border-slate-800/80 grid grid-cols-2 gap-2">
+                  {onOpenWishlist && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowMobileFilters(false);
+                        setShowMobileStats(false);
+                        onClose();
+                        onOpenWishlist();
+                      }}
+                      className="p-2.5 rounded-xl bg-pink-950/60 hover:bg-pink-900/60 border border-pink-700/50 text-pink-300 text-xs font-bold flex items-center justify-center gap-1.5 active:scale-95"
+                    >
+                      <Heart size={14} className="fill-pink-400 text-pink-400" />
+                      <span>Cartas que Procuro</span>
+                    </button>
+                  )}
+
+                  {onOpenRanking && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowMobileFilters(false);
+                        setShowMobileStats(false);
+                        onOpenRanking();
+                      }}
+                      className="p-2.5 rounded-xl bg-amber-950/60 hover:bg-amber-900/60 border border-amber-600/50 text-amber-300 text-xs font-bold flex items-center justify-center gap-1.5 active:scale-95"
+                    >
+                      <Trophy size={14} className="text-amber-400" />
+                      <span>Hall da Fama</span>
+                    </button>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowMobileFilters(false);
+                      setShowMobileStats(false);
+                      setShowBulkModal(true);
+                    }}
+                    className="col-span-2 p-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center justify-center gap-1.5 active:scale-95 shadow-md shadow-emerald-950/40"
+                  >
+                    <PackagePlus size={15} />
+                    <span>Inserir Decks / Coleções em Lote</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Rodapé do Drawer */}
+              <div className="p-3 border-t border-slate-800 bg-slate-950/90 flex items-center justify-between gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedCollection('Todas');
+                    setSelectedFoilFilter('all');
+                    setOnlySpecials(false);
+                    setSearchTerm('');
+                    setFilterMode('all');
+                  }}
+                  className="px-3 py-2 rounded-xl text-xs font-bold text-slate-400 hover:text-white"
+                >
+                  Limpar Filtros
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setShowMobileFilters(false); setShowMobileStats(false); }}
+                  className="px-5 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-black shadow-lg shadow-purple-900/40 active:scale-95"
+                >
+                  Ver {filteredCards.length} Cartas
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* TOAST FLUTUANTE DE SUCESSO */}
         {toastMessage && (
