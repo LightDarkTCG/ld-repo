@@ -15,31 +15,13 @@ import {
   CartItem,
   ExclusiveProduct,
   MarketplaceListing,
+  MarketplaceSellerReview,
   OrderStatus,
   PaymentStatus,
   ShippingOption,
   StoreOrder,
   StoreSettings
 } from './types';
-
-export const PLATFORM_FEE_PERCENT = 10; // 10% de comissão para o site Light Dark
-
-export function calculatePlatformCommission(grossAmount: number): {
-  grossAmount: number;
-  platformFeePercent: number;
-  platformFeeAmount: number;
-  sellerNetAmount: number;
-} {
-  const safeGross = Number.isFinite(grossAmount) && grossAmount > 0 ? grossAmount : 0;
-  const platformFeeAmount = Math.round(safeGross * (PLATFORM_FEE_PERCENT / 100) * 100) / 100;
-  const sellerNetAmount = Math.round((safeGross - platformFeeAmount) * 100) / 100;
-  return {
-    grossAmount: safeGross,
-    platformFeePercent: PLATFORM_FEE_PERCENT,
-    platformFeeAmount,
-    sellerNetAmount
-  };
-}
 
 enum OperationType {
   CREATE = 'create',
@@ -650,34 +632,10 @@ export function generateOrderId(): string {
 export async function createStoreOrder(order: StoreOrder): Promise<StoreOrder> {
   const path = `storeOrders/${order.id}`;
   try {
-    // Calcular comissão de 10% caso haja itens de vendedores da comunidade no pedido
-    const communityItems = (order.items || []).filter((i) => i.isCommunityListing);
-    const hasCommunityItems = communityItems.length > 0;
-    let platformCommissionTotal = 0;
-    let sellerPayoutTotal = 0;
-
-    for (const item of communityItems) {
-      const itemSubtotal = (item.unitPrice || 0) * (item.quantity || 1);
-      const { platformFeeAmount, sellerNetAmount } = calculatePlatformCommission(itemSubtotal);
-      platformCommissionTotal += platformFeeAmount;
-      sellerPayoutTotal += sellerNetAmount;
-    }
-
-    platformCommissionTotal = Math.round(platformCommissionTotal * 100) / 100;
-    sellerPayoutTotal = Math.round(sellerPayoutTotal * 100) / 100;
-
-    const enrichedOrder: StoreOrder = {
-      ...order,
-      hasCommunityItems,
-      platformCommissionTotal,
-      sellerPayoutTotal,
-      sellerPayoutStatus: hasCommunityItems ? 'pending_payout' : 'not_applicable'
-    };
-
-    const clean = JSON.parse(JSON.stringify(enrichedOrder));
+    const clean = JSON.parse(JSON.stringify(order));
     await setDoc(doc(db, 'storeOrders', order.id), clean);
     saveLocalOrderId(order.id);
-    return enrichedOrder;
+    return order;
   } catch (err) {
     handleFirestoreError(err, OperationType.CREATE, path);
   }
@@ -950,75 +908,7 @@ export const ORDER_STATUS_LABELS: Record<OrderStatus, { label: string; color: st
   }
 };
 
-// --- MARKETPLACE DA COMUNIDADE (CARTAS & COLEÇÕES DE USUÁRIOS) ---
-export function buildCartItemFromMarketplaceListing(
-  listing: MarketplaceListing,
-  quantity: number = 1
-): CartItem {
-  const safeQty = Math.min(Math.max(1, quantity), Math.max(1, listing.stockQuantity || 1));
-  const { platformFeePercent, platformFeeAmount, sellerNetAmount } = calculatePlatformCommission(
-    listing.price * safeQty
-  );
-
-  return {
-    cartItemId: `mkt__${listing.id}`,
-    productId: listing.id,
-    title: listing.title,
-    variationName:
-      listing.listingType === 'single_card'
-        ? `Carta Avulsa • ${listing.condition}${listing.isFoil ? ' • Foil' : ''} (Vendedor: ${listing.sellerName})`
-        : `Coleção/Lote (${listing.totalCardsCount || listing.includedCards?.length || 1} cartas) • ${listing.condition} (Vendedor: ${listing.sellerName})`,
-    badge: listing.listingType === 'single_card' ? 'Carta de Jogador' : 'Coleção de Jogador',
-    unitPrice: listing.price,
-    formattedPrice: formatBRL(listing.price),
-    quantity: safeQty,
-    imageUrl: listing.imageUrl,
-    isPreOrder: false,
-    weightGrams: listing.weightGrams || (listing.listingType === 'single_card' ? 35 : 250),
-    freeShipping: false,
-    maxStock: listing.stockQuantity || 1,
-    isCommunityListing: true,
-    listingId: listing.id,
-    sellerId: listing.sellerId,
-    sellerName: listing.sellerName,
-    sellerEmail: listing.sellerEmail,
-    sellerPixKey: listing.sellerPixKey,
-    sellerPixKeyType: listing.sellerPixKeyType,
-    sellerWhatsapp: listing.sellerWhatsapp,
-    platformFeePercent,
-    platformFeeAmount,
-    sellerNetAmount
-  };
-}
-
-export function addMarketplaceListingToCart(
-  listing: MarketplaceListing,
-  quantity: number = 1
-): CartItem[] {
-  const current = getCartItems();
-  const newItem = buildCartItemFromMarketplaceListing(listing, quantity);
-  const existingIdx = current.findIndex((c) => c.cartItemId === newItem.cartItemId);
-
-  if (existingIdx >= 0) {
-    const existing = current[existingIdx];
-    const maxStock = newItem.maxStock !== undefined ? newItem.maxStock : 99;
-    const nextQty = Math.min(maxStock, existing.quantity + newItem.quantity);
-    const { platformFeeAmount, sellerNetAmount } = calculatePlatformCommission(listing.price * nextQty);
-    current[existingIdx] = {
-      ...existing,
-      ...newItem,
-      quantity: nextQty,
-      platformFeeAmount,
-      sellerNetAmount
-    };
-  } else {
-    current.push(newItem);
-  }
-
-  saveCartItems(current);
-  return [...current];
-}
-
+// --- MERCADO DA COMUNIDADE (COMÉRCIO LIVRE ENTRE JOGADORES + AVALIAÇÕES) ---
 export function subscribeMarketplaceListings(
   onListings: (listings: MarketplaceListing[]) => void,
   onError?: (err: unknown) => void
@@ -1041,12 +931,8 @@ export function subscribeMarketplaceListings(
 export async function createMarketplaceListing(listing: MarketplaceListing): Promise<MarketplaceListing> {
   const path = `marketplaceListings/${listing.id}`;
   try {
-    const { platformFeePercent, platformFeeAmount, sellerNetAmount } = calculatePlatformCommission(listing.price);
     const enriched: MarketplaceListing = {
       ...listing,
-      platformFeePercent,
-      platformFeeAmount,
-      sellerNetAmount,
       formattedPrice: formatBRL(listing.price),
       createdAt: listing.createdAt || new Date().toISOString(),
       updatedAt: new Date().toISOString()
@@ -1069,10 +955,6 @@ export async function updateMarketplaceListing(
       updatedAt: new Date().toISOString()
     };
     if (typeof fields.price === 'number') {
-      const { platformFeePercent, platformFeeAmount, sellerNetAmount } = calculatePlatformCommission(fields.price);
-      extra.platformFeePercent = platformFeePercent;
-      extra.platformFeeAmount = platformFeeAmount;
-      extra.sellerNetAmount = sellerNetAmount;
       extra.formattedPrice = formatBRL(fields.price);
     }
     const payload = JSON.parse(JSON.stringify({ ...fields, ...extra }));
@@ -1090,4 +972,53 @@ export async function deleteMarketplaceListing(listingId: string): Promise<void>
     handleFirestoreError(err, OperationType.DELETE, path);
   }
 }
+
+// --- SISTEMA DE AVALIAÇÃO POR COMPRADOR (REPUTAÇÃO DE VENDEDORES) ---
+export function subscribeMarketplaceSellerReviews(
+  onReviews: (reviews: MarketplaceSellerReview[]) => void,
+  onError?: (err: unknown) => void
+) {
+  const path = 'marketplaceSellerReviews';
+  return onSnapshot(
+    collection(db, path),
+    (snap) => {
+      const list = snap.docs.map((d) => d.data() as MarketplaceSellerReview);
+      list.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+      onReviews(list);
+    },
+    (err) => {
+      if (onError) onError(err);
+      console.warn('Erro ao assinar marketplaceSellerReviews:', err);
+    }
+  );
+}
+
+export async function createMarketplaceSellerReview(
+  review: MarketplaceSellerReview
+): Promise<MarketplaceSellerReview> {
+  const path = `marketplaceSellerReviews/${review.id}`;
+  try {
+    const clean = JSON.parse(
+      JSON.stringify({
+        ...review,
+        rating: Math.max(1, Math.min(5, Math.round(review.rating || 5))),
+        createdAt: review.createdAt || new Date().toISOString()
+      })
+    );
+    await setDoc(doc(db, 'marketplaceSellerReviews', review.id), clean);
+    return clean;
+  } catch (err) {
+    handleFirestoreError(err, OperationType.CREATE, path);
+  }
+}
+
+export async function deleteMarketplaceSellerReview(reviewId: string): Promise<void> {
+  const path = `marketplaceSellerReviews/${reviewId}`;
+  try {
+    await deleteDoc(doc(db, 'marketplaceSellerReviews', reviewId));
+  } catch (err) {
+    handleFirestoreError(err, OperationType.DELETE, path);
+  }
+}
+
 

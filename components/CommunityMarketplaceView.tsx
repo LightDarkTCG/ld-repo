@@ -1,15 +1,12 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Sparkles,
   Layers,
   Plus,
   Search,
-  ShoppingCart,
   Check,
   Trash2,
   User as UserIcon,
-  ShieldCheck,
-  Percent,
   Tag,
   MapPin,
   Eye,
@@ -18,27 +15,31 @@ import {
   PauseCircle,
   PlayCircle,
   Edit3,
-  Info,
-  HelpCircle,
-  Wallet
+  Star,
+  MessageCircle,
+  ExternalLink,
+  ThumbsUp,
+  Award,
+  Truck
 } from 'lucide-react';
 import {
   CardCondition,
   CardData,
   MarketplaceCardEntry,
   MarketplaceListing,
-  MarketplaceListingType
+  MarketplaceListingType,
+  MarketplaceSellerReview
 } from '../types';
 import {
-  addMarketplaceListingToCart,
-  calculatePlatformCommission,
   createMarketplaceListing,
+  createMarketplaceSellerReview,
   deleteMarketplaceListing,
+  deleteMarketplaceSellerReview,
   formatBRL,
   formatCep,
   formatPhone,
   parseBRLPrice,
-  PLATFORM_FEE_PERCENT,
+  subscribeMarketplaceSellerReviews,
   updateMarketplaceListing
 } from '../storeService';
 
@@ -48,7 +49,6 @@ interface CommunityMarketplaceViewProps {
   user: any;
   isAdmin?: boolean;
   onOpenAuth?: () => void;
-  onOpenCartDrawer: () => void;
 }
 
 const CARD_CONDITIONS: CardCondition[] = [
@@ -64,19 +64,43 @@ export const CommunityMarketplaceView: React.FC<CommunityMarketplaceViewProps> =
   allCards,
   user,
   isAdmin,
-  onOpenAuth,
-  onOpenCartDrawer
+  onOpenAuth
 }) => {
-  const [subTab, setSubTab] = useState<'explore' | 'sell' | 'my_listings' | 'how_it_works'>('explore');
+  const [subTab, setSubTab] = useState<'explore' | 'sell' | 'my_listings' | 'sellers_reputation'>('explore');
+
+  // Seller Reviews from Firestore
+  const [reviews, setReviews] = useState<MarketplaceSellerReview[]>([]);
+
+  useEffect(() => {
+    const unsub = subscribeMarketplaceSellerReviews((list) => {
+      setReviews(list);
+    });
+    return () => unsub();
+  }, []);
 
   // Filter states for Explore
   const [typeFilter, setTypeFilter] = useState<'all' | MarketplaceListingType>('all');
   const [conditionFilter, setConditionFilter] = useState<string>('all');
   const [onlyFoil, setOnlyFoil] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [sortBy, setSortBy] = useState<'recent' | 'price-asc' | 'price-desc'>('recent');
-  const [addedId, setAddedId] = useState<string | null>(null);
+  const [sortBy, setSortBy] = useState<'recent' | 'price-asc' | 'price-desc' | 'rating-desc'>('recent');
   const [inspectListing, setInspectListing] = useState<MarketplaceListing | null>(null);
+
+  // Seller Reviews Modal State
+  const [reviewModalSeller, setReviewModalSeller] = useState<{
+    sellerId: string;
+    sellerName: string;
+    sellerAvatar?: string;
+    defaultListingId?: string;
+    defaultListingTitle?: string;
+  } | null>(null);
+  const [newRating, setNewRating] = useState<number>(5);
+  const [newRecommend, setNewRecommend] = useState<boolean>(true);
+  const [newComment, setNewComment] = useState<string>('');
+  const [newReviewListingTitle, setNewReviewListingTitle] = useState<string>('');
+  const [reviewError, setReviewError] = useState<string>('');
+  const [reviewSuccess, setReviewSuccess] = useState<string>('');
+  const [isSubmittingReview, setIsSubmittingReview] = useState<boolean>(false);
 
   // Create / Edit Listing Form State
   const [editingListingId, setEditingListingId] = useState<string | null>(null);
@@ -92,10 +116,10 @@ export const CommunityMarketplaceView: React.FC<CommunityMarketplaceViewProps> =
   const [cardSearchTerm, setCardSearchTerm] = useState('');
   const [includedCards, setIncludedCards] = useState<MarketplaceCardEntry[]>([]);
 
-  // Seller Payout & Location Info
-  const [sellerPixKeyType, setSellerPixKeyType] = useState<'cpf' | 'email' | 'phone' | 'random'>('cpf');
-  const [sellerPixKey, setSellerPixKey] = useState('');
+  // Seller Direct Contact & Shipping Notes
   const [sellerWhatsapp, setSellerWhatsapp] = useState('');
+  const [sellerExternalLink, setSellerExternalLink] = useState('');
+  const [deliveryNotes, setDeliveryNotes] = useState('Envio via Correios (Carta Registrada / PAC / SEDEX) por conta do comprador');
   const [sellerCep, setSellerCep] = useState('');
   const [sellerCity, setSellerCity] = useState('');
   const [sellerState, setSellerState] = useState('');
@@ -104,12 +128,62 @@ export const CommunityMarketplaceView: React.FC<CommunityMarketplaceViewProps> =
   const [formSuccess, setFormSuccess] = useState('');
   const [isSaving, setIsSaving] = useState(false);
 
-  // Live 10% commission breakdown for current priceInput
   const parsedPrice = useMemo(() => parseBRLPrice(priceInput), [priceInput]);
-  const commissionBreakdown = useMemo(
-    () => calculatePlatformCommission(parsedPrice),
-    [parsedPrice]
-  );
+
+  // Aggregate seller stats map: sellerId -> { average, count, recommendPct, reviews }
+  const sellerStatsMap = useMemo(() => {
+    const map = new Map<
+      string,
+      {
+        sellerId: string;
+        sellerName: string;
+        average: number;
+        count: number;
+        recommendPct: number;
+        reviews: MarketplaceSellerReview[];
+      }
+    >();
+
+    for (const r of reviews) {
+      if (!r.sellerId) continue;
+      const current = map.get(r.sellerId) || {
+        sellerId: r.sellerId,
+        sellerName: r.sellerName || 'Vendedor',
+        average: 0,
+        count: 0,
+        recommendPct: 100,
+        reviews: []
+      };
+      current.reviews.push(r);
+      map.set(r.sellerId, current);
+    }
+
+    map.forEach((val) => {
+      const count = val.reviews.length;
+      if (count > 0) {
+        const sum = val.reviews.reduce((acc, r) => acc + (Number(r.rating) || 5), 0);
+        const recCount = val.reviews.filter((r) => r.recommendSeller !== false).length;
+        val.count = count;
+        val.average = Math.round((sum / count) * 10) / 10;
+        val.recommendPct = Math.round((recCount / count) * 100);
+      }
+    });
+
+    return map;
+  }, [reviews]);
+
+  const getSellerStats = (sellerId: string) => {
+    return (
+      sellerStatsMap.get(sellerId) || {
+        sellerId,
+        sellerName: '',
+        average: 0,
+        count: 0,
+        recommendPct: 100,
+        reviews: []
+      }
+    );
+  };
 
   // Official catalog cards for picker
   const catalogCards = useMemo(() => {
@@ -140,8 +214,8 @@ export const CommunityMarketplaceView: React.FC<CommunityMarketplaceViewProps> =
       if (onlyFoil && !item.isFoil) return false;
       if (q) {
         const hay = `${item.title} ${item.description} ${item.cardName || ''} ${item.sellerName || ''} ${
-          (item.includedCards || []).map((c) => c.cardName).join(' ')
-        }`.toLowerCase();
+          item.sellerCity || ''
+        } ${(item.includedCards || []).map((c) => c.cardName).join(' ')}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
       return true;
@@ -150,11 +224,16 @@ export const CommunityMarketplaceView: React.FC<CommunityMarketplaceViewProps> =
     list.sort((a, b) => {
       if (sortBy === 'price-asc') return a.price - b.price;
       if (sortBy === 'price-desc') return b.price - a.price;
+      if (sortBy === 'rating-desc') {
+        const rA = getSellerStats(a.sellerId).average;
+        const rB = getSellerStats(b.sellerId).average;
+        if (rB !== rA) return rB - rA;
+      }
       return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime();
     });
 
     return list;
-  }, [listings, typeFilter, conditionFilter, onlyFoil, searchQuery, sortBy]);
+  }, [listings, typeFilter, conditionFilter, onlyFoil, searchQuery, sortBy, sellerStatsMap]);
 
   const myListings = useMemo(() => {
     if (!user) return [];
@@ -162,6 +241,138 @@ export const CommunityMarketplaceView: React.FC<CommunityMarketplaceViewProps> =
       (item) => item.sellerId === user.uid || item.sellerEmail === user.email || isAdmin
     );
   }, [listings, user, isAdmin]);
+
+  // All unique sellers with listings or reviews
+  const allSellersDirectory = useMemo(() => {
+    const map = new Map<
+      string,
+      {
+        sellerId: string;
+        sellerName: string;
+        sellerAvatar?: string;
+        sellerCity?: string;
+        sellerState?: string;
+        activeListingsCount: number;
+      }
+    >();
+
+    for (const item of listings) {
+      const existing = map.get(item.sellerId) || {
+        sellerId: item.sellerId,
+        sellerName: item.sellerName,
+        sellerAvatar: item.sellerAvatar,
+        sellerCity: item.sellerCity,
+        sellerState: item.sellerState,
+        activeListingsCount: 0
+      };
+      if (item.status === 'active' && item.stockQuantity > 0) {
+        existing.activeListingsCount += 1;
+      }
+      map.set(item.sellerId, existing);
+    }
+
+    for (const r of reviews) {
+      if (!map.has(r.sellerId)) {
+        map.set(r.sellerId, {
+          sellerId: r.sellerId,
+          sellerName: r.sellerName || 'Vendedor',
+          activeListingsCount: 0
+        });
+      }
+    }
+
+    const arr = Array.from(map.values());
+    arr.sort((a, b) => {
+      const stA = getSellerStats(a.sellerId);
+      const stB = getSellerStats(b.sellerId);
+      if (stB.average !== stA.average) return stB.average - stA.average;
+      return stB.count - stA.count;
+    });
+    return arr;
+  }, [listings, reviews, sellerStatsMap]);
+
+  const buildSellerWhatsAppUrl = (item: MarketplaceListing) => {
+    const cleanPhone = (item.sellerWhatsapp || '').replace(/\D/g, '');
+    if (!cleanPhone) return null;
+    const fullPhone = cleanPhone.startsWith('55') ? cleanPhone : `55${cleanPhone}`;
+    const msg = `Olá ${item.sellerName}! Vi seu anúncio *"${item.title}"* (${formatBRL(
+      item.price
+    )}) no Mercado de Jogadores do *Light Dark TCG* e tenho interesse em negociar!`;
+    return `https://wa.me/${fullPhone}?text=${encodeURIComponent(msg)}`;
+  };
+
+  const openSellerReviewsModal = (
+    sellerId: string,
+    sellerName: string,
+    sellerAvatar?: string,
+    defaultListingId?: string,
+    defaultListingTitle?: string
+  ) => {
+    setReviewModalSeller({
+      sellerId,
+      sellerName,
+      sellerAvatar,
+      defaultListingId,
+      defaultListingTitle
+    });
+    setNewRating(5);
+    setNewRecommend(true);
+    setNewComment('');
+    setNewReviewListingTitle(defaultListingTitle || '');
+    setReviewError('');
+    setReviewSuccess('');
+  };
+
+  const handleSubmitSellerReview = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setReviewError('');
+    setReviewSuccess('');
+
+    if (!user) {
+      setReviewError('Faça login para avaliar este vendedor.');
+      return;
+    }
+
+    if (!reviewModalSeller) return;
+
+    if (user.uid === reviewModalSeller.sellerId) {
+      setReviewError('Você não pode avaliar a si mesmo.');
+      return;
+    }
+
+    if (!newComment.trim()) {
+      setReviewError('Escreva um breve comentário sobre como foi a negociação e a entrega.');
+      return;
+    }
+
+    setIsSubmittingReview(true);
+    try {
+      const reviewId = `REV-${Date.now()}-${Math.floor(100 + Math.random() * 900)}`;
+      const payload: MarketplaceSellerReview = {
+        id: reviewId,
+        sellerId: reviewModalSeller.sellerId,
+        sellerName: reviewModalSeller.sellerName,
+        buyerId: user.uid,
+        buyerName: user.displayName || user.email?.split('@')[0] || 'Comprador',
+        buyerEmail: user.email || '',
+        buyerAvatar: user.photoURL || '',
+        listingId: reviewModalSeller.defaultListingId,
+        listingTitle: newReviewListingTitle.trim() || reviewModalSeller.defaultListingTitle || 'Negociação no Mercado',
+        rating: newRating,
+        comment: newComment.trim(),
+        recommendSeller: newRecommend,
+        createdAt: new Date().toISOString()
+      };
+
+      await createMarketplaceSellerReview(payload);
+      setNewComment('');
+      setReviewSuccess('Avaliação publicada com sucesso! Obrigado por ajudar a comunidade.');
+    } catch (err: any) {
+      setReviewError(err.message || 'Erro ao enviar avaliação.');
+    } finally {
+      setIsSubmittingReview(false);
+    }
+  };
 
   const handleSelectSingleCardFromCatalog = (card: CardData) => {
     const coverImg = card.catalogCoverImageUrl || card.imageUrl || '';
@@ -242,9 +453,12 @@ export const CommunityMarketplaceView: React.FC<CommunityMarketplaceViewProps> =
     setImageUrl(item.imageUrl || '');
     setSelectedCardCode(item.cardId || '');
     setIncludedCards(item.includedCards || []);
-    setSellerPixKeyType(item.sellerPixKeyType || 'cpf');
-    setSellerPixKey(item.sellerPixKey || '');
     setSellerWhatsapp(item.sellerWhatsapp || '');
+    setSellerExternalLink(item.sellerExternalLink || '');
+    setDeliveryNotes(
+      item.deliveryNotes ||
+        'Envio via Correios (Carta Registrada / PAC / SEDEX) por conta do comprador'
+    );
     setSellerCep(item.sellerCep || '');
     setSellerCity(item.sellerCity || '');
     setSellerState(item.sellerState || '');
@@ -268,14 +482,14 @@ export const CommunityMarketplaceView: React.FC<CommunityMarketplaceViewProps> =
       return;
     }
 
-    if (parsedPrice < 2) {
-      setFormError('O valor mínimo para anunciar no Mercado é R$ 2,00.');
+    if (parsedPrice <= 0) {
+      setFormError('Informe um valor válido para o anúncio.');
       return;
     }
 
-    if (!sellerPixKey.trim()) {
+    if (!sellerWhatsapp.trim() && !sellerExternalLink.trim()) {
       setFormError(
-        'Informe sua Chave PIX para receber os 90% líquidos quando sua carta ou coleção for vendida.'
+        'Informe seu WhatsApp ou um Link Externo para que os compradores possam negociar diretamente com você.'
       );
       return;
     }
@@ -305,9 +519,6 @@ export const CommunityMarketplaceView: React.FC<CommunityMarketplaceViewProps> =
             : 'Coleção / Lote anunciado por jogador da comunidade.'),
         price: parsedPrice,
         formattedPrice: formatBRL(parsedPrice),
-        platformFeePercent: PLATFORM_FEE_PERCENT,
-        platformFeeAmount: commissionBreakdown.platformFeeAmount,
-        sellerNetAmount: commissionBreakdown.sellerNetAmount,
         stockQuantity: Math.max(1, Number(stockQuantity) || 1),
         condition,
         isFoil: listingType === 'single_card' ? isFoil : false,
@@ -326,12 +537,11 @@ export const CommunityMarketplaceView: React.FC<CommunityMarketplaceViewProps> =
         sellerEmail: user.email || '',
         sellerAvatar: user.photoURL || '',
         sellerWhatsapp: sellerWhatsapp.trim(),
+        sellerExternalLink: sellerExternalLink.trim() || undefined,
+        deliveryNotes: deliveryNotes.trim() || undefined,
         sellerCep: sellerCep.trim(),
         sellerCity: sellerCity.trim(),
         sellerState: sellerState.trim().toUpperCase(),
-        sellerPixKey: sellerPixKey.trim(),
-        sellerPixKeyType,
-        weightGrams: listingType === 'single_card' ? 40 : Math.max(150, totalCardsInCollection * 5),
         status: 'active',
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
@@ -349,7 +559,7 @@ export const CommunityMarketplaceView: React.FC<CommunityMarketplaceViewProps> =
       setTimeout(() => {
         setFormSuccess('');
         setSubTab('explore');
-      }, 1400);
+      }, 1200);
     } catch (err: any) {
       setFormError(err.message || 'Erro ao publicar anúncio.');
     } finally {
@@ -361,19 +571,17 @@ export const CommunityMarketplaceView: React.FC<CommunityMarketplaceViewProps> =
     <div className="space-y-6">
       {/* ================= TOP BANNER & SUB-NAVIGATION ================= */}
       <div className="bg-gradient-to-r from-purple-950/70 via-[#12111c] to-emerald-950/50 border border-purple-500/30 rounded-2xl p-4 sm:p-5 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-        <div className="space-y-1">
+        <div className="space-y-1.5">
           <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-md bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 text-[11px] font-bold uppercase tracking-wider">
-            <ShieldCheck size={13} />
-            <span>Mercado da Comunidade · Compra & Venda entre Jogadores</span>
+            <Sparkles size={13} />
+            <span>Comércio Livre entre Jogadores · 0% de Taxa</span>
           </div>
           <h2 className="text-lg sm:text-xl font-black text-white tracking-tight">
-            Compre e Venda Cartas Avulsas, Decks e Coleções Completas
+            Mercado da Galera: Cartas Avulsas, Decks e Coleções
           </h2>
           <p className="text-xs text-slate-300 max-w-2xl leading-relaxed">
-            Anuncie suas cartas ou coleções gratuitamente. O comprador paga com segurança via{' '}
-            <strong className="text-white">PIX ou Cartão (Mercado Pago)</strong>, o site retém{' '}
-            <strong className="text-amber-300">10% de taxa de intermediação</strong> e repassa{' '}
-            <strong className="text-emerald-400">90% do valor direto para o seu PIX</strong>.
+            Negociação e entrega feitas <strong className="text-white">diretamente entre comprador e vendedor</strong>, sem taxas ou intermediação do site. Confira sempre as{' '}
+            <strong className="text-amber-300">avaliações de outros compradores</strong> antes de fechar negócio e avalie o vendedor após receber suas cartas!
           </p>
         </div>
 
@@ -423,16 +631,15 @@ export const CommunityMarketplaceView: React.FC<CommunityMarketplaceViewProps> =
 
           <button
             type="button"
-            onClick={() => setSubTab('how_it_works')}
-            className={`px-3 py-2.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
-              subTab === 'how_it_works'
+            onClick={() => setSubTab('sellers_reputation')}
+            className={`px-3.5 py-2.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+              subTab === 'sellers_reputation'
                 ? 'bg-amber-500 text-slate-950'
                 : 'bg-slate-900 hover:bg-slate-800 text-amber-300 border border-amber-500/30'
             }`}
-            title="Entenda como funciona a taxa de 10% e o repasse via PIX"
           >
-            <HelpCircle size={14} />
-            <span>Como Funciona (Taxa 10%)</span>
+            <Star size={14} className={subTab === 'sellers_reputation' ? 'fill-slate-950' : 'fill-amber-400'} />
+            <span>Avaliações de Vendedores ({reviews.length})</span>
           </button>
         </div>
       </div>
@@ -497,14 +704,14 @@ export const CommunityMarketplaceView: React.FC<CommunityMarketplaceViewProps> =
               </label>
             </div>
 
-            {/* Sell Call-to-Action Card */}
-            <div className="bg-[#0e0e14] border border-emerald-500/30 rounded-2xl p-4 space-y-3">
-              <div className="flex items-center gap-2 text-emerald-400 font-bold text-xs">
-                <Wallet size={16} />
-                <span>Tem cartas repetidas ou uma coleção?</span>
+            {/* Free Trade & Buyer Rating Info Box */}
+            <div className="bg-[#0e0e14] border border-amber-500/30 rounded-2xl p-4 space-y-2.5">
+              <div className="flex items-center gap-2 text-amber-300 font-bold text-xs">
+                <Award size={16} />
+                <span>Reputação por Comprador</span>
               </div>
               <p className="text-[11px] text-slate-400 leading-relaxed">
-                Publique seu anúncio em segundos e receba <strong className="text-white">90% do valor</strong> direto no seu PIX (apenas 10% de comissão do site).
+                O comércio é livre entre os jogadores (sem taxas). Clique nas estrelas de qualquer vendedor para ler relatos de quem já comprou ou deixar sua avaliação!
               </p>
               <button
                 type="button"
@@ -514,7 +721,7 @@ export const CommunityMarketplaceView: React.FC<CommunityMarketplaceViewProps> =
                 }}
                 className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition cursor-pointer"
               >
-                + Vender Minha Carta / Coleção
+                + Anunciar Grátis
               </button>
             </div>
           </aside>
@@ -532,7 +739,7 @@ export const CommunityMarketplaceView: React.FC<CommunityMarketplaceViewProps> =
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Buscar carta avulsa, coleção, vendedor, raridade..."
+                  placeholder="Buscar carta avulsa, coleção, vendedor, cidade..."
                   className="w-full bg-slate-950 border border-slate-800 focus:border-purple-500 rounded-xl pl-9 pr-4 py-2 text-xs text-white outline-none"
                 />
               </div>
@@ -545,6 +752,7 @@ export const CommunityMarketplaceView: React.FC<CommunityMarketplaceViewProps> =
                   className="bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white font-bold outline-none"
                 >
                   <option value="recent">Mais Recentes</option>
+                  <option value="rating-desc">Melhor Avaliação do Vendedor</option>
                   <option value="price-asc">Menor Preço</option>
                   <option value="price-desc">Maior Preço</option>
                 </select>
@@ -554,7 +762,9 @@ export const CommunityMarketplaceView: React.FC<CommunityMarketplaceViewProps> =
             {activeListings.length > 0 ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5">
                 {activeListings.map((item) => {
-                  const isAdded = addedId === item.id;
+                  const sellerStats = getSellerStats(item.sellerId);
+                  const waUrl = buildSellerWhatsAppUrl(item);
+
                   return (
                     <div
                       key={item.id}
@@ -600,24 +810,67 @@ export const CommunityMarketplaceView: React.FC<CommunityMarketplaceViewProps> =
                             </span>
                             <span className="bg-black/80 px-2 py-0.5 rounded text-slate-200 flex items-center gap-1 border border-white/10">
                               <Eye size={11} />
-                              <span>Detalhes</span>
+                              <span>Ver Detalhes</span>
                             </span>
                           </div>
                         </div>
 
                         {/* Body */}
-                        <div className="p-4 space-y-2">
+                        <div className="p-4 space-y-2.5">
+                          {/* Seller & Buyer Rating Row */}
+                          <div className="flex items-center justify-between gap-2 bg-slate-950/90 border border-slate-800/80 rounded-xl px-2.5 py-1.5">
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              {item.sellerAvatar ? (
+                                <img
+                                  src={item.sellerAvatar}
+                                  alt={item.sellerName}
+                                  className="w-5 h-5 rounded-full object-cover shrink-0"
+                                />
+                              ) : (
+                                <UserIcon size={12} className="text-purple-400 shrink-0" />
+                              )}
+                              <span className="text-xs font-bold text-slate-200 truncate">
+                                {item.sellerName}
+                              </span>
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={() =>
+                                openSellerReviewsModal(
+                                  item.sellerId,
+                                  item.sellerName,
+                                  item.sellerAvatar,
+                                  item.id,
+                                  item.title
+                                )
+                              }
+                              className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-300 text-[11px] font-bold transition shrink-0 cursor-pointer"
+                              title="Ver avaliações de compradores ou avaliar este vendedor"
+                            >
+                              <Star size={11} className="fill-amber-400 text-amber-400" />
+                              {sellerStats.count > 0 ? (
+                                <span>
+                                  {sellerStats.average.toFixed(1)} ({sellerStats.count})
+                                </span>
+                              ) : (
+                                <span>Avaliar</span>
+                              )}
+                            </button>
+                          </div>
+
                           <div className="flex items-center justify-between text-[11px] text-slate-400">
-                            <span className="flex items-center gap-1 truncate">
-                              <UserIcon size={11} className="text-purple-400 shrink-0" />
-                              <strong className="text-slate-200 truncate">{item.sellerName}</strong>
-                            </span>
-                            {item.sellerCity && item.sellerState && (
-                              <span className="flex items-center gap-0.5 text-[10px] text-slate-400 shrink-0">
-                                <MapPin size={10} />
+                            {item.sellerCity && item.sellerState ? (
+                              <span className="flex items-center gap-1 text-slate-400">
+                                <MapPin size={11} className="text-emerald-400" />
                                 {item.sellerCity}/{item.sellerState}
                               </span>
+                            ) : (
+                              <span>Envio direto com vendedor</span>
                             )}
+                            <span className="font-mono text-amber-300">
+                              {item.stockQuantity} disp.
+                            </span>
                           </div>
 
                           <h3
@@ -653,60 +906,65 @@ export const CommunityMarketplaceView: React.FC<CommunityMarketplaceViewProps> =
                         </div>
                       </div>
 
-                      {/* Footer Price & Buy */}
+                      {/* Footer Price & Direct Negotiation */}
                       <div className="p-4 pt-3 border-t border-slate-800/80 bg-slate-950/40 space-y-2.5">
                         <div className="flex items-baseline justify-between">
                           <div>
                             <span className="text-[10px] text-slate-400 block">
-                              Compra Garantida via Mercado Pago
+                              Valor pedido pelo jogador
                             </span>
                             <span className="text-lg font-black text-emerald-400 font-mono tabular-nums">
                               {formatBRL(item.price)}
                             </span>
                           </div>
-                          <span className="text-[11px] font-mono text-amber-300 tabular-nums">
-                            {item.stockQuantity} disp.
-                          </span>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              openSellerReviewsModal(
+                                item.sellerId,
+                                item.sellerName,
+                                item.sellerAvatar,
+                                item.id,
+                                item.title
+                              )
+                            }
+                            className="text-[11px] text-amber-300 hover:text-amber-200 underline cursor-pointer"
+                          >
+                            Avaliar Vendedor
+                          </button>
                         </div>
 
                         <div className="flex items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              addMarketplaceListingToCart(item, 1);
-                              setAddedId(item.id);
-                              setTimeout(() => setAddedId(null), 1400);
-                            }}
-                            className={`flex-1 py-2 px-2.5 rounded-xl font-bold text-xs transition flex items-center justify-center gap-1 border cursor-pointer ${
-                              isAdded
-                                ? 'bg-emerald-600 text-white border-emerald-500'
-                                : 'bg-slate-900 hover:bg-slate-800 text-white border-slate-700'
-                            }`}
-                          >
-                            {isAdded ? (
-                              <>
-                                <Check size={13} />
-                                <span>Adicionado!</span>
-                              </>
-                            ) : (
-                              <>
-                                <Plus size={13} />
-                                <span>Por no Carrinho</span>
-                              </>
-                            )}
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => {
-                              addMarketplaceListingToCart(item, 1);
-                              onOpenCartDrawer();
-                            }}
-                            className="flex-1 py-2 px-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs transition flex items-center justify-center gap-1 shadow-md shadow-purple-950/50 cursor-pointer"
-                          >
-                            <ShoppingCart size={13} />
-                            <span>Comprar</span>
-                          </button>
+                          {waUrl ? (
+                            <a
+                              href={waUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex-1 py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition flex items-center justify-center gap-1.5 shadow-md shadow-emerald-950/50"
+                            >
+                              <MessageCircle size={14} />
+                              <span>Negociar no WhatsApp</span>
+                            </a>
+                          ) : item.sellerExternalLink ? (
+                            <a
+                              href={item.sellerExternalLink}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex-1 py-2.5 px-3 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs transition flex items-center justify-center gap-1.5"
+                            >
+                              <ExternalLink size={14} />
+                              <span>Acessar Link do Anúncio</span>
+                            </a>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => setInspectListing(item)}
+                              className="flex-1 py-2.5 px-3 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs transition flex items-center justify-center gap-1.5 cursor-pointer"
+                            >
+                              <Eye size={14} />
+                              <span>Ver Contato</span>
+                            </button>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -721,7 +979,7 @@ export const CommunityMarketplaceView: React.FC<CommunityMarketplaceViewProps> =
                     Nenhum anúncio de jogador encontrado
                   </h3>
                   <p className="text-xs text-slate-400 max-w-md mx-auto">
-                    Seja o primeiro a anunciar uma carta avulsa ou coleção completa no Mercado Light Dark!
+                    Seja o primeiro a anunciar gratuitamente uma carta avulsa ou coleção completa no Mercado da Comunidade!
                   </p>
                 </div>
                 <button
@@ -732,7 +990,7 @@ export const CommunityMarketplaceView: React.FC<CommunityMarketplaceViewProps> =
                   }}
                   className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition cursor-pointer"
                 >
-                  + Criar Primeiro Anúncio
+                  + Criar Primeiro Anúncio Grátis
                 </button>
               </div>
             )}
@@ -740,17 +998,17 @@ export const CommunityMarketplaceView: React.FC<CommunityMarketplaceViewProps> =
         </div>
       )}
 
-      {/* ================= TAB 2: SELL CARD OR COLLECTION FORM ================= */}
+      {/* ================= TAB 2: SELL CARD OR COLLECTION FORM (FREE PEER-TO-PEER) ================= */}
       {subTab === 'sell' && (
         <div className="bg-[#0e0e14] border border-slate-800/90 rounded-2xl p-5 sm:p-7 max-w-5xl mx-auto">
           {!user ? (
             <div className="text-center py-12 space-y-4">
               <UserIcon size={44} className="mx-auto text-purple-400" />
               <h3 className="text-lg font-bold text-white">
-                Faça login para vender suas cartas e coleções
+                Faça login para anunciar suas cartas e coleções
               </h3>
               <p className="text-xs text-slate-400 max-w-md mx-auto">
-                Você precisa estar conectado à sua conta Light Dark para cadastrar anúncios, gerenciar seu estoque e informar sua chave PIX de recebimento.
+                Conecte-se à sua conta Light Dark para publicar seus anúncios gratuitamente e construir sua reputação de vendedor com avaliações dos compradores.
               </p>
               {onOpenAuth && (
                 <button
@@ -769,10 +1027,10 @@ export const CommunityMarketplaceView: React.FC<CommunityMarketplaceViewProps> =
                   <h3 className="text-lg font-black text-white">
                     {editingListingId
                       ? 'Editar Anúncio no Mercado'
-                      : 'Anunciar Carta Avulsa ou Coleção'}
+                      : 'Anunciar Carta Avulsa ou Coleção (100% Grátis)'}
                   </h3>
                   <p className="text-xs text-slate-400">
-                    Anúncio gratuito · Taxa de apenas 10% somente quando a venda for concluída.
+                    Comércio livre entre jogadores · Sem taxas do site · Você negocia pagamento e entrega diretamente com o comprador.
                   </p>
                 </div>
 
@@ -1014,7 +1272,7 @@ export const CommunityMarketplaceView: React.FC<CommunityMarketplaceViewProps> =
 
                     <div>
                       <label className="text-xs font-bold text-slate-300 block mb-1">
-                        Descrição Detalhada (sleeves inclusos, estado das bordas, tiragem, etc.)
+                        Descrição Detalhada (estado das bordas, sleeves inclusos, lista de cartas, etc.)
                       </label>
                       <textarea
                         rows={3}
@@ -1027,133 +1285,89 @@ export const CommunityMarketplaceView: React.FC<CommunityMarketplaceViewProps> =
                   </div>
                 </div>
 
-                {/* Right Column: Live 10% Fee Calculator & Seller PIX Payout Info (5 cols) */}
+                {/* Right Column: Price & Direct Negotiation / Delivery Details (5 cols) */}
                 <div className="lg:col-span-5 space-y-4">
-                  {/* Live 10% Commission Box */}
-                  <div className="bg-slate-950 border border-emerald-500/40 rounded-2xl p-4 space-y-3.5">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-black uppercase tracking-wider text-emerald-400 flex items-center gap-1.5">
-                        <Percent size={14} />
-                        <span>Preço & Simulador de Repasse (90% / 10%)</span>
-                      </span>
-                    </div>
-
-                    <div>
-                      <label className="text-xs font-bold text-white block mb-1">
-                        Preço de Venda do Anúncio (R$) *
-                      </label>
-                      <input
-                        type="text"
-                        required
-                        value={priceInput}
-                        onChange={(e) => setPriceInput(e.target.value)}
-                        placeholder="Ex: 89,90"
-                        className="w-full bg-slate-900 border border-emerald-500/50 focus:border-emerald-400 rounded-xl px-3.5 py-2.5 text-base font-black font-mono text-emerald-300 outline-none"
-                      />
-                    </div>
-
-                    {/* Breakdown Table */}
-                    <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-3 space-y-2 text-xs">
-                      <div className="flex items-center justify-between text-slate-300">
-                        <span>Valor Pago pelo Comprador:</span>
-                        <span className="font-mono font-bold tabular-nums">
-                          {formatBRL(commissionBreakdown.grossAmount)}
-                        </span>
-                      </div>
-                      <div className="flex items-center justify-between text-amber-300">
-                        <span>Taxa do Mercado Light Dark ({PLATFORM_FEE_PERCENT}%):</span>
-                        <span className="font-mono font-bold tabular-nums">
-                          - {formatBRL(commissionBreakdown.platformFeeAmount)}
-                        </span>
-                      </div>
-                      <div className="border-t border-slate-800 pt-2 flex items-center justify-between text-sm font-black text-emerald-400">
-                        <span>Você Recebe no seu PIX (90%):</span>
-                        <span className="font-mono tabular-nums">
-                          {formatBRL(commissionBreakdown.sellerNetAmount)}
-                        </span>
-                      </div>
-                    </div>
-
+                  <div className="bg-slate-950 border border-emerald-500/40 rounded-2xl p-4 space-y-3">
+                    <label className="text-xs font-bold text-white block">
+                      Preço Pedido (R$) *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={priceInput}
+                      onChange={(e) => setPriceInput(e.target.value)}
+                      placeholder="Ex: 49,90"
+                      className="w-full bg-slate-900 border border-emerald-500/50 focus:border-emerald-400 rounded-xl px-3.5 py-2.5 text-base font-black font-mono text-emerald-300 outline-none"
+                    />
                     <p className="text-[11px] text-slate-400 leading-relaxed">
-                      O comprador paga pelo Mercado Pago (PIX ou Cartão). O valor de{' '}
-                      <strong className="text-emerald-300">
-                        {formatBRL(commissionBreakdown.sellerNetAmount)}
-                      </strong>{' '}
-                      é transferido para a sua Chave PIX abaixo após a confirmação do envio.
+                      <strong className="text-emerald-300">0% de taxa:</strong> Você recebe 100% do valor combinado diretamente com o comprador.
                     </p>
                   </div>
 
-                  {/* Seller PIX Key & Contact Info */}
+                  {/* Direct Contact & Delivery Info */}
                   <div className="bg-slate-950 border border-slate-800 rounded-2xl p-4 space-y-3">
                     <h4 className="text-xs font-black uppercase tracking-wider text-purple-300">
-                      Dados para Recebimento (PIX) e Envio
+                      Contato Direto & Forma de Entrega
                     </h4>
 
-                    <div className="grid grid-cols-3 gap-2">
-                      <div className="col-span-1">
-                        <label className="text-[11px] text-slate-400 block mb-1">Tipo PIX *</label>
-                        <select
-                          value={sellerPixKeyType}
-                          onChange={(e) => setSellerPixKeyType(e.target.value as any)}
-                          className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2 py-2 text-xs text-white outline-none"
-                        >
-                          <option value="cpf">CPF/CNPJ</option>
-                          <option value="email">E-mail</option>
-                          <option value="phone">Celular</option>
-                          <option value="random">Aleatória</option>
-                        </select>
-                      </div>
-                      <div className="col-span-2">
-                        <label className="text-[11px] text-slate-400 block mb-1">
-                          Sua Chave PIX (para receber os 90%) *
-                        </label>
-                        <input
-                          type="text"
-                          required
-                          value={sellerPixKey}
-                          onChange={(e) => setSellerPixKey(e.target.value)}
-                          placeholder="Digite sua chave PIX..."
-                          className="w-full bg-slate-900 border border-slate-800 focus:border-purple-500 rounded-lg px-3 py-2 text-xs text-white font-mono outline-none"
-                        />
-                      </div>
+                    <div>
+                      <label className="text-[11px] text-slate-300 font-bold block mb-1">
+                        WhatsApp para Negociação *
+                      </label>
+                      <input
+                        type="text"
+                        value={sellerWhatsapp}
+                        onChange={(e) => setSellerWhatsapp(formatPhone(e.target.value))}
+                        placeholder="(11) 99999-9999"
+                        className="w-full bg-slate-900 border border-slate-800 focus:border-purple-500 rounded-lg px-3 py-2 text-xs text-white outline-none"
+                      />
                     </div>
 
-                    <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-[11px] text-slate-400 block mb-1">
+                        Link Externo Opcional (Mercado Livre, Shopee, MYP Cards, OLX, etc.)
+                      </label>
+                      <input
+                        type="url"
+                        value={sellerExternalLink}
+                        onChange={(e) => setSellerExternalLink(e.target.value)}
+                        placeholder="https://..."
+                        className="w-full bg-slate-900 border border-slate-800 focus:border-purple-500 rounded-lg px-3 py-2 text-xs text-white outline-none"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-[11px] text-slate-400 block mb-1">
+                        Como você combina a entrega / envio?
+                      </label>
+                      <input
+                        type="text"
+                        value={deliveryNotes}
+                        onChange={(e) => setDeliveryNotes(e.target.value)}
+                        placeholder="Ex: Carta Registrada, Correios, ou entrega em mãos"
+                        className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white outline-none"
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-2">
                       <div>
-                        <label className="text-[11px] text-slate-400 block mb-1">
-                          WhatsApp de Contato
-                        </label>
-                        <input
-                          type="text"
-                          value={sellerWhatsapp}
-                          onChange={(e) => setSellerWhatsapp(formatPhone(e.target.value))}
-                          placeholder="(11) 99999-9999"
-                          className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white outline-none"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-[11px] text-slate-400 block mb-1">
-                          CEP de Origem
-                        </label>
+                        <label className="text-[11px] text-slate-400 block mb-1">CEP</label>
                         <input
                           type="text"
                           value={sellerCep}
                           onChange={(e) => setSellerCep(formatCep(e.target.value))}
                           placeholder="00000-000"
-                          className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white font-mono outline-none"
+                          className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-2 text-xs text-white font-mono outline-none"
                         />
                       </div>
-                    </div>
-
-                    <div className="grid grid-cols-3 gap-2">
-                      <div className="col-span-2">
+                      <div>
                         <label className="text-[11px] text-slate-400 block mb-1">Cidade</label>
                         <input
                           type="text"
                           value={sellerCity}
                           onChange={(e) => setSellerCity(e.target.value)}
-                          placeholder="Ex: São Paulo"
-                          className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white outline-none"
+                          placeholder="São Paulo"
+                          className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-2 text-xs text-white outline-none"
                         />
                       </div>
                       <div>
@@ -1164,7 +1378,7 @@ export const CommunityMarketplaceView: React.FC<CommunityMarketplaceViewProps> =
                           value={sellerState}
                           onChange={(e) => setSellerState(e.target.value.toUpperCase())}
                           placeholder="SP"
-                          className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white uppercase outline-none"
+                          className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-2 text-xs text-white uppercase outline-none"
                         />
                       </div>
                     </div>
@@ -1192,7 +1406,7 @@ export const CommunityMarketplaceView: React.FC<CommunityMarketplaceViewProps> =
                         ? 'Salvando Anúncio...'
                         : editingListingId
                         ? 'Salvar Alterações no Anúncio'
-                        : 'Publicar Anúncio no Mercado'}
+                        : 'Publicar Anúncio Grátis'}
                     </button>
                   </div>
                 </div>
@@ -1211,7 +1425,7 @@ export const CommunityMarketplaceView: React.FC<CommunityMarketplaceViewProps> =
                 {isAdmin ? 'Todos os Anúncios da Comunidade (Visão Admin)' : 'Meus Anúncios Publicados'}
               </h3>
               <p className="text-xs text-slate-400">
-                Gerencie preços, estoque e status dos seus anúncios de cartas e coleções.
+                Gerencie preços, disponibilidade e status dos seus anúncios de cartas e coleções.
               </p>
             </div>
             <button
@@ -1235,155 +1449,209 @@ export const CommunityMarketplaceView: React.FC<CommunityMarketplaceViewProps> =
             </div>
           ) : (
             <div className="divide-y divide-slate-800">
-              {myListings.map((item) => (
-                <div
-                  key={item.id}
-                  className="py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-4"
-                >
-                  <div className="flex items-center gap-3">
-                    <img
-                      src={item.imageUrl || 'https://i.imgur.com/cDLxOtO.png'}
-                      alt={item.title}
-                      referrerPolicy="no-referrer"
-                      className="w-14 h-14 rounded-xl object-contain bg-black border border-slate-800 shrink-0"
-                    />
-                    <div>
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-bold text-sm text-white">{item.title}</span>
-                        <span
-                          className={`text-[10px] font-bold px-2 py-0.5 rounded ${
-                            item.status === 'active'
-                              ? 'bg-emerald-950 text-emerald-300 border border-emerald-600/40'
-                              : 'bg-amber-950 text-amber-300 border border-amber-600/40'
-                          }`}
-                        >
-                          {item.status === 'active' ? 'Ativo' : 'Pausado / Vendido'}
-                        </span>
-                      </div>
-                      <div className="text-xs text-slate-400 mt-0.5">
-                        Preço: <strong className="text-white font-mono">{formatBRL(item.price)}</strong> · Taxa 10%: <strong className="text-amber-300 font-mono">{formatBRL(item.platformFeeAmount)}</strong> · Você recebe (90%): <strong className="text-emerald-400 font-mono">{formatBRL(item.sellerNetAmount)}</strong>
-                      </div>
-                      <div className="text-[11px] text-slate-500 mt-0.5">
-                        Vendedor: {item.sellerName} · PIX ({item.sellerPixKeyType}): {item.sellerPixKey}
+              {myListings.map((item) => {
+                const sellerStats = getSellerStats(item.sellerId);
+                return (
+                  <div
+                    key={item.id}
+                    className="py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+                  >
+                    <div className="flex items-center gap-3">
+                      <img
+                        src={item.imageUrl || 'https://i.imgur.com/cDLxOtO.png'}
+                        alt={item.title}
+                        referrerPolicy="no-referrer"
+                        className="w-14 h-14 rounded-xl object-contain bg-black border border-slate-800 shrink-0"
+                      />
+                      <div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-bold text-sm text-white">{item.title}</span>
+                          <span
+                            className={`text-[10px] font-bold px-2 py-0.5 rounded ${
+                              item.status === 'active'
+                                ? 'bg-emerald-950 text-emerald-300 border border-emerald-600/40'
+                                : 'bg-amber-950 text-amber-300 border border-amber-600/40'
+                            }`}
+                          >
+                            {item.status === 'active' ? 'Ativo' : 'Pausado / Vendido'}
+                          </span>
+                        </div>
+                        <div className="text-xs text-slate-400 mt-0.5">
+                          Valor: <strong className="text-emerald-400 font-mono">{formatBRL(item.price)}</strong> · Condição: <strong className="text-white">{item.condition}</strong>
+                        </div>
+                        <div className="text-[11px] text-slate-500 mt-0.5 flex items-center gap-2">
+                          <span>Vendedor: {item.sellerName}</span>
+                          <span>·</span>
+                          <span className="text-amber-300 flex items-center gap-1">
+                            <Star size={11} className="fill-amber-400 text-amber-400" />
+                            {sellerStats.count > 0
+                              ? `${sellerStats.average.toFixed(1)} (${sellerStats.count} avaliações)`
+                              : 'Sem avaliações ainda'}
+                          </span>
+                        </div>
                       </div>
                     </div>
+
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          updateMarketplaceListing(item.id, {
+                            status: item.status === 'active' ? 'paused' : 'active'
+                          })
+                        }
+                        className="px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-xs text-slate-200 flex items-center gap-1 cursor-pointer"
+                      >
+                        {item.status === 'active' ? (
+                          <>
+                            <PauseCircle size={13} />
+                            <span>Marcar Vendido / Pausar</span>
+                          </>
+                        ) : (
+                          <>
+                            <PlayCircle size={13} />
+                            <span>Reativar</span>
+                          </>
+                        )}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleStartEdit(item)}
+                        className="px-3 py-1.5 rounded-lg bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/40 text-xs text-purple-300 flex items-center gap-1 cursor-pointer"
+                      >
+                        <Edit3 size={13} />
+                        <span>Editar</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => deleteMarketplaceListing(item.id)}
+                        className="p-1.5 rounded-lg bg-red-950/60 hover:bg-red-900/70 border border-red-700/50 text-red-300 cursor-pointer"
+                        title="Excluir anúncio"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
                   </div>
-
-                  <div className="flex items-center gap-2 shrink-0">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        updateMarketplaceListing(item.id, {
-                          status: item.status === 'active' ? 'paused' : 'active'
-                        })
-                      }
-                      className="px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-xs text-slate-200 flex items-center gap-1 cursor-pointer"
-                    >
-                      {item.status === 'active' ? (
-                        <>
-                          <PauseCircle size={13} />
-                          <span>Pausar</span>
-                        </>
-                      ) : (
-                        <>
-                          <PlayCircle size={13} />
-                          <span>Reativar</span>
-                        </>
-                      )}
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => handleStartEdit(item)}
-                      className="px-3 py-1.5 rounded-lg bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/40 text-xs text-purple-300 flex items-center gap-1 cursor-pointer"
-                    >
-                      <Edit3 size={13} />
-                      <span>Editar</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => deleteMarketplaceListing(item.id)}
-                      className="p-1.5 rounded-lg bg-red-950/60 hover:bg-red-900/70 border border-red-700/50 text-red-300 cursor-pointer"
-                      title="Excluir anúncio"
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
       )}
 
-      {/* ================= TAB 4: HOW THE 10% COMMISSION WORKS ================= */}
-      {subTab === 'how_it_works' && (
-        <div className="bg-[#0e0e14] border border-slate-800/90 rounded-2xl p-6 max-w-4xl mx-auto space-y-6">
-          <div className="space-y-1 border-b border-slate-800 pb-4">
-            <h3 className="text-lg sm:text-xl font-black text-white flex items-center gap-2">
-              <ShieldCheck size={20} className="text-emerald-400" />
-              <span>Como Funciona o Mercado da Comunidade e a Taxa de 10%</span>
-            </h3>
-            <p className="text-xs text-slate-400">
-              Transparência total para compradores, vendedores e administração do site Light Dark TCG.
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="bg-slate-950 border border-slate-800 rounded-xl p-4 space-y-2">
-              <div className="w-8 h-8 rounded-lg bg-purple-500/20 border border-purple-500/40 flex items-center justify-center text-purple-300 font-black text-sm">
-                1
-              </div>
-              <h4 className="text-sm font-bold text-white">Anúncio Gratuito</h4>
-              <p className="text-xs text-slate-400 leading-relaxed">
-                O jogador cadastra sua Carta Avulsa ou Coleção gratuitamente e informa o preço desejado e sua Chave PIX. O sistema já mostra na hora os 10% de comissão do site e os 90% líquidos.
-              </p>
-            </div>
-
-            <div className="bg-slate-950 border border-slate-800 rounded-xl p-4 space-y-2">
-              <div className="w-8 h-8 rounded-lg bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-300 font-black text-sm">
-                2
-              </div>
-              <h4 className="text-sm font-bold text-white">Pagamento Seguro (Escrow)</h4>
-              <p className="text-xs text-slate-400 leading-relaxed">
-                O comprador paga 100% do pedido via PIX ou Cartão pelo Mercado Pago oficial do site. O pagamento fica retido com segurança na conta Mercado Pago da plataforma.
-              </p>
-            </div>
-
-            <div className="bg-slate-950 border border-slate-800 rounded-xl p-4 space-y-2">
-              <div className="w-8 h-8 rounded-lg bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-300 font-black text-sm">
-                3
-              </div>
-              <h4 className="text-sm font-bold text-white">Retenção de 10% e Repasse 90%</h4>
-              <p className="text-xs text-slate-400 leading-relaxed">
-                Assim que o envio é confirmado, o site mantém automaticamente seus <strong>10% de comissão</strong> na conta Mercado Pago e transfere os <strong>90% líquidos</strong> para a Chave PIX do vendedor.
+      {/* ================= TAB 4: SELLERS REPUTATION & BUYER REVIEWS ================= */}
+      {subTab === 'sellers_reputation' && (
+        <div className="bg-[#0e0e14] border border-slate-800/90 rounded-2xl p-5 sm:p-6 space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-4">
+            <div>
+              <h3 className="text-lg font-black text-white flex items-center gap-2">
+                <Star size={18} className="fill-amber-400 text-amber-400" />
+                <span>Reputação de Vendedores & Avaliações por Comprador</span>
+              </h3>
+              <p className="text-xs text-slate-400">
+                Consulte a nota e os comentários deixados por compradores reais da comunidade ou avalie um vendedor com quem você negociou.
               </p>
             </div>
           </div>
 
-          <div className="bg-emerald-950/30 border border-emerald-500/40 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div className="space-y-1">
-              <div className="text-xs font-black text-emerald-300 uppercase">
-                Exemplo Prático de Venda de R$ 100,00
-              </div>
-              <p className="text-xs text-slate-300">
-                • Comprador paga: <strong className="text-white">R$ 100,00</strong> (+ frete) via Mercado Pago.<br />
-                • Comissão retida pelo site (10%): <strong className="text-amber-300">R$ 10,00</strong> (já fica na sua conta Mercado Pago).<br />
-                • Repasse ao vendedor (90%): <strong className="text-emerald-400">R$ 90,00</strong> enviados via PIX pelo painel Admin.
+          {allSellersDirectory.length === 0 ? (
+            <div className="text-center py-12 space-y-2">
+              <Star size={36} className="mx-auto text-slate-600" />
+              <p className="text-xs text-slate-400">
+                Ainda não há vendedores avaliados no Mercado da Comunidade.
               </p>
             </div>
-            <button
-              type="button"
-              onClick={() => {
-                resetForm();
-                setSubTab('sell');
-              }}
-              className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shrink-0 cursor-pointer"
-            >
-              Anunciar Agora
-            </button>
-          </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {allSellersDirectory.map((seller) => {
+                const st = getSellerStats(seller.sellerId);
+                return (
+                  <div
+                    key={seller.sellerId}
+                    className="bg-slate-950 border border-slate-800 rounded-xl p-4 flex flex-col justify-between gap-4"
+                  >
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          {seller.sellerAvatar ? (
+                            <img
+                              src={seller.sellerAvatar}
+                              alt={seller.sellerName}
+                              className="w-9 h-9 rounded-full object-cover border border-purple-500/40"
+                            />
+                          ) : (
+                            <div className="w-9 h-9 rounded-full bg-purple-950 border border-purple-500/40 flex items-center justify-center text-purple-300 font-bold text-sm">
+                              {(seller.sellerName || 'V')[0]}
+                            </div>
+                          )}
+                          <div className="min-w-0">
+                            <div className="font-bold text-sm text-white truncate">
+                              {seller.sellerName}
+                            </div>
+                            <div className="text-[11px] text-slate-400">
+                              {seller.activeListingsCount} anúncio(s) ativo(s)
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="text-right shrink-0">
+                          <div className="flex items-center gap-1 justify-end text-amber-400 font-black text-sm">
+                            <Star size={14} className="fill-amber-400" />
+                            <span>{st.count > 0 ? st.average.toFixed(1) : 'Novo'}</span>
+                          </div>
+                          <div className="text-[10px] text-slate-400">
+                            {st.count} {st.count === 1 ? 'avaliação' : 'avaliações'}
+                          </div>
+                        </div>
+                      </div>
+
+                      {st.count > 0 && (
+                        <div className="text-[11px] text-emerald-400 bg-emerald-950/30 border border-emerald-500/30 rounded-lg px-2.5 py-1.5 flex items-center gap-1.5">
+                          <ThumbsUp size={12} />
+                          <span>{st.recommendPct}% dos compradores recomendam este vendedor</span>
+                        </div>
+                      )}
+
+                      {st.reviews.length > 0 && (
+                        <div className="space-y-1.5 pt-1">
+                          {st.reviews.slice(0, 2).map((rev) => (
+                            <div
+                              key={rev.id}
+                              className="bg-slate-900/80 border border-slate-800/80 rounded-lg p-2 text-[11px] space-y-1"
+                            >
+                              <div className="flex items-center justify-between">
+                                <span className="font-bold text-slate-200">{rev.buyerName}</span>
+                                <span className="text-amber-400 font-bold">
+                                  {'★'.repeat(rev.rating)}
+                                </span>
+                              </div>
+                              <p className="text-slate-400 line-clamp-2">"{rev.comment}"</p>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        openSellerReviewsModal(
+                          seller.sellerId,
+                          seller.sellerName,
+                          seller.sellerAvatar
+                        )
+                      }
+                      className="w-full py-2 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-amber-300 font-bold text-xs transition cursor-pointer"
+                    >
+                      Ver Todas as Avaliações / Avaliar Vendedor
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
 
@@ -1426,31 +1694,65 @@ export const CommunityMarketplaceView: React.FC<CommunityMarketplaceViewProps> =
               </div>
 
               <div className="space-y-3">
-                <div className="bg-slate-950 border border-slate-800 rounded-xl p-3 space-y-1.5 text-xs">
-                  <div className="flex justify-between">
+                <div className="bg-slate-950 border border-slate-800 rounded-xl p-3 space-y-2 text-xs">
+                  <div className="flex items-center justify-between">
                     <span className="text-slate-400">Vendedor:</span>
                     <span className="font-bold text-white">{inspectListing.sellerName}</span>
                   </div>
+
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-400">Reputação:</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const target = inspectListing;
+                        setInspectListing(null);
+                        openSellerReviewsModal(
+                          target.sellerId,
+                          target.sellerName,
+                          target.sellerAvatar,
+                          target.id,
+                          target.title
+                        );
+                      }}
+                      className="text-amber-300 font-bold flex items-center gap-1 hover:underline cursor-pointer"
+                    >
+                      <Star size={12} className="fill-amber-400 text-amber-400" />
+                      <span>
+                        {getSellerStats(inspectListing.sellerId).count > 0
+                          ? `${getSellerStats(inspectListing.sellerId).average.toFixed(1)} (${
+                              getSellerStats(inspectListing.sellerId).count
+                            } avaliações)`
+                          : 'Ver / Avaliar Vendedor'}
+                      </span>
+                    </button>
+                  </div>
+
                   <div className="flex justify-between">
                     <span className="text-slate-400">Condição:</span>
                     <span className="font-bold text-emerald-400">{inspectListing.condition}</span>
                   </div>
+
                   {inspectListing.isFoil && (
                     <div className="flex justify-between">
                       <span className="text-slate-400">Acabamento:</span>
                       <span className="font-bold text-amber-300">✨ Foil / Holográfica</span>
                     </div>
                   )}
-                  <div className="flex justify-between">
-                    <span className="text-slate-400">Disponível:</span>
-                    <span className="font-mono text-white">{inspectListing.stockQuantity} un.</span>
-                  </div>
+
                   {inspectListing.sellerCity && (
                     <div className="flex justify-between">
                       <span className="text-slate-400">Localização:</span>
                       <span className="text-slate-200">
                         {inspectListing.sellerCity}/{inspectListing.sellerState}
                       </span>
+                    </div>
+                  )}
+
+                  {inspectListing.deliveryNotes && (
+                    <div className="pt-1.5 border-t border-slate-800 text-[11px] text-slate-300 flex items-start gap-1.5">
+                      <Truck size={13} className="text-purple-400 shrink-0 mt-0.5" />
+                      <span>{inspectListing.deliveryNotes}</span>
                     </div>
                   )}
                 </div>
@@ -1460,24 +1762,56 @@ export const CommunityMarketplaceView: React.FC<CommunityMarketplaceViewProps> =
                 </p>
 
                 <div className="pt-2 border-t border-slate-800">
-                  <div className="text-xs text-slate-400">Valor no Mercado:</div>
+                  <div className="text-xs text-slate-400">Valor pedido pelo vendedor:</div>
                   <div className="text-2xl font-black text-emerald-400 font-mono">
                     {formatBRL(inspectListing.price)}
                   </div>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() => {
-                    addMarketplaceListingToCart(inspectListing, 1);
-                    setInspectListing(null);
-                    onOpenCartDrawer();
-                  }}
-                  className="w-full py-3 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg cursor-pointer"
-                >
-                  <ShoppingCart size={15} />
-                  <span>Adicionar ao Carrinho e Comprar</span>
-                </button>
+                <div className="space-y-2 pt-1">
+                  {buildSellerWhatsAppUrl(inspectListing) && (
+                    <a
+                      href={buildSellerWhatsAppUrl(inspectListing)!}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg"
+                    >
+                      <MessageCircle size={15} />
+                      <span>Chamar Vendedor no WhatsApp ({inspectListing.sellerWhatsapp})</span>
+                    </a>
+                  )}
+
+                  {inspectListing.sellerExternalLink && (
+                    <a
+                      href={inspectListing.sellerExternalLink}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="w-full py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs flex items-center justify-center gap-2"
+                    >
+                      <ExternalLink size={14} />
+                      <span>Abrir Link Externo do Vendedor</span>
+                    </a>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const target = inspectListing;
+                      setInspectListing(null);
+                      openSellerReviewsModal(
+                        target.sellerId,
+                        target.sellerName,
+                        target.sellerAvatar,
+                        target.id,
+                        target.title
+                      );
+                    }}
+                    className="w-full py-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-amber-500/40 text-amber-300 font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <Star size={13} className="fill-amber-400 text-amber-400" />
+                    <span>Avaliar este Vendedor / Ler Avaliações</span>
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -1511,6 +1845,284 @@ export const CommunityMarketplaceView: React.FC<CommunityMarketplaceViewProps> =
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* ================= SELLER REVIEWS & BUYER RATING MODAL ================= */}
+      {reviewModalSeller && (
+        <div
+          className="fixed inset-0 z-[98] bg-black/85 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={() => setReviewModalSeller(null)}
+        >
+          <div
+            className="bg-[#0e0e14] border border-slate-800 rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto p-5 sm:p-6 space-y-5 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between gap-3 border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-amber-500/15 border border-amber-500/40 flex items-center justify-center text-amber-400 font-black">
+                  <Star size={20} className="fill-amber-400" />
+                </div>
+                <div>
+                  <h3 className="text-base sm:text-lg font-black text-white">
+                    Avaliações do Vendedor: {reviewModalSeller.sellerName}
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    Sistema de reputação comunitária por comprador
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setReviewModalSeller(null)}
+                className="p-1.5 rounded-lg bg-slate-900 text-slate-400 hover:text-white cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Seller Summary Strip */}
+            {(() => {
+              const st = getSellerStats(reviewModalSeller.sellerId);
+              return (
+                <div className="bg-slate-950 border border-slate-800 rounded-xl p-4 flex flex-wrap items-center justify-between gap-4">
+                  <div className="flex items-center gap-3">
+                    <div className="text-3xl font-black font-mono text-amber-400">
+                      {st.count > 0 ? st.average.toFixed(1) : '—'}
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-1 text-amber-400">
+                        {[1, 2, 3, 4, 5].map((n) => (
+                          <Star
+                            key={n}
+                            size={14}
+                            className={
+                              st.count > 0 && n <= Math.round(st.average)
+                                ? 'fill-amber-400 text-amber-400'
+                                : 'text-slate-700'
+                            }
+                          />
+                        ))}
+                      </div>
+                      <div className="text-xs text-slate-400 mt-0.5">
+                        {st.count} {st.count === 1 ? 'avaliação de comprador' : 'avaliações de compradores'}
+                      </div>
+                    </div>
+                  </div>
+
+                  {st.count > 0 && (
+                    <div className="px-3 py-1.5 rounded-lg bg-emerald-950/50 border border-emerald-500/40 text-emerald-300 text-xs font-bold flex items-center gap-1.5">
+                      <ThumbsUp size={14} />
+                      <span>{st.recommendPct}% recomendam</span>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
+            {/* Form to Submit Buyer Review */}
+            <div className="bg-slate-950 border border-purple-500/30 rounded-xl p-4 space-y-3">
+              <h4 className="text-xs font-black uppercase tracking-wider text-purple-300">
+                Comprou com {reviewModalSeller.sellerName}? Deixe sua Avaliação!
+              </h4>
+
+              {!user ? (
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-xs text-slate-400">
+                    Faça login para avaliar este vendedor como comprador.
+                  </p>
+                  {onOpenAuth && (
+                    <button
+                      type="button"
+                      onClick={onOpenAuth}
+                      className="px-4 py-2 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold cursor-pointer"
+                    >
+                      Entrar
+                    </button>
+                  )}
+                </div>
+              ) : user.uid === reviewModalSeller.sellerId ? (
+                <p className="text-xs text-slate-400">
+                  Este é o seu próprio perfil de vendedor. Apenas outros jogadores compradores podem deixar avaliações aqui.
+                </p>
+              ) : (
+                <form onSubmit={handleSubmitSellerReview} className="space-y-3">
+                  {reviewError && (
+                    <div className="p-2.5 rounded-lg bg-red-950/70 border border-red-600/50 text-red-200 text-xs">
+                      {reviewError}
+                    </div>
+                  )}
+                  {reviewSuccess && (
+                    <div className="p-2.5 rounded-lg bg-emerald-950/70 border border-emerald-500/50 text-emerald-200 text-xs font-bold">
+                      {reviewSuccess}
+                    </div>
+                  )}
+
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <label className="text-[11px] text-slate-400 block mb-1">
+                        Sua Nota para o Vendedor:
+                      </label>
+                      <div className="flex items-center gap-1">
+                        {[1, 2, 3, 4, 5].map((star) => (
+                          <button
+                            key={star}
+                            type="button"
+                            onClick={() => setNewRating(star)}
+                            className="p-1 cursor-pointer transition hover:scale-110"
+                          >
+                            <Star
+                              size={22}
+                              className={
+                                star <= newRating
+                                  ? 'fill-amber-400 text-amber-400'
+                                  : 'text-slate-700'
+                              }
+                            />
+                          </button>
+                        ))}
+                        <span className="ml-2 text-xs font-bold text-amber-300">
+                          {newRating} de 5 estrelas
+                        </span>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="text-[11px] text-slate-400 block mb-1">
+                        Você recomenda este vendedor?
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setNewRecommend(true)}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-bold border cursor-pointer ${
+                            newRecommend
+                              ? 'bg-emerald-600 text-white border-emerald-500'
+                              : 'bg-slate-900 text-slate-400 border-slate-800'
+                          }`}
+                        >
+                          👍 Sim, recomendo
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setNewRecommend(false)}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-bold border cursor-pointer ${
+                            !newRecommend
+                              ? 'bg-red-600 text-white border-red-500'
+                              : 'bg-slate-900 text-slate-400 border-slate-800'
+                          }`}
+                        >
+                          👎 Não recomendo
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-[11px] text-slate-400 block mb-1">
+                      Qual carta ou coleção você comprou?
+                    </label>
+                    <input
+                      type="text"
+                      value={newReviewListingTitle}
+                      onChange={(e) => setNewReviewListingTitle(e.target.value)}
+                      placeholder="Ex: Carta Avulsa Mahina Foil / Lote 30 Cartas"
+                      className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-purple-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[11px] text-slate-400 block mb-1">
+                      Relato da Compra (entrega, embalagem, estado real das cartas) *
+                    </label>
+                    <textarea
+                      rows={2}
+                      required
+                      value={newComment}
+                      onChange={(e) => setNewComment(e.target.value)}
+                      placeholder="Conte para outros compradores como foi negociar com este vendedor..."
+                      className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2.5 text-xs text-white outline-none focus:border-purple-500 resize-none"
+                    />
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={isSubmittingReview}
+                    className="w-full py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs transition cursor-pointer"
+                  >
+                    {isSubmittingReview ? 'Publicando Avaliação...' : 'Publicar Avaliação de Comprador'}
+                  </button>
+                </form>
+              )}
+            </div>
+
+            {/* Existing Buyer Reviews List */}
+            <div className="space-y-2.5">
+              <h4 className="text-xs font-black uppercase tracking-wider text-slate-300">
+                Histórico de Avaliações ({getSellerStats(reviewModalSeller.sellerId).count})
+              </h4>
+
+              {getSellerStats(reviewModalSeller.sellerId).reviews.length === 0 ? (
+                <p className="text-xs text-slate-500 py-4 text-center">
+                  Este vendedor ainda não recebeu avaliações de compradores.
+                </p>
+              ) : (
+                <div className="space-y-2.5 max-h-64 overflow-y-auto pr-1">
+                  {getSellerStats(reviewModalSeller.sellerId).reviews.map((rev) => (
+                    <div
+                      key={rev.id}
+                      className="bg-slate-950 border border-slate-800 rounded-xl p-3 space-y-1.5 text-xs"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-white">{rev.buyerName}</span>
+                          <span
+                            className={`text-[10px] px-2 py-0.5 rounded font-bold ${
+                              rev.recommendSeller !== false
+                                ? 'bg-emerald-950 text-emerald-300 border border-emerald-500/30'
+                                : 'bg-red-950 text-red-300 border border-red-500/30'
+                            }`}
+                          >
+                            {rev.recommendSeller !== false ? '👍 Recomenda' : '👎 Não recomenda'}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <span className="text-amber-400 font-bold">
+                            {'★'.repeat(rev.rating)}
+                            {'☆'.repeat(Math.max(0, 5 - rev.rating))}
+                          </span>
+                          {(isAdmin || (user && user.uid === rev.buyerId)) && (
+                            <button
+                              type="button"
+                              onClick={() => deleteMarketplaceSellerReview(rev.id)}
+                              className="text-slate-500 hover:text-red-400"
+                              title="Remover avaliação"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      {rev.listingTitle && (
+                        <div className="text-[11px] text-purple-300 font-semibold">
+                          Item negociado: {rev.listingTitle}
+                        </div>
+                      )}
+
+                      <p className="text-slate-300 leading-relaxed">{rev.comment}</p>
+
+                      <div className="text-[10px] text-slate-500">
+                        {new Date(rev.createdAt).toLocaleDateString('pt-BR')}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}

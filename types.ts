@@ -206,18 +206,6 @@ export interface CartItem {
   weightGrams: number;
   freeShipping?: boolean;
   maxStock?: number;
-  // Marketplace (venda de jogadores)
-  isCommunityListing?: boolean;
-  listingId?: string;
-  sellerId?: string;
-  sellerName?: string;
-  sellerEmail?: string;
-  sellerPixKey?: string;
-  sellerPixKeyType?: 'cpf' | 'email' | 'phone' | 'random';
-  sellerWhatsapp?: string;
-  platformFeePercent?: number; // 10%
-  platformFeeAmount?: number;  // 10% do subtotal do item
-  sellerNetAmount?: number;    // 90% que vai para o vendedor
 }
 
 export type MarketplaceListingType = 'single_card' | 'collection';
@@ -240,9 +228,6 @@ export interface MarketplaceListing {
   description: string;
   price: number; // Valor numérico em R$
   formattedPrice: string;
-  platformFeePercent: number; // 10
-  platformFeeAmount: number;  // 10% retido pelo site
-  sellerNetAmount: number;    // 90% líquido para o vendedor
   stockQuantity: number;
   condition: CardCondition;
   isFoil?: boolean;
@@ -256,21 +241,36 @@ export interface MarketplaceListing {
   cardRarity?: string;
   includedCards?: MarketplaceCardEntry[];
   totalCardsCount?: number;
-  // Dados do vendedor
+  // Dados do vendedor (negociação e entrega direta entre os jogadores)
   sellerId: string;
   sellerName: string;
   sellerEmail: string;
   sellerAvatar?: string;
-  sellerWhatsapp?: string;
+  sellerWhatsapp: string;
   sellerCity?: string;
   sellerState?: string;
   sellerCep?: string;
-  sellerPixKey: string;
-  sellerPixKeyType: 'cpf' | 'email' | 'phone' | 'random';
-  weightGrams?: number;
+  sellerExternalLink?: string; // Link opcional (Mercado Livre, Shopee, OLX, MYP Cards, Discord, etc.)
+  deliveryNotes?: string;      // Como o vendedor combina o envio (ex: Carta Registrada, Correios, Em mãos)
   status: 'active' | 'sold' | 'paused';
   createdAt: string;
   updatedAt: string;
+}
+
+export interface MarketplaceSellerReview {
+  id: string;
+  sellerId: string;
+  sellerName: string;
+  buyerId: string;
+  buyerName: string;
+  buyerEmail?: string;
+  buyerAvatar?: string;
+  listingId?: string;
+  listingTitle?: string;
+  rating: number; // 1 a 5 estrelas
+  comment: string;
+  recommendSeller: boolean;
+  createdAt: string;
 }
 
 export interface ShippingOption {

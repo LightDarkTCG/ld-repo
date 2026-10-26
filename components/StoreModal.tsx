@@ -915,10 +915,6 @@ export const StoreModal: React.FC<StoreModalProps> = ({
               user={user}
               isAdmin={isAdmin}
               onOpenAuth={onOpenAuth}
-              onOpenCartDrawer={() => {
-                setCartStep('cart');
-                setIsCartDrawerOpen(true);
-              }}
             />
           ) : (
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">

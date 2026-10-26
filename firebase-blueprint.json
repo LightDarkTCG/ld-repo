@@ -111,30 +111,43 @@
     },
     "MarketplaceListing": {
       "title": "Marketplace Listing",
-      "description": "User-listed single card or card collection for sale in the Light Dark Mercado with 10% platform commission.",
+      "description": "User-listed single card or card collection for free peer-to-peer trade in the Light Dark Mercado.",
       "type": "object",
       "properties": {
         "id": { "type": "string", "description": "Listing ID" },
         "listingType": { "type": "string", "description": "single_card or collection" },
         "title": { "type": "string", "description": "Listing title" },
         "description": { "type": "string", "description": "Listing description" },
-        "price": { "type": "number", "description": "Gross price in BRL" },
-        "platformFeePercent": { "type": "number", "description": "Platform fee percentage (10)" },
-        "platformFeeAmount": { "type": "number", "description": "10% platform commission in BRL" },
-        "sellerNetAmount": { "type": "number", "description": "90% net seller payout in BRL" },
+        "price": { "type": "number", "description": "Price in BRL" },
         "stockQuantity": { "type": "number", "description": "Available quantity" },
         "condition": { "type": "string", "description": "Card condition (Mint, Near Mint, etc.)" },
         "imageUrl": { "type": "string", "description": "Main image URL" },
         "sellerId": { "type": "string", "description": "Seller Firebase UID" },
         "sellerName": { "type": "string", "description": "Seller display name" },
         "sellerEmail": { "type": "string", "description": "Seller email" },
-        "sellerPixKey": { "type": "string", "description": "Seller PIX key for 90% payout" },
-        "sellerPixKeyType": { "type": "string", "description": "cpf, email, phone, or random" },
+        "sellerWhatsapp": { "type": "string", "description": "Seller WhatsApp for direct negotiation" },
         "status": { "type": "string", "description": "active, sold, or paused" },
         "createdAt": { "type": "string", "description": "ISO creation timestamp" },
         "updatedAt": { "type": "string", "description": "ISO update timestamp" }
       },
-      "required": ["id", "listingType", "title", "price", "sellerId", "sellerName", "sellerPixKey", "status", "createdAt"]
+      "required": ["id", "listingType", "title", "price", "sellerId", "sellerName", "status", "createdAt"]
+    },
+    "MarketplaceSellerReview": {
+      "title": "Marketplace Seller Review",
+      "description": "Buyer rating and review for a community seller in the Light Dark Mercado.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Review ID" },
+        "sellerId": { "type": "string", "description": "Seller Firebase UID" },
+        "sellerName": { "type": "string", "description": "Seller display name" },
+        "buyerId": { "type": "string", "description": "Buyer Firebase UID" },
+        "buyerName": { "type": "string", "description": "Buyer display name" },
+        "rating": { "type": "number", "description": "Star rating from 1 to 5" },
+        "comment": { "type": "string", "description": "Buyer review comment" },
+        "recommendSeller": { "type": "boolean", "description": "Whether the buyer recommends the seller" },
+        "createdAt": { "type": "string", "description": "ISO creation timestamp" }
+      },
+      "required": ["id", "sellerId", "buyerId", "buyerName", "rating", "comment", "createdAt"]
     }
   },
   "firestore": {
@@ -168,8 +181,13 @@
     },
     "marketplaceListings": {
       "schema": { "$ref": "#/entities/MarketplaceListing" },
-      "description": "Community marketplace listings for single cards and collections with 10% platform commission."
+      "description": "Community marketplace listings for single cards and collections."
+    },
+    "marketplaceSellerReviews": {
+      "schema": { "$ref": "#/entities/MarketplaceSellerReview" },
+      "description": "Buyer reviews and star ratings for community sellers."
     }
   }
 }
+
 

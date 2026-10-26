@@ -168,11 +168,28 @@ service cloud.firestore {
                     && request.resource.data.sellerId == request.auth.uid
                     && request.resource.data.title is string
                     && request.resource.data.price is number
-                    && request.resource.data.price >= 2;
+                    && request.resource.data.price > 0;
       allow update, delete: if isAdmin() || (
         request.auth != null && resource.data.sellerId == request.auth.uid
       );
     }
+
+    // Avaliações de Compradores sobre Vendedores no Mercado da Comunidade
+    match /marketplaceSellerReviews/{reviewId} {
+      allow read: if true;
+      allow create: if request.auth != null
+                    && request.resource.data.buyerId == request.auth.uid
+                    && request.resource.data.sellerId is string
+                    && request.resource.data.sellerId != request.auth.uid
+                    && request.resource.data.rating is number
+                    && request.resource.data.rating >= 1
+                    && request.resource.data.rating <= 5
+                    && request.resource.data.comment is string;
+      allow update, delete: if isAdmin() || (
+        request.auth != null && resource.data.buyerId == request.auth.uid
+      );
+    }
   }
 }
+
 
