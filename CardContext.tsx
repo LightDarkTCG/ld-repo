@@ -47,7 +47,7 @@ export const cleanCardCode = (rawCode?: string): string => {
   if (!rawCode) return '';
   const cached = cleanCodeCache.get(rawCode);
   if (cached !== undefined) return cached;
-  const cleaned = rawCode.replace(/-(?:ALT|MOD|alt|mod|M)$/i, '').trim();
+  const cleaned = rawCode.replace(/(?:[-_](?:ALT|MOD|alt|mod|M))$/i, '').trim();
   cleanCodeCache.set(rawCode, cleaned);
   return cleaned;
 };
@@ -119,7 +119,7 @@ defaultCards.forEach(d => {
  */
 const recoverCodeFromDocId = (docId: string): string => {
   if (!docId) return '';
-  const cleanId = docId.replace(/-(?:ALT|MOD|alt|mod|M)$/i, '');
+  const cleanId = docId.replace(/(?:[-_](?:ALT|MOD|alt|mod|M))$/i, '');
   if (/^\d{4}_\d{4}_[A-Za-z0-9]+$/.test(cleanId)) {
     return cleanId.replace(/_/g, '/');
   }

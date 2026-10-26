@@ -1153,17 +1153,18 @@ export const AlbumModal: React.FC<AlbumModalProps> = ({ isOpen, onClose, onSelec
             </div>
           ) : (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-4">
-              {filteredCards.map((card) => {
+              {filteredCards.map((card, cardIdx) => {
                 const qty = getQuantity(card);
                 const isOwned = qty > 0;
                 const cardSpecial = isSpecialCard(card);
                 const cardFoils = getCardFoils(card);
                 const hasAnyFoil = cardFoils.length > 0;
                 const isWanted = isCardWanted(card);
+                const cardKey = normalizeAlbumKey(card) || `card_${card.id || cardIdx}`;
 
                 return (
                   <div
-                    key={normalizeAlbumKey(card)}
+                    key={`${cardKey}_${card.imageUrl || cardIdx}`}
                     className={`relative rounded-xl transition-all duration-200 group flex flex-col items-center p-2 border ${
                       hasAnyFoil
                         ? 'bg-slate-900/95 border-pink-500/80 shadow-lg shadow-pink-950/40 foil-card-rainbow'

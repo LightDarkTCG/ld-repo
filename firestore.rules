@@ -144,6 +144,11 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    match /wbCosmicNodes/{document=**} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
     // Pedidos da Loja Oficial Light Dark TCG
     match /storeOrders/{orderId} {
       allow read: if true;

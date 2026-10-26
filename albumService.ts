@@ -211,12 +211,20 @@ export const normalizeAlbumKey = (
 
   // CardData
   const card = cardOrCode;
+  if (!frame && !id && (card as any).albumKey) {
+    return (card as any).albumKey;
+  }
+
   const rawCode = card.code || card.id || '';
   const cleanCode = cleanCardCode(rawCode);
   const baseCode = getBaseCardCode(cleanCode, card.parentCode);
 
-  // Se o código possui letras que indicam uma skin específica (ex: '2025/0001/B0152' vs '2025/0001/00152')
-  const isSkinCode = Boolean(cleanCode && baseCode && cleanCode !== baseCode);
+  // Verifica se o segmento do número da carta possui letras que indicam uma skin específica (ex: '2025/0001/B0152', '2025/0001/0B188')
+  // Diferenças puramente numéricas de zero à esquerda (ex: '2025/0001/0073' vs '2025/0001/00073') NÃO são skins!
+  const codeSegments = cleanCode.split(/[\/_]/);
+  const lastSegment = codeSegments[codeSegments.length - 1] || '';
+  const hasLetterInCardNum = /[a-zA-Z]/.test(lastSegment);
+  const isSkinCode = Boolean(cleanCode && baseCode && cleanCode !== baseCode && hasLetterInCardNum);
 
   const baseKey = isSkinCode
     ? cleanCode.replace(/[\/\s-]/g, '_')
@@ -224,9 +232,9 @@ export const normalizeAlbumKey = (
 
   const effectiveFrame = frame || card.frame;
   const isModern = effectiveFrame === 'Moderno' || 
-                   (rawCode && (rawCode.endsWith('-MOD') || rawCode.endsWith('-M'))) || 
-                   (card.id && card.id.includes('-MOD')) ||
-                   (id && id.includes('-MOD')) ||
+                   (rawCode && (rawCode.endsWith('-MOD') || rawCode.endsWith('-M') || rawCode.endsWith('_MOD'))) || 
+                   (card.id && (card.id.includes('-MOD') || card.id.includes('_MOD'))) ||
+                   (id && (id.includes('-MOD') || id.includes('_MOD'))) ||
                    (card.variationType && card.variationType.toLowerCase().includes('moderno'));
 
   // Coleções criadas originalmente na era moderna já possuem código exclusivo (ex: Invasão do Caos 2026/0001/00301)

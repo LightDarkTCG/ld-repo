@@ -100,6 +100,7 @@ export function getCatalogueUniverse(allCards: CardData[]): CatalogueStats {
           varKey = `${varKey}_VAR_${getVariationArtHash(varCard)}`;
         }
         if (varKey && !seen.has(varKey)) {
+          (varCard as any).albumKey = varKey;
           seen.add(varKey);
           seenImages.add(v.imageUrl);
           cardsList.push(varCard);
