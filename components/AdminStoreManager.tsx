@@ -76,6 +76,7 @@ export const AdminStoreManager: React.FC = () => {
     const pendingShipment = approved.filter(
       (o) => !['shipped', 'delivered', 'cancelled'].includes(o.orderStatus)
     ).length;
+    const preOrdersCount = approved.filter((o) => o.hasPreOrderItems).length;
     return {
       totalOrders: orders.length,
       approvedCount: approved.length,

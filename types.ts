@@ -241,6 +241,8 @@ export interface MarketplaceListing {
   cardRarity?: string;
   includedCards?: MarketplaceCardEntry[];
   totalCardsCount?: number;
+  deckCode?: string;
+  collectionName?: string;
   // Dados do vendedor (negociação e entrega direta entre os jogadores)
   sellerId: string;
   sellerName: string;

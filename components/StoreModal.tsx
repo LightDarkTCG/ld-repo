@@ -46,6 +46,7 @@ import {
   addToCart,
   calculateShippingOptions,
   clearCart,
+  convertMarketplaceListingToOfficialProduct,
   createStoreOrder,
   DEFAULT_STORE_SETTINGS,
   fetchStoreSettings,
@@ -219,6 +220,7 @@ export const StoreModal: React.FC<StoreModalProps> = ({
   // Store Mode: Official Products vs Community Player Listings
   const [marketSection, setMarketSection] = useState<'official' | 'community'>('official');
   const [communityListings, setCommunityListings] = useState<MarketplaceListing[]>([]);
+  const [openSellTrigger, setOpenSellTrigger] = useState(0);
 
   // Store Filter & Search States
   const [selectedCategory, setSelectedCategory] = useState<StoreCategoryFilter>('all');
@@ -289,6 +291,17 @@ export const StoreModal: React.FC<StoreModalProps> = ({
 
     const unsubListings = subscribeMarketplaceListings((list) => {
       setCommunityListings(list);
+      // Se a conta oficial estiver logada, qualquer anúncio de revenda criado por ela é automaticamente convertido em Produto Oficial
+      if (isAdmin || user?.email?.toLowerCase() === 'viniciuspdiasuzumaki@gmail.com') {
+        const adminResaleItems = list.filter(
+          (item) => item.sellerEmail?.toLowerCase() === 'viniciuspdiasuzumaki@gmail.com'
+        );
+        adminResaleItems.forEach((item) => {
+          convertMarketplaceListingToOfficialProduct(item).catch((e) =>
+            console.warn('Auto-conversão para Produto Oficial:', e)
+          );
+        });
+      }
     });
 
     if (initialOrderId) {
@@ -802,12 +815,25 @@ export const StoreModal: React.FC<StoreModalProps> = ({
           <div className="order-2 md:order-3 flex items-center gap-2">
             <button
               type="button"
-              onClick={() => setMarketSection('community')}
-              className="px-3 py-2.5 rounded-xl text-xs font-bold bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/40 transition flex items-center gap-1.5 whitespace-nowrap cursor-pointer"
-              title="Vender suas cartas avulsas ou coleções no Mercado"
+              onClick={() => {
+                setMarketSection('community');
+                setOpenSellTrigger((prev) => prev + 1);
+              }}
+              className={`px-3 py-2.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                isAdmin
+                  ? 'bg-amber-500 hover:bg-amber-400 text-slate-950 shadow-md shadow-amber-950/50'
+                  : 'bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/40'
+              }`}
+              title={
+                isAdmin
+                  ? 'Cadastrar Produto Oficial (Deck por Código, Coleção de Booster ou Carta Oficial)'
+                  : 'Vender suas cartas avulsas, deck por código ou coleções no Mercado'
+              }
             >
               <Plus size={14} />
-              <span className="hidden sm:inline">Vender Cartas / Coleção</span>
+              <span className="hidden sm:inline">
+                {isAdmin ? 'Adicionar Produto Oficial' : 'Vender Cartas / Coleção'}
+              </span>
             </button>
 
             {isAdmin && onOpenAdminStore && (
@@ -914,6 +940,8 @@ export const StoreModal: React.FC<StoreModalProps> = ({
               allCards={allCards}
               user={user}
               isAdmin={isAdmin}
+              openSellTrigger={openSellTrigger}
+              onOfficialProductCreated={() => setMarketSection('official')}
               onOpenAuth={onOpenAuth}
             />
           ) : (

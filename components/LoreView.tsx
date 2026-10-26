@@ -4,7 +4,7 @@ import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage, readBrowserCache, writeBrowserCache } from '../firebase';
 import {
   X, Clock, Grid, Feather, ChevronRight, ChevronUp, ChevronDown, Compass, Edit3, Plus, Trash2,
-  ArrowUp, ArrowDown, Upload, Film, Image as ImageIcon, Type, Quote, Layers, Check, Loader2
+  ArrowUp, ArrowDown, Upload, Film, Image as ImageIcon, Type, Quote, Layers, Check, Loader2, GitFork
 } from 'lucide-react';
 import { AdminPanel } from './AdminPanel';
 import {
@@ -15,6 +15,7 @@ import {
   DEFAULT_COSMIC_TERRITORIES,
   LoreContentBlock
 } from './CosmicLoreMap';
+import { CharacterRelationsTree } from './CharacterRelationsTree';
 import { useCards, sanitizeForFirestore } from '../CardContext';
 import { useAuth } from '../authService';
 import { CardDetailModal } from './CardDetailModal';
@@ -47,8 +48,8 @@ export const LoreView = ({ onClose }: { onClose: () => void }) => {
     return cached && cached.length > 0 ? cached : DEFAULT_COSMIC_TERRITORIES;
   });
 
-  // Navigation State ('cosmic_map' is now available alongside 'home', 'tab_view', 'item_detail')
-  const [currentView, setCurrentView] = useState<'home' | 'cosmic_map' | 'tab_view' | 'item_detail'>('home');
+  // Navigation State ('cosmic_map' and 'relations_tree' are available alongside 'home', 'tab_view', 'item_detail')
+  const [currentView, setCurrentView] = useState<'home' | 'cosmic_map' | 'relations_tree' | 'tab_view' | 'item_detail'>('home');
   const [isTopNavCollapsed, setIsTopNavCollapsed] = useState<boolean>(false);
   const [activeTabId, setActiveTabId] = useState<string>('');
   const [selectedItem, setSelectedItem] = useState<any>(null);
@@ -447,6 +448,20 @@ export const LoreView = ({ onClose }: { onClose: () => void }) => {
               <Compass size={13} /> Mapa 3D do Universo
             </button>
 
+            <button
+              onClick={() => {
+                setSelectedItem(null);
+                setCurrentView('relations_tree');
+              }}
+              className={`flex items-center gap-1.5 hover:text-white transition whitespace-nowrap px-2.5 py-1 rounded border ${
+                currentView === 'relations_tree'
+                  ? 'bg-purple-900/40 text-purple-300 border-purple-400'
+                  : 'border-purple-500/40 text-purple-300 hover:bg-purple-950/30'
+              }`}
+            >
+              <GitFork size={13} /> Árvore de Relações
+            </button>
+
             {wbTabs.map(t => (
               <button
                 key={t.id}
@@ -482,7 +497,7 @@ export const LoreView = ({ onClose }: { onClose: () => void }) => {
                 setSelectedItem(null);
                 setIsEditingItemDetail(false);
                 setCurrentView('tab_view');
-              } else if (currentView === 'tab_view' || currentView === 'cosmic_map') {
+              } else if (currentView === 'tab_view' || currentView === 'cosmic_map' || currentView === 'relations_tree') {
                 setCurrentView('home');
               } else {
                 onClose();
@@ -545,7 +560,7 @@ export const LoreView = ({ onClose }: { onClose: () => void }) => {
           </div>
         </div>
       ) : (
-        <div className={currentView === 'cosmic_map' ? (isTopNavCollapsed ? 'h-screen' : 'pt-14 h-screen') : 'pt-14 min-h-screen'}>
+        <div className={currentView === 'cosmic_map' || currentView === 'relations_tree' ? (isTopNavCollapsed ? 'h-screen' : 'pt-14 h-screen') : 'pt-14 min-h-screen'}>
           {/* 3D INTERACTIVE MULTIVERSE / COSMOS MAP VIEW */}
           {currentView === 'cosmic_map' && (
             <CosmicLoreMap
@@ -560,6 +575,15 @@ export const LoreView = ({ onClose }: { onClose: () => void }) => {
               onResetDefaultCosmology={handleResetDefaultCosmology}
               onUploadMedia={handleUploadMediaFile}
               onSelectCard={(card) => setInspectedCard(card)}
+            />
+          )}
+
+          {/* CHARACTER RELATIONS TREE VIEW */}
+          {currentView === 'relations_tree' && (
+            <CharacterRelationsTree
+              cards={cards}
+              isAdmin={isAdmin}
+              onInspectCard={(card) => setInspectedCard(card)}
             />
           )}
 
@@ -580,25 +604,32 @@ export const LoreView = ({ onClose }: { onClose: () => void }) => {
                 {wbSettings.description}
               </p>
 
-              <div className="flex flex-col sm:flex-row items-center gap-5 relative z-10">
+              <div className="flex flex-col sm:flex-row flex-wrap justify-center items-center gap-4 relative z-10">
                 <button
                   onClick={() => setCurrentView('cosmic_map')}
-                  className="font-cinzel border-2 border-theme bg-[rgba(var(--primary-rgb),0.2)] hover:bg-[rgba(var(--primary-rgb),0.35)] text-white px-8 py-4 tracking-widest uppercase text-sm font-bold transition duration-300 shadow-[0_0_25px_rgba(var(--primary-rgb),0.35)] flex items-center gap-3"
+                  className="font-cinzel border-2 border-theme bg-[rgba(var(--primary-rgb),0.2)] hover:bg-[rgba(var(--primary-rgb),0.35)] text-white px-7 py-4 tracking-widest uppercase text-sm font-bold transition duration-300 shadow-[0_0_25px_rgba(var(--primary-rgb),0.35)] flex items-center gap-3"
                 >
                   <Compass size={18} className="text-theme" /> Explorar Mapa 3D do Universo
+                </button>
+
+                <button
+                  onClick={() => setCurrentView('relations_tree')}
+                  className="font-cinzel border-2 border-purple-500/70 bg-purple-950/35 hover:bg-purple-900/50 text-purple-100 px-7 py-4 tracking-widest uppercase text-sm font-bold transition duration-300 shadow-[0_0_25px_rgba(168,85,247,0.3)] flex items-center gap-3"
+                >
+                  <GitFork size={18} className="text-purple-400" /> Árvore de Relações
                 </button>
 
                 {wbTabs.length > 0 ? (
                   <button
                     onClick={() => navToTab(wbTabs[0].id)}
-                    className="font-cinzel border border-theme/50 bg-[#0c0c12] hover:bg-[rgba(var(--primary-rgb),0.12)] text-theme px-8 py-4 tracking-widest uppercase text-sm font-bold transition duration-300"
+                    className="font-cinzel border border-theme/50 bg-[#0c0c12] hover:bg-[rgba(var(--primary-rgb),0.12)] text-theme px-7 py-4 tracking-widest uppercase text-sm font-bold transition duration-300"
                   >
                     Abrir Arquivos & Crônicas
                   </button>
                 ) : (
                   <button
                     onClick={() => setIsAdminOpen(true)}
-                    className="font-cinzel border border-purple-500 text-purple-400 px-8 py-4 tracking-widest uppercase text-sm font-bold transition hover:bg-purple-900/30"
+                    className="font-cinzel border border-purple-500 text-purple-400 px-7 py-4 tracking-widest uppercase text-sm font-bold transition hover:bg-purple-900/30"
                   >
                     Configurar Área do Mestre
                   </button>

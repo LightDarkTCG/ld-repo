@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { X, Search, Save, Download, Trash2, Plus, Minus, AlertTriangle, CheckCircle, BarChart3, Copy, Eye, ChevronDown, ChevronUp, ChevronRight, ChevronLeft, Layers, Network, Cloud, Flame } from 'lucide-react';
+import { X, Search, Save, Download, Trash2, Plus, Minus, AlertTriangle, CheckCircle, BarChart3, Copy, Eye, ChevronDown, ChevronUp, ChevronRight, ChevronLeft, Layers, Network, Cloud, Flame, Dices, Users } from 'lucide-react';
 import { CardData } from '../types';
 import { collectionsList, archetypesList } from '../data';
 import { useCards, cleanCardCode, getBaseCardCode, getCardDisplayPriority, resolveModernFrameOnly } from '../CardContext';
@@ -9,6 +9,8 @@ import { CardDetailModal } from './CardDetailModal';
 import { CardNeuralMap } from './CardNeuralMap';
 import { SavedDecksModal } from './SavedDecksModal';
 import { PopularCardsModal } from './PopularCardsModal';
+import { MulliganSimulator } from './MulliganSimulatorModal';
+import { CommunityDecksModal } from './CommunityDecksModal';
 
 interface DeckBuilderModalProps {
   isOpen: boolean;
@@ -22,10 +24,11 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
   const [confirmClear, setConfirmClear] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [importCode, setImportCode] = useState("");
-  const [activeTab, setActiveTab] = useState<'build' | 'neural' | 'stats' | 'save'>('build');
+  const [activeTab, setActiveTab] = useState<'build' | 'neural' | 'mulligan' | 'stats' | 'save'>('build');
   const [inspectCard, setInspectCard] = useState<CardData | null>(null);
   const [showCloudDecksModal, setShowCloudDecksModal] = useState(false);
   const [showPopularModal, setShowPopularModal] = useState(false);
+  const [showCommunityDecksModal, setShowCommunityDecksModal] = useState(false);
   const [filters, setFilters] = useState({
     type: "Todos",
     archetype: "Todos",
@@ -313,6 +316,20 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
         allCards={allCards}
       />
 
+      {/* Community Decks Mural Modal */}
+      <CommunityDecksModal
+        isOpen={showCommunityDecksModal}
+        onClose={() => setShowCommunityDecksModal(false)}
+        currentMainDeck={deck}
+        currentSideDeck={sideDeck}
+        onLoadDeck={(m, s) => {
+          setDeck(m);
+          setSideDeck(s);
+          setActiveTab('build');
+        }}
+        allCards={allCards}
+      />
+
       {/* Popular Cards Meta Modal */}
       <PopularCardsModal
         isOpen={showPopularModal}
@@ -334,47 +351,63 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
           <h2 className="text-lg md:text-2xl font-bold text-white flex items-center gap-2 whitespace-nowrap">
             <Save className="text-purple-500" size={20} /> MONTE SEU DECK
           </h2>
-          <div className="flex bg-slate-800 rounded-lg p-1 w-full md:w-auto overflow-x-auto">
+          <div className="flex bg-slate-800 rounded-lg p-1 w-full md:w-auto overflow-x-auto gap-0.5">
             <button 
               onClick={() => setActiveTab('build')}
-              className={`flex-1 md:flex-none px-2 md:px-4 py-1.5 rounded-md text-[10px] md:text-sm font-bold transition whitespace-nowrap ${activeTab === 'build' ? 'bg-purple-600 text-white' : 'text-slate-400 hover:text-white'}`}
+              className={`flex-1 md:flex-none px-2 md:px-3.5 py-1.5 rounded-md text-[10px] md:text-xs font-bold transition whitespace-nowrap ${activeTab === 'build' ? 'bg-purple-600 text-white' : 'text-slate-400 hover:text-white'}`}
             >
               Montar
             </button>
             <button 
+              onClick={() => setActiveTab('mulligan')}
+              className={`flex-1 md:flex-none px-2 md:px-3.5 py-1.5 rounded-md text-[10px] md:text-xs font-bold transition whitespace-nowrap flex items-center justify-center gap-1.5 ${activeTab === 'mulligan' ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-lg shadow-emerald-950/50 border border-emerald-400/40' : 'text-emerald-300 hover:text-white'}`}
+              title="Simular Mão Inicial de 5 cartas, Mulligan 1x e Probabilidades exatas"
+            >
+              <Dices size={14} className={activeTab === 'mulligan' ? 'text-white' : 'text-emerald-400'} />
+              <span>Mão Inicial / Mulligan</span>
+            </button>
+            <button 
               onClick={() => setActiveTab('neural')}
-              className={`flex-1 md:flex-none px-2 md:px-4 py-1.5 rounded-md text-[10px] md:text-sm font-bold transition whitespace-nowrap flex items-center justify-center gap-1.5 ${activeTab === 'neural' ? 'bg-gradient-to-r from-purple-700 to-indigo-700 text-white shadow-lg shadow-purple-900/50 border border-purple-500/40' : 'text-slate-400 hover:text-white'}`}
+              className={`flex-1 md:flex-none px-2 md:px-3.5 py-1.5 rounded-md text-[10px] md:text-xs font-bold transition whitespace-nowrap flex items-center justify-center gap-1.5 ${activeTab === 'neural' ? 'bg-gradient-to-r from-purple-700 to-indigo-700 text-white shadow-lg shadow-purple-900/50 border border-purple-500/40' : 'text-slate-400 hover:text-white'}`}
               title="Visualizar Mapa Neural interativo de sinergias do Deck"
             >
-              <Network size={15} className={activeTab === 'neural' ? 'text-cyan-300 animate-pulse' : 'text-cyan-400'} />
+              <Network size={14} className={activeTab === 'neural' ? 'text-cyan-300 animate-pulse' : 'text-cyan-400'} />
               <span>Mapa Neural</span>
             </button>
             <button 
               onClick={() => setActiveTab('stats')}
-              className={`flex-1 md:flex-none px-2 md:px-4 py-1.5 rounded-md text-[10px] md:text-sm font-bold transition whitespace-nowrap ${activeTab === 'stats' ? 'bg-purple-600 text-white' : 'text-slate-400 hover:text-white'}`}
+              className={`flex-1 md:flex-none px-2 md:px-3.5 py-1.5 rounded-md text-[10px] md:text-xs font-bold transition whitespace-nowrap ${activeTab === 'stats' ? 'bg-purple-600 text-white' : 'text-slate-400 hover:text-white'}`}
             >
               Estatísticas
             </button>
             <button 
               onClick={() => setActiveTab('save')}
-              className={`flex-1 md:flex-none px-2 md:px-4 py-1.5 rounded-md text-[10px] md:text-sm font-bold transition whitespace-nowrap ${activeTab === 'save' ? 'bg-purple-600 text-white' : 'text-slate-400 hover:text-white'}`}
+              className={`flex-1 md:flex-none px-2 md:px-3.5 py-1.5 rounded-md text-[10px] md:text-xs font-bold transition whitespace-nowrap ${activeTab === 'save' ? 'bg-purple-600 text-white' : 'text-slate-400 hover:text-white'}`}
             >
               Salvar/Carregar
             </button>
             <button 
+              onClick={() => setShowCommunityDecksModal(true)}
+              className="flex-1 md:flex-none px-2 md:px-3 py-1.5 rounded-md text-[10px] md:text-xs font-bold transition whitespace-nowrap flex items-center justify-center gap-1.5 bg-gradient-to-r from-amber-600/30 to-purple-800/70 text-amber-200 hover:text-white border border-amber-500/40 shadow-sm active:scale-95"
+              title="Explorar e publicar Decklists no Mural da Comunidade"
+            >
+              <Users size={13} className="text-amber-300" />
+              <span>Mural de Decks</span>
+            </button>
+            <button 
               onClick={() => setShowCloudDecksModal(true)}
-              className="flex-1 md:flex-none px-2 md:px-3 py-1.5 rounded-md text-[10px] md:text-sm font-bold transition whitespace-nowrap flex items-center justify-center gap-1.5 bg-gradient-to-r from-purple-800 to-indigo-800 text-purple-200 hover:text-white border border-purple-600/40 shadow-sm active:scale-95"
+              className="flex-1 md:flex-none px-2 md:px-3 py-1.5 rounded-md text-[10px] md:text-xs font-bold transition whitespace-nowrap flex items-center justify-center gap-1.5 bg-gradient-to-r from-purple-800 to-indigo-800 text-purple-200 hover:text-white border border-purple-600/40 shadow-sm active:scale-95"
               title="Acessar meus decks salvos na nuvem"
             >
-              <Cloud size={14} className="text-purple-300" />
+              <Cloud size={13} className="text-purple-300" />
               <span>Decks na Nuvem</span>
             </button>
             <button 
               onClick={() => setShowPopularModal(true)}
-              className="flex-1 md:flex-none px-2 md:px-3 py-1.5 rounded-md text-[10px] md:text-sm font-bold transition whitespace-nowrap flex items-center justify-center gap-1.5 bg-gradient-to-r from-red-950/80 to-amber-950/80 text-amber-200 hover:text-white border border-amber-600/40 shadow-sm active:scale-95"
+              className="flex-1 md:flex-none px-2 md:px-3 py-1.5 rounded-md text-[10px] md:text-xs font-bold transition whitespace-nowrap flex items-center justify-center gap-1.5 bg-gradient-to-r from-red-950/80 to-amber-950/80 text-amber-200 hover:text-white border border-amber-600/40 shadow-sm active:scale-95"
               title="Ver as 10 cartas mais usadas no Meta por categoria"
             >
-              <Flame size={14} className="text-red-400" />
+              <Flame size={13} className="text-red-400" />
               <span>Cartas Populares</span>
             </button>
           </div>
@@ -747,6 +780,19 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
             </>
           )}
 
+          {activeTab === 'mulligan' && (
+            <div className="w-full h-full min-h-0 flex-1 overflow-y-auto p-3 md:p-6 bg-[#0a0a0f]">
+              <div className="max-w-6xl mx-auto">
+                <MulliganSimulator
+                  deck={deck}
+                  sideDeck={sideDeck}
+                  isEmbedded
+                  onInspectCard={(card) => setInspectCard(card)}
+                />
+              </div>
+            </div>
+          )}
+
           {activeTab === 'neural' && (
             <div className="w-full h-full min-h-0 flex-1 flex flex-col">
               <CardNeuralMap
@@ -894,13 +940,22 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
                             <Copy size={20} />
                           </button>
                         </div>
-                        <button 
-                          onClick={() => setShowCloudDecksModal(true)}
-                          className="w-full py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg shadow-purple-900/40 transition"
-                        >
-                          <Cloud size={16} />
-                          <span>Salvar / Gerenciar na Nuvem (Conta Google)</span>
-                        </button>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                          <button 
+                            onClick={() => setShowCloudDecksModal(true)}
+                            className="w-full py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg shadow-purple-900/40 transition"
+                          >
+                            <Cloud size={16} />
+                            <span>Salvar na Nuvem (Conta)</span>
+                          </button>
+                          <button 
+                            onClick={() => setShowCommunityDecksModal(true)}
+                            className="w-full py-2.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-slate-950 font-black text-xs flex items-center justify-center gap-2 shadow-lg shadow-amber-900/40 transition"
+                          >
+                            <Users size={16} />
+                            <span>Publicar no Mural da Comunidade</span>
+                          </button>
+                        </div>
                       </div>
                     ) : (
                       <div className="text-red-500 bg-red-900/20 p-4 rounded border border-red-800 text-left text-sm space-y-2">

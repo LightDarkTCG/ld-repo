@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { X, ShoppingCart, Play, Image as ImageIcon, ChevronLeft, ChevronRight, Layers, Sword, Shield, Sparkles, ExternalLink, Copy, Check, Info, Calendar } from 'lucide-react';
+import { X, ShoppingCart, Play, Image as ImageIcon, ChevronLeft, ChevronRight, Layers, Sword, Shield, Sparkles, ExternalLink, Copy, Check, Info, Calendar, Dices } from 'lucide-react';
 import { ExclusiveProduct, ProductMediaItem, CardData, ProductPriceVariation } from '../types';
 import { parseDeckFromCode, ParsedDeckData, DeckCardEntry } from '../deckUtils';
+import { MulliganSimulatorModal } from './MulliganSimulatorModal';
 
 interface ProductDetailModalProps {
   product: ExclusiveProduct | null;
@@ -26,6 +27,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
   const [copiedCode, setCopiedCode] = useState(false);
   const [showNotice, setShowNotice] = useState(false);
   const [addedToCartFeedback, setAddedToCartFeedback] = useState(false);
+  const [showMulliganSimulator, setShowMulliganSimulator] = useState(false);
 
   // Extract all media items
   const mediaList: ProductMediaItem[] = useMemo(() => {
@@ -500,8 +502,18 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                   </p>
                 </div>
 
-                {deckData.rawDeckBuilderCode && (
-                  <div className="flex flex-col sm:items-end gap-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowMulliganSimulator(true)}
+                    className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg font-bold text-xs bg-emerald-600/90 hover:bg-emerald-500 text-white border border-emerald-400/50 transition-all shadow-md cursor-pointer"
+                    title="Simular Mão Inicial de 5 cartas e Mulligan deste Deck"
+                  >
+                    <Dices size={16} />
+                    <span>Simular Mão Inicial (5 Cartas)</span>
+                  </button>
+
+                  {deckData.rawDeckBuilderCode && (
                     <button
                       onClick={handleCopyDeckCode}
                       className={`inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg font-bold text-xs transition-all shadow-md ${
@@ -523,11 +535,8 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                         </>
                       )}
                     </button>
-                    <span className="text-[10px] text-slate-400 hidden sm:block">
-                      Compatível com a aba Carregar Deck
-                    </span>
-                  </div>
-                )}
+                  )}
+                </div>
               </div>
 
               {/* Main Deck */}
@@ -630,6 +639,22 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
             </button>
           </div>
         </div>
+      )}
+
+      {/* Mulligan Hand Simulator Modal */}
+      {showMulliganSimulator && deckData.isValid && (
+        <MulliganSimulatorModal
+          isOpen={showMulliganSimulator}
+          onClose={() => setShowMulliganSimulator(false)}
+          deck={deckData.mainDeck.flatMap(entry =>
+            entry.card ? Array(entry.qty).fill(entry.card) : []
+          )}
+          sideDeck={deckData.sideDeck.flatMap(entry =>
+            entry.card ? Array(entry.qty).fill(entry.card) : []
+          )}
+          deckTitle={product.title}
+          onInspectCard={onSelectCard}
+        />
       )}
     </div>
   );

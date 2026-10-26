@@ -20,6 +20,7 @@ import {
   PaymentStatus,
   ShippingOption,
   StoreOrder,
+  StoreProductCategory,
   StoreSettings
 } from './types';
 
@@ -1020,5 +1021,130 @@ export async function deleteMarketplaceSellerReview(reviewId: string): Promise<v
     handleFirestoreError(err, OperationType.DELETE, path);
   }
 }
+
+// --- ADICIONAR / CONVERTER PRODUTO OFICIAL DIRETO NO CATÁLOGO OFICIAL (CONTA ADMIN) ---
+export async function saveOfficialProductToStore(
+  product: ExclusiveProduct
+): Promise<ExclusiveProduct[]> {
+  const path = 'homeSettings/global';
+  try {
+    const snap = await getDoc(doc(db, 'homeSettings', 'global'));
+    const currentSettings: any = snap.exists() ? snap.data() : {};
+    const existingList: ExclusiveProduct[] = Array.isArray(currentSettings.exclusiveProducts)
+      ? [...currentSettings.exclusiveProducts]
+      : [];
+
+    const cleanProd: ExclusiveProduct = JSON.parse(
+      JSON.stringify({
+        isActive: true,
+        title: product.title,
+        category: product.category || 'Produto Oficial',
+        storeCategory: product.storeCategory || 'decks',
+        description: product.description || '',
+        price: product.price || 'R$ 49,90',
+        originalPrice: product.originalPrice || '',
+        mediaType: product.mediaType || 'image',
+        mediaUrl: product.mediaUrl || 'https://i.imgur.com/cDLxOtO.png',
+        mediaList:
+          product.mediaList && product.mediaList.length > 0
+            ? product.mediaList
+            : [
+                {
+                  url: product.mediaUrl || 'https://i.imgur.com/cDLxOtO.png',
+                  type: product.mediaType || 'image'
+                }
+              ],
+        buttonText: product.buttonText || 'Comprar Agora',
+        buttonLink: '', // Vazio para usar Carrinho Interno + Mercado Pago Oficial
+        badge: product.badge || 'OFICIAL LIGHT DARK',
+        cardCodes: product.cardCodes || '',
+        isPreOrder: Boolean(product.isPreOrder),
+        preOrderReleaseDate: product.preOrderReleaseDate || '',
+        isPromotion: Boolean(product.isPromotion),
+        stockCount: product.stockCount ?? 50,
+        weightGrams: product.weightGrams || 250,
+        variations: product.variations || []
+      })
+    );
+
+    const updatedList = [cleanProd, ...existingList];
+    const updatedSettings = {
+      ...currentSettings,
+      exclusiveProducts: updatedList
+    };
+
+    await setDoc(doc(db, 'homeSettings', 'global'), JSON.parse(JSON.stringify(updatedSettings)), {
+      merge: true
+    });
+    writeBrowserCache('ld_cache_homeSettings_v2', updatedSettings);
+    return updatedList;
+  } catch (err) {
+    handleFirestoreError(err, OperationType.WRITE, path);
+  }
+}
+
+export async function convertMarketplaceListingToOfficialProduct(
+  listing: MarketplaceListing,
+  overrideStoreCategory?: StoreProductCategory
+): Promise<ExclusiveProduct> {
+  const inferredCategory: StoreProductCategory =
+    overrideStoreCategory ||
+    (listing.listingType === 'single_card'
+      ? 'cartas_avulsas'
+      : listing.deckCode
+      ? 'decks'
+      : 'kits');
+
+  // Build cardCodes from deckCode, single cardId, or includedCards
+  let cardCodes = listing.deckCode || '';
+  if (!cardCodes) {
+    if (listing.listingType === 'single_card' && listing.cardId) {
+      cardCodes = listing.cardId;
+    } else if (listing.includedCards && listing.includedCards.length > 0) {
+      const codes: string[] = [];
+      for (const entry of listing.includedCards) {
+        const qty = Math.max(1, Number(entry.quantity) || 1);
+        for (let i = 0; i < qty; i++) {
+          codes.push(entry.cardId);
+        }
+      }
+      cardCodes = codes.join(', ');
+    }
+  }
+
+  const officialProduct: ExclusiveProduct = {
+    isActive: true,
+    title: listing.title,
+    category:
+      inferredCategory === 'cartas_avulsas'
+        ? 'Carta Avulsa Oficial'
+        : inferredCategory === 'decks'
+        ? 'Deck Personalizado Oficial'
+        : 'Coleção Oficial / Booster',
+    storeCategory: inferredCategory,
+    description: listing.description,
+    price: formatBRL(listing.price),
+    mediaType: 'image',
+    mediaUrl: listing.imageUrl || 'https://i.imgur.com/cDLxOtO.png',
+    mediaList: [
+      {
+        url: listing.imageUrl || 'https://i.imgur.com/cDLxOtO.png',
+        type: 'image'
+      }
+    ],
+    buttonText: 'Comprar Agora',
+    buttonLink: '',
+    badge: listing.isFoil ? 'FOIL OFICIAL' : 'OFICIAL LIGHT DARK',
+    cardCodes,
+    stockCount: listing.stockQuantity || 10,
+    weightGrams: listing.listingType === 'single_card' ? 50 : 250
+  };
+
+  await saveOfficialProductToStore(officialProduct);
+  // Remove from resale listings so it only exists as an Official Product
+  await deleteMarketplaceListing(listing.id);
+  return officialProduct;
+}
+
 
 

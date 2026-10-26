@@ -6,7 +6,7 @@ import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { auth, db, storage, readBrowserCache, writeBrowserCache } from '../firebase';
 import { useCards, sanitizeForFirestore, cleanCardCode } from '../CardContext';
 import { ArchetypeData, LEGADO_RARITIES, MODERNO_RARITIES } from '../types';
-import { parseDeckFromCode } from '../deckUtils';
+import { encodeDeckCode, parseDeckFromCode } from '../deckUtils';
 import { BatchImageMatcher } from './BatchImageMatcher';
 import { AdminStoreManager } from './AdminStoreManager';
 import { isUserAdmin, logout } from '../authService';
@@ -1294,6 +1294,54 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
                                         Cole aqui o <strong>código gerado no Criador de Deck</strong> (menu principal &gt; Criador de Deck &gt; aba <em>Salvar / Exportar</em> &gt; <em>Copiar Código</em>). O sistema decodifica o deck principal e side deck automaticamente!
                                       </p>
 
+                                      {/* 1-Click Entire Booster Collection Loader */}
+                                      <div className="bg-slate-900/90 border border-emerald-500/30 rounded-lg p-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                                        <div className="text-[11px] text-emerald-300 font-bold flex items-center gap-1.5">
+                                          <Box size={13} />
+                                          <span>Ou preencher com Coleção Inteira de Booster (sem ir carta a carta):</span>
+                                        </div>
+                                        <select
+                                          defaultValue=""
+                                          onChange={e => {
+                                            const colName = e.target.value;
+                                            if (!colName) return;
+                                            const colCards = (cards || []).filter(
+                                              c => !c.deleted && !c.isHidden && (c.collection || '').trim() === colName
+                                            );
+                                            const uniqueMap = new Map<string, any>();
+                                            colCards.forEach(c => {
+                                              const k = c.code || c.id;
+                                              if (!uniqueMap.has(k)) uniqueMap.set(k, c);
+                                            });
+                                            const uniqueList = Array.from(uniqueMap.values());
+                                            if (uniqueList.length === 0) return;
+                                            const encoded = encodeDeckCode(uniqueList, []);
+                                            const np = [...(homeSettings.exclusiveProducts || [])];
+                                            np[i].cardCodes = encoded;
+                                            if (!np[i].title || np[i].title === 'Novo Produto') {
+                                              np[i].title = `Coleção Completa Booster: ${colName} (${uniqueList.length} Cartas)`;
+                                            }
+                                            setHomeSettings({ ...homeSettings, exclusiveProducts: np });
+                                            e.target.value = '';
+                                          }}
+                                          className="bg-slate-950 border border-emerald-500/40 rounded px-2.5 py-1.5 text-xs text-white font-bold outline-none"
+                                        >
+                                          <option value="">-- Carregar Coleção de Booster --</option>
+                                          {Array.from(
+                                            new Set(
+                                              (cards || [])
+                                                .filter(c => !c.deleted && !c.isHidden && c.collection)
+                                                .map(c => (c.collection || '').trim())
+                                                .filter(Boolean)
+                                            )
+                                          ).map(colName => (
+                                            <option key={colName} value={colName}>
+                                              Carregar tudo de: {colName}
+                                            </option>
+                                          ))}
+                                        </select>
+                                      </div>
+
                                       <textarea 
                                         value={prod.cardCodes || ''} 
                                         onChange={e => {
@@ -1302,7 +1350,7 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
                                           setHomeSettings({...homeSettings, exclusiveProducts: np});
                                         }} 
                                         className="w-full bg-slate-950 border border-slate-700 rounded p-2.5 text-white font-mono text-xs h-24 resize-y focus:border-purple-500 outline-none" 
-                                        placeholder="Cole o código do Criador de Deck aqui (ex: eyJtYWluIjpb...)..." 
+                                        placeholder="Cole o código do Criador de Deck aqui (ex: LDT:1,2,3... ou eyJtYWluIjpb...)..." 
                                       />
 
                                       {/* Real-time Deck Validation Feedback */}

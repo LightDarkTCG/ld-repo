@@ -21,15 +21,18 @@ import {
   Heart,
   Filter,
   SlidersHorizontal,
-  BarChart2
+  BarChart2,
+  ShoppingCart,
+  Copy
 } from 'lucide-react';
-import { CardData } from '../types';
+import { CardData, MarketplaceListing } from '../types';
 import { useCards, cleanCardCode, getBaseCardCode, getCardDisplayPriority, resolveModernFrameOnly } from '../CardContext';
 import { useAuth, isUserAdmin } from '../authService';
 import { useUserAlbum, normalizeAlbumKey, FOIL_TYPES, FoilTypeInfo } from '../albumService';
 import { compareCardCodes } from '../deckUtils';
 import { syncUserCollectorStats, getCatalogueUniverse } from '../collectorsService';
 import { useUserWishlist } from '../wishlistService';
+import { subscribeMarketplaceListings } from '../storeService';
 import { allCards as defaultCards } from '../data';
 import { isCardRarePrint } from '../rarePrintService';
 import { VerificationRequestModal } from './VerificationRequestModal';
@@ -137,7 +140,44 @@ export const AlbumModal: React.FC<AlbumModalProps> = ({ isOpen, onClose, onSelec
   } = useUserAlbum(user?.uid);
 
   // Cartas que procuro (Wishlist)
-  const { isCardWanted, addCard: addWantedCard, removeCard: removeWantedCard } = useUserWishlist(user?.uid, user);
+  const { wishlist, isCardWanted, addCard: addWantedCard, removeCard: removeWantedCard } = useUserWishlist(user?.uid, user);
+
+  // Anúncios ativos do Mercado para cruzar com a Lista de Desejos e Fichário
+  const [marketListings, setMarketListings] = useState<MarketplaceListing[]>([]);
+  React.useEffect(() => {
+    if (!isOpen) return;
+    const unsub = subscribeMarketplaceListings(list => {
+      setMarketListings(list.filter(item => item.status === 'active' && item.stockQuantity > 0));
+    });
+    return () => unsub();
+  }, [isOpen]);
+
+  const marketCardCodesSet = useMemo(() => {
+    const codes = new Set<string>();
+    const names = new Set<string>();
+    marketListings.forEach(item => {
+      if (item.cardId) codes.add(cleanCardCode(item.cardId).toUpperCase());
+      if (item.cardName) names.add(item.cardName.trim().toLowerCase());
+      if (item.includedCards) {
+        item.includedCards.forEach(ic => {
+          if (ic.cardId) codes.add(cleanCardCode(ic.cardId).toUpperCase());
+          if (ic.cardName) names.add(ic.cardName.trim().toLowerCase());
+        });
+      }
+    });
+    return { codes, names };
+  }, [marketListings]);
+
+  const isCardAvailableInMarket = React.useCallback((card: CardData) => {
+    const cCode = cleanCardCode(card.code || '').toUpperCase();
+    const bCode = getBaseCardCode(card.code, card.parentCode).toUpperCase();
+    const cName = (card.name || '').trim().toLowerCase();
+    return (
+      (cCode && marketCardCodesSet.codes.has(cCode)) ||
+      (bCode && marketCardCodesSet.codes.has(bCode)) ||
+      (cName && marketCardCodesSet.names.has(cName))
+    );
+  }, [marketCardCodesSet]);
 
   // Sincroniza estatísticas de colecionador na nuvem sempre que o acervo mudar
   React.useEffect(() => {
@@ -151,7 +191,7 @@ export const AlbumModal: React.FC<AlbumModalProps> = ({ isOpen, onClose, onSelec
   const [onlySpecials, setOnlySpecials] = useState<boolean>(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCollection, setSelectedCollection] = useState('Todas');
-  const [filterMode, setFilterMode] = useState<'all' | 'owned' | 'missing'>('all');
+  const [filterMode, setFilterMode] = useState<'all' | 'owned' | 'missing' | 'wanted' | 'duplicates'>('all');
   const [selectedFoilFilter, setSelectedFoilFilter] = useState<'all' | 'any_foil' | string>('all');
   const [cardForFoilModal, setCardForFoilModal] = useState<CardData | null>(null);
 
@@ -368,9 +408,11 @@ export const AlbumModal: React.FC<AlbumModalProps> = ({ isOpen, onClose, onSelec
       // Filtro rápido de somente especiais
       if (onlySpecials && !cardSpecial) return false;
 
-      // Filtro de posse
+      // Filtro de posse, lista de desejos e repetidas
       if (filterMode === 'owned' && !isOwned) return false;
       if (filterMode === 'missing' && isOwned) return false;
+      if (filterMode === 'wanted' && !isCardWanted(card)) return false;
+      if (filterMode === 'duplicates' && qty <= 1) return false;
 
       // Filtro de coleção
       if (selectedCollection === '★ Especiais' && !cardSpecial) {
@@ -403,7 +445,44 @@ export const AlbumModal: React.FC<AlbumModalProps> = ({ isOpen, onClose, onSelec
 
       return true;
     });
-  }, [albumPoolCards, searchTerm, selectedCollection, filterMode, onlySpecials, selectedFoilFilter, getQuantity, hasFoil]);
+  }, [albumPoolCards, searchTerm, selectedCollection, filterMode, onlySpecials, selectedFoilFilter, getQuantity, hasFoil, isCardWanted]);
+
+  const wantedCountInPool = useMemo(() => {
+    return albumPoolCards.filter(c => isCardWanted(c)).length;
+  }, [albumPoolCards, isCardWanted]);
+
+  const duplicatesCountInPool = useMemo(() => {
+    return albumPoolCards.filter(c => getQuantity(c) > 1).length;
+  }, [albumPoolCards, getQuantity]);
+
+  const handleCopyCollectorChecklist = () => {
+    const wantedList = albumPoolCards.filter(c => isCardWanted(c));
+    const dupesList = albumPoolCards.filter(c => getQuantity(c) > 1);
+    const lines: string[] = [
+      `📘 MEU FICHÁRIO & CHECKLIST - LIGHT DARK TCG`,
+      `Progresso: ${stats.totalUniqueOwned}/${stats.totalCards} cartas únicas (${stats.percent}%) | Total de cópias: ${stats.totalCopies}`,
+      ``
+    ];
+    if (wantedList.length > 0) {
+      lines.push(`🎯 LISTA DE DESEJOS (PROCURANDO - ${wantedList.length}):`);
+      wantedList.forEach(c => {
+        const inMkt = isCardAvailableInMarket(c) ? ' [À VENDA NO MERCADO]' : '';
+        lines.push(`• ${c.name} (${c.code}) - ${c.collection || 'Geral'}${inMkt}`);
+      });
+      lines.push(``);
+    }
+    if (dupesList.length > 0) {
+      lines.push(`🔄 REPETIDAS PARA TROCA / VENDA (${dupesList.length}):`);
+      dupesList.forEach(c => {
+        const extra = getQuantity(c) - 1;
+        lines.push(`• ${extra}x ${c.name} (${c.code}) - ${c.collection || 'Geral'}`);
+      });
+      lines.push(``);
+    }
+    navigator.clipboard.writeText(lines.join('\n'));
+    setToastMessage('Checklist de Colecionador (Desejos + Repetidas) copiado para a área de transferência!');
+    setTimeout(() => setToastMessage(null), 3500);
+  };
 
   if (!isOpen) return null;
 
@@ -614,6 +693,24 @@ export const AlbumModal: React.FC<AlbumModalProps> = ({ isOpen, onClose, onSelec
                 }`}
               >
                 Faltam ({stats.totalCards - stats.totalUniqueOwned})
+              </button>
+              <button
+                type="button"
+                onClick={() => setFilterMode('wanted')}
+                className={`px-2 py-0.5 rounded-md text-[11px] font-bold transition whitespace-nowrap ${
+                  filterMode === 'wanted' ? 'bg-pink-600 text-white shadow-xs' : 'text-pink-300'
+                }`}
+              >
+                ★ Desejos ({wantedCountInPool})
+              </button>
+              <button
+                type="button"
+                onClick={() => setFilterMode('duplicates')}
+                className={`px-2 py-0.5 rounded-md text-[11px] font-bold transition whitespace-nowrap ${
+                  filterMode === 'duplicates' ? 'bg-cyan-600 text-white shadow-xs' : 'text-cyan-300'
+                }`}
+              >
+                Repetidas ({duplicatesCountInPool})
               </button>
             </div>
 
@@ -921,7 +1018,40 @@ export const AlbumModal: React.FC<AlbumModalProps> = ({ isOpen, onClose, onSelec
               >
                 Faltando ({stats.totalCards - stats.totalUniqueOwned})
               </button>
+              <button
+                onClick={() => setFilterMode('wanted')}
+                className={`px-3 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1 ${
+                  filterMode === 'wanted' 
+                    ? 'bg-pink-600 text-white shadow-sm' 
+                    : 'text-pink-300 hover:text-white'
+                }`}
+                title="Filtrar apenas cartas marcadas na sua Lista de Desejos"
+              >
+                <Heart size={11} className="fill-current" />
+                <span>Desejos ({wantedCountInPool})</span>
+              </button>
+              <button
+                onClick={() => setFilterMode('duplicates')}
+                className={`px-3 py-1 rounded-lg text-xs font-bold transition ${
+                  filterMode === 'duplicates' 
+                    ? 'bg-cyan-600 text-white shadow-sm' 
+                    : 'text-cyan-300 hover:text-white'
+                }`}
+                title="Filtrar cartas com 2 ou mais cópias (disponíveis para troca/venda)"
+              >
+                Repetidas ({duplicatesCountInPool})
+              </button>
             </div>
+
+            <button
+              type="button"
+              onClick={handleCopyCollectorChecklist}
+              className="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-emerald-500/40 text-emerald-300 text-xs font-bold transition flex items-center gap-1.5 shadow-sm active:scale-95 shrink-0"
+              title="Copiar resumo de Lista de Desejos + Cartas Repetidas para WhatsApp/Discord"
+            >
+              <Copy size={13} />
+              <span>Exportar Checklist</span>
+            </button>
 
             {/* FILTRO DE ACABAMENTO FOIL */}
             <div className="flex items-center gap-1.5 bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-xl">
@@ -1216,6 +1346,16 @@ export const AlbumModal: React.FC<AlbumModalProps> = ({ isOpen, onClose, onSelec
                         </div>
                       )}
                     </div>
+
+                    {/* BADGE SE DISPONÍVEL NO MERCADO */}
+                    {isCardAvailableInMarket(card) && (!isOwned || isWanted) && (
+                      <div className="absolute bottom-[106px] left-3 right-3 z-10 pointer-events-none flex justify-center">
+                        <div className="bg-emerald-950/95 border border-emerald-400/70 text-emerald-200 text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full shadow-lg flex items-center gap-1">
+                          <ShoppingCart size={9} className="text-emerald-400" />
+                          <span>À Venda no Mercado!</span>
+                        </div>
+                      </div>
+                    )}
 
                     {/* BADGE DE CARTA ESPECIAL (LIMITADA, EVENTO, RARA) */}
                     {cardSpecial && (
