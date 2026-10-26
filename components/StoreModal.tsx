@@ -33,8 +33,10 @@ import {
   ChevronRight
 } from 'lucide-react';
 import {
+  CardData,
   CartItem,
   ExclusiveProduct,
+  MarketplaceListing,
   ShippingOption,
   StoreOrder,
   StoreProductCategory,
@@ -59,9 +61,11 @@ import {
   isValidCpf,
   lookupCepAddress,
   parseBRLPrice,
+  subscribeMarketplaceListings,
   syncOrderPaymentStatus,
   updateCartItemQuantity
 } from '../storeService';
+import { CommunityMarketplaceView } from './CommunityMarketplaceView';
 
 export type StoreCategoryFilter = 'all' | StoreProductCategory;
 
@@ -187,6 +191,7 @@ interface StoreModalProps {
   isOpen: boolean;
   onClose: () => void;
   products: ExclusiveProduct[];
+  allCards?: CardData[];
   initialTab?: 'vitrine' | 'carrinho';
   initialOrderId?: string | null;
   user?: any;
@@ -201,6 +206,7 @@ export const StoreModal: React.FC<StoreModalProps> = ({
   isOpen,
   onClose,
   products,
+  allCards = [],
   initialTab = 'vitrine',
   initialOrderId,
   user,
@@ -210,6 +216,10 @@ export const StoreModal: React.FC<StoreModalProps> = ({
   onOpenAuth,
   onOpenUserOrders
 }) => {
+  // Store Mode: Official Products vs Community Player Listings
+  const [marketSection, setMarketSection] = useState<'official' | 'community'>('official');
+  const [communityListings, setCommunityListings] = useState<MarketplaceListing[]>([]);
+
   // Store Filter & Search States
   const [selectedCategory, setSelectedCategory] = useState<StoreCategoryFilter>('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -277,6 +287,10 @@ export const StoreModal: React.FC<StoreModalProps> = ({
     setCart(getCartItems());
     fetchStoreSettings().then(setStoreSettings);
 
+    const unsubListings = subscribeMarketplaceListings((list) => {
+      setCommunityListings(list);
+    });
+
     if (initialOrderId) {
       getStoreOrderById(initialOrderId).then((ord) => {
         if (ord) {
@@ -294,6 +308,10 @@ export const StoreModal: React.FC<StoreModalProps> = ({
       setIsCartDrawerOpen(false);
       setCartStep('cart');
     }
+
+    return () => {
+      unsubListings();
+    };
   }, [isOpen, initialTab, initialOrderId]);
 
   // Poll payment status automatically when on 'payment' step and order is pending
@@ -692,7 +710,7 @@ export const StoreModal: React.FC<StoreModalProps> = ({
             <ShieldCheck size={14} className="text-emerald-400 shrink-0" />
             <span className="truncate">
               {storeSettings.storeNotice ||
-                'Loja Oficial Light Dark TCG · Pagamento seguro via Mercado Pago (PIX e Cartão em até 12x) · Envio via Correios, Jadlog e Loggi'}
+                'Mercado Light Dark TCG · Produtos Oficiais & Cartas/Coleções de Jogadores · Pagamento seguro via Mercado Pago'}
             </span>
           </div>
           <div className="font-mono text-xs shrink-0">
@@ -738,54 +756,73 @@ export const StoreModal: React.FC<StoreModalProps> = ({
               />
               <div>
                 <h1 className="text-base sm:text-lg font-black text-white tracking-tight leading-none">
-                  LOJA OFICIAL
+                  MERCADO
                 </h1>
                 <span className="text-[11px] text-emerald-400 font-semibold block mt-0.5">
-                  Light Dark TCG · Produtos Físicos
+                  Light Dark TCG · Produtos Oficiais & Vendas da Comunidade
                 </span>
               </div>
             </div>
           </div>
 
-          {/* Center: Search Bar */}
-          <div className="order-3 md:order-2 w-full md:flex-1 md:max-w-xl relative">
-            <Search
-              size={16}
-              className="text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none"
-            />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Buscar decks, cartas avulsas, playmats, kits, pré-vendas..."
-              className="w-full bg-slate-950 border border-slate-800 focus:border-purple-500 rounded-xl pl-10 pr-9 py-2.5 text-xs sm:text-sm text-white placeholder-slate-500 outline-none transition"
-            />
-            {searchQuery && (
-              <button
-                type="button"
-                onClick={() => setSearchQuery('')}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white"
-              >
-                <X size={14} />
-              </button>
-            )}
+          {/* Center: Mode Switcher (Produtos Oficiais vs Cartas & Coleções de Usuários) */}
+          <div className="order-3 md:order-2 w-full md:w-auto flex flex-wrap items-center gap-2 bg-slate-950 p-1.5 rounded-2xl border border-slate-800">
+            <button
+              type="button"
+              onClick={() => setMarketSection('official')}
+              className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer ${
+                marketSection === 'official'
+                  ? 'bg-purple-600 text-white shadow-md shadow-purple-950/50'
+                  : 'text-slate-300 hover:text-white hover:bg-slate-900'
+              }`}
+            >
+              <Package size={15} />
+              <span>Produtos Oficiais ({activeProducts.length})</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setMarketSection('community')}
+              className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer ${
+                marketSection === 'community'
+                  ? 'bg-emerald-600 text-white shadow-md shadow-emerald-950/50'
+                  : 'text-emerald-300 hover:text-white hover:bg-slate-900'
+              }`}
+            >
+              <Sparkles size={15} />
+              <span>
+                Cartas & Coleções de Jogadores (
+                {communityListings.filter((l) => l.status === 'active' && l.stockQuantity > 0).length}
+                )
+              </span>
+            </button>
           </div>
 
-          {/* Right: Admin Button & Mercado Livre-style Cart Icon */}
-          <div className="order-2 md:order-3 flex items-center gap-2.5">
+          {/* Right: Sell Button, Admin Button & Cart Icon */}
+          <div className="order-2 md:order-3 flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setMarketSection('community')}
+              className="px-3 py-2.5 rounded-xl text-xs font-bold bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/40 transition flex items-center gap-1.5 whitespace-nowrap cursor-pointer"
+              title="Vender suas cartas avulsas ou coleções no Mercado"
+            >
+              <Plus size={14} />
+              <span className="hidden sm:inline">Vender Cartas / Coleção</span>
+            </button>
+
             {isAdmin && onOpenAdminStore && (
               <button
                 type="button"
                 onClick={onOpenAdminStore}
                 className="px-3 py-2.5 rounded-xl text-xs font-bold bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/40 transition flex items-center gap-1.5 whitespace-nowrap cursor-pointer"
-                title="Gerenciar Pedidos, Frete e Produtos no Painel Admin"
+                title="Gerenciar Pedidos, Comissões de 10%, Frete e Produtos no Painel Admin"
               >
                 <Settings size={15} />
-                <span className="hidden lg:inline">Gerenciar Loja</span>
+                <span className="hidden lg:inline">Gerenciar Mercado</span>
               </button>
             )}
 
-            {/* Cart Icon Button (Mercado Livre Style - Icon + Quantity Badge Only) */}
+            {/* Cart Icon Button */}
             <button
               type="button"
               onClick={() => {
@@ -808,43 +845,83 @@ export const StoreModal: React.FC<StoreModalProps> = ({
           </div>
         </div>
 
-        {/* ================= HORIZONTAL CATEGORY BAR ================= */}
-        <div className="max-w-7xl mx-auto mt-3 pt-2.5 border-t border-slate-800/70 flex items-center gap-1.5 overflow-x-auto no-scrollbar">
-          {STORE_CATEGORIES.map((cat) => {
-            const isSelected = selectedCategory === cat.id;
-            const count = categoryCounts[cat.id];
-            return (
-              <button
-                key={cat.id}
-                type="button"
-                onClick={() => setSelectedCategory(cat.id)}
-                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 whitespace-nowrap shrink-0 cursor-pointer ${
-                  isSelected
-                    ? 'bg-purple-600 text-white shadow-md shadow-purple-950/50'
-                    : 'bg-slate-900/70 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-800/80'
-                }`}
-              >
-                {getCategoryIcon(cat.id, 14)}
-                <span>{cat.label}</span>
-                <span
-                  className={`text-[10px] font-mono px-1.5 py-0.2 rounded-md tabular-nums ${
-                    isSelected
-                      ? 'bg-black/30 text-white font-black'
-                      : 'bg-slate-950 text-slate-400'
-                  }`}
+        {/* ================= HORIZONTAL CATEGORY BAR (FOR OFFICIAL PRODUCTS) ================= */}
+        {marketSection === 'official' && (
+          <div className="max-w-7xl mx-auto mt-3 pt-2.5 border-t border-slate-800/70 flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+              {STORE_CATEGORIES.map((cat) => {
+                const isSelected = selectedCategory === cat.id;
+                const count = categoryCounts[cat.id];
+                return (
+                  <button
+                    key={cat.id}
+                    type="button"
+                    onClick={() => setSelectedCategory(cat.id)}
+                    className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 whitespace-nowrap shrink-0 cursor-pointer ${
+                      isSelected
+                        ? 'bg-purple-600 text-white shadow-md shadow-purple-950/50'
+                        : 'bg-slate-900/70 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-800/80'
+                    }`}
+                  >
+                    {getCategoryIcon(cat.id, 14)}
+                    <span>{cat.label}</span>
+                    <span
+                      className={`text-[10px] font-mono px-1.5 py-0.2 rounded-md tabular-nums ${
+                        isSelected
+                          ? 'bg-black/30 text-white font-black'
+                          : 'bg-slate-950 text-slate-400'
+                      }`}
+                    >
+                      {count}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="relative w-full sm:w-72">
+              <Search
+                size={14}
+                className="text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
+              />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Buscar produto oficial..."
+                className="w-full bg-slate-950 border border-slate-800 focus:border-purple-500 rounded-xl pl-9 pr-8 py-1.5 text-xs text-white placeholder-slate-500 outline-none transition"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white"
                 >
-                  {count}
-                </span>
-              </button>
-            );
-          })}
-        </div>
+                  <X size={13} />
+                </button>
+              )}
+            </div>
+          </div>
+        )}
       </header>
 
       {/* ================= MAIN FULL-PAGE STORE BODY ================= */}
       <div className="flex-1 overflow-y-auto custom-scrollbar">
         <div className="max-w-7xl mx-auto px-4 sm:px-8 py-6 sm:py-8">
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+          {marketSection === 'community' ? (
+            <CommunityMarketplaceView
+              listings={communityListings}
+              allCards={allCards}
+              user={user}
+              isAdmin={isAdmin}
+              onOpenAuth={onOpenAuth}
+              onOpenCartDrawer={() => {
+                setCartStep('cart');
+                setIsCartDrawerOpen(true);
+              }}
+            />
+          ) : (
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
             {/* LEFT SIDEBAR: FILTERS & QUICK SHIPPING SIMULATOR (3 COLS ON DESKTOP) */}
             <aside className="lg:col-span-3 space-y-5">
               {/* Categories Filter Card */}
@@ -1355,6 +1432,7 @@ export const StoreModal: React.FC<StoreModalProps> = ({
               )}
             </main>
           </div>
+          )}
         </div>
       </div>
 

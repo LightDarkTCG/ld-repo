@@ -77,12 +77,22 @@ export const AdminStoreManager: React.FC = () => {
       (o) => !['shipped', 'delivered', 'cancelled'].includes(o.orderStatus)
     ).length;
     const preOrdersCount = approved.filter((o) => o.hasPreOrderItems).length;
+    const platformCommissionEarned = approved.reduce(
+      (acc, o) => acc + (o.platformCommissionTotal || 0),
+      0
+    );
+    const pendingSellerPayouts = approved
+      .filter((o) => o.hasCommunityItems && o.sellerPayoutStatus !== 'paid_out')
+      .reduce((acc, o) => acc + (o.sellerPayoutTotal || 0), 0);
+
     return {
       totalOrders: orders.length,
       approvedCount: approved.length,
       totalRevenue,
       pendingShipment,
-      preOrdersCount
+      preOrdersCount,
+      platformCommissionEarned,
+      pendingSellerPayouts
     };
   }, [orders]);
 
@@ -230,9 +240,11 @@ export const AdminStoreManager: React.FC = () => {
       {/* Sub-navigation */}
       <div className="flex flex-wrap items-center justify-between gap-4 bg-slate-900 p-4 rounded-xl border border-slate-800">
         <div>
-          <h3 className="text-lg font-black text-white">Central da Loja Oficial, Pré-Vendas & Frete</h3>
+          <h3 className="text-lg font-black text-white">
+            Central do Mercado, Comissões (10%), Pré-Vendas & Frete
+          </h3>
           <p className="text-xs text-slate-400">
-            Gerencie pedidos pagos via Mercado Pago, etiquetas de envio dos Correios, códigos de rastreio e tabelas de frete.
+            Gerencie pedidos pagos via Mercado Pago, comissões de 10% sobre vendas de jogadores, repasses PIX (90%) e tabelas de frete.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -246,7 +258,7 @@ export const AdminStoreManager: React.FC = () => {
             }`}
           >
             <Package size={15} />
-            <span>Pedidos & Envios ({orders.length})</span>
+            <span>Pedidos & Repasses ({orders.length})</span>
           </button>
           <button
             type="button"
@@ -266,7 +278,7 @@ export const AdminStoreManager: React.FC = () => {
       {subTab === 'orders' ? (
         <div className="space-y-6">
           {/* KPI Summary Strip */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
             <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
               <div className="text-xs text-slate-400">Receita Aprovada</div>
               <div className="text-2xl font-black font-mono text-emerald-400 tabular-nums mt-1">
@@ -277,12 +289,22 @@ export const AdminStoreManager: React.FC = () => {
               </div>
             </div>
 
-            <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
-              <div className="text-xs text-slate-400">Reservas de Pré-Venda</div>
-              <div className="text-2xl font-black font-mono text-purple-300 tabular-nums mt-1">
-                {stats.preOrdersCount}
+            <div className="bg-slate-900 border border-emerald-500/40 rounded-xl p-4">
+              <div className="text-xs text-emerald-300 font-bold">Sua Comissão (10% Vendas)</div>
+              <div className="text-2xl font-black font-mono text-emerald-400 tabular-nums mt-1">
+                {formatBRL(stats.platformCommissionEarned)}
               </div>
-              <div className="text-[11px] text-slate-500 mt-0.5">Pagos / Reservados</div>
+              <div className="text-[11px] text-slate-400 mt-0.5">
+                Retido na sua conta Mercado Pago
+              </div>
+            </div>
+
+            <div className="bg-slate-900 border border-amber-500/40 rounded-xl p-4">
+              <div className="text-xs text-amber-300 font-bold">Repasses PIX (90%) Pendentes</div>
+              <div className="text-2xl font-black font-mono text-amber-300 tabular-nums mt-1">
+                {formatBRL(stats.pendingSellerPayouts)}
+              </div>
+              <div className="text-[11px] text-slate-400 mt-0.5">A transferir p/ vendedores</div>
             </div>
 
             <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
@@ -507,6 +529,66 @@ export const AdminStoreManager: React.FC = () => {
                               {ord.shippingCost === 0 ? 'GRÁTIS' : formatBRL(ord.shippingCost)}
                             </span>
                           </div>
+
+                          {/* Breakdown de Comissão de 10% caso haja itens da comunidade */}
+                          {ord.hasCommunityItems && (
+                            <div className="mt-2 pt-2 border-t border-emerald-500/30 bg-emerald-950/20 rounded-lg p-2.5 space-y-1.5">
+                              <div className="text-[11px] font-black uppercase text-emerald-300">
+                                Venda da Comunidade (Divisão 10% / 90%)
+                              </div>
+                              <div className="flex justify-between text-amber-300 text-[11px]">
+                                <span>Sua Comissão (10% do site):</span>
+                                <span className="font-mono font-bold">
+                                  {formatBRL(ord.platformCommissionTotal || 0)}
+                                </span>
+                              </div>
+                              <div className="flex justify-between text-emerald-400 text-[11px]">
+                                <span>Repasse ao Vendedor (90%):</span>
+                                <span className="font-mono font-bold">
+                                  {formatBRL(ord.sellerPayoutTotal || 0)}
+                                </span>
+                              </div>
+                              {ord.items
+                                .filter((i) => i.isCommunityListing && i.sellerPixKey)
+                                .map((i, sIdx) => (
+                                  <div
+                                    key={sIdx}
+                                    className="text-[10px] text-slate-300 bg-slate-900/90 p-1.5 rounded border border-slate-800 flex items-center justify-between gap-1"
+                                  >
+                                    <span className="truncate">
+                                      PIX ({i.sellerName}): <strong className="font-mono text-white">{i.sellerPixKey}</strong>
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => navigator.clipboard.writeText(i.sellerPixKey || '')}
+                                      className="px-1.5 py-0.5 rounded bg-purple-600/30 text-purple-200 hover:bg-purple-600/50 shrink-0"
+                                    >
+                                      Copiar PIX
+                                    </button>
+                                  </div>
+                                ))}
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  updateStoreOrderFields(ord.id, {
+                                    sellerPayoutStatus:
+                                      ord.sellerPayoutStatus === 'paid_out'
+                                        ? 'pending_payout'
+                                        : 'paid_out'
+                                  })
+                                }
+                                className={`w-full py-1.5 rounded-lg text-[11px] font-bold transition ${
+                                  ord.sellerPayoutStatus === 'paid_out'
+                                    ? 'bg-emerald-600 text-white'
+                                    : 'bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 border border-amber-500/40'
+                                }`}
+                              >
+                                {ord.sellerPayoutStatus === 'paid_out'
+                                  ? '✓ Repasse de 90% Realizado ao Vendedor'
+                                  : 'Marcar Repasse de 90% como Pago'}
+                              </button>
+                            </div>
+                          )}
                         </div>
                       </div>
 

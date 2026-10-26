@@ -1784,6 +1784,7 @@ export default function App() {
         isOpen={isBuyModalOpen}
         onClose={closeCurrentModal}
         products={homeSettings?.exclusiveProducts || []}
+        allCards={allCards}
         onOpenProductDetail={(product, variationIdx) => {
           navigateToModal(() => {
             setSelectedProduct(product);
@@ -1979,7 +1980,7 @@ export default function App() {
                 }}
                 className="relative bg-emerald-500 hover:bg-emerald-400 text-slate-950 px-3.5 py-1.5 rounded-lg text-xs font-black transition-all duration-200 flex items-center gap-1.5 shadow-sm shadow-emerald-900/40 active:scale-95 whitespace-nowrap"
               >
-                <Package size={14} className="text-slate-950" /> Loja Oficial
+                <Package size={14} className="text-slate-950" /> Mercado
               </button>
               <button
                 onClick={() => {
@@ -2244,7 +2245,7 @@ export default function App() {
                     }}
                     className="flex-1 bg-emerald-500 hover:bg-emerald-400 text-slate-950 px-3.5 py-2 rounded-lg text-xs font-black transition flex items-center justify-center gap-2 shadow-sm"
                   >
-                    <Package size={15} className="text-slate-950" /> Loja Oficial
+                    <Package size={15} className="text-slate-950" /> Mercado
                   </button>
                   <button
                     onClick={() => {

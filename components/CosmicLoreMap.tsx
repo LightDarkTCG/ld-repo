@@ -5,7 +5,7 @@ import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment
 import {
   Compass, Sparkles, Plus, Edit3, Trash2, X, ChevronRight, ChevronLeft, ChevronUp, ChevronDown,
   ArrowUp, ArrowDown, Upload, Film, Image as ImageIcon, Type, Quote, Layers, Move3d, RotateCcw,
-  Maximize2, Minimize2, BookOpen, Search, Check, Loader2, Eye, EyeOff, Shield, Flame, Orbit
+  Maximize2, Minimize2, BookOpen, Search, Check, Loader2, Eye, EyeOff, Shield, Flame, Orbit, Clock
 } from 'lucide-react';
 import { CardData } from '../types';
 import { collectionsList } from '../data';
@@ -17,6 +17,15 @@ export interface LoreContentBlock {
   caption?: string;
   mediaUrl?: string;
   mediaList?: { url: string; caption?: string; type?: 'image' | 'video' }[];
+}
+
+export interface CosmicLocationTimelineEvent {
+  id: string;
+  dateLabel: string;
+  title: string;
+  description: string;
+  mediaUrl?: string;
+  mediaType?: 'image' | 'video';
 }
 
 export type CosmicPlaneId = 'macroverso_13' | 'paralelo_corrupcao' | 'rede_do_caos';
@@ -90,6 +99,7 @@ export interface CosmicNodeData {
   coverImageUrl?: string;
   summary: string;
   blocks: LoreContentBlock[];
+  timelineEvents?: CosmicLocationTimelineEvent[];
   linkedCardCodes?: string[];
   linkedArchetypes?: string[];
   linkedCollections?: string[];
@@ -143,39 +153,39 @@ export const PLANE_DEFINITIONS: {
     id: 'macroverso_13',
     label: 'Macroverso 13',
     shortLabel: 'Macroverso 13',
-    description: 'Plano material e cósmico onde orbitam o Universo Primordial, os universos paralelos e as fronteiras exteriores.',
+    description: 'Plano principal do Macroverso 13.',
     accentColor: '#d4af37'
   },
   {
     id: 'paralelo_corrupcao',
     label: 'Paralelo da Corrupção',
     shortLabel: 'Corrupção (Asmonious)',
-    description: 'Plano paralelo abissal regido por Asmonious, acessado através dos Poços da Corrupção espalhados pelo Macroverso.',
+    description: 'Plano paralelo da Corrupção.',
     accentColor: '#ef4444'
   },
   {
     id: 'rede_do_caos',
     label: 'Rede do Caos',
     shortLabel: 'Rede do Caos',
-    description: 'Plano paralelo de conduítes e fendas dimensionais que interliga as incursões da força do Caos.',
+    description: 'Plano paralelo da Rede do Caos.',
     accentColor: '#a855f7'
   },
   {
     id: 'all',
     label: 'Visão Multidimensional (Todos)',
     shortLabel: 'Todos os Planos',
-    description: 'Sobreposição simultânea do Macroverso 13, do Paralelo da Corrupção e da Rede do Caos.',
+    description: 'Visualização simultânea de todos os planos.',
     accentColor: '#38bdf8'
   }
 ];
 
 const WANDERING_POCKET_WAYPOINTS: { x: number; y: number; z: number; sectorName: string }[] = [
-  { x: 16, y: 9, z: -15, sectorName: 'Órbita Oculta de Lúmeni' },
-  { x: -30, y: 12, z: 10, sectorName: 'Quadrante Nebular Oeste' },
-  { x: 34, y: -5, z: 19, sectorName: 'Fronteira dos Poços Abissais' },
-  { x: -16, y: 14, z: 32, sectorName: 'Corredor do Festival' },
-  { x: 40, y: 12, z: -22, sectorName: 'Periferia do Setor Tecma' },
-  { x: -24, y: -7, z: -28, sectorName: 'Sombra da Fronteira Norte' }
+  { x: 16, y: 9, z: -15, sectorName: 'Setor 1' },
+  { x: -30, y: 12, z: 10, sectorName: 'Setor 2' },
+  { x: 34, y: -5, z: 19, sectorName: 'Setor 3' },
+  { x: -16, y: 14, z: 32, sectorName: 'Setor 4' },
+  { x: 40, y: 12, z: -22, sectorName: 'Setor 5' },
+  { x: -24, y: -7, z: -28, sectorName: 'Setor 6' }
 ];
 
 // Helper to compute polar sector centroid in 3D space
@@ -214,51 +224,51 @@ const makePolarSector = (
   };
 };
 
-// Complete Helldivers-Style Polar Sector Grid (4 Concentric Rings with Staggered Angular Wedges)
+// Complete Polar Sector Grid — Numbered strictly Setor 1 to Setor 36
 export const DEFAULT_COSMIC_TERRITORIES: CosmicTerritoryData[] = [
-  // ANEL 1 (Núcleo Interior: r = 10..23) — 7 Setores
-  makePolarSector('sec_r1_1', 'Setor Lúmeni', 1, 10, 23, 0, 52, 'Aliança', 100),
-  makePolarSector('sec_r1_2', 'Setor Coroa Solar', 1, 10, 23, 52, 104, 'Caos', 88),
-  makePolarSector('sec_r1_3', 'Setor Sagan', 1, 10, 23, 104, 156, 'Neutro', 0),
-  makePolarSector('sec_r1_4', 'Setor Gothmar', 1, 10, 23, 156, 208, 'Neutro', 0),
-  makePolarSector('sec_r1_5', 'Setor Marspira', 1, 10, 23, 208, 260, 'Asmonious', 94),
-  makePolarSector('sec_r1_6', 'Setor Talus', 1, 10, 23, 260, 310, 'Neutro', 0),
-  makePolarSector('sec_r1_7', 'Setor Iptus', 1, 10, 23, 310, 360, 'Aliança', 92),
+  // ANEL 1 (r = 10..23) — Setor 1 a Setor 7
+  makePolarSector('sec_r1_1', 'Setor 1', 1, 10, 23, 0, 52, 'Aliança', 100),
+  makePolarSector('sec_r1_2', 'Setor 2', 1, 10, 23, 52, 104, 'Caos', 88),
+  makePolarSector('sec_r1_3', 'Setor 3', 1, 10, 23, 104, 156, 'Neutro', 0),
+  makePolarSector('sec_r1_4', 'Setor 4', 1, 10, 23, 156, 208, 'Neutro', 0),
+  makePolarSector('sec_r1_5', 'Setor 5', 1, 10, 23, 208, 260, 'Asmonious', 94),
+  makePolarSector('sec_r1_6', 'Setor 6', 1, 10, 23, 260, 310, 'Neutro', 0),
+  makePolarSector('sec_r1_7', 'Setor 7', 1, 10, 23, 310, 360, 'Aliança', 92),
 
-  // ANEL 2 (Quadrante Médio-Interno: r = 23..37) — 9 Setores (ângulos defasados em degrau estilo Helldivers)
-  makePolarSector('sec_r2_1', 'Setor Fallen', 2, 23, 37, 14, 54, 'Aliança', 95),
-  makePolarSector('sec_r2_2', 'Setor Fenda Rubra', 2, 23, 37, 54, 94, 'Asmonious', 96),
-  makePolarSector('sec_r2_3', 'Setor Rictus', 2, 23, 37, 94, 134, 'Caos', 92),
-  makePolarSector('sec_r2_4', 'Setor Saleria', 2, 23, 37, 134, 174, 'Neutro', 0),
-  makePolarSector('sec_r2_5', 'Setor Meridian', 2, 23, 37, 174, 214, 'Neutro', 0),
-  makePolarSector('sec_r2_6', 'Setor Hydra', 2, 23, 37, 214, 254, 'Asmonious', 98),
-  makePolarSector('sec_r2_7', 'Setor Claire', 2, 23, 37, 254, 294, 'Asmonious', 89),
-  makePolarSector('sec_r2_8', 'Setor Artur', 2, 23, 37, 294, 334, 'Neutro', 0),
-  makePolarSector('sec_r2_9', 'Setor Falstaff', 2, 23, 37, 334, 374, 'Aliança', 90),
+  // ANEL 2 (r = 23..37) — Setor 8 a Setor 16
+  makePolarSector('sec_r2_1', 'Setor 8', 2, 23, 37, 14, 54, 'Aliança', 95),
+  makePolarSector('sec_r2_2', 'Setor 9', 2, 23, 37, 54, 94, 'Asmonious', 96),
+  makePolarSector('sec_r2_3', 'Setor 10', 2, 23, 37, 94, 134, 'Caos', 92),
+  makePolarSector('sec_r2_4', 'Setor 11', 2, 23, 37, 134, 174, 'Neutro', 0),
+  makePolarSector('sec_r2_5', 'Setor 12', 2, 23, 37, 174, 214, 'Neutro', 0),
+  makePolarSector('sec_r2_6', 'Setor 13', 2, 23, 37, 214, 254, 'Asmonious', 98),
+  makePolarSector('sec_r2_7', 'Setor 14', 2, 23, 37, 254, 294, 'Asmonious', 89),
+  makePolarSector('sec_r2_8', 'Setor 15', 2, 23, 37, 294, 334, 'Neutro', 0),
+  makePolarSector('sec_r2_9', 'Setor 16', 2, 23, 37, 334, 374, 'Aliança', 90),
 
-  // ANEL 3 (Quadrante Médio-Externo: r = 37..51) — 10 Setores
-  makePolarSector('sec_r3_1', 'Setor Forja Von', 3, 37, 51, 0, 36, 'Aliança', 96),
-  makePolarSector('sec_r3_2', 'Setor Orla Sudeste', 3, 37, 51, 36, 72, 'Asmonious', 92),
-  makePolarSector('sec_r3_3', 'Setor Hanzo', 3, 37, 51, 72, 108, 'Caos', 85),
-  makePolarSector('sec_r3_4', 'Setor Akira', 3, 37, 51, 108, 144, 'Neutro', 0),
-  makePolarSector('sec_r3_5', 'Setor Arkham', 3, 37, 51, 144, 180, 'Neutro', 0),
-  makePolarSector('sec_r3_6', 'Setor Vigilantes', 3, 37, 51, 180, 216, 'Neutro', 0),
-  makePolarSector('sec_r3_7', 'Setor Andrômeda', 3, 37, 51, 216, 252, 'Asmonious', 95),
-  makePolarSector('sec_r3_8', 'Setor Lacaille', 3, 37, 51, 252, 288, 'Asmonious', 91),
-  makePolarSector('sec_r3_9', 'Setor Tanis', 3, 37, 51, 288, 324, 'Asmonious', 87),
-  makePolarSector('sec_r3_10', 'Setor Draco', 3, 37, 51, 324, 360, 'Aliança', 94),
+  // ANEL 3 (r = 37..51) — Setor 17 a Setor 26
+  makePolarSector('sec_r3_1', 'Setor 17', 3, 37, 51, 0, 36, 'Aliança', 96),
+  makePolarSector('sec_r3_2', 'Setor 18', 3, 37, 51, 36, 72, 'Asmonious', 92),
+  makePolarSector('sec_r3_3', 'Setor 19', 3, 37, 51, 72, 108, 'Caos', 85),
+  makePolarSector('sec_r3_4', 'Setor 20', 3, 37, 51, 108, 144, 'Neutro', 0),
+  makePolarSector('sec_r3_5', 'Setor 21', 3, 37, 51, 144, 180, 'Neutro', 0),
+  makePolarSector('sec_r3_6', 'Setor 22', 3, 37, 51, 180, 216, 'Neutro', 0),
+  makePolarSector('sec_r3_7', 'Setor 23', 3, 37, 51, 216, 252, 'Asmonious', 95),
+  makePolarSector('sec_r3_8', 'Setor 24', 3, 37, 51, 252, 288, 'Asmonious', 91),
+  makePolarSector('sec_r3_9', 'Setor 25', 3, 37, 51, 288, 324, 'Asmonious', 87),
+  makePolarSector('sec_r3_10', 'Setor 26', 3, 37, 51, 324, 360, 'Aliança', 94),
 
-  // ANEL 4 (Orla Extrema do Macroverso: r = 51..65) — 10 Setores
-  makePolarSector('sec_r4_1', 'Setor Sten', 4, 51, 65, 18, 54, 'Aliança', 91),
-  makePolarSector('sec_r4_2', 'Setor Farsight', 4, 51, 65, 54, 90, 'Neutro', 0),
-  makePolarSector('sec_r4_3', 'Setor Omega', 4, 51, 65, 90, 126, 'Caos', 84),
-  makePolarSector('sec_r4_4', 'Setor Festival', 4, 51, 65, 126, 162, 'Neutro', 0),
-  makePolarSector('sec_r4_5', 'Setor Quintus', 4, 51, 65, 162, 198, 'Neutro', 0),
-  makePolarSector('sec_r4_6', 'Setor Ymir', 4, 51, 65, 198, 234, 'Neutro', 0),
-  makePolarSector('sec_r4_7', 'Setor Valdis', 4, 51, 65, 234, 270, 'Asmonious', 100),
-  makePolarSector('sec_r4_8', 'Setor Selo do Nada', 4, 51, 65, 270, 306, 'Neutro', 0),
-  makePolarSector('sec_r4_9', 'Setor Tecma ARC', 4, 51, 65, 306, 342, 'Aliança', 97),
-  makePolarSector('sec_r4_10', 'Setor Lestrade', 4, 51, 65, 342, 378, 'Aliança', 93)
+  // ANEL 4 (r = 51..65) — Setor 27 a Setor 36
+  makePolarSector('sec_r4_1', 'Setor 27', 4, 51, 65, 18, 54, 'Aliança', 91),
+  makePolarSector('sec_r4_2', 'Setor 28', 4, 51, 65, 54, 90, 'Neutro', 0),
+  makePolarSector('sec_r4_3', 'Setor 29', 4, 51, 65, 90, 126, 'Caos', 84),
+  makePolarSector('sec_r4_4', 'Setor 30', 4, 51, 65, 126, 162, 'Neutro', 0),
+  makePolarSector('sec_r4_5', 'Setor 31', 4, 51, 65, 162, 198, 'Neutro', 0),
+  makePolarSector('sec_r4_6', 'Setor 32', 4, 51, 65, 198, 234, 'Neutro', 0),
+  makePolarSector('sec_r4_7', 'Setor 33', 4, 51, 65, 234, 270, 'Asmonious', 100),
+  makePolarSector('sec_r4_8', 'Setor 34', 4, 51, 65, 270, 306, 'Neutro', 0),
+  makePolarSector('sec_r4_9', 'Setor 35', 4, 51, 65, 306, 342, 'Aliança', 97),
+  makePolarSector('sec_r4_10', 'Setor 36', 4, 51, 65, 342, 378, 'Aliança', 93)
 ];
 
 export const DEFAULT_COSMIC_NODES: CosmicNodeData[] = [
@@ -266,7 +276,7 @@ export const DEFAULT_COSMIC_NODES: CosmicNodeData[] = [
   {
     id: 'node_universo_principal',
     name: 'Universo Primordial',
-    subtitle: 'Eixo Central · Lúmeni, Reinos Élficos & Os Destinados',
+    subtitle: '',
     planeId: 'macroverso_13',
     category: 'universo_principal',
     visualType: 'spiral_galaxy',
@@ -284,47 +294,20 @@ export const DEFAULT_COSMIC_NODES: CosmicNodeData[] = [
       'node_castelo_extraverso'
     ],
     coverImageUrl: 'https://i.imgur.com/mwRZMe9.png',
-    summary:
-      'A grande galáxia espiral no coração do Macroverso 13. É neste mesmo universo primordial que coexistem o reino de Lúmeni e o conflito entre Lúmens e Darkus liderado por Mahina, a tragédia élfica de Jim durante a Noite da Ruptura e a jornada de seu filho Jenos ao lado da nova geração de Destinados.',
-    customStats: [
-      { label: 'Posição Astral', value: 'Centro do Macroverso 13' },
-      { label: 'Núcleos Históricos', value: 'Lúmeni, Reino Élfico & Santuário das Gemas' },
-      { label: 'Linhagens Centrais', value: 'Mahina, Jim, Jenos, Eizen & Viorie' },
-      { label: 'Relíquias', value: 'Cristal do Equilíbrio, Crueldade & Espada Macroversal' }
-    ],
+    summary: 'Lore será preenchida em breve',
+    customStats: [],
     linkedCollections: ['Herdeiro do Caos', 'Insanis', 'Príncipe do Macroverso'],
     linkedArchetypes: [],
     linkedCardCodes: [],
-    cosmologyVersion: 6,
+    timelineEvents: [],
+    cosmologyVersion: 7,
     orderIndex: 0,
-    blocks: [
-      {
-        id: 'b_up_1',
-        type: 'heading',
-        text: 'A Galáxia Central de Lúmeni e dos Reinos Élficos'
-      },
-      {
-        id: 'b_up_2',
-        type: 'paragraph',
-        text: 'No centro do Macroverso 13 brilha o Universo Primordial. Foi em seus mundos que a guerra milenar entre Lúmens e Darkus moldou o destino do jovem príncipe Mahina e de seus irmãos sob a sombra do Grande Sábio. Ao mesmo tempo, este universo testemunhou a queda do reino élfico de Jim na Noite da Ruptura, quando a perda de sua família o levou a empunhar a rapieira Crueldade e abrir fendas para absorver suas próprias variantes.'
-      },
-      {
-        id: 'b_up_3',
-        type: 'quote',
-        text: 'Das cinzas do trono visível e da loucura das variantes, ergueram-se tanto o Cristal do Equilíbrio de Mahina quanto a Espada das Doze Gemas empunhada por Jenos.',
-        caption: 'Registros Imperiais do Universo Primordial'
-      },
-      {
-        id: 'b_up_4',
-        type: 'paragraph',
-        text: 'Mais tarde, foi também neste universo que Jenos — filho de Jim e Selena — reuniu aliados como Sienna, Liza, Raito e Kurai para enfrentar as incursões que ameaçavam toda a existência.'
-      }
-    ]
+    blocks: []
   },
   {
     id: 'node_universo_deusa_lua',
     name: 'Claire de Lune',
-    subtitle: 'Galáxia das Quatro Luas · Panteão Celestial de Selena',
+    subtitle: '',
     planeId: 'macroverso_13',
     category: 'universo_paralelo',
     visualType: 'spiral_galaxy',
@@ -339,36 +322,20 @@ export const DEFAULT_COSMIC_NODES: CosmicNodeData[] = [
       'node_castelo_extraverso'
     ],
     coverImageUrl: 'https://i.imgur.com/NRJ4RxO.png',
-    summary:
-      'Uma galáxia espiral prateada banhada pelo luar eterno e regida por divindades ancestrais como Zeus, Hefesto, Héstia e Hades. Em Claire de Lune, Selena reinou entre seus devotos ao lado de Yatija e do Dragão Negro Ancião antes de despertar suas memórias primordiais.',
-    customStats: [
-      { label: 'Órbita', value: 'Quadrante Interior Oeste' },
-      { label: 'Regente', value: 'Selena' },
-      { label: 'Panteão', value: 'Zeus, Hefesto, Héstia & Hades' },
-      { label: 'Guardiões', value: 'Samanosuke, Yatija & Dragão Negro Ancião' }
-    ],
+    summary: 'Lore será preenchida em breve',
+    customStats: [],
     linkedCollections: ['Deusa da Lua'],
     linkedArchetypes: [],
     linkedCardCodes: [],
-    cosmologyVersion: 6,
+    timelineEvents: [],
+    cosmologyVersion: 7,
     orderIndex: 1,
-    blocks: [
-      {
-        id: 'b_dl_1',
-        type: 'heading',
-        text: 'O Reino Sob as Quatro Luas'
-      },
-      {
-        id: 'b_dl_2',
-        type: 'paragraph',
-        text: 'Nos mundos sagrados de Claire de Lune, templos erguidos sob quatro luas veneravam a serenidade até a traição de Samanosuke e as conspirações de Hades. Quando o sangue tingiu o firmamento na noite da Lua de Sangue, Selena recobrou a plenitude de sua essência como o Conceito da Criação.'
-      }
-    ]
+    blocks: []
   },
   {
     id: 'node_universo_chamas',
     name: 'Fallen Gods',
-    subtitle: 'Espiral Vulcânica · Domínio do Fogo Primordial',
+    subtitle: '',
     planeId: 'macroverso_13',
     category: 'universo_paralelo',
     visualType: 'spiral_galaxy',
@@ -383,36 +350,20 @@ export const DEFAULT_COSMIC_NODES: CosmicNodeData[] = [
       'node_festival_torneio'
     ],
     coverImageUrl: 'https://i.imgur.com/71f2OFs.png',
-    summary:
-      'Galáxia incandescente marcada por tempestades solares, mares de magma e pelo aço flamejante de Donnie — o guerreiro que uniu sua alma ao próprio Fogo Primordial — ao lado de Shenua e de sua filha Talenia.',
-    customStats: [
-      { label: 'Órbita', value: 'Setor Ígneo Leste' },
-      { label: 'Avatar Dominante', value: 'Donnie' },
-      { label: 'Linhagem', value: 'Donnie, Shenua & Talenia' },
-      { label: 'Natureza Elemental', value: 'Chamas Primordiais & Cinzas' }
-    ],
+    summary: 'Lore será preenchida em breve',
+    customStats: [],
     linkedCollections: ['Mundo em Chamas'],
     linkedArchetypes: [],
     linkedCardCodes: [],
-    cosmologyVersion: 6,
+    timelineEvents: [],
+    cosmologyVersion: 7,
     orderIndex: 2,
-    blocks: [
-      {
-        id: 'b_mc_1',
-        type: 'heading',
-        text: 'As Forjas de Cinza e Supernova'
-      },
-      {
-        id: 'b_mc_2',
-        type: 'paragraph',
-        text: 'Nos sistemas estelares de Fallen Gods, o calor jamais cessa. Enquanto Donnie canalizava o Fogo Primordial como uma força de devastação capaz de consumir exércitos inteiros, sua filha Talenia demonstrou que a mesma chama ancestral podia restaurar e proteger a vida.'
-      }
-    ]
+    blocks: []
   },
   {
     id: 'node_universo_heroico',
     name: 'Universo Heróico',
-    subtitle: 'Galáxia dos Vigilantes · Bastião dos Superseres',
+    subtitle: '',
     planeId: 'macroverso_13',
     category: 'universo_paralelo',
     visualType: 'spiral_galaxy',
@@ -421,35 +372,20 @@ export const DEFAULT_COSMIC_NODES: CosmicNodeData[] = [
     scale: 1.35,
     position: { x: -46, y: 5, z: -8 },
     connectedNodeIds: ['node_universo_principal', 'node_universo_arkham', 'node_universo_deusa_lua'],
-    summary:
-      'Uma galáxia vibrante onde metrópoles monumentais são defendidas por ligas de heróis, campeões despertos e sentinelas juramentados a proteger os inocentes contra ameaças cósmicas e tiranos interplanetários.',
-    customStats: [
-      { label: 'Órbita', value: 'Setor Ocidental de Defesa' },
-      { label: 'Força Dominante', value: 'Aliança dos Campeões & Vigilantes' },
-      { label: 'Característica', value: 'Metrópoles Futuristas & Superseres' }
-    ],
+    summary: 'Lore será preenchida em breve',
+    customStats: [],
     linkedCollections: [],
     linkedArchetypes: [],
     linkedCardCodes: [],
-    cosmologyVersion: 6,
+    timelineEvents: [],
+    cosmologyVersion: 7,
     orderIndex: 3,
-    blocks: [
-      {
-        id: 'b_uh_1',
-        type: 'heading',
-        text: 'A Era dos Campeões'
-      },
-      {
-        id: 'b_uh_2',
-        type: 'paragraph',
-        text: 'No Universo Heróico, indivíduos dotados de dádivas extraordinárias erguem-se como faróis de esperança. Suas cidades reluzentes funcionam como fortalezas estratégicas da Aliança contra as incursões do Caos e de Asmonious.'
-      }
-    ]
+    blocks: []
   },
   {
     id: 'node_universo_arkham',
     name: 'Universo Arkham',
-    subtitle: 'Galáxia Noturna · Sombras, Asilos & Mistérios Ocultos',
+    subtitle: '',
     planeId: 'macroverso_13',
     category: 'universo_paralelo',
     visualType: 'spiral_galaxy',
@@ -458,35 +394,20 @@ export const DEFAULT_COSMIC_NODES: CosmicNodeData[] = [
     scale: 1.35,
     position: { x: -44, y: -3, z: 22 },
     connectedNodeIds: ['node_universo_principal', 'node_universo_heroico', 'node_festival_torneio'],
-    summary:
-      'Um universo envolto em névoa perpétua, arquitetura gótica e segredos psicológicos sombrios. Em suas metrópoles noturnas e asilos interditados, detetives implacáveis, mentes criminosas e horrores ocultos travam uma guerra silenciosa nas sombras.',
-    customStats: [
-      { label: 'Órbita', value: 'Quadrante Sombrio Sudoeste' },
-      { label: 'Atmosfera', value: 'Noite Perpétua & Investigação Oculta' },
-      { label: 'Domínios', value: 'Metrópoles Góticas & Asilos de Contenção' }
-    ],
+    summary: 'Lore será preenchida em breve',
+    customStats: [],
     linkedCollections: [],
     linkedArchetypes: [],
     linkedCardCodes: [],
-    cosmologyVersion: 6,
+    timelineEvents: [],
+    cosmologyVersion: 7,
     orderIndex: 4,
-    blocks: [
-      {
-        id: 'b_ua_1',
-        type: 'heading',
-        text: 'Onde a Razão Caminha no Fio da Navalha'
-      },
-      {
-        id: 'b_ua_2',
-        type: 'paragraph',
-        text: 'Sob céus carregados de chuva e dirigíveis de vigilância, o Universo Arkham abriga tanto vigilantes das sombras quanto mentes brilhantes consumidas pela obsessão e pelo abismo.'
-      }
-    ]
+    blocks: []
   },
   {
     id: 'node_fabrica_von',
     name: 'Fábrica do Von',
-    subtitle: 'Galáxia Forja · Complexo de Engenharia & Evolução',
+    subtitle: '',
     planeId: 'macroverso_13',
     category: 'universo_paralelo',
     visualType: 'spiral_galaxy',
@@ -495,35 +416,20 @@ export const DEFAULT_COSMIC_NODES: CosmicNodeData[] = [
     scale: 1.35,
     position: { x: 48, y: 2, z: 6 },
     connectedNodeIds: ['node_universo_mechs', 'node_universo_chamas', 'node_nave_gina'],
-    summary:
-      'Um colossal complexo galáctico transformado em forja industrial e laboratório de evolução tecnológica. Aqui, reatores estelares alimentam linhas de montagem planetárias, autômatos de guerra e os experimentos visionários de Von.',
-    customStats: [
-      { label: 'Órbita', value: 'Corredor Industrial Leste' },
-      { label: 'Regente / Arquiteto', value: 'Von' },
-      { label: 'Especialidade', value: 'Engenharia Bélica, Autômatos & Evolução' }
-    ],
+    summary: 'Lore será preenchida em breve',
+    customStats: [],
     linkedCollections: [],
     linkedArchetypes: [],
     linkedCardCodes: [],
-    cosmologyVersion: 6,
+    timelineEvents: [],
+    cosmologyVersion: 7,
     orderIndex: 5,
-    blocks: [
-      {
-        id: 'b_fv_1',
-        type: 'heading',
-        text: 'As Engrenagens que Moldam Estrelas'
-      },
-      {
-        id: 'b_fv_2',
-        type: 'paragraph',
-        text: 'Na Fábrica do Von, mundos inteiros foram convertidos em fundições orbitais e centros de pesquisa avançada, onde a matéria bruta do cosmos é refinada em armamentos e máquinas em constante evolução.'
-      }
-    ]
+    blocks: []
   },
   {
     id: 'node_universo_mechs',
     name: 'Universo Tecma',
-    subtitle: 'Galáxia Exterior · Corporação ARC, Longinus & Errantes',
+    subtitle: '',
     planeId: 'macroverso_13',
     category: 'universo_paralelo',
     visualType: 'spiral_galaxy',
@@ -533,42 +439,20 @@ export const DEFAULT_COSMIC_NODES: CosmicNodeData[] = [
     position: { x: 54, y: 6, z: -32 },
     connectedNodeIds: ['node_universo_principal', 'node_fabrica_von', 'node_castelo_extraverso', 'node_nave_gina'],
     coverImageUrl: 'https://i.imgur.com/4vlTSq5.png',
-    summary:
-      'Situado na periferia longínqua do Macroverso 13, o Universo Tecma é uma realidade de alta tecnologia onde pilotos de elite chamados Spears operam mechas colossais Longinus sob o comando da corporação ARC para conter criaturas titânicas conhecidas como Errantes.',
-    customStats: [
-      { label: 'Órbita', value: 'Periferia Extrema Nordeste' },
-      { label: 'Defesa Planetária', value: 'Corporação ARC & Unidades Longinus' },
-      { label: 'Figuras Notáveis', value: 'Vellret, Kiara, Till Von Linden & Ethan' },
-      { label: 'Anomalia Lunar', value: 'A Entidade Sem Nome' }
-    ],
+    summary: 'Lore será preenchida em breve',
+    customStats: [],
     linkedCollections: ['Mechs e Mangas'],
     linkedArchetypes: [],
     linkedCardCodes: [],
-    cosmologyVersion: 6,
+    timelineEvents: [],
+    cosmologyVersion: 7,
     orderIndex: 6,
-    blocks: [
-      {
-        id: 'b_mm_1',
-        type: 'heading',
-        text: 'Mechas Longinus Contra os Errantes'
-      },
-      {
-        id: 'b_mm_2',
-        type: 'paragraph',
-        text: 'Longe dos reinos místicos centrais, o Universo Tecma desenvolveu-se em torno da ciência bélica da corporação ARC. Jovens pilotos conhecidos como Spears sincronizam suas mentes aos colossos mecânicos Longinus para defender a humanidade contra o avanço dos Errantes Anômalos.'
-      },
-      {
-        id: 'b_mm_3',
-        type: 'quote',
-        text: 'Diante da Entidade Sem Nome que habitava a Lua, o Spear Vellret encarou o abismo seriamente e disse: "Me vê uma manga boa aí."',
-        caption: 'Registros de Batalha da Base ARC'
-      }
-    ]
+    blocks: []
   },
   {
     id: 'node_poco_portal_1',
-    name: 'Poço da Corrupção (Fenda Central)',
-    subtitle: 'Porta de Entrada para o Paralelo da Corrupção',
+    name: 'Poço da Corrupção 1',
+    subtitle: '',
     planeId: 'macroverso_13',
     targetPlaneId: 'paralelo_corrupcao',
     isPortalGateway: true,
@@ -580,35 +464,20 @@ export const DEFAULT_COSMIC_NODES: CosmicNodeData[] = [
     position: { x: 18, y: -3, z: 16 },
     connectedNodeIds: ['node_universo_principal', 'node_poco_portal_2'],
     coverImageUrl: 'https://i.imgur.com/ULE363X.png',
-    summary:
-      'Os Poços da Corrupção não são mundos comuns, mas portas de entrada abissais espalhadas em vários pontos do Macroverso 13. Atravessar suas águas carmesins leva diretamente ao Paralelo da Corrupção, o domínio de Asmonious.',
-    customStats: [
-      { label: 'Classificação', value: 'Porta de Entrada Dimensional' },
-      { label: 'Plano de Destino', value: 'Paralelo da Corrupção (Asmonious)' },
-      { label: 'Guardiões do Limiar', value: 'Dragões Ourus & Pratonius' }
-    ],
+    summary: 'Lore será preenchida em breve',
+    customStats: [],
     linkedCollections: [],
     linkedArchetypes: [],
     linkedCardCodes: [],
-    cosmologyVersion: 6,
+    timelineEvents: [],
+    cosmologyVersion: 7,
     orderIndex: 7,
-    blocks: [
-      {
-        id: 'b_pp1_1',
-        type: 'heading',
-        text: 'As Portas Abissais de Asmonious'
-      },
-      {
-        id: 'b_pp1_2',
-        type: 'paragraph',
-        text: 'Espalhados como cicatrizes pelo tecido do Macroverso 13, os Poços da Corrupção conectam o plano material ao Paralelo da Corrupção. Foi em um desses poços que Otto renasceu como Asmonious.'
-      }
-    ]
+    blocks: []
   },
   {
     id: 'node_poco_portal_2',
-    name: 'Poço da Corrupção (Orla Sudeste)',
-    subtitle: 'Porta de Entrada para o Paralelo da Corrupção',
+    name: 'Poço da Corrupção 2',
+    subtitle: '',
     planeId: 'macroverso_13',
     targetPlaneId: 'paralelo_corrupcao',
     isPortalGateway: true,
@@ -620,35 +489,20 @@ export const DEFAULT_COSMIC_NODES: CosmicNodeData[] = [
     position: { x: 36, y: -4, z: 28 },
     connectedNodeIds: ['node_poco_portal_1', 'node_prisao_macroversal'],
     coverImageUrl: 'https://i.imgur.com/ULE363X.png',
-    summary:
-      'Uma segunda fenda ativa do Poço da Corrupção aberta na orla sudeste do Macroverso 13, permitindo que as legiões dos Lordes Profanos projetem a influência de Asmonious sobre os setores vizinhos.',
-    customStats: [
-      { label: 'Classificação', value: 'Porta de Entrada Dimensional' },
-      { label: 'Plano de Destino', value: 'Paralelo da Corrupção (Asmonious)' },
-      { label: 'Atividade', value: 'Incursão Ativa dos Lordes Profanos' }
-    ],
+    summary: 'Lore será preenchida em breve',
+    customStats: [],
     linkedCollections: [],
     linkedArchetypes: [],
     linkedCardCodes: [],
-    cosmologyVersion: 6,
+    timelineEvents: [],
+    cosmologyVersion: 7,
     orderIndex: 8,
-    blocks: [
-      {
-        id: 'b_pp2_1',
-        type: 'heading',
-        text: 'A Infiltração na Orla Sudeste'
-      },
-      {
-        id: 'b_pp2_2',
-        type: 'paragraph',
-        text: 'Cada Poço da Corrupção funciona como uma âncora dimensional que drena a vitalidade dos mundos próximos e abre caminho para o Paralelo da Corrupção.'
-      }
-    ]
+    blocks: []
   },
   {
     id: 'node_zona_caotica_sabio',
     name: 'Zona Caótica do Sábio',
-    subtitle: 'Dimensão de Bolso Errante · Coordenadas Mutáveis',
+    subtitle: '',
     planeId: 'macroverso_13',
     category: 'anomalia_errante',
     visualType: 'wandering_pocket',
@@ -659,35 +513,20 @@ export const DEFAULT_COSMIC_NODES: CosmicNodeData[] = [
     connectedNodeIds: ['node_universo_principal'],
     coverImageUrl: 'https://i.imgur.com/BZtRZds.png',
     isWandering: true,
-    summary:
-      'A dimensão de bolso particular do Grande Sábio. Esta nebulosa de fendas douradas nunca permanece fixa no mesmo ponto do espaço: ela se desloca continuamente pelos quadrantes do Macroverso 13, e em seu interior apenas a vontade do Sábio dita as leis da realidade.',
-    customStats: [
-      { label: 'Natureza Espacial', value: 'Dimensão de Bolso Itinerante' },
-      { label: 'Regente', value: 'O Grande Sábio' },
-      { label: 'Propriedade', value: 'Altera sua localização continuamente pelo cosmos' }
-    ],
+    summary: 'Lore será preenchida em breve',
+    customStats: [],
     linkedCollections: [],
     linkedArchetypes: [],
     linkedCardCodes: [],
-    cosmologyVersion: 6,
+    timelineEvents: [],
+    cosmologyVersion: 7,
     orderIndex: 9,
-    blocks: [
-      {
-        id: 'b_zc_1',
-        type: 'heading',
-        text: 'O Santuário que Jamais Repousa'
-      },
-      {
-        id: 'b_zc_2',
-        type: 'paragraph',
-        text: 'A Zona Caótica existe como uma dimensão autônoma que deriva entre os universos sem jamais fixar raízes, tornando-se impossível de ser sitiada por frotas ou exércitos convencionais.'
-      }
-    ]
+    blocks: []
   },
   {
     id: 'node_nave_gina',
     name: 'Nave Macroversal',
-    subtitle: 'Cruzador Interuniversal em Trânsito Astral',
+    subtitle: '',
     planeId: 'macroverso_13',
     category: 'anomalia_errante',
     visualType: 'starship_vessel',
@@ -698,35 +537,20 @@ export const DEFAULT_COSMIC_NODES: CosmicNodeData[] = [
     connectedNodeIds: ['node_universo_principal', 'node_universo_mechs', 'node_festival_torneio', 'node_castelo_extraverso'],
     coverImageUrl: 'https://i.imgur.com/s1bLm2Z.png',
     isTravelingShip: true,
-    summary:
-      'Viajando continuamente através do vazio entre as galáxias está a colossal Nave Macroversal pilotada por Gina. Capaz de cruzar as barreiras entre diferentes universos paralelos, a embarcação serve como o grande meio de travessia dos Escolhidos através do Macroverso 13.',
-    customStats: [
-      { label: 'Status Operacional', value: 'Em Rota Orbital Entre Universos' },
-      { label: 'Piloto Chefe', value: 'Gina' },
-      { label: 'Capacidade', value: 'Travessia Direta Entre Fronteiras Universais' }
-    ],
+    summary: 'Lore será preenchida em breve',
+    customStats: [],
     linkedCollections: [],
     linkedArchetypes: [],
     linkedCardCodes: ['2025/0001/00190'],
-    cosmologyVersion: 6,
+    timelineEvents: [],
+    cosmologyVersion: 7,
     orderIndex: 10,
-    blocks: [
-      {
-        id: 'b_ng_1',
-        type: 'heading',
-        text: 'A Arca que Rasga o Espaço Entre Mundos'
-      },
-      {
-        id: 'b_ng_2',
-        type: 'paragraph',
-        text: 'Equipada com propulsores capazes de suportar a pressão dimensional entre galáxias, a Nave Macroversal percorre uma rota contínua pelo cosmos sob o comando de Gina.'
-      }
-    ]
+    blocks: []
   },
   {
     id: 'node_festival_torneio',
     name: 'O Festival',
-    subtitle: 'Coliseu Estelar nas Fronteiras do Macroverso',
+    subtitle: '',
     planeId: 'macroverso_13',
     category: 'borda_macroversal',
     visualType: 'festival_arena',
@@ -736,35 +560,20 @@ export const DEFAULT_COSMIC_NODES: CosmicNodeData[] = [
     position: { x: -50, y: 5, z: 38 },
     connectedNodeIds: ['node_universo_principal', 'node_universo_arkham', 'node_universo_chamas', 'node_nave_gina'],
     coverImageUrl: 'https://i.imgur.com/hq54EdA.png',
-    summary:
-      'Situado em um setor afastado na orla do Macroverso 13, O Festival é o grande torneio que reúne campeões, duelistas e entidades de todas as galáxias para medir forças sob o olhar dos soberanos cósmicos.',
-    customStats: [
-      { label: 'Localização', value: 'Orla Sudoeste do Macroverso 13' },
-      { label: 'Finalidade', value: 'Grande Torneio Interuniversal' },
-      { label: 'Destaques', value: 'Jesfa & Campeões de Múltiplos Universos' }
-    ],
+    summary: 'Lore será preenchida em breve',
+    customStats: [],
     linkedCollections: [],
     linkedArchetypes: [],
     linkedCardCodes: [],
-    cosmologyVersion: 6,
+    timelineEvents: [],
+    cosmologyVersion: 7,
     orderIndex: 11,
-    blocks: [
-      {
-        id: 'b_ft_1',
-        type: 'heading',
-        text: 'Onde Guerreiros de Todas as Galáxias Colidem'
-      },
-      {
-        id: 'b_ft_2',
-        type: 'paragraph',
-        text: 'Afastado dos conflitos territoriais diretos, O Festival convoca os seres mais extraordinários de cada universo para combates lendários na fronteira estelar.'
-      }
-    ]
+    blocks: []
   },
   {
     id: 'node_prisao_macroversal',
     name: 'Prisão Macroversal',
-    subtitle: 'Borda Extrema · Selo Primordial do Nada',
+    subtitle: '',
     planeId: 'macroverso_13',
     category: 'borda_macroversal',
     visualType: 'macro_prison',
@@ -774,35 +583,20 @@ export const DEFAULT_COSMIC_NODES: CosmicNodeData[] = [
     position: { x: 0, y: 4, z: -64 },
     connectedNodeIds: ['node_universo_principal', 'node_poco_portal_2', 'node_castelo_extraverso'],
     coverImageUrl: 'https://i.imgur.com/q5KOgyN.png',
-    summary:
-      'Ancorada no limite extremo da Borda do Macroverso 13, a Prisão Macroversal contém O Nada — a força primordial anterior à própria criação — mantendo-o selado por correntes de energia astral.',
-    customStats: [
-      { label: 'Localização', value: 'Borda Extrema do Macroverso 13' },
-      { label: 'Entidade Contida', value: 'O Nada' },
-      { label: 'Função', value: 'Impedir o Colapso em Gema Macroversal' }
-    ],
+    summary: 'Lore será preenchida em breve',
+    customStats: [],
     linkedCollections: [],
     linkedArchetypes: [],
     linkedCardCodes: [],
-    cosmologyVersion: 6,
+    timelineEvents: [],
+    cosmologyVersion: 7,
     orderIndex: 12,
-    blocks: [
-      {
-        id: 'b_pm_1',
-        type: 'heading',
-        text: 'A Última Fronteira Antes do Vazio'
-      },
-      {
-        id: 'b_pm_2',
-        type: 'paragraph',
-        text: 'Na borda do Macroverso 13 pulsa o selo de contenção do Nada. Se suas barreiras caírem por completo, todo o macroverso se condensa em uma única Gema Macroversal.'
-      }
-    ]
+    blocks: []
   },
   {
     id: 'node_castelo_extraverso',
     name: 'Castelo Extraverso',
-    subtitle: 'Fora do Macroverso · Trono do Senhor do Macroverso',
+    subtitle: '',
     planeId: 'macroverso_13',
     category: 'extraverso',
     visualType: 'extraverse_castle',
@@ -818,35 +612,20 @@ export const DEFAULT_COSMIC_NODES: CosmicNodeData[] = [
       'node_nave_gina'
     ],
     coverImageUrl: 'https://i.imgur.com/smxmHNB.png',
-    summary:
-      'Erguido fora dos limites do Macroverso 13, no domínio soberano do Extraverso. É desta cidadela transcendental que o Senhor do Macroverso — como Salazar — governa e observa todas as realidades ao lado dos Conceitos e de seus Escolhidos.',
-    customStats: [
-      { label: 'Localização', value: 'Fora do Macroverso 13 (Extraverso)' },
-      { label: 'Soberano Histórico', value: 'Salazar (Senhor do Macroverso)' },
-      { label: 'Corte & Herdeiros', value: 'Solus, Hyummeng, Blair & Criven' }
-    ],
+    summary: 'Lore será preenchida em breve',
+    customStats: [],
     linkedCollections: [],
     linkedArchetypes: [],
     linkedCardCodes: [],
-    cosmologyVersion: 6,
+    timelineEvents: [],
+    cosmologyVersion: 7,
     orderIndex: 13,
-    blocks: [
-      {
-        id: 'b_ce_1',
-        type: 'heading',
-        text: 'A Cidadela Acima das Galáxias'
-      },
-      {
-        id: 'b_ce_2',
-        type: 'paragraph',
-        text: 'Pairando no espaço exterior ao anel do Macroverso 13, o Castelo Extraverso é o assento supremo de autoridade cósmica.'
-      }
-    ]
+    blocks: []
   },
   {
     id: 'node_caminho_entre_caminhos',
     name: 'Caminho entre os Caminhos',
-    subtitle: 'Corredor Linear de Portas · Guardado por Lúmen & Darkus',
+    subtitle: '',
     planeId: 'macroverso_13',
     category: 'extraverso',
     visualType: 'pathway_of_doors',
@@ -862,36 +641,20 @@ export const DEFAULT_COSMIC_NODES: CosmicNodeData[] = [
       'node_veu',
       'node_castelo_extraverso'
     ],
-    summary:
-      'Uma monumental passarela em linha reta repleta de portas dimensionais, onde cada porta permite emergir em um local distinto do Macroverso 13. Protegido em conjunto pelo Conceito Lúmen e pelo Conceito Darkus, suas correntes de luz dourada e escuridão abissal envolvem todo o Macroverso como uma grande espiral única.',
-    customStats: [
-      { label: 'Arquitetura', value: 'Corredor Linear de Portas Dimensionais' },
-      { label: 'Guardiões', value: 'Conceito Lúmen & Conceito Darkus' },
-      { label: 'Alcance', value: 'Acesso Direto a Qualquer Ponto do Macroverso' },
-      { label: 'Abismo Inferior', value: 'Acima do Véu' }
-    ],
+    summary: 'Lore será preenchida em breve',
+    customStats: [],
     linkedCollections: [],
     linkedArchetypes: [],
     linkedCardCodes: [],
-    cosmologyVersion: 6,
+    timelineEvents: [],
+    cosmologyVersion: 7,
     orderIndex: 14,
-    blocks: [
-      {
-        id: 'b_cec_1',
-        type: 'heading',
-        text: 'O Corredor das Infinitas Portas'
-      },
-      {
-        id: 'b_cec_2',
-        type: 'paragraph',
-        text: 'Estendendo-se em linha reta acima do Véu, o Caminho entre os Caminhos reúne as portas que conectam todos os quadrantes do Macroverso 13. Sob a guarda eterna do Conceito Lúmen e do Conceito Darkus, uma imensa espiral de luz e sombra irradia deste corredor e abraça todo o cosmos.'
-      }
-    ]
+    blocks: []
   },
   {
     id: 'node_veu',
     name: 'O Véu',
-    subtitle: 'Abaixo do Caminho entre os Caminhos · Domínio da Senhora do Véu',
+    subtitle: '',
     planeId: 'macroverso_13',
     category: 'extraverso',
     visualType: 'the_veil',
@@ -901,35 +664,20 @@ export const DEFAULT_COSMIC_NODES: CosmicNodeData[] = [
     position: { x: 0, y: -14, z: -38 },
     connectedNodeIds: ['node_caminho_entre_caminhos', 'node_universo_principal'],
     coverImageUrl: 'https://i.imgur.com/kSR0Wec.png',
-    summary:
-      'Situado diretamente abaixo do Caminho entre os Caminhos, O Véu é uma região etérea e silenciosa governada pela Senhora do Véu e pelos Senhores das Camadas. Sob seu manto prateado vigora uma lei absoluta: nenhum Conceito possui poderes dentro do Véu.',
-    customStats: [
-      { label: 'Localização', value: 'Abaixo do Caminho entre os Caminhos' },
-      { label: 'Soberana', value: 'A Senhora do Véu' },
-      { label: 'Lei Absoluta', value: 'Anulação Total do Poder dos Conceitos' }
-    ],
+    summary: 'Lore será preenchida em breve',
+    customStats: [],
     linkedCollections: [],
     linkedArchetypes: [],
     linkedCardCodes: [],
-    cosmologyVersion: 6,
+    timelineEvents: [],
+    cosmologyVersion: 7,
     orderIndex: 15,
-    blocks: [
-      {
-        id: 'b_ov_1',
-        type: 'heading',
-        text: 'Onde os Conceitos Silenciam'
-      },
-      {
-        id: 'b_ov_2',
-        type: 'paragraph',
-        text: 'Repousando abaixo do Caminho entre os Caminhos, O Véu apaga a centelha conceitual de qualquer entidade que atravesse suas camadas de névoa astral.'
-      }
-    ]
+    blocks: []
   },
   {
     id: 'node_macroverso_inverso',
     name: 'Macroverso Inverso',
-    subtitle: 'Singularidade Espelhada de Selena · Horizonte de Eventos',
+    subtitle: '',
     planeId: 'macroverso_13',
     category: 'extraverso',
     visualType: 'black_hole',
@@ -939,260 +687,68 @@ export const DEFAULT_COSMIC_NODES: CosmicNodeData[] = [
     position: { x: 0, y: -30, z: 0 },
     connectedNodeIds: ['node_universo_principal', 'node_universo_deusa_lua'],
     coverImageUrl: 'https://i.imgur.com/jtzmrTk.png',
-    summary:
-      'Tecido por Selena como um reflexo invertido sob o eixo do Macroverso 13. Manifestando-se como uma colossal singularidade de buraco negro com disco de acreção carmesim e violeta, nele os destinos, alianças e sentimentos dos seres originais refletem-se de forma oposta.',
-    customStats: [
-      { label: 'Localização', value: 'Singularidade Espelhada Inferior' },
-      { label: 'Criadora & Regente', value: 'Selena' },
-      { label: 'Natureza', value: 'Buraco Negro & Reflexo Invertido do Macroverso' }
-    ],
+    summary: 'Lore será preenchida em breve',
+    customStats: [],
     linkedCollections: [],
     linkedArchetypes: [],
     linkedCardCodes: [],
-    cosmologyVersion: 6,
+    timelineEvents: [],
+    cosmologyVersion: 7,
     orderIndex: 16,
-    blocks: [
-      {
-        id: 'b_mi_1',
-        type: 'heading',
-        text: 'O Horizonte de Eventos da Criação Invertida'
-      },
-      {
-        id: 'b_mi_2',
-        type: 'paragraph',
-        text: 'Unindo seu poder primordial ao vazio do Nada, Selena deu origem ao Macroverso Inverso, onde cada estrela e cada alma reflete o avesso do mundo superior.'
-      }
-    ]
+    blocks: []
   },
 
   // ==================== PLANO PARALELO 2: PARALELO DA CORRUPÇÃO ====================
   {
     id: 'node_trono_asmonious',
-    name: 'Abismo Soberano de Asmonious',
-    subtitle: 'Coração do Paralelo da Corrupção',
+    name: 'Paralelo da Corrupção',
+    subtitle: '',
     planeId: 'paralelo_corrupcao',
     targetPlaneId: 'macroverso_13',
+    isPortalGateway: true,
     category: 'plano_paralelo',
     visualType: 'macro_prison',
     primaryColor: '#ef4444',
     secondaryColor: '#7f1d1d',
     scale: 1.75,
     position: { x: 0, y: 0, z: 0 },
-    connectedNodeIds: ['node_bastiao_lordes_profanos', 'node_altar_dragoes_poco'],
+    connectedNodeIds: [],
     coverImageUrl: 'https://i.imgur.com/ULE363X.png',
-    summary:
-      'O epicentro do Paralelo da Corrupção. Este abismo carmesim é o verdadeiro domínio de Asmonious, para onde convergem todos os Poços da Corrupção abertos no Macroverso 13.',
-    customStats: [
-      { label: 'Plano Dimensional', value: 'Paralelo da Corrupção' },
-      { label: 'Soberano', value: 'Asmonious (O Conceito da Corrupção)' },
-      { label: 'Portas de Acesso', value: 'Poços da Corrupção no Macroverso 13' }
-    ],
+    summary: 'Lore será preenchida em breve',
+    customStats: [],
     linkedCollections: [],
     linkedArchetypes: [],
     linkedCardCodes: [],
-    cosmologyVersion: 6,
+    timelineEvents: [],
+    cosmologyVersion: 7,
     orderIndex: 17,
-    blocks: [
-      {
-        id: 'b_ta_1',
-        type: 'heading',
-        text: 'O Plano Paralelo da Corrupção'
-      },
-      {
-        id: 'b_ta_2',
-        type: 'paragraph',
-        text: 'O Poço da Corrupção não é um simples lugar isolado, mas um plano paralelo inteiro moldado pela essência de Asmonious. Cada poço aberto nos mundos do Macroverso 13 funciona como um portal direto para este domínio profano.'
-      }
-    ]
-  },
-  {
-    id: 'node_bastiao_lordes_profanos',
-    name: 'Cidadela dos Lordes Profanos',
-    subtitle: 'Domínio da Guerra, Vingança, Luxúria & Maldade',
-    planeId: 'paralelo_corrupcao',
-    category: 'plano_paralelo',
-    visualType: 'extraverse_castle',
-    primaryColor: '#dc2626',
-    secondaryColor: '#991b1b',
-    scale: 1.4,
-    position: { x: -30, y: 4, z: -18 },
-    connectedNodeIds: ['node_trono_asmonious'],
-    summary:
-      'A fortaleza abissal onde os generais corrompidos por Asmonious — Vlad, Kron, Fitsa e Nalime — comandam as legiões prontas para atravessar os Poços da Corrupção.',
-    customStats: [
-      { label: 'Plano Dimensional', value: 'Paralelo da Corrupção' },
-      { label: 'Comandantes', value: 'Vlad, Kron, Fitsa & Nalime' }
-    ],
-    linkedCollections: [],
-    linkedArchetypes: [],
-    linkedCardCodes: [],
-    cosmologyVersion: 6,
-    orderIndex: 18,
-    blocks: [
-      {
-        id: 'b_blp_1',
-        type: 'heading',
-        text: 'Os Quatro Pilares de Asmonious'
-      },
-      {
-        id: 'b_blp_2',
-        type: 'paragraph',
-        text: 'Outrora guerreiros orgulhosos, os quatro Lordes Profanos foram moldados pelas águas abissais para liderar a expansão territorial de Asmonious.'
-      }
-    ]
-  },
-  {
-    id: 'node_altar_dragoes_poco',
-    name: 'Vórtice de Ourus & Pratonius',
-    subtitle: 'Confluência das Águas Profanas · Retorno ao Macroverso 13',
-    planeId: 'paralelo_corrupcao',
-    targetPlaneId: 'macroverso_13',
-    isPortalGateway: true,
-    category: 'porta_corrupcao',
-    visualType: 'corrupted_well',
-    primaryColor: '#f59e0b',
-    secondaryColor: '#ef4444',
-    scale: 1.35,
-    position: { x: 28, y: -2, z: 18 },
-    connectedNodeIds: ['node_trono_asmonious'],
-    summary:
-      'Guarnecido pelos dragões ancestrais Ourus e Pratonius, este vórtice interliga o interior do Paralelo da Corrupção a todas as portas de entrada espalhadas pelo Macroverso 13.',
-    customStats: [
-      { label: 'Plano Dimensional', value: 'Paralelo da Corrupção' },
-      { label: 'Guardiões', value: 'Ourus & Pratonius' },
-      { label: 'Passagem', value: 'Conecta de volta ao Macroverso 13' }
-    ],
-    linkedCollections: [],
-    linkedArchetypes: [],
-    linkedCardCodes: [],
-    cosmologyVersion: 6,
-    orderIndex: 19,
-    blocks: [
-      {
-        id: 'b_adp_1',
-        type: 'heading',
-        text: 'Os Dragões Guardiões do Limiar'
-      },
-      {
-        id: 'b_adp_2',
-        type: 'paragraph',
-        text: 'Ourus e Pratonius vigiam o fluxo entre o plano de Asmonious e os múltiplos poços abertos no universo material.'
-      }
-    ]
+    blocks: []
   },
 
   // ==================== PLANO PARALELO 3: REDE DO CAOS ====================
   {
     id: 'node_nucleo_rede_caos',
-    name: 'Nexo Central da Rede do Caos',
-    subtitle: 'Plano Paralelo · A Malha Dimensional do Caos',
+    name: 'Rede do Caos',
+    subtitle: '',
     planeId: 'rede_do_caos',
     targetPlaneId: 'macroverso_13',
+    isPortalGateway: true,
     category: 'plano_paralelo',
     visualType: 'chaos_network',
     primaryColor: '#a855f7',
     secondaryColor: '#ec4899',
     scale: 1.8,
     position: { x: 0, y: 0, z: 0 },
-    connectedNodeIds: ['node_conduite_caos_norte', 'node_fenda_convergencia_caos'],
-    summary:
-      'A Rede do Caos é um plano paralelo formado por uma imensa malha de sinapses estelares, conduítes de energia e fendas que atravessam o tecido do Macroverso 13, permitindo que a força do Caos se propague entre realidades.',
-    customStats: [
-      { label: 'Plano Dimensional', value: 'Rede do Caos' },
-      { label: 'Natureza', value: 'Malha Interdimensional de Energia Caótica' },
-      { label: 'Força Regente', value: 'Caos' }
-    ],
+    connectedNodeIds: [],
+    summary: 'Lore será preenchida em breve',
+    customStats: [],
     linkedCollections: [],
     linkedArchetypes: [],
     linkedCardCodes: [],
-    cosmologyVersion: 6,
-    orderIndex: 20,
-    blocks: [
-      {
-        id: 'b_nrc_1',
-        type: 'heading',
-        text: 'A Teia Invisível Sob as Galáxias'
-      },
-      {
-        id: 'b_nrc_2',
-        type: 'paragraph',
-        text: 'Como um organismo vivo de partículas e filamentos violetas, a Rede do Caos conecta mentes, portais e fendas de incursão através de todo o Macroverso 13.'
-      }
-    ]
-  },
-  {
-    id: 'node_conduite_caos_norte',
-    name: 'Espiral de Ressonância Caótica',
-    subtitle: 'Setor de Propagação da Rede do Caos',
-    planeId: 'rede_do_caos',
-    category: 'plano_paralelo',
-    visualType: 'spiral_galaxy',
-    primaryColor: '#c084fc',
-    secondaryColor: '#6366f1',
-    scale: 1.4,
-    position: { x: -28, y: 4, z: -20 },
-    connectedNodeIds: ['node_nucleo_rede_caos'],
-    summary:
-      'Um turbilhão de partículas em espiral dentro da Rede do Caos onde as ondas de distorção dimensional são amplificadas antes de emergirem nos universos materiais.',
-    customStats: [
-      { label: 'Plano Dimensional', value: 'Rede do Caos' },
-      { label: 'Função', value: 'Amplificação de Fendas do Caos' }
-    ],
-    linkedCollections: [],
-    linkedArchetypes: [],
-    linkedCardCodes: [],
-    cosmologyVersion: 6,
-    orderIndex: 21,
-    blocks: [
-      {
-        id: 'b_ccn_1',
-        type: 'heading',
-        text: 'Onde a Distorção Ganha Forma'
-      },
-      {
-        id: 'b_ccn_2',
-        type: 'paragraph',
-        text: 'Neste setor da Rede do Caos, tempestades de partículas alimentam os portais que conectam os exércitos do Caos às fronteiras do Macroverso.'
-      }
-    ]
-  },
-  {
-    id: 'node_fenda_convergencia_caos',
-    name: 'Portal de Passagem da Rede',
-    subtitle: 'Fenda de Travessia · Retorno ao Macroverso 13',
-    planeId: 'rede_do_caos',
-    targetPlaneId: 'macroverso_13',
-    isPortalGateway: true,
-    category: 'plano_paralelo',
-    visualType: 'chaos_network',
-    primaryColor: '#e879f9',
-    secondaryColor: '#9333ea',
-    scale: 1.35,
-    position: { x: 28, y: -3, z: 20 },
-    connectedNodeIds: ['node_nucleo_rede_caos'],
-    summary:
-      'Ponto de ancoragem dimensional que permite transitar entre as correntes da Rede do Caos e o espaço aberto do Macroverso 13.',
-    customStats: [
-      { label: 'Plano Dimensional', value: 'Rede do Caos' },
-      { label: 'Passagem', value: 'Conecta de volta ao Macroverso 13' }
-    ],
-    linkedCollections: [],
-    linkedArchetypes: [],
-    linkedCardCodes: [],
-    cosmologyVersion: 6,
-    orderIndex: 22,
-    blocks: [
-      {
-        id: 'b_fcc_1',
-        type: 'heading',
-        text: 'A Passagem Entre a Rede e o Cosmos'
-      },
-      {
-        id: 'b_fcc_2',
-        type: 'paragraph',
-        text: 'Através deste nó de convergência, viajantes e forças do Caos emergem diretamente nos quadrantes do Macroverso 13.'
-      }
-    ]
+    timelineEvents: [],
+    cosmologyVersion: 7,
+    orderIndex: 18,
+    blocks: []
   }
 ];
 
@@ -1313,6 +869,20 @@ export const CosmicLoreMap: React.FC<CosmicLoreMapProps> = ({
   const [isTrajectoryMenuOpen, setIsTrajectoryMenuOpen] = useState<boolean>(false);
   const [trajectorySearchQuery, setTrajectorySearchQuery] = useState<string>('');
   const [savingTrajectory, setSavingTrajectory] = useState<boolean>(false);
+
+  // Per-Location Timeline (Linha do Tempo do Local) Quick Editor States
+  const [isTimelineFormOpen, setIsTimelineFormOpen] = useState<boolean>(false);
+  const [editingTimelineEventId, setEditingTimelineEventId] = useState<string | null>(null);
+  const [timelineDraft, setTimelineDraft] = useState<CosmicLocationTimelineEvent>({
+    id: '',
+    dateLabel: '',
+    title: '',
+    description: '',
+    mediaUrl: '',
+    mediaType: 'image'
+  });
+  const [savingTimelineEvent, setSavingTimelineEvent] = useState<boolean>(false);
+  const [uploadingTimelineMedia, setUploadingTimelineMedia] = useState<boolean>(false);
 
   // Screen-projected 2D coordinates for DOM markers over 3D nodes & territories
   const [projectedLabels, setProjectedLabels] = useState<
@@ -1639,7 +1209,7 @@ export const CosmicLoreMap: React.FC<CosmicLoreMapProps> = ({
     const newNode: CosmicNodeData = {
       id: `cosmic_${Date.now()}`,
       name: 'Novo Universo',
-      subtitle: 'Galáxia Descoberta no Cosmos',
+      subtitle: '',
       planeId: targetPlane,
       category:
         targetPlane !== 'macroverso_13'
@@ -1657,27 +1227,15 @@ export const CosmicLoreMap: React.FC<CosmicLoreMapProps> = ({
         z: Math.round(pos.z * 10) / 10
       },
       connectedNodeIds: ['node_universo_principal'],
-      summary: 'Descreva a história, os habitantes e as forças que regem esta galáxia.',
-      customStats: [
-        { label: 'Quadrante', value: `${distFromCenter} Unidades Astrais` }
-      ],
+      summary: 'Lore será preenchida em breve',
+      customStats: [],
       linkedCollections: [],
       linkedArchetypes: [],
       linkedCardCodes: [],
-      cosmologyVersion: 6,
+      timelineEvents: [],
+      cosmologyVersion: 7,
       orderIndex: nodes.length,
-      blocks: [
-        {
-          id: `blk_${Date.now()}_1`,
-          type: 'heading',
-          text: 'Origens & Crônicas'
-        },
-        {
-          id: `blk_${Date.now()}_2`,
-          type: 'paragraph',
-          text: 'Escreva aqui os parágrafos da lore ou adicione imagens e vídeos abaixo.'
-        }
-      ]
+      blocks: []
     };
     setPlacementMode(null);
     setIsEditMode(true);
@@ -1695,7 +1253,7 @@ export const CosmicLoreMap: React.FC<CosmicLoreMapProps> = ({
     const wellNode: CosmicNodeData = {
       id: `poco_corrupcao_${Date.now()}`,
       name: `Poço da Corrupção #${wellCount}`,
-      subtitle: 'Porta de Entrada para o Paralelo da Corrupção',
+      subtitle: '',
       planeId: activePlane === 'all' ? 'macroverso_13' : activePlane,
       targetPlaneId: 'paralelo_corrupcao',
       isPortalGateway: true,
@@ -1711,29 +1269,15 @@ export const CosmicLoreMap: React.FC<CosmicLoreMapProps> = ({
       },
       connectedNodeIds: ['node_universo_principal'],
       coverImageUrl: 'https://i.imgur.com/ULE363X.png',
-      summary:
-        'Porta de entrada abissal que conecta este setor do Macroverso diretamente ao Paralelo da Corrupção de Asmonious.',
-      customStats: [
-        { label: 'Classificação', value: 'Porta de Entrada Dimensional' },
-        { label: 'Destino', value: 'Paralelo da Corrupção (Asmonious)' }
-      ],
+      summary: 'Lore será preenchida em breve',
+      customStats: [],
       linkedCollections: [],
       linkedArchetypes: [],
       linkedCardCodes: [],
-      cosmologyVersion: 6,
+      timelineEvents: [],
+      cosmologyVersion: 7,
       orderIndex: nodes.length,
-      blocks: [
-        {
-          id: `blk_${Date.now()}_w1`,
-          type: 'heading',
-          text: 'Fenda Abissal de Asmonious'
-        },
-        {
-          id: `blk_${Date.now()}_w2`,
-          type: 'paragraph',
-          text: 'Este Poço da Corrupção serve como passagem entre o universo material e o Paralelo da Corrupção.'
-        }
-      ]
+      blocks: []
     };
     setPlacementMode(null);
     await onSaveNode(wellNode);
@@ -3827,6 +3371,146 @@ export const CosmicLoreMap: React.FC<CosmicLoreMapProps> = ({
     setEditingNode({ ...editingNode, blocks: list });
   };
 
+  // Timeline Event Helpers inside Edit Mode
+  const addEditingTimelineEvent = () => {
+    if (!editingNode) return;
+    const newEv: CosmicLocationTimelineEvent = {
+      id: `tl_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      dateLabel: '',
+      title: '',
+      description: '',
+      mediaUrl: '',
+      mediaType: 'image'
+    };
+    setEditingNode({
+      ...editingNode,
+      timelineEvents: [...(editingNode.timelineEvents || []), newEv]
+    });
+  };
+
+  const updateEditingTimelineEvent = (
+    index: number,
+    patch: Partial<CosmicLocationTimelineEvent>
+  ) => {
+    if (!editingNode) return;
+    const list = [...(editingNode.timelineEvents || [])];
+    list[index] = { ...list[index], ...patch };
+    setEditingNode({ ...editingNode, timelineEvents: list });
+  };
+
+  const moveEditingTimelineEvent = (index: number, direction: -1 | 1) => {
+    if (!editingNode) return;
+    const list = [...(editingNode.timelineEvents || [])];
+    const targetIdx = index + direction;
+    if (targetIdx < 0 || targetIdx >= list.length) return;
+    const temp = list[index];
+    list[index] = list[targetIdx];
+    list[targetIdx] = temp;
+    setEditingNode({ ...editingNode, timelineEvents: list });
+  };
+
+  const removeEditingTimelineEvent = (index: number) => {
+    if (!editingNode) return;
+    const list = (editingNode.timelineEvents || []).filter((_, idx) => idx !== index);
+    setEditingNode({ ...editingNode, timelineEvents: list });
+  };
+
+  // Quick Timeline Event Helpers directly inside Reader View (for Admin)
+  const handleOpenNewTimelineForm = () => {
+    setEditingTimelineEventId(null);
+    setTimelineDraft({
+      id: `tl_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      dateLabel: '',
+      title: '',
+      description: '',
+      mediaUrl: '',
+      mediaType: 'image'
+    });
+    setIsTimelineFormOpen(true);
+  };
+
+  const handleOpenEditTimelineForm = (ev: CosmicLocationTimelineEvent) => {
+    setEditingTimelineEventId(ev.id);
+    setTimelineDraft({
+      id: ev.id,
+      dateLabel: ev.dateLabel || '',
+      title: ev.title || '',
+      description: ev.description || '',
+      mediaUrl: ev.mediaUrl || '',
+      mediaType: ev.mediaType || 'image'
+    });
+    setIsTimelineFormOpen(true);
+  };
+
+  const handleSaveQuickTimelineEvent = async (targetNode: CosmicNodeData) => {
+    if (!timelineDraft.title.trim() && !timelineDraft.description.trim()) return;
+    setSavingTimelineEvent(true);
+    try {
+      const existing = targetNode.timelineEvents || [];
+      let nextEvents: CosmicLocationTimelineEvent[];
+      if (editingTimelineEventId) {
+        nextEvents = existing.map((ev) =>
+          ev.id === editingTimelineEventId ? { ...timelineDraft } : ev
+        );
+      } else {
+        nextEvents = [
+          ...existing,
+          {
+            ...timelineDraft,
+            id: timelineDraft.id || `tl_${Date.now()}`
+          }
+        ];
+      }
+      const updatedNode: CosmicNodeData = {
+        ...targetNode,
+        timelineEvents: nextEvents
+      };
+      await onSaveNode(updatedNode);
+      setIsTimelineFormOpen(false);
+      setEditingTimelineEventId(null);
+    } finally {
+      setSavingTimelineEvent(false);
+    }
+  };
+
+  const handleDeleteQuickTimelineEvent = async (
+    targetNode: CosmicNodeData,
+    eventId: string
+  ) => {
+    setSavingTimelineEvent(true);
+    try {
+      const nextEvents = (targetNode.timelineEvents || []).filter((ev) => ev.id !== eventId);
+      await onSaveNode({
+        ...targetNode,
+        timelineEvents: nextEvents
+      });
+    } finally {
+      setSavingTimelineEvent(false);
+    }
+  };
+
+  const handleMoveQuickTimelineEvent = async (
+    targetNode: CosmicNodeData,
+    index: number,
+    direction: -1 | 1
+  ) => {
+    const list = [...(targetNode.timelineEvents || [])];
+    const targetIdx = index + direction;
+    if (targetIdx < 0 || targetIdx >= list.length) return;
+    setSavingTimelineEvent(true);
+    try {
+      const temp = list[index];
+      list[index] = list[targetIdx];
+      list[targetIdx] = temp;
+      await onSaveNode({
+        ...targetNode,
+        timelineEvents: list
+      });
+    } finally {
+      setSavingTimelineEvent(false);
+    }
+  };
+
   const handleSaveEditingNode = async () => {
     if (!editingNode) return;
     setSavingNode(true);
@@ -4529,7 +4213,7 @@ export const CosmicLoreMap: React.FC<CosmicLoreMapProps> = ({
                     onClick={async () => {
                       const newSec = makePolarSector(
                         `sec_custom_${Date.now()}`,
-                        `Novo Setor #${territories.length + 1}`,
+                        `Setor ${territories.length + 1}`,
                         2,
                         23,
                         37,
@@ -5723,6 +5407,157 @@ export const CosmicLoreMap: React.FC<CosmicLoreMapProps> = ({
                   </div>
                 </div>
 
+                {/* Timeline Events Editor for this Location */}
+                <div className="bg-slate-900/90 border border-amber-500/35 rounded-xl p-4 space-y-4">
+                  <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
+                    <div>
+                      <h4 className="text-xs font-bold uppercase tracking-wider text-amber-300 flex items-center gap-1.5">
+                        <Clock size={14} /> Linha do Tempo Deste Local (Acontecimentos)
+                      </h4>
+                      <p className="text-[11px] text-slate-400">
+                        Adicione e organize os acontecimentos cronológicos que ocorreram neste local.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={addEditingTimelineEvent}
+                      className="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs flex items-center gap-1 shrink-0 transition"
+                    >
+                      <Plus size={13} /> + Acontecimento
+                    </button>
+                  </div>
+
+                  {(editingNode.timelineEvents || []).length === 0 ? (
+                    <div className="text-xs text-slate-400 bg-slate-950/80 border border-slate-800 rounded-lg p-3 text-center">
+                      Nenhum acontecimento na linha do tempo deste local. Clique em{' '}
+                      <strong className="text-amber-300">+ Acontecimento</strong> para adicionar.
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {(editingNode.timelineEvents || []).map((ev, evIdx) => (
+                        <div
+                          key={ev.id}
+                          className="bg-slate-950 border border-slate-800 rounded-xl p-3.5 space-y-2.5"
+                        >
+                          <div className="flex items-center justify-between border-b border-slate-800/80 pb-2">
+                            <span className="text-xs font-bold text-amber-300">
+                              Acontecimento #{evIdx + 1}
+                            </span>
+                            <div className="flex items-center gap-1">
+                              <button
+                                type="button"
+                                disabled={evIdx === 0}
+                                onClick={() => moveEditingTimelineEvent(evIdx, -1)}
+                                className="p-1 rounded bg-slate-900 hover:bg-slate-800 disabled:opacity-30 text-slate-300"
+                                title="Mover para cima"
+                              >
+                                <ArrowUp size={12} />
+                              </button>
+                              <button
+                                type="button"
+                                disabled={evIdx === (editingNode.timelineEvents || []).length - 1}
+                                onClick={() => moveEditingTimelineEvent(evIdx, 1)}
+                                className="p-1 rounded bg-slate-900 hover:bg-slate-800 disabled:opacity-30 text-slate-300"
+                                title="Mover para baixo"
+                              >
+                                <ArrowDown size={12} />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => removeEditingTimelineEvent(evIdx)}
+                                className="p-1 rounded bg-red-950/60 hover:bg-red-900 text-red-300 ml-1"
+                                title="Excluir acontecimento"
+                              >
+                                <Trash2 size={12} />
+                              </button>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                            <div>
+                              <label className="text-[10px] text-slate-400 block mb-0.5">
+                                Data / Era / Marco Temporal
+                              </label>
+                              <input
+                                type="text"
+                                value={ev.dateLabel}
+                                onChange={(e) =>
+                                  updateEditingTimelineEvent(evIdx, { dateLabel: e.target.value })
+                                }
+                                placeholder="Ex: Era Primordial, Ano 400..."
+                                className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs text-white"
+                              />
+                            </div>
+                            <div className="sm:col-span-2">
+                              <label className="text-[10px] text-slate-400 block mb-0.5">
+                                Título do Acontecimento
+                              </label>
+                              <input
+                                type="text"
+                                value={ev.title}
+                                onChange={(e) =>
+                                  updateEditingTimelineEvent(evIdx, { title: e.target.value })
+                                }
+                                placeholder="Título do evento histórico..."
+                                className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs text-white"
+                              />
+                            </div>
+                          </div>
+
+                          <div>
+                            <label className="text-[10px] text-slate-400 block mb-0.5">
+                              Descrição do Acontecimento
+                            </label>
+                            <textarea
+                              value={ev.description}
+                              onChange={(e) =>
+                                updateEditingTimelineEvent(evIdx, { description: e.target.value })
+                              }
+                              placeholder="Descreva o que aconteceu neste marco da linha do tempo..."
+                              className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs text-white h-20 resize-none"
+                            />
+                          </div>
+
+                          <div className="flex gap-2 items-center">
+                            <input
+                              type="text"
+                              value={ev.mediaUrl || ''}
+                              onChange={(e) =>
+                                updateEditingTimelineEvent(evIdx, { mediaUrl: e.target.value })
+                              }
+                              placeholder="URL de imagem/vídeo opcional..."
+                              className="flex-1 bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs text-white"
+                            />
+                            <label className="px-2.5 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-lg text-xs font-bold cursor-pointer flex items-center gap-1 shrink-0">
+                              <Upload size={12} /> Mídia
+                              <input
+                                type="file"
+                                accept="image/*,video/*"
+                                className="hidden"
+                                onChange={async (e) => {
+                                  if (e.target.files?.[0]) {
+                                    const file = e.target.files[0];
+                                    setUploadingBlockId(ev.id);
+                                    try {
+                                      const url = await onUploadMedia(file);
+                                      updateEditingTimelineEvent(evIdx, {
+                                        mediaUrl: url,
+                                        mediaType: file.type.startsWith('video/') ? 'video' : 'image'
+                                      });
+                                    } finally {
+                                      setUploadingBlockId(null);
+                                    }
+                                  }
+                                }}
+                              />
+                            </label>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
                 {/* Card Game Integration Picker */}
                 <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-4 space-y-4">
                   <h4 className="text-xs font-bold uppercase tracking-wider text-[#d4af37]">
@@ -6036,6 +5871,295 @@ export const CosmicLoreMap: React.FC<CosmicLoreMapProps> = ({
                       }
                       return null;
                     })}
+                  </div>
+
+                  {/* LOCATION TIMELINE SECTION (LINHA DO TEMPO DESTE LOCAL) */}
+                  <div className="pt-6 border-t border-white/10 space-y-4">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <div>
+                        <h4 className="font-cinzel text-sm font-bold uppercase tracking-widest text-[#d4af37] flex items-center gap-2">
+                          <Clock size={15} className="text-[#d4af37]" />
+                          <span>
+                            Linha do Tempo Deste Local (
+                            {(activeNodeForDrawer.timelineEvents || []).length})
+                          </span>
+                        </h4>
+                        <p className="text-xs text-slate-400">
+                          Cronologia de acontecimentos e marcos históricos ocorridos em{' '}
+                          {activeNodeForDrawer.name}.
+                        </p>
+                      </div>
+
+                      {isAdmin && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (isTimelineFormOpen && !editingTimelineEventId) {
+                              setIsTimelineFormOpen(false);
+                            } else {
+                              handleOpenNewTimelineForm();
+                            }
+                          }}
+                          className="px-3 py-1.5 rounded-lg bg-[#d4af37] hover:bg-amber-400 text-slate-950 font-bold text-xs flex items-center gap-1.5 shrink-0 transition shadow-md"
+                        >
+                          <Plus size={13} />
+                          <span>
+                            {isTimelineFormOpen && !editingTimelineEventId
+                              ? 'Fechar Formulário'
+                              : '+ Adicionar Acontecimento'}
+                          </span>
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Admin Inline Form to Add or Edit a Timeline Event */}
+                    {isAdmin && isTimelineFormOpen && (
+                      <div className="bg-slate-950/95 border border-[#d4af37]/60 rounded-xl p-4 space-y-3 animate-fade-in">
+                        <div className="flex items-center justify-between border-b border-white/10 pb-2">
+                          <span className="text-xs font-cinzel font-bold uppercase tracking-wider text-[#d4af37]">
+                            {editingTimelineEventId
+                              ? 'Editar Acontecimento da Linha do Tempo'
+                              : `Novo Acontecimento em ${activeNodeForDrawer.name}`}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsTimelineFormOpen(false);
+                              setEditingTimelineEventId(null);
+                            }}
+                            className="text-slate-400 hover:text-white"
+                          >
+                            <X size={14} />
+                          </button>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                          <div>
+                            <label className="text-[10px] text-slate-400 block mb-1">
+                              Data / Era / Período
+                            </label>
+                            <input
+                              type="text"
+                              value={timelineDraft.dateLabel}
+                              onChange={(e) =>
+                                setTimelineDraft({ ...timelineDraft, dateLabel: e.target.value })
+                              }
+                              placeholder="Ex: Era 1, Ano 320..."
+                              className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs text-white"
+                            />
+                          </div>
+                          <div className="sm:col-span-2">
+                            <label className="text-[10px] text-slate-400 block mb-1">
+                              Título do Acontecimento
+                            </label>
+                            <input
+                              type="text"
+                              value={timelineDraft.title}
+                              onChange={(e) =>
+                                setTimelineDraft({ ...timelineDraft, title: e.target.value })
+                              }
+                              placeholder="Nome do acontecimento..."
+                              className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs text-white"
+                            />
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="text-[10px] text-slate-400 block mb-1">
+                            Descrição do Acontecimento
+                          </label>
+                          <textarea
+                            value={timelineDraft.description}
+                            onChange={(e) =>
+                              setTimelineDraft({ ...timelineDraft, description: e.target.value })
+                            }
+                            placeholder="Escreva os detalhes deste acontecimento histórico..."
+                            className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-xs text-white h-24 resize-none"
+                          />
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-2">
+                          <input
+                            type="text"
+                            value={timelineDraft.mediaUrl || ''}
+                            onChange={(e) =>
+                              setTimelineDraft({ ...timelineDraft, mediaUrl: e.target.value })
+                            }
+                            placeholder="URL de imagem ou vídeo opcional..."
+                            className="flex-1 bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs text-white"
+                          />
+                          <label className="px-3 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-lg text-xs font-bold cursor-pointer flex items-center gap-1.5 shrink-0">
+                            {uploadingTimelineMedia ? (
+                              <Loader2 size={12} className="animate-spin" />
+                            ) : (
+                              <Upload size={12} />
+                            )}
+                            <span>Anexar Mídia</span>
+                            <input
+                              type="file"
+                              accept="image/*,video/*"
+                              className="hidden"
+                              onChange={async (e) => {
+                                if (e.target.files?.[0]) {
+                                  const file = e.target.files[0];
+                                  setUploadingTimelineMedia(true);
+                                  try {
+                                    const url = await onUploadMedia(file);
+                                    setTimelineDraft({
+                                      ...timelineDraft,
+                                      mediaUrl: url,
+                                      mediaType: file.type.startsWith('video/') ? 'video' : 'image'
+                                    });
+                                  } finally {
+                                    setUploadingTimelineMedia(false);
+                                  }
+                                }
+                              }}
+                            />
+                          </label>
+                        </div>
+
+                        <div className="flex justify-end gap-2 pt-1">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsTimelineFormOpen(false);
+                              setEditingTimelineEventId(null);
+                            }}
+                            className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold"
+                          >
+                            Cancelar
+                          </button>
+                          <button
+                            type="button"
+                            disabled={savingTimelineEvent}
+                            onClick={() => handleSaveQuickTimelineEvent(activeNodeForDrawer)}
+                            className="px-4 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-bold flex items-center gap-1.5"
+                          >
+                            {savingTimelineEvent ? (
+                              <Loader2 size={12} className="animate-spin" />
+                            ) : (
+                              <Check size={12} />
+                            )}
+                            <span>Salvar Acontecimento</span>
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Vertical Timeline Events List */}
+                    {(activeNodeForDrawer.timelineEvents || []).length > 0 ? (
+                      <div className="relative pl-5 border-l-2 border-[#d4af37]/40 space-y-5 my-2">
+                        {(activeNodeForDrawer.timelineEvents || []).map((ev, idx) => (
+                          <div
+                            key={ev.id}
+                            className="relative bg-[#0c0c17] border border-white/10 hover:border-[#d4af37]/50 rounded-xl p-4 space-y-2 transition"
+                          >
+                            {/* Timeline Node Dot */}
+                            <div
+                              className="absolute -left-[27px] top-4 w-3.5 h-3.5 rounded-full bg-[#08080f] border-2 border-[#d4af37] shadow-[0_0_10px_rgba(212,175,55,0.8)]"
+                              style={{ borderColor: activeNodeForDrawer.primaryColor || '#d4af37' }}
+                            />
+
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="space-y-1">
+                                {ev.dateLabel && (
+                                  <span className="inline-block px-2 py-0.5 rounded bg-[#d4af37]/15 border border-[#d4af37]/40 text-[#d4af37] font-cinzel text-[10px] font-bold uppercase tracking-widest">
+                                    {ev.dateLabel}
+                                  </span>
+                                )}
+                                <h5 className="font-cinzel text-sm sm:text-base font-bold text-white">
+                                  {ev.title || `Acontecimento #${idx + 1}`}
+                                </h5>
+                              </div>
+
+                              {isAdmin && (
+                                <div className="flex items-center gap-1 shrink-0">
+                                  <button
+                                    type="button"
+                                    disabled={idx === 0 || savingTimelineEvent}
+                                    onClick={() =>
+                                      handleMoveQuickTimelineEvent(activeNodeForDrawer, idx, -1)
+                                    }
+                                    className="p-1 rounded bg-slate-900 hover:bg-slate-800 disabled:opacity-30 text-slate-300"
+                                    title="Mover para antes"
+                                  >
+                                    <ArrowUp size={12} />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={
+                                      idx ===
+                                        (activeNodeForDrawer.timelineEvents || []).length - 1 ||
+                                      savingTimelineEvent
+                                    }
+                                    onClick={() =>
+                                      handleMoveQuickTimelineEvent(activeNodeForDrawer, idx, 1)
+                                    }
+                                    className="p-1 rounded bg-slate-900 hover:bg-slate-800 disabled:opacity-30 text-slate-300"
+                                    title="Mover para depois"
+                                  >
+                                    <ArrowDown size={12} />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenEditTimelineForm(ev)}
+                                    className="p-1 rounded bg-purple-950/70 hover:bg-purple-800 text-purple-200"
+                                    title="Editar acontecimento"
+                                  >
+                                    <Edit3 size={12} />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={savingTimelineEvent}
+                                    onClick={() =>
+                                      handleDeleteQuickTimelineEvent(activeNodeForDrawer, ev.id)
+                                    }
+                                    className="p-1 rounded bg-red-950/70 hover:bg-red-900 text-red-300"
+                                    title="Excluir acontecimento"
+                                  >
+                                    <Trash2 size={12} />
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+
+                            {ev.description && (
+                              <p className="font-playfair text-sm text-slate-300 leading-relaxed whitespace-pre-wrap">
+                                {ev.description}
+                              </p>
+                            )}
+
+                            {ev.mediaUrl && (
+                              <div className="pt-2">
+                                {ev.mediaType === 'video' ? (
+                                  <video
+                                    src={ev.mediaUrl}
+                                    controls
+                                    className="w-full max-h-64 rounded-lg border border-white/10 bg-black object-contain"
+                                  />
+                                ) : (
+                                  <img
+                                    src={ev.mediaUrl}
+                                    alt={ev.title || ''}
+                                    className="w-full max-h-64 rounded-lg border border-white/10 bg-black object-contain"
+                                  />
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-xs text-slate-400 bg-[#0b0b14] border border-white/10 rounded-xl p-4 text-center">
+                        Linha do tempo será preenchida em breve.
+                        {isAdmin && (
+                          <span className="block mt-1 text-amber-300">
+                            Clique em <strong>+ Adicionar Acontecimento</strong> acima para registrar os eventos deste local.
+                          </span>
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   {/* Connected Realities / Travel Links */}

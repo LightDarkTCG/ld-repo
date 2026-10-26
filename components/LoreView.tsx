@@ -39,11 +39,11 @@ export const LoreView = ({ onClose }: { onClose: () => void }) => {
   const [wbItems, setWbItems] = useState<any[]>(() => readBrowserCache<any[]>('ld_cache_wbItems_v2') || []);
   const [wbTimelineEvents, setWbTimelineEvents] = useState<any[]>(() => readBrowserCache<any[]>('ld_cache_wbTimeline_v2') || []);
   const [cosmicNodes, setCosmicNodes] = useState<CosmicNodeData[]>(() => {
-    const cached = readBrowserCache<CosmicNodeData[]>('ld_cache_wbCosmicNodes_v6');
+    const cached = readBrowserCache<CosmicNodeData[]>('ld_cache_wbCosmicNodes_v7');
     return cached && cached.length > 0 ? cached : DEFAULT_COSMIC_NODES;
   });
   const [cosmicTerritories, setCosmicTerritories] = useState<CosmicTerritoryData[]>(() => {
-    const cached = readBrowserCache<CosmicTerritoryData[]>('ld_cache_wbTerritories_v2');
+    const cached = readBrowserCache<CosmicTerritoryData[]>('ld_cache_wbTerritories_v3');
     return cached && cached.length > 0 ? cached : DEFAULT_COSMIC_TERRITORIES;
   });
 
@@ -71,7 +71,11 @@ export const LoreView = ({ onClose }: { onClose: () => void }) => {
     'node_santuario_paz',
     'node_abismo_asmonious',
     'node_universo_insanis',
-    'node_poco_corrupcao'
+    'node_poco_corrupcao',
+    'node_bastiao_lordes_profanos',
+    'node_altar_dragoes_poco',
+    'node_conduite_caos_norte',
+    'node_fenda_convergencia_caos'
   ]);
 
   const loadData = async () => {
@@ -95,15 +99,29 @@ export const LoreView = ({ onClose }: { onClose: () => void }) => {
             t => typeof t.innerRadius === 'number' && typeof t.startAngleDeg === 'number'
           );
         if (isPolarSectorGrid) {
-          setCosmicTerritories(loadedTerritories);
-          writeBrowserCache('ld_cache_wbTerritories_v2', loadedTerritories);
+          const hasNonNumericSectorNames = loadedTerritories.some(
+            t => !/^Setor \d+$/i.test((t.name || '').trim())
+          );
+          const normalizedTerritories = hasNonNumericSectorNames
+            ? loadedTerritories.map((t, idx) => ({
+                ...t,
+                name: `Setor ${idx + 1}`
+              }))
+            : loadedTerritories;
+          setCosmicTerritories(normalizedTerritories);
+          writeBrowserCache('ld_cache_wbTerritories_v3', normalizedTerritories);
+          if (hasNonNumericSectorNames) {
+            setDoc(doc(db, 'wbSettings', 'cosmicTerritories'), {
+              items: sanitizeForFirestore(normalizedTerritories)
+            }).catch(() => {});
+          }
         } else {
           setCosmicTerritories(DEFAULT_COSMIC_TERRITORIES);
-          writeBrowserCache('ld_cache_wbTerritories_v2', DEFAULT_COSMIC_TERRITORIES);
+          writeBrowserCache('ld_cache_wbTerritories_v3', DEFAULT_COSMIC_TERRITORIES);
         }
       } else {
         setCosmicTerritories(DEFAULT_COSMIC_TERRITORIES);
-        writeBrowserCache('ld_cache_wbTerritories_v2', DEFAULT_COSMIC_TERRITORIES);
+        writeBrowserCache('ld_cache_wbTerritories_v3', DEFAULT_COSMIC_TERRITORIES);
       }
 
       const tabsSnap = await getDocs(collection(db, 'wbTabs'));
@@ -127,34 +145,60 @@ export const LoreView = ({ onClose }: { onClose: () => void }) => {
       const cosmicSnap = await getDocs(collection(db, 'wbCosmicNodes'));
       if (!cosmicSnap.empty) {
         const rawLoaded = cosmicSnap.docs.map(d => ({ id: d.id, ...d.data() })) as CosmicNodeData[];
-        const hasV6Cosmology = rawLoaded.some(n => n.id === 'node_universo_principal' && n.cosmologyVersion === 6);
+        const hasV7Cosmology = rawLoaded.some(
+          n => n.id === 'node_universo_principal' && n.cosmologyVersion === 7
+        );
 
-        if (!hasV6Cosmology) {
-          const defaultIds = new Set(DEFAULT_COSMIC_NODES.map(n => n.id));
+        if (!hasV7Cosmology) {
+          const defaultMap = new Map(DEFAULT_COSMIC_NODES.map(n => [n.id, n]));
+          const existingMap = new Map(rawLoaded.map(n => [n.id, n]));
+
+          const updatedDefaultNodes = DEFAULT_COSMIC_NODES.map(defNode => {
+            const prev = existingMap.get(defNode.id);
+            return {
+              ...defNode,
+              linkedCardCodes: prev?.linkedCardCodes ?? defNode.linkedCardCodes,
+              cardTrajectoryStep: prev?.cardTrajectoryStep ?? defNode.cardTrajectoryStep,
+              timelineEvents: prev?.timelineEvents ?? [],
+              cosmologyVersion: 7
+            };
+          });
+
           const customNodes = rawLoaded
-            .filter(n => !defaultIds.has(n.id) && !LEGACY_NODE_IDS.has(n.id))
+            .filter(n => !defaultMap.has(n.id) && !LEGACY_NODE_IDS.has(n.id))
             .map(n => ({
               ...n,
+              subtitle: '',
+              summary: 'Lore será preenchida em breve',
+              customStats: [],
+              blocks: [],
+              timelineEvents: n.timelineEvents || [],
               linkedArchetypes: [],
               linkedCollections: n.category === 'porta_corrupcao' ? [] : n.linkedCollections || [],
-              cosmologyVersion: 6
+              cosmologyVersion: 7
             }));
-          const mergedNodes = [...DEFAULT_COSMIC_NODES, ...customNodes];
-          setCosmicNodes(mergedNodes);
-          writeBrowserCache('ld_cache_wbCosmicNodes_v6', mergedNodes);
 
-          for (const defNode of DEFAULT_COSMIC_NODES) {
-            setDoc(doc(db, 'wbCosmicNodes', defNode.id), sanitizeForFirestore(defNode)).catch(() => {});
+          const mergedNodes = [...updatedDefaultNodes, ...customNodes];
+          setCosmicNodes(mergedNodes);
+          writeBrowserCache('ld_cache_wbCosmicNodes_v7', mergedNodes);
+
+          for (const legacyId of Array.from(LEGACY_NODE_IDS)) {
+            deleteDoc(doc(db, 'wbCosmicNodes', legacyId)).catch(() => {});
+          }
+          for (const nodeToSave of mergedNodes) {
+            setDoc(doc(db, 'wbCosmicNodes', nodeToSave.id), sanitizeForFirestore(nodeToSave)).catch(
+              () => {}
+            );
           }
         } else {
           const cleanLoaded = rawLoaded.filter(n => !LEGACY_NODE_IDS.has(n.id));
           cleanLoaded.sort((a, b) => (a.orderIndex || 0) - (b.orderIndex || 0));
           setCosmicNodes(cleanLoaded);
-          writeBrowserCache('ld_cache_wbCosmicNodes_v6', cleanLoaded);
+          writeBrowserCache('ld_cache_wbCosmicNodes_v7', cleanLoaded);
         }
       } else {
         setCosmicNodes(DEFAULT_COSMIC_NODES);
-        writeBrowserCache('ld_cache_wbCosmicNodes_v6', DEFAULT_COSMIC_NODES);
+        writeBrowserCache('ld_cache_wbCosmicNodes_v7', DEFAULT_COSMIC_NODES);
       }
     } catch (e) {
       console.error(e);
@@ -171,7 +215,7 @@ export const LoreView = ({ onClose }: { onClose: () => void }) => {
 
   // Save or update a 3D Cosmic Node (and seed defaults if collection was empty)
   const handleSaveCosmicNode = async (node: CosmicNodeData) => {
-    const cleanNode = sanitizeForFirestore({ ...node, cosmologyVersion: 6 });
+    const cleanNode = sanitizeForFirestore({ ...node, cosmologyVersion: 7 });
     await setDoc(doc(db, 'wbCosmicNodes', node.id), cleanNode);
 
     const existingIds = new Set(cosmicNodes.map(n => n.id));
@@ -189,14 +233,14 @@ export const LoreView = ({ onClose }: { onClose: () => void }) => {
     }
 
     setCosmicNodes(nextNodes);
-    writeBrowserCache('ld_cache_wbCosmicNodes_v6', nextNodes);
+    writeBrowserCache('ld_cache_wbCosmicNodes_v7', nextNodes);
   };
 
   const handleSaveTerritories = async (nextTerritories: CosmicTerritoryData[]) => {
     const cleanItems = sanitizeForFirestore(nextTerritories);
     await setDoc(doc(db, 'wbSettings', 'cosmicTerritories'), { items: cleanItems });
     setCosmicTerritories(cleanItems);
-    writeBrowserCache('ld_cache_wbTerritories_v2', cleanItems);
+    writeBrowserCache('ld_cache_wbTerritories_v3', cleanItems);
   };
 
   const handleResetDefaultCosmology = async () => {
@@ -215,15 +259,15 @@ export const LoreView = ({ onClose }: { onClose: () => void }) => {
     const nextNodes = [...DEFAULT_COSMIC_NODES, ...customNodes];
     setCosmicNodes(nextNodes);
     setCosmicTerritories(DEFAULT_COSMIC_TERRITORIES);
-    writeBrowserCache('ld_cache_wbCosmicNodes_v6', nextNodes);
-    writeBrowserCache('ld_cache_wbTerritories_v2', DEFAULT_COSMIC_TERRITORIES);
+    writeBrowserCache('ld_cache_wbCosmicNodes_v7', nextNodes);
+    writeBrowserCache('ld_cache_wbTerritories_v3', DEFAULT_COSMIC_TERRITORIES);
   };
 
   const handleDeleteCosmicNode = async (nodeId: string) => {
     await deleteDoc(doc(db, 'wbCosmicNodes', nodeId)).catch(() => {});
     const nextNodes = cosmicNodes.filter(n => n.id !== nodeId);
     setCosmicNodes(nextNodes);
-    writeBrowserCache('ld_cache_wbCosmicNodes_v6', nextNodes);
+    writeBrowserCache('ld_cache_wbCosmicNodes_v7', nextNodes);
   };
 
   // Reorder items in a tab directly with Up/Down arrows

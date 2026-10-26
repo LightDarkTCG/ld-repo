@@ -206,6 +206,71 @@ export interface CartItem {
   weightGrams: number;
   freeShipping?: boolean;
   maxStock?: number;
+  // Marketplace (venda de jogadores)
+  isCommunityListing?: boolean;
+  listingId?: string;
+  sellerId?: string;
+  sellerName?: string;
+  sellerEmail?: string;
+  sellerPixKey?: string;
+  sellerPixKeyType?: 'cpf' | 'email' | 'phone' | 'random';
+  sellerWhatsapp?: string;
+  platformFeePercent?: number; // 10%
+  platformFeeAmount?: number;  // 10% do subtotal do item
+  sellerNetAmount?: number;    // 90% que vai para o vendedor
+}
+
+export type MarketplaceListingType = 'single_card' | 'collection';
+export type CardCondition = 'Mint' | 'Near Mint (NM)' | 'Slightly Played (SP)' | 'Moderately Played (MP)' | 'Heavily Played (HP)';
+
+export interface MarketplaceCardEntry {
+  cardId: string;
+  cardName: string;
+  cardType?: string;
+  cardImageUrl?: string;
+  quantity: number;
+  isFoil?: boolean;
+  condition?: CardCondition;
+}
+
+export interface MarketplaceListing {
+  id: string;
+  listingType: MarketplaceListingType;
+  title: string;
+  description: string;
+  price: number; // Valor numérico em R$
+  formattedPrice: string;
+  platformFeePercent: number; // 10
+  platformFeeAmount: number;  // 10% retido pelo site
+  sellerNetAmount: number;    // 90% líquido para o vendedor
+  stockQuantity: number;
+  condition: CardCondition;
+  isFoil?: boolean;
+  language?: string;
+  imageUrl: string;
+  additionalImages?: string[];
+  // Se for carta avulsa ou coleção vinculada a cartas do catálogo
+  cardId?: string;
+  cardName?: string;
+  cardFaction?: string;
+  cardRarity?: string;
+  includedCards?: MarketplaceCardEntry[];
+  totalCardsCount?: number;
+  // Dados do vendedor
+  sellerId: string;
+  sellerName: string;
+  sellerEmail: string;
+  sellerAvatar?: string;
+  sellerWhatsapp?: string;
+  sellerCity?: string;
+  sellerState?: string;
+  sellerCep?: string;
+  sellerPixKey: string;
+  sellerPixKeyType: 'cpf' | 'email' | 'phone' | 'random';
+  weightGrams?: number;
+  status: 'active' | 'sold' | 'paused';
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface ShippingOption {
@@ -305,6 +370,11 @@ export interface StoreOrder {
   totalAmount: number;
   hasPreOrderItems: boolean;
   preOrderReleaseNotes?: string;
+  // Comissões do Mercado de Usuários (10% site / 90% vendedor)
+  hasCommunityItems?: boolean;
+  platformCommissionTotal?: number; // Total retido pelo site (10% dos itens de jogadores)
+  sellerPayoutTotal?: number;       // Total líquido a repassar aos vendedores (90%)
+  sellerPayoutStatus?: 'not_applicable' | 'pending_payout' | 'paid_out';
   paymentMethod: 'pix' | 'checkout_pro';
   paymentStatus: PaymentStatus;
   orderStatus: OrderStatus;
@@ -323,4 +393,5 @@ export interface StoreOrder {
   paidAt?: string;
   shippedAt?: string;
 }
+
 
