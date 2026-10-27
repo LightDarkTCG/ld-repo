@@ -27,17 +27,23 @@ import {
 import { useCards } from '../CardContext';
 import { CardData } from '../types';
 import {
+  BotAdaptiveMemory,
+  BotDeckSelection,
   ChoiceCandidate,
   DuelGameState,
   DuelLogType,
   FieldFighter,
-  PendingCardChoiceModal
+  PendingCardChoiceModal,
+  StructuralDeckId
 } from './botTypes';
 import {
+  STRUCTURAL_DECK_OPTIONS,
   addLog,
   advanceTurn,
+  analyzeMatchAndLearn,
   applyEffectDamageToFighter,
   canPlayCardInMainPhase,
+  canSummonHeroDirectly,
   checkWinCondition,
   countJimsInErasedZone,
   createInitialDuelState,
@@ -50,9 +56,13 @@ import {
   getEffectiveArchetypes,
   getEffectiveCt,
   getFighterEffectiveAtk,
+  isContinuousBackrowCard,
   isJimCard,
+  loadBotAdaptiveMemory,
+  payDirectHeroSummonCost,
   performBotSmartMulligan,
   processStartOfTurn,
+  resetBotAdaptiveMemory,
   resolveInsanisCardEffect,
   resolveModernCardVersion,
   sendCardToDeadOrErasedZone,
@@ -84,8 +94,10 @@ const GEMA_1_ARCHETYPE_POOL = [
 export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) => {
   const { cards: liveCards } = useCards();
   const [deckMode, setDeckMode] = useState<'structural_29' | 'optimized_40'>('structural_29');
+  const [playerDeckId, setPlayerDeckId] = useState<StructuralDeckId>('Insanis');
+  const [botDeckSelection, setBotDeckSelection] = useState<BotDeckSelection>('Invasão do Caos');
   const [gameState, setGameState] = useState<DuelGameState>(() =>
-    createInitialDuelState('structural_29', liveCards)
+    createInitialDuelState('structural_29', liveCards, 'Insanis', 'Invasão do Caos')
   );
 
   // Selected card from Player Hand in MAIN_PHASE
@@ -110,6 +122,7 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
 
   // When player clicks Invocar Herói (in Main Phase, Pre-Draw, or Reaction)
   const [selectingSlotForHero, setSelectingSlotForHero] = useState<boolean>(false);
+  const [selectedHeroCodeToSummon, setSelectedHeroCodeToSummon] = useState<string | null>(null);
 
   // When player clicks a card in hand during CARD_REACTION or COMBAT_REACTION that requires choosing a column/slot
   const [pendingReactionHandIndex, setPendingReactionHandIndex] = useState<number | null>(null);
@@ -124,6 +137,10 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
 
   // Retractable Combat Log state
   const [isLogOpen, setIsLogOpen] = useState<boolean>(true);
+
+  // Adaptive Bot Memory & Post-Match Autopsy
+  const [botMemory, setBotMemory] = useState<BotAdaptiveMemory>(() => loadBotAdaptiveMemory());
+  const [hasAnalyzedCurrentMatch, setHasAnalyzedCurrentMatch] = useState<boolean>(false);
 
   // Beta Tester Access Gate (Username & Password)
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
@@ -215,6 +232,15 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
       setTrocaFirstSlot(null);
     }
   }, [gameState.phase]);
+
+  // Trigger Post-Match Autopsy & Adaptive Learning when match ends
+  useEffect(() => {
+    if (gameState.phase === 'GAME_OVER' && !hasAnalyzedCurrentMatch) {
+      const updatedMem = analyzeMatchAndLearn(gameState);
+      setBotMemory(updatedMem);
+      setHasAnalyzedCurrentMatch(true);
+    }
+  }, [gameState.phase, hasAnalyzedCurrentMatch, gameState]);
 
   // Bot automated turn loop
   useEffect(() => {
@@ -401,8 +427,14 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
     logs: [...prev.logs]
   });
 
-  const handleRestartDuel = (newMode: 'structural_29' | 'optimized_40' = deckMode) => {
+  const handleRestartDuel = (
+    newMode: 'structural_29' | 'optimized_40' = deckMode,
+    newPlayerDeck: StructuralDeckId = playerDeckId,
+    newBotDeck: BotDeckSelection = botDeckSelection
+  ) => {
     setDeckMode(newMode);
+    setPlayerDeckId(newPlayerDeck);
+    setBotDeckSelection(newBotDeck);
     setSelectedHandIndex(null);
     setSelectedAttackerSlot(null);
     setSelectingSlotForHero(false);
@@ -410,7 +442,9 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
     setTrocaFirstSlot(null);
     setPendingGema1Play(null);
     setSelectedChoiceIds([]);
-    setGameState(createInitialDuelState(newMode, liveCards));
+    setHasAnalyzedCurrentMatch(false);
+    setBotMemory(loadBotAdaptiveMemory());
+    setGameState(createInitialDuelState(newMode, liveCards, newPlayerDeck, newBotDeck));
   };
 
   const handleProceedToMulligan = () => {
@@ -766,14 +800,46 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
     setPendingGema1Play(null);
   };
 
-  // Summon Hero (0 Mana, "A Qualquer Momento") into a chosen slot
+  // Summon Hero into a chosen slot (enforcing official summoning requirements per Hero!)
   const handleSummonHeroToSlot = (slotIndex: number) => {
     setGameState((prev) => {
       const next = cloneState(prev);
-      const heroCard = next.player.heroDeck[0];
-      if (!heroCard) return prev;
+      const isAnytimeWindow =
+        next.phase === 'CARD_REACTION' ||
+        next.phase === 'COMBAT_REACTION' ||
+        next.phase === 'PRE_DRAW_WINDOW';
 
-      next.player.heroDeck.shift();
+      let summonableIdx = -1;
+      if (selectedHeroCodeToSummon) {
+        summonableIdx = next.player.heroDeck.findIndex(
+          (h) =>
+            h.code === selectedHeroCodeToSummon &&
+            canSummonHeroDirectly(next, 'player', h, isAnytimeWindow).allowed
+        );
+      }
+      if (summonableIdx === -1) {
+        summonableIdx = next.player.heroDeck.findIndex(
+          (h) => canSummonHeroDirectly(next, 'player', h, isAnytimeWindow).allowed
+        );
+      }
+      if (summonableIdx === -1) {
+        const firstHero =
+          next.player.heroDeck.find((h) => h.code === selectedHeroCodeToSummon) ||
+          next.player.heroDeck[0];
+        if (firstHero) {
+          const check = canSummonHeroDirectly(next, 'player', firstHero, isAnytimeWindow);
+          addLog(
+            next,
+            'system',
+            `Requisito de invocação de «${firstHero.name}» não cumprido: ${check.reason}`,
+            'info'
+          );
+        }
+        return next;
+      }
+
+      const [heroCard] = next.player.heroDeck.splice(summonableIdx, 1);
+      payDirectHeroSummonCost(next, 'player', heroCard);
       const authorityCt = getCardAuthorityCt(next.player, heroCard);
 
       if (
@@ -787,7 +853,7 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
         addLog(
           next,
           'player',
-          `🛡️ Reação «A Qualquer Momento»! Você invocou «${heroCard.name}» (0 de Mana) na Coluna ${
+          `🛡️ Reação «A Qualquer Momento»! Você invocou «${heroCard.name}» na Coluna ${
             slotIndex + 1
           } antes da ação do Bot!`,
           'reaction'
@@ -803,7 +869,7 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
       addLog(
         next,
         'player',
-        `👑 Você declarou a invocação «A Qualquer Momento» do Herói «${heroCard.name}» (0 de Mana) na Coluna ${
+        `👑 Você declarou a invocação do Herói «${heroCard.name}» na Coluna ${
           slotIndex + 1
         }!`,
         'summon'
@@ -834,6 +900,7 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
       return next;
     });
     setSelectingSlotForHero(false);
+    setSelectedHeroCodeToSummon(null);
   };
 
   // Resolve a Reaction Card played by the Player on a chosen slot (or immediately if no slot needed)
@@ -1094,6 +1161,9 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
     if (card.type === 'Combatente' || card.type === 'Herói' || card.type === 'Equipamento') {
       return true;
     }
+    if (isContinuousBackrowCard(card)) {
+      return true;
+    }
     if (
       card.code === '2025/0001/00016' ||
       card.code === '2025/0001/00017' ||
@@ -1103,6 +1173,9 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
       card.code === '2025/0001/00025' ||
       card.code === '2025/0001/00027'
     ) {
+      return true;
+    }
+    if (card.type === 'Efeito' && card.description.toLowerCase().includes('cause')) {
       return true;
     }
     return false;
@@ -1153,7 +1226,8 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
       card.code === '2025/0001/00018' ||
       card.code === '2025/0001/00022' ||
       card.code === '2025/0001/00026' ||
-      card.code === '2025/0001/00030'
+      card.code === '2025/0001/00030' ||
+      (!doesCardNeedSlotSelection(card, false) && card.type === 'Efeito')
     ) {
       executePlayerCardPlay(idx, 0);
       return;
@@ -1218,7 +1292,11 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
           executePlayerReactionCardOnSlot(pendingReactionHandIndex, slotIndex);
           return;
         }
-        if (reactCard.type === 'Equipamento' && slotFighter !== null) {
+        if (
+          reactCard.type === 'Equipamento' &&
+          !isContinuousBackrowCard(reactCard) &&
+          slotFighter !== null
+        ) {
           const isMacroGem =
             reactCard.code === '2025/0001/00013' ||
             reactCard.code === '2025/0001/00014' ||
@@ -1261,7 +1339,7 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
         return;
       }
 
-      if (card.type === 'Equipamento' && slotFighter !== null) {
+      if (card.type === 'Equipamento' && !isContinuousBackrowCard(card) && slotFighter !== null) {
         const isMacroGem =
           card.code === '2025/0001/00013' ||
           card.code === '2025/0001/00014' ||
@@ -1327,15 +1405,16 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
       const reactCard = gameState.player.hand[pendingReactionHandIndex];
       if (!reactCard) return;
 
-      if (
-        (reactCard.code === '2025/0001/00016' || reactCard.code === '2025/0001/00017') &&
-        gameState.player.backrow[slotIndex] === null
-      ) {
+      if (isContinuousBackrowCard(reactCard) && gameState.player.backrow[slotIndex] === null) {
         executePlayerReactionCardOnSlot(pendingReactionHandIndex, slotIndex);
         return;
       }
 
-      if (reactCard.type === 'Equipamento' && gameState.player.frontline[slotIndex] !== null) {
+      if (
+        reactCard.type === 'Equipamento' &&
+        !isContinuousBackrowCard(reactCard) &&
+        gameState.player.frontline[slotIndex] !== null
+      ) {
         handlePlayerFrontSlotClick(slotIndex);
         return;
       }
@@ -1348,15 +1427,16 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
     const card = gameState.player.hand[selectedHandIndex];
     if (!card) return;
 
-    if (
-      (card.code === '2025/0001/00016' || card.code === '2025/0001/00017') &&
-      gameState.player.backrow[slotIndex] === null
-    ) {
+    if (isContinuousBackrowCard(card) && gameState.player.backrow[slotIndex] === null) {
       executePlayerCardPlay(selectedHandIndex, slotIndex);
       return;
     }
 
-    if (card.type === 'Equipamento' && gameState.player.frontline[slotIndex] !== null) {
+    if (
+      card.type === 'Equipamento' &&
+      !isContinuousBackrowCard(card) &&
+      gameState.player.frontline[slotIndex] !== null
+    ) {
       handlePlayerFrontSlotClick(slotIndex);
       return;
     }
@@ -1379,6 +1459,73 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
           'player',
           `💚 «Jim - Herói» (A Qualquer Momento • 1x por Rodada): Você recuperou +1 de Vida (Vida atual: ${next.player.hp} PV)!`,
           'life_gain'
+        );
+        return next;
+      });
+      return;
+    }
+
+    // «Salazar - Guia dos Escolhidos» (00181) <-> «Salazar - O Poderoso Líder» (00182) 1x por rodada
+    if (
+      (fighter.card.code === '2025/0001/00181' || fighter.card.code === '2025/0001/00182') &&
+      !fighter.usedOncePerRoundAbility
+    ) {
+      const targetCode =
+        fighter.card.code === '2025/0001/00181' ? '2025/0001/00182' : '2025/0001/00181';
+      setGameState((prev) => {
+        const next = cloneState(prev);
+        const p = next.player;
+        const curF = p.frontline[slotIndex];
+        if (!curF || curF.usedOncePerRoundAbility) return prev;
+        const hIdx = p.heroDeck.findIndex((c) => c.code === targetCode);
+        if (hIdx === -1) return prev;
+        const [newHero] = p.heroDeck.splice(hIdx, 1);
+        p.heroDeck.push(curF.card);
+        p.frontline[slotIndex] = null;
+        summonFighterToSlot(next, 'player', newHero, slotIndex);
+        if (p.frontline[slotIndex]) {
+          p.frontline[slotIndex]!.usedOncePerRoundAbility = true;
+        }
+        p.runes = Math.min(12, p.runes + 1);
+        addLog(
+          next,
+          'player',
+          `👑 Dualidade de «Salazar»: Você trocou «${curF.card.name}» por «${newHero.name}» e recebeu +1 Runa (${p.runes} Runas)!`,
+          'summon'
+        );
+        return next;
+      });
+      return;
+    }
+
+    // «Salazar - Grande Mestre da Dualidade» (00183): "Uma vez por rodada, a qualquer momento, coloque em campo «Salazar - Guia dos Escolhidos» ou «Salazar - O Poderoso Líder» (podendo ter mais de um Herói em campo)."
+    if (fighter.card.code === '2025/0001/00183' && !fighter.usedOncePerRoundAbility) {
+      setGameState((prev) => {
+        const next = cloneState(prev);
+        const p = next.player;
+        const curF = p.frontline[slotIndex];
+        if (!curF || curF.usedOncePerRoundAbility) return prev;
+        const freeSlot = p.frontline.findIndex((s) => s === null);
+        if (freeSlot === -1) return prev;
+
+        const isDualSalazar = (c: CardData) =>
+          c.code === '2025/0001/00181' || c.code === '2025/0001/00182';
+        let pulled: CardData | null = null;
+        const hIdx = p.heroDeck.findIndex(isDualSalazar);
+        const dIdx = p.deadZone.findIndex(isDualSalazar);
+        const eIdx = p.erasedZone.findIndex(isDualSalazar);
+        if (hIdx !== -1) pulled = p.heroDeck.splice(hIdx, 1)[0];
+        else if (dIdx !== -1) pulled = p.deadZone.splice(dIdx, 1)[0];
+        else if (eIdx !== -1) pulled = p.erasedZone.splice(eIdx, 1)[0];
+        if (!pulled) return prev;
+
+        curF.usedOncePerRoundAbility = true;
+        summonFighterToSlot(next, 'player', pulled, freeSlot);
+        addLog(
+          next,
+          'player',
+          `👑 «Salazar - Grande Mestre da Dualidade»: Colocou «${pulled.name}» em campo na Coluna ${freeSlot + 1}!`,
+          'summon'
         );
         return next;
       });
@@ -1511,7 +1658,11 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
       enemyFighter
     ) {
       const reactCard = gameState.player.hand[pendingReactionHandIndex];
-      if (reactCard && reactCard.code === '2025/0001/00025') {
+      if (
+        reactCard &&
+        (reactCard.code === '2025/0001/00025' ||
+          (reactCard.type === 'Efeito' && reactCard.description.toLowerCase().includes('cause')))
+      ) {
         executePlayerReactionCardOnSlot(pendingReactionHandIndex, botSlotIndex);
         return;
       }
@@ -1521,7 +1672,12 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
 
     if (selectedHandIndex !== null) {
       const card = gameState.player.hand[selectedHandIndex];
-      if (card && card.code === '2025/0001/00025' && enemyFighter) {
+      if (
+        card &&
+        (card.code === '2025/0001/00025' ||
+          (card.type === 'Efeito' && card.description.toLowerCase().includes('cause'))) &&
+        enemyFighter
+      ) {
         executePlayerCardPlay(selectedHandIndex, botSlotIndex);
         return;
       }
@@ -1807,18 +1963,24 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
   return (
     <div className="fixed inset-0 z-[120] bg-slate-950/95 backdrop-blur-xl flex flex-col overflow-hidden text-slate-100 select-none">
       {/* TOP HEADER BAR */}
-      <div className="h-14 border-b border-purple-500/20 bg-slate-900/90 px-4 flex items-center justify-between shrink-0">
+      <div className="min-h-14 py-1.5 border-b border-purple-500/20 bg-slate-900/90 px-4 flex flex-wrap items-center justify-between gap-2 shrink-0">
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-xl bg-purple-600/20 border border-purple-500/40 flex items-center justify-center text-purple-400 shadow-inner">
             <Bot size={20} />
           </div>
           <div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <span className="font-display font-black text-sm tracking-wider uppercase text-white">
                 Simulador Oficial • Duelo vs Bot (Nível 3)
               </span>
               <span className="px-2 py-0.5 text-[10px] font-extrabold uppercase rounded-md bg-purple-500/20 text-purple-300 border border-purple-500/30">
-                Deck Insanis • Frame Moderno
+                {gameState.playerDeckId} vs {gameState.botDeckId}
+              </span>
+              <span
+                title="Memória Neural Adaptativa: o Bot analisa cada derrota nos 6 Pilares Universais de TCG e recalibra seus pesos matemáticos"
+                className="px-2 py-0.5 text-[10px] font-extrabold uppercase rounded-md bg-cyan-500/20 text-cyan-300 border border-cyan-500/30"
+              >
+                IA Gen #{botMemory.generation} (V:{botMemory.botWins} / D:{botMemory.botLosses})
               </span>
             </div>
             <p className="text-[11px] text-slate-400">
@@ -1832,8 +1994,49 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
           </div>
         </div>
 
-        {/* Quick Actions */}
-        <div className="flex items-center gap-2">
+        {/* Deck Selectors + Quick Actions */}
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Seu Deck Selector */}
+          <div className="flex items-center gap-1.5 bg-slate-950/90 border border-purple-500/30 rounded-lg px-2 py-1">
+            <span className="text-[10px] font-black uppercase text-purple-300">Seu Deck:</span>
+            <select
+              value={playerDeckId}
+              onChange={(e) => {
+                const nextDeck = e.target.value as StructuralDeckId;
+                handleRestartDuel(deckMode, nextDeck, botDeckSelection);
+              }}
+              className="bg-transparent text-xs font-bold text-white focus:outline-none cursor-pointer"
+            >
+              {STRUCTURAL_DECK_OPTIONS.map((opt) => (
+                <option key={`p_deck_${opt.id}`} value={opt.id} className="bg-slate-900 text-white">
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Deck do Bot Selector */}
+          <div className="flex items-center gap-1.5 bg-slate-950/90 border border-rose-500/30 rounded-lg px-2 py-1">
+            <span className="text-[10px] font-black uppercase text-rose-300">Deck Bot:</span>
+            <select
+              value={botDeckSelection}
+              onChange={(e) => {
+                const nextBotDeck = e.target.value as BotDeckSelection;
+                handleRestartDuel(deckMode, playerDeckId, nextBotDeck);
+              }}
+              className="bg-transparent text-xs font-bold text-white focus:outline-none cursor-pointer"
+            >
+              <option value="random" className="bg-slate-900 text-amber-300">
+                🎲 Aleatório (Qualquer Estrutural)
+              </option>
+              {STRUCTURAL_DECK_OPTIONS.map((opt) => (
+                <option key={`b_deck_${opt.id}`} value={opt.id} className="bg-slate-900 text-white">
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
           {(() => {
             const h = evaluateBoardHeuristic(gameState);
             const scoreColor =
@@ -1844,7 +2047,7 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
                 : 'bg-amber-950/70 border-amber-500/40 text-amber-300';
             return (
               <div
-                className={`hidden lg:flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[11px] font-black ${scoreColor}`}
+                className={`hidden xl:flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[11px] font-black ${scoreColor}`}
                 title={`Avaliação Matemática do Bot: ${h.score0to100}/100 (Δ ${h.rawDelta > 0 ? '+' : ''}${h.rawDelta} pts)\nBot: ${h.botBreakdown.totalRawPoints} pts (Campo ${h.botBreakdown.boardFightersScore}, Zona Apagada ${h.botBreakdown.erasedZoneSynergyScore}, Combos ${h.botBreakdown.comboSynergyBonus})\nVocê: ${h.playerBreakdown.totalRawPoints} pts\nPostura IA: ${h.posture}`}
               >
                 <span>Heurística IA: {h.score0to100}/100</span>
@@ -1853,20 +2056,16 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
             );
           })()}
 
-          <div className="hidden md:flex items-center px-2.5 py-1 rounded-lg bg-purple-950/60 border border-purple-500/30 text-[11px] font-bold text-purple-200">
-            Deck Insanis (30 Cartas Únicas • Máx 35)
-          </div>
-
           <button
             onClick={() => setShowRulesModal(true)}
             className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold flex items-center gap-1.5 border border-slate-700 transition-colors"
           >
             <HelpCircle size={14} className="text-purple-400" />
-            <span className="hidden sm:inline">Regras Insanis</span>
+            <span className="hidden sm:inline">Regras</span>
           </button>
 
           <button
-            onClick={() => handleRestartDuel(deckMode)}
+            onClick={() => handleRestartDuel(deckMode, playerDeckId, botDeckSelection)}
             className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold flex items-center gap-1.5 border border-slate-700 transition-colors"
           >
             <RotateCcw size={14} />
@@ -2319,8 +2518,8 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
               <div className="px-4 py-1 rounded-full bg-slate-900/90 border border-purple-500/30 text-[11px] font-bold text-slate-300 flex items-center gap-2 shadow">
                 {selectingSlotForHero ? (
                   <span className="text-amber-300 font-black">
-                    👑 Invocação de Herói (0 Mana): Clique em qual Coluna (1 a 6) deseja posicionar
-                    «Jim - O Senhor do Macroverso»!
+                    👑 Invocação de Herói: Clique em qual Coluna (1 a 6) deseja posicionar o seu
+                    Herói!
                   </span>
                 ) : selectedHandCard ? (
                   <span className="text-purple-300">
@@ -2367,7 +2566,8 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
                   gameState.phase === 'MAIN_PHASE' &&
                   selectedHandCard &&
                   fighter !== null &&
-                  (selectedHandCard.type === 'Equipamento' ||
+                  ((selectedHandCard.type === 'Equipamento' &&
+                    !isContinuousBackrowCard(selectedHandCard)) ||
                     selectedHandCard.code === '2025/0001/00019' ||
                     selectedHandCard.code === '2025/0001/00020');
 
@@ -2379,7 +2579,8 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
                       selectedReactionCard.code === '2025/0001/00021' ||
                       selectedReactionCard.code === '2025/0001/00027') &&
                       fighter === null) ||
-                      ((selectedReactionCard.type === 'Equipamento' ||
+                      (((selectedReactionCard.type === 'Equipamento' &&
+                        !isContinuousBackrowCard(selectedReactionCard)) ||
                         selectedReactionCard.code === '2025/0001/00019' ||
                         selectedReactionCard.code === '2025/0001/00020') &&
                         fighter !== null))) ||
@@ -2393,9 +2594,30 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
                 const effArchs = fighter ? getEffectiveArchetypes(gameState, fighter) : [];
                 const imgUrl = fighter ? getModernImage(fighter.card) : undefined;
 
+                const canUseSalazarSwap =
+                  fighter &&
+                  gameState.phase === 'MAIN_PHASE' &&
+                  gameState.activePlayer === 'player' &&
+                  !fighter.usedOncePerRoundAbility &&
+                  ((fighter.card.code === '2025/0001/00181' &&
+                    gameState.player.heroDeck.some((c) => c.code === '2025/0001/00182')) ||
+                    (fighter.card.code === '2025/0001/00182' &&
+                      gameState.player.heroDeck.some((c) => c.code === '2025/0001/00181')));
+
+                const canUseMestreDualidadeSummon =
+                  fighter &&
+                  fighter.card.code === '2025/0001/00183' &&
+                  !fighter.usedOncePerRoundAbility &&
+                  gameState.player.frontline.some((s) => s === null) &&
+                  [...gameState.player.heroDeck, ...gameState.player.deadZone, ...gameState.player.erasedZone].some(
+                    (c) => c.code === '2025/0001/00181' || c.code === '2025/0001/00182'
+                  );
+
                 const canUseAnytimeAbility =
                   fighter &&
                   ((fighter.card.code === '2025/0001/00007' && !fighter.usedOncePerRoundAbility) ||
+                    canUseSalazarSwap ||
+                    canUseMestreDualidadeSummon ||
                     (fighter.card.code === '2025/0001/00001' &&
                       !fighter.jimLordTier9GemUsedThisRound &&
                       countJimsInErasedZone(gameState.player) >= 9));
@@ -2501,6 +2723,10 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
                           >
                             {fighter.card.code === '2025/0001/00007'
                               ? '💚 +1 Vida (1x/Rodada)'
+                              : canUseSalazarSwap
+                              ? '👑 Trocar Salazar (+1 Runa)'
+                              : canUseMestreDualidadeSummon
+                              ? '👑 Invocar Guia/Líder (1x/Rodada)'
                               : '⚡ Buscar Gema [9+ Jim]'}
                           </button>
                         )}
@@ -2541,20 +2767,20 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
                 const isSupportTarget =
                   ((gameState.phase === 'MAIN_PHASE' &&
                     selectedHandCard &&
-                    (selectedHandCard.code === '2025/0001/00016' ||
-                      selectedHandCard.code === '2025/0001/00017')) ||
+                    isContinuousBackrowCard(selectedHandCard)) ||
                     (gameState.phase === 'CARD_REACTION' &&
                       selectedReactionCard &&
-                      (selectedReactionCard.code === '2025/0001/00016' ||
-                        selectedReactionCard.code === '2025/0001/00017'))) &&
+                      isContinuousBackrowCard(selectedReactionCard))) &&
                   sup === null;
 
                 const isEquipSupportTarget =
                   frontFighter !== null &&
                   ((gameState.phase === 'MAIN_PHASE' &&
-                    selectedHandCard?.type === 'Equipamento') ||
+                    selectedHandCard?.type === 'Equipamento' &&
+                    !isContinuousBackrowCard(selectedHandCard)) ||
                     (gameState.phase === 'CARD_REACTION' &&
-                      selectedReactionCard?.type === 'Equipamento'));
+                      selectedReactionCard?.type === 'Equipamento' &&
+                      !isContinuousBackrowCard(selectedReactionCard)));
 
                 const canUseBusca =
                   sup &&
@@ -2712,40 +2938,98 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
                 )}
               </div>
 
-              {/* Player Zones & Hero Summon ("A Qualquer Momento" - 0 Mana) & End Turn */}
+              {/* Player Zones & Hero Summon (Enforcing Official Requirements per Hero) & End Turn */}
               <div className="flex items-center gap-1.5 flex-wrap">
-                {gameState.player.heroDeck.length > 0 && (
-                  <button
-                    onClick={() => {
-                      setSelectedHandIndex(null);
-                      setSelectedAttackerSlot(null);
-                      setPendingReactionHandIndex(null);
-                      setSelectingSlotForHero((prev) => !prev);
-                    }}
-                    className={`px-3 py-1 rounded-lg font-black text-xs flex items-center gap-2 shadow-lg transition-all ${
-                      selectingSlotForHero
-                        ? 'bg-emerald-500 text-slate-950 ring-2 ring-white'
-                        : isReactionPhase && availablePlayerReactions.canSummonHeroJimLord
-                        ? 'bg-gradient-to-r from-cyan-400 to-amber-400 text-slate-950 ring-2 ring-cyan-300 animate-pulse'
-                        : 'bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-slate-950 shadow-amber-500/20'
-                    }`}
-                    title="Jim - O Senhor do Macroverso pode ser invocado A QUALQUER MOMENTO por 0 de Mana!"
-                  >
-                    {getModernImage(gameState.player.heroDeck[0]) && (
-                      <img
-                        src={getModernImage(gameState.player.heroDeck[0])}
-                        alt="Herói"
-                        className="w-5 h-7 object-cover rounded border border-slate-900"
-                      />
-                    )}
-                    <Crown size={14} />
-                    {selectingSlotForHero
-                      ? 'Cancelar Seleção de Coluna'
-                      : `Invocar Herói (0 Mana • ${countJimsInErasedZone(
-                          gameState.player
-                        )} Jim Apagados)`}
-                  </button>
-                )}
+                {gameState.player.heroDeck.length > 0 &&
+                  (() => {
+                    const isAnytimeWindow =
+                      isReactionPhase || gameState.phase === 'PRE_DRAW_WINDOW';
+                    const summonableHero = gameState.player.heroDeck.find(
+                      (h) => canSummonHeroDirectly(gameState, 'player', h, isAnytimeWindow).allowed
+                    );
+                    const displayHero = summonableHero || gameState.player.heroDeck[0];
+                    const heroCheck = canSummonHeroDirectly(
+                      gameState,
+                      'player',
+                      displayHero,
+                      isAnytimeWindow
+                    );
+                    const canClickSummon =
+                      heroCheck.allowed &&
+                      (isAnytimeWindow ||
+                        (gameState.phase === 'MAIN_PHASE' &&
+                          gameState.activePlayer === 'player'));
+
+                    return (
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => {
+                            if (!canClickSummon) {
+                              if (gameState.player.heroDeck.length > 1) {
+                                setZoneViewer({
+                                  title: `Sua Zona do Herói (${gameState.player.heroDeck.length} Heróis)`,
+                                  cards: gameState.player.heroDeck
+                                });
+                              } else {
+                                setInspectedFighter(null);
+                                setInspectedCard(displayHero);
+                              }
+                              return;
+                            }
+                            setSelectedHandIndex(null);
+                            setSelectedAttackerSlot(null);
+                            setPendingReactionHandIndex(null);
+                            setSelectedHeroCodeToSummon(displayHero.code);
+                            setSelectingSlotForHero((prev) => !prev);
+                          }}
+                          className={`px-3 py-1 rounded-lg font-black text-xs flex items-center gap-2 shadow-lg transition-all ${
+                            selectingSlotForHero
+                              ? 'bg-emerald-500 text-slate-950 ring-2 ring-white'
+                              : canClickSummon && isReactionPhase
+                              ? 'bg-gradient-to-r from-cyan-400 to-amber-400 text-slate-950 ring-2 ring-cyan-300 animate-pulse'
+                              : canClickSummon
+                              ? 'bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-slate-950 shadow-amber-500/20'
+                              : 'bg-slate-800/90 hover:bg-slate-700 text-slate-300 border border-slate-700'
+                          }`}
+                          title={
+                            canClickSummon
+                              ? `Invocar «${displayHero.name}» (${heroCheck.badgeText})`
+                              : `${displayHero.name} — ${
+                                  heroCheck.reason || 'Aguardando seu turno ou requisito'
+                                } (Clique para inspecionar)`
+                          }
+                        >
+                          {getModernImage(displayHero) && (
+                            <img
+                              src={getModernImage(displayHero)}
+                              alt="Herói"
+                              className="w-5 h-7 object-cover rounded border border-slate-900"
+                            />
+                          )}
+                          {canClickSummon ? <Crown size={14} /> : <Lock size={13} />}
+                          {selectingSlotForHero
+                            ? 'Cancelar Seleção de Coluna'
+                            : canClickSummon
+                            ? `Invocar «${displayHero.name}» (${heroCheck.badgeText})`
+                            : `Herói (${gameState.player.heroDeck.length}): ${heroCheck.badgeText}`}
+                        </button>
+                        {gameState.player.heroDeck.length > 1 && (
+                          <button
+                            onClick={() =>
+                              setZoneViewer({
+                                title: `Sua Zona do Herói (${gameState.player.heroDeck.length} Heróis)`,
+                                cards: gameState.player.heroDeck
+                              })
+                            }
+                            className="p-1.5 rounded-lg bg-slate-950 hover:bg-slate-800 border border-amber-500/40 text-amber-300"
+                            title="Ver todos os Heróis na sua Zona do Herói e seus requisitos"
+                          >
+                            <Eye size={13} />
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })()}
 
                 <div className="px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-800 text-[11px] text-slate-300">
                   Deck: <strong className="text-white">{gameState.player.deck.length}</strong>
@@ -3270,7 +3554,8 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
 
             <div className="space-y-2 pt-2">
               {gameState.player.heroDeck.length > 0 &&
-                gameState.player.frontline.some((s) => s === null) && (
+                canSummonHeroDirectly(gameState, 'player', gameState.player.heroDeck[0], true)
+                  .allowed && (
                   <button
                     onClick={() => setSelectingSlotForHero(true)}
                     className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-slate-950 font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-lg"
@@ -3288,9 +3573,9 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
                     <button
                       key={`predraw_heroi_${slotIdx}`}
                       onClick={() => handleActivateFieldFighterAbility(slotIdx)}
-                      className="w-full py-2 px-4 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs flex items-center justify-center gap-2"
+                      className="w-full py-2 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-2"
                     >
-                      ⚡ Ativar «Jim - Herói» (+5 ATK até o fim do turno)
+                      💚 Ativar «Jim - Herói» (+1 de Vida de Jogador • 1x/Rodada)
                     </button>
                   );
                 }
@@ -3419,7 +3704,7 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
          ============================================================ */}
       {gameState.phase === 'GAME_OVER' && (
         <div className="fixed inset-0 z-[150] bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-purple-500/40 rounded-2xl max-w-md w-full p-6 text-center space-y-5 shadow-2xl">
+          <div className="bg-slate-900 border border-purple-500/40 rounded-2xl max-w-lg w-full p-6 text-center space-y-5 shadow-2xl max-h-[90vh] overflow-y-auto">
             <div
               className={`w-16 h-16 rounded-2xl mx-auto flex items-center justify-center ${
                 gameState.winner === 'player'
@@ -3440,13 +3725,108 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
               <p className="text-xs text-slate-300 mt-2">{gameState.winReason}</p>
             </div>
 
+            {/* AUTÓPSIA UNIVERSAL PÓS-PARTIDA E REFORÇO HEURÍSTICO DA IA (6 PILARES TCG) */}
+            <div className="text-left bg-slate-950/90 border border-cyan-500/30 rounded-xl p-4 space-y-3">
+              <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                <div className="flex items-center gap-2">
+                  <Bot size={16} className="text-cyan-400" />
+                  <span className="text-[11px] font-black uppercase tracking-wider text-cyan-300">
+                    Autópsia Universal de TCG & Aprendizado (Gen #{botMemory.generation})
+                  </span>
+                </div>
+                <span className="text-[10px] font-bold text-slate-400">
+                  Histórico IA: {botMemory.botWins}V / {botMemory.botLosses}D
+                </span>
+              </div>
+
+              {botMemory.lastMatchAutopsy.length > 0 ? (
+                <div className="space-y-2">
+                  {botMemory.lastMatchAutopsy.map((entry, idx) => (
+                    <div
+                      key={idx}
+                      className="text-[11px] bg-slate-900/90 border border-slate-800 rounded-lg p-2.5 space-y-1 leading-relaxed"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">
+                          {entry.pillarLabel}
+                        </span>
+                      </div>
+                      <p className="font-bold text-amber-300">{entry.title}</p>
+                      <p className="text-slate-300">{entry.analysis}</p>
+                      <p className="text-[10px] text-emerald-300 font-semibold">
+                        ↳ Ajuste: {entry.adjustmentSummary}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-[11px] text-emerald-300">
+                  • O Bot consolidou seus pesos táticos universais para o próximo duelo.
+                </p>
+              )}
+
+              <div className="pt-1 border-t border-slate-800/80">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">
+                  Matriz Universal de 6 Pilares do Bot (Salva para Qualquer Deck/Matchup):
+                </p>
+                <div className="grid grid-cols-2 gap-1.5 text-[10px]">
+                  <div className="bg-slate-900/80 border border-slate-800 rounded px-2 py-1 flex justify-between">
+                    <span className="text-slate-400">1. Vida como Recurso:</span>
+                    <strong className="text-cyan-300">
+                      {botMemory.weights.lifeAsResourceCautionMultiplier.toFixed(2)}x (≥{botMemory.weights.minSafeHpForLifeCost} PV)
+                    </strong>
+                  </div>
+                  <div className="bg-slate-900/80 border border-slate-800 rounded px-2 py-1 flex justify-between">
+                    <span className="text-slate-400">2. Timing Wincon/Herói:</span>
+                    <strong className="text-amber-300">
+                      {Math.round(botMemory.weights.winconTimingThresholdScale * 100)}% Exigência
+                    </strong>
+                  </div>
+                  <div className="bg-slate-900/80 border border-slate-800 rounded px-2 py-1 flex justify-between">
+                    <span className="text-slate-400">3. Motor de Sinergia:</span>
+                    <strong className="text-purple-300">
+                      {botMemory.weights.synergyEnginePriorityMultiplier.toFixed(2)}x
+                    </strong>
+                  </div>
+                  <div className="bg-slate-900/80 border border-slate-800 rounded px-2 py-1 flex justify-between">
+                    <span className="text-slate-400">4. Interação/Remoção:</span>
+                    <strong className="text-emerald-300">
+                      {botMemory.weights.interactionAndRemovalDiscipline.toFixed(2)}x
+                    </strong>
+                  </div>
+                  <div className="bg-slate-900/80 border border-slate-800 rounded px-2 py-1 flex justify-between">
+                    <span className="text-slate-400">5. Tempo/Defesa Mesa:</span>
+                    <strong className="text-rose-300">
+                      {botMemory.weights.boardTempoAndDefenseMultiplier.toFixed(2)}x
+                    </strong>
+                  </div>
+                  <div className="bg-slate-900/80 border border-slate-800 rounded px-2 py-1 flex justify-between">
+                    <span className="text-slate-400">6. Vantagem de Cartas:</span>
+                    <strong className="text-indigo-300">
+                      {botMemory.weights.cardAdvantageAndDrawMultiplier.toFixed(2)}x
+                    </strong>
+                  </div>
+                </div>
+              </div>
+            </div>
+
             <div className="flex items-center justify-center gap-3">
               <button
                 onClick={() => handleRestartDuel(deckMode)}
                 className="px-6 py-3 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-black text-xs uppercase tracking-wider shadow-lg shadow-purple-600/30 flex items-center gap-2"
               >
                 <RotateCcw size={15} />
-                Jogar Novamente
+                Jogar Novamente (IA Evoluída)
+              </button>
+              <button
+                onClick={() => {
+                  const fresh = resetBotAdaptiveMemory();
+                  setBotMemory(fresh);
+                }}
+                title="Zerar aprendizado e restaurar pesos originais de fábrica"
+                className="px-3 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white font-bold text-[11px] uppercase border border-slate-700"
+              >
+                Resetar IA
               </button>
               <button
                 onClick={onClose}
@@ -3561,11 +3941,24 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 overflow-y-auto pr-1">
                 {zoneViewer.cards.map((c, i) => {
                   const modernImg = getModernImage(c);
+                  const isPlayerHeroZone = zoneViewer.title.startsWith('Sua Zona do Herói');
+                  const isAnytimeWindow =
+                    isReactionPhase || gameState.phase === 'PRE_DRAW_WINDOW';
+                  const heroStatus =
+                    isPlayerHeroZone && c.type === 'Herói'
+                      ? canSummonHeroDirectly(gameState, 'player', c, isAnytimeWindow)
+                      : null;
+                  const canSummonThisHeroNow =
+                    Boolean(heroStatus?.allowed) &&
+                    (isAnytimeWindow ||
+                      (gameState.phase === 'MAIN_PHASE' &&
+                        gameState.activePlayer === 'player'));
+
                   return (
                     <div
                       key={`${c.code}_${i}`}
                       onClick={() => setInspectedCard(c)}
-                      className="rounded-xl bg-slate-950 border border-slate-800 hover:border-purple-500/50 cursor-pointer overflow-hidden flex flex-col"
+                      className="rounded-xl bg-slate-950 border border-slate-800 hover:border-purple-500/50 cursor-pointer overflow-hidden flex flex-col justify-between"
                     >
                       <div className="relative w-full aspect-[704/987] bg-slate-900">
                         {modernImg && (
@@ -3575,12 +3968,46 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
                             className="w-full h-full object-cover"
                           />
                         )}
+                        {heroStatus && (
+                          <div
+                            className={`absolute top-1.5 inset-x-1.5 px-1.5 py-0.5 rounded text-[9px] font-black text-center shadow ${
+                              heroStatus.allowed
+                                ? 'bg-emerald-500 text-slate-950'
+                                : 'bg-slate-950/90 text-amber-300 border border-amber-500/40'
+                            }`}
+                          >
+                            {heroStatus.badgeText}
+                          </div>
+                        )}
                       </div>
-                      <div className="p-2 text-center">
-                        <p className="font-bold text-xs text-white truncate">{c.name}</p>
-                        <span className="text-[10px] text-cyan-400 font-bold">
-                          CT {c.ct} • {c.type}
-                        </span>
+                      <div className="p-2 text-center space-y-1.5">
+                        <div>
+                          <p className="font-bold text-xs text-white truncate">{c.name}</p>
+                          <span className="text-[10px] text-cyan-400 font-bold block">
+                            CT {c.ct} • {c.type}
+                          </span>
+                        </div>
+                        {heroStatus && (
+                          <p className="text-[9px] text-slate-400 line-clamp-2 leading-tight">
+                            {heroStatus.reason}
+                          </p>
+                        )}
+                        {canSummonThisHeroNow && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setZoneViewer(null);
+                              setSelectedHandIndex(null);
+                              setSelectedAttackerSlot(null);
+                              setPendingReactionHandIndex(null);
+                              setSelectedHeroCodeToSummon(c.code);
+                              setSelectingSlotForHero(true);
+                            }}
+                            className="w-full py-1 px-2 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-[10px] uppercase tracking-wider"
+                          >
+                            👑 Invocar este Herói
+                          </button>
+                        )}
                       </div>
                     </div>
                   );

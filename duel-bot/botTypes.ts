@@ -2,6 +2,19 @@ import { CardData } from '../types';
 
 export type PlayerId = 'player' | 'bot';
 
+export type StructuralDeckId =
+  | 'Insanis'
+  | 'Invasão do Caos'
+  | 'Príncipe do Macroverso'
+  | 'Mechs e Mangas'
+  | 'Herdeiro do Caos'
+  | 'Mundo em Chamas'
+  | 'Corruptor Profano'
+  | 'O Escolhido'
+  | 'Deusa da Lua';
+
+export type BotDeckSelection = StructuralDeckId | 'random';
+
 export type DuelPhase =
   | 'INITIATIVE'
   | 'MULLIGAN'
@@ -72,6 +85,7 @@ export interface DuelLogEntry {
 export interface PlayerDuelState {
   id: PlayerId;
   name: string;
+  deckId: StructuralDeckId;
   hp: number;
   mana: number;
   maxManaCap: number;
@@ -90,6 +104,8 @@ export interface PlayerDuelState {
   lockedFromAttackingThisTurn: boolean; // true if summoned/played after attacking
   lostFighterInBattleThisTurn: boolean;
   heroDiedThisTurn: boolean;
+  damageDealtToEnemyPlayerThisRound: number;
+  alliedFightersLostWhileSelenaLuaActive: number;
 }
 
 export interface PendingReactionWindow {
@@ -168,6 +184,8 @@ export interface DuelGameState {
   pendingGuerreiroSplashDamage: boolean;
   logs: DuelLogEntry[];
   deckMode: 'structural_29' | 'optimized_40';
+  playerDeckId: StructuralDeckId;
+  botDeckId: StructuralDeckId;
 }
 
 export interface PlayerSideHeuristic {
@@ -190,4 +208,46 @@ export interface HeuristicEvaluationResult {
   botBreakdown: PlayerSideHeuristic;
   playerBreakdown: PlayerSideHeuristic;
 }
+
+export type UniversalFailurePillar =
+  | 'LIFE_AS_RESOURCE_OVEREXTENSION'
+  | 'WINCON_AND_HERO_TIMING_DELAY'
+  | 'SYNERGY_AND_ENGINE_SCALING_GAP'
+  | 'INTERACTION_AND_COUNTERPLAY_DEFICIT'
+  | 'BOARD_TEMPO_AND_DEFENSIVE_STABILIZATION'
+  | 'CARD_ADVANTAGE_AND_HAND_SUSTAIN'
+  | 'BOT_VICTORY_REINFORCEMENT';
+
+export interface BotLossDiagnosisEntry {
+  causeCode: UniversalFailurePillar;
+  pillarLabel: string;
+  title: string;
+  analysis: string;
+  adjustmentSummary: string;
+}
+
+export interface BotAdaptiveMemory {
+  generation: number;
+  matchesPlayed: number;
+  botWins: number;
+  botLosses: number;
+  weights: {
+    /** 1. Gestão de Vida como Recurso (cautela ao pagar PV em efeitos) */
+    lifeAsResourceCautionMultiplier: number;
+    minSafeHpForLifeCost: number;
+    /** 2. Agressividade no Timing de Herói / Condição de Vitória (0.6 a 1.5, menor = desce mais cedo) */
+    winconTimingThresholdScale: number;
+    /** 3. Prioridade de Motores de Sinergia, Setup e Zonas Auxiliares (Morta/Apagada/Suportes) */
+    synergyEnginePriorityMultiplier: number;
+    /** 4. Disciplina de Interação, Reações, Contra-Negações e Remoção de Peças-Chave */
+    interactionAndRemovalDiscipline: number;
+    /** 5. Tempo de Mesa, Presença de Linha de Frente e Estabilização contra Aggro */
+    boardTempoAndDefenseMultiplier: number;
+    /** 6. Vantagem de Cartas (Card Advantage), Compras e Sustentação de Mão */
+    cardAdvantageAndDrawMultiplier: number;
+  };
+  lastMatchAutopsy: BotLossDiagnosisEntry[];
+}
+
+
 
