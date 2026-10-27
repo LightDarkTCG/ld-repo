@@ -745,6 +745,20 @@ export function subscribeAllStoreOrders(
 }
 
 // --- MERCADO PAGO API CLIENT HELPERS ---
+async function parseMpApiResponse(res: Response, fallbackError: string): Promise<any> {
+  const rawText = await res.text();
+  try {
+    return JSON.parse(rawText);
+  } catch {
+    if (res.status === 404 || rawText.includes('The page could not be found')) {
+      throw new Error(
+        'Rota de pagamento (/api/mercadopago) não encontrada no servidor. Faça o deploy atualizado na Vercel com a pasta /api e configure a variável MERCADOPAGO_ACCESS_TOKEN.'
+      );
+    }
+    throw new Error(fallbackError);
+  }
+}
+
 export async function generatePixForOrder(order: StoreOrder): Promise<{
   paymentId: string;
   status: PaymentStatus;
@@ -769,7 +783,7 @@ export async function generatePixForOrder(order: StoreOrder): Promise<{
     })
   });
 
-  const data = await res.json();
+  const data = await parseMpApiResponse(res, 'Erro ao gerar PIX no Mercado Pago.');
   if (!res.ok) {
     throw new Error(data.error || 'Erro ao gerar PIX no Mercado Pago.');
   }
@@ -810,7 +824,7 @@ export async function generateCheckoutPreferenceForOrder(order: StoreOrder): Pro
     })
   });
 
-  const data = await res.json();
+  const data = await parseMpApiResponse(res, 'Erro ao criar link de pagamento no Mercado Pago.');
   if (!res.ok) {
     throw new Error(data.error || 'Erro ao criar link de pagamento no Mercado Pago.');
   }
@@ -831,13 +845,13 @@ export async function syncOrderPaymentStatus(order: StoreOrder): Promise<StoreOr
     if (mpPaymentId) {
       const res = await fetch(`/api/mercadopago/payment/${encodeURIComponent(mpPaymentId)}`);
       if (res.ok) {
-        const data = await res.json();
+        const data = await parseMpApiResponse(res, 'Erro ao consultar pagamento.');
         mpStatus = data.status;
       }
     } else {
       const res = await fetch(`/api/mercadopago/order/${encodeURIComponent(order.id)}`);
       if (res.ok) {
-        const data = await res.json();
+        const data = await parseMpApiResponse(res, 'Erro ao consultar pedido.');
         if (data.found) {
           mpStatus = data.status;
           mpPaymentId = data.paymentId;
