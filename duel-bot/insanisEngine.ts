@@ -1820,6 +1820,42 @@ export function pullAndEquipCamadaFromAnywhere(
   return null;
 }
 
+export function checkOttoAscensionToAsmonious(state: DuelGameState, ownerId: PlayerId): boolean {
+  const owner = getPlayerState(state, ownerId);
+  if (owner.runes < 10) return false;
+  const ottoSlot = owner.frontline.findIndex(
+    (f) => f !== null && f.card.code === '2025/0001/00151'
+  );
+  if (ottoSlot === -1) return false;
+
+  const ottoFighter = owner.frontline[ottoSlot]!;
+  owner.frontline[ottoSlot] = null;
+  for (const eq of ottoFighter.equipments) {
+    owner.deadZone.push(eq.card);
+  }
+  owner.erasedZone.push(ottoFighter.card);
+
+  let asmonious: CardData | null = null;
+  const hIdx = owner.heroDeck.findIndex((c) => c.code === '2025/0001/00152');
+  const dIdx = owner.deck.findIndex((c) => c.code === '2025/0001/00152');
+  const zIdx = owner.deadZone.findIndex((c) => c.code === '2025/0001/00152');
+  if (hIdx !== -1) asmonious = owner.heroDeck.splice(hIdx, 1)[0];
+  else if (dIdx !== -1) asmonious = owner.deck.splice(dIdx, 1)[0];
+  else if (zIdx !== -1) asmonious = owner.deadZone.splice(zIdx, 1)[0];
+
+  if (asmonious) {
+    addLog(
+      state,
+      ownerId,
+      `👑 10+ Runas alcançadas! «Otto - Arauto da Corrupção» foi enviado para a Zona Apagada e invocou «Asmonious - O Corruptor»!`,
+      'summon'
+    );
+    summonFighterToSlot(state, ownerId, asmonious, ottoSlot);
+    return true;
+  }
+  return false;
+}
+
 export function summonFighterToSlot(
   state: DuelGameState,
   ownerId: PlayerId,
@@ -1977,6 +2013,7 @@ export function summonFighterToSlot(
       `Arquétipo [Cósmico]: «${card.name}» gerou 1 Runa (Total: ${owner.runes}).`,
       'effect'
     );
+    checkOttoAscensionToAsmonious(state, ownerId);
   }
 
   if (isHero) {
@@ -2914,6 +2951,27 @@ export function processStartOfRound(state: DuelGameState) {
             `🔥 «Donnie - Grande General»: Enviou 1 carta do topo de ambos os Decks para a Zona Apagada!`,
             'effect'
           );
+        }
+
+        // Lordes do Corruptor Profano (2025/0001/00155 a 2025/0001/00161):
+        // "No começo da rodada, receba 1 Runa."
+        if (
+          f.card.code === '2025/0001/00155' ||
+          f.card.code === '2025/0001/00156' ||
+          f.card.code === '2025/0001/00157' ||
+          f.card.code === '2025/0001/00158' ||
+          f.card.code === '2025/0001/00159' ||
+          f.card.code === '2025/0001/00160' ||
+          f.card.code === '2025/0001/00161'
+        ) {
+          p.runes += 1;
+          addLog(
+            state,
+            pid,
+            `✨ «${f.card.name}»: Gerou +1 Runa no começo da rodada (Total: ${p.runes} Runas)!`,
+            'effect'
+          );
+          checkOttoAscensionToAsmonious(state, pid);
         }
 
         // Asmonious - O Corruptor (2025/0001/00152):
