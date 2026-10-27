@@ -1,0 +1,193 @@
+import { CardData } from '../types';
+
+export type PlayerId = 'player' | 'bot';
+
+export type DuelPhase =
+  | 'INITIATIVE'
+  | 'MULLIGAN'
+  | 'PRE_DRAW_WINDOW'
+  | 'MAIN_PHASE'
+  | 'COMBAT_REACTION'
+  | 'CARD_REACTION'
+  | 'GAME_OVER';
+
+export interface AttachedEquipment {
+  instanceId: string;
+  card: CardData;
+  grantedArchetypes?: string[];
+}
+
+export interface FieldFighter {
+  instanceId: string;
+  card: CardData;
+  slotIndex: number; // 0 to 5
+  owner: PlayerId;
+  baseAtk: number;
+  baseHp: number;
+  currentHp: number;
+  maxHp: number;
+  permAtkBonus: number;
+  permHpBonus: number;
+  tempAtkBonus: number;
+  archetypes: string[];
+  equipments: AttachedEquipment[];
+  summonedRound: number;
+  summonedTurnGlobal: number;
+  hasAttackedThisTurn: boolean;
+  usedOncePerRoundAbility: boolean;
+  macroversalUsedThisRound: boolean;
+  azaradoUsedThisRound: boolean;
+  isHero: boolean;
+  jimLordTier5Plus?: boolean;
+  jimLordTier6Mana?: boolean;
+  jimLordTier9GemUsedThisRound?: boolean;
+}
+
+export interface FieldSupport {
+  instanceId: string;
+  card: CardData;
+  slotIndex: number; // 0 to 5
+  owner: PlayerId;
+  usedOncePerRound: boolean;
+}
+
+export type DuelLogType =
+  | 'life_loss'
+  | 'life_gain'
+  | 'attack'
+  | 'reaction'
+  | 'summon'
+  | 'effect'
+  | 'info';
+
+export interface DuelLogEntry {
+  id: string;
+  round: number;
+  turn: number;
+  actor: PlayerId | 'system';
+  text: string;
+  type: DuelLogType;
+}
+
+export interface PlayerDuelState {
+  id: PlayerId;
+  name: string;
+  hp: number;
+  mana: number;
+  maxManaCap: number;
+  runes: number;
+  hand: CardData[];
+  deck: CardData[];
+  heroDeck: CardData[];
+  deadZone: CardData[]; // Zona Morta
+  erasedZone: CardData[]; // Zona Apagada
+  frontline: (FieldFighter | null)[]; // 6 slots (0..5)
+  backrow: (FieldSupport | null)[]; // 6 slots (0..5)
+  ctReductionThisRound: number;
+  pendingPactoLifeLossNextRound: number;
+  skipDrawsUntilGlobalTurn: number;
+  hasAttackedInCurrentTurn: boolean;
+  lockedFromAttackingThisTurn: boolean; // true if summoned/played after attacking
+  lostFighterInBattleThisTurn: boolean;
+  heroDiedThisTurn: boolean;
+}
+
+export interface PendingReactionWindow {
+  type: 'CARD_PLAYED' | 'ATTACK_DECLARED';
+  sourceActor: PlayerId;
+  responder: PlayerId;
+  triggerCard?: CardData;
+  triggerActionLabel: string;
+  effectiveCtOfTrigger?: number;
+  canBeNegatedByMaxCt?: number;
+  minCtToNegate?: number;
+  isSelamentoTrigger?: boolean;
+  selamentoLifePaid?: number;
+  selamentoDoubleLifeCost?: number;
+  isCounterChain?: boolean;
+  attackerSlot?: number;
+  targetSlot?: number; // -1 for direct attack
+  pendingPayload: (activeState: DuelGameState) => void;
+  onNegatedPayload?: (activeState: DuelGameState) => void;
+}
+
+export interface ChoiceCandidate {
+  id: string;
+  card: CardData;
+  sourceZone: 'deck' | 'hand' | 'deadZone' | 'erasedZone';
+  sourceIndex: number;
+  subtitle?: string;
+}
+
+export interface PendingCardChoiceModal {
+  title: string;
+  description: string;
+  candidates: ChoiceCandidate[];
+  minSelect: number;
+  maxSelect: number;
+  maxTotalCt?: number; // Used by Fragmentar
+  allowConfirmAllFromDeadZoneOption?: boolean; // Used by Jim - Necromante
+  deadZoneJimCount?: number;
+  needsSlotPlacementAfterChoice?: boolean;
+  targetSlotForChosenCard?: number;
+  effectKind:
+    | 'DESTRUICAO_VARIANTES'
+    | 'ASCENSAO_DO_REI'
+    | 'NECROMANTE'
+    | 'BUSCA_ETERNIDADE'
+    | 'JIM_LORD_GEMA'
+    | 'CHAMADO_VARIANTE'
+    | 'PORTAL_VARIANTES'
+    | 'DISFARCE_MESTRE'
+    | 'FRAGMENTAR'
+    | 'LAMENTO_DO_REI'
+    | 'REI_ELFO';
+  reiElfoSourceSlot?: number;
+  disfarceTargetSlot?: number;
+}
+
+export interface DuelGameState {
+  round: number;
+  turnInRound: 1 | 2;
+  globalTurn: number;
+  firstPlayerOfRound: PlayerId;
+  activePlayer: PlayerId;
+  phase: DuelPhase;
+  winner: PlayerId | 'draw' | null;
+  winReason: string | null;
+  initiativeRoll: {
+    playerRoll: number;
+    botRoll: number;
+    winner: PlayerId | null;
+  };
+  mulliganDone: boolean;
+  player: PlayerDuelState;
+  bot: PlayerDuelState;
+  reactionWindow: PendingReactionWindow | null;
+  pendingChoiceQueue: PendingCardChoiceModal[];
+  pendingGuerreiroSplashDamage: boolean;
+  logs: DuelLogEntry[];
+  deckMode: 'structural_29' | 'optimized_40';
+}
+
+export interface PlayerSideHeuristic {
+  lifeScore: number;
+  boardFightersScore: number;
+  backrowAndEquipScore: number;
+  erasedZoneSynergyScore: number;
+  handAndTempoScore: number;
+  comboSynergyBonus: number;
+  totalRawPoints: number;
+}
+
+export interface HeuristicEvaluationResult {
+  /** Nota normalizada de 0 a 100 (50 = Equilíbrio Perfeito, >50 Vantagem Bot, <50 Vantagem Jogador) */
+  score0to100: number;
+  /** Diferença bruta (Raw_Bot - Raw_Player) antes da função Sigmoide */
+  rawDelta: number;
+  /** Classificação tática da situação para ajustar postura do Bot (AGRESSIVA, EQUILIBRADA, DEFENSIVA, LETAL) */
+  posture: 'LETHAL_PUSH' | 'DOMINATING' | 'BALANCED' | 'DEFENSIVE_RECOVERY' | 'CRITICAL_SURVIVAL';
+  botBreakdown: PlayerSideHeuristic;
+  playerBreakdown: PlayerSideHeuristic;
+}
+

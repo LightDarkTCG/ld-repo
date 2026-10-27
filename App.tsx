@@ -34,6 +34,7 @@ import { ProductDetailModal } from './components/ProductDetailModal';
 import { GameGuideSections } from './components/GameGuideSections';
 import { StoreModal } from './components/StoreModal';
 import { addToCart, getCartItems } from './storeService';
+import { DuelBotModal } from './duel-bot/DuelBotModal';
 
 // --- SUB-COMPONENTS ---
 
@@ -1609,6 +1610,7 @@ export default function App() {
 
   // Check for game mode in URL
   const [isGameMode, setIsGameMode] = useState(false);
+  const [isDuelBotOpen, setIsDuelBotOpen] = useState(false);
   // Inicializa exclusivamente do cache do navegador (sincronizado com o Firebase) sem textos fixos antigos
   const [homeSettings, setHomeSettings] = useState<any>(() => {
     return readBrowserCache<any>('ld_cache_homeSettings_v2');
@@ -1908,6 +1910,7 @@ export default function App() {
       />
       <TypeModal type={selectedType} onClose={closeCurrentModal} />
       {isGameOpen && <GameBoard onClose={closeCurrentModal} />}
+      <DuelBotModal isOpen={isDuelBotOpen} onClose={() => setIsDuelBotOpen(false)} />
       {adminMode !== 'none' && isAdmin && <AdminPanel adminType={adminMode} onClose={closeCurrentModal} />}
 
       {/* Navbar */}
@@ -1951,6 +1954,13 @@ export default function App() {
               className="bg-slate-100 hover:bg-white text-slate-950 px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 flex items-center gap-1.5 shadow-sm active:scale-95 whitespace-nowrap"
             >
               <Zap size={14} className="text-purple-600 fill-purple-600/30" /> App Duelo
+            </button>
+            <button 
+              onClick={() => setIsDuelBotOpen(true)}
+              className="bg-gradient-to-r from-purple-700 to-indigo-700 hover:from-purple-600 hover:to-indigo-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 flex items-center gap-1.5 shadow-sm active:scale-95 whitespace-nowrap border border-purple-400/30"
+              title="Simulador de Duelo contra IA (Deck Insanis)"
+            >
+              <Sword size={14} className="text-amber-300" /> Duelo vs IA
             </button>
             <button 
               onClick={() => setIsTournamentOpen(true)}
@@ -2216,6 +2226,12 @@ export default function App() {
                   className="bg-slate-100 hover:bg-white text-slate-950 px-3.5 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 shadow-sm"
                 >
                   <Zap size={15} className="text-purple-600 fill-purple-600/30" /> App Duelo
+                </button>
+                <button 
+                  onClick={() => { setIsDuelBotOpen(true); setIsMenuOpen(false); }}
+                  className="bg-gradient-to-r from-purple-700 to-indigo-700 hover:from-purple-600 hover:to-indigo-600 text-white px-3.5 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 shadow-sm border border-purple-400/30"
+                >
+                  <Sword size={15} className="text-amber-300" /> Duelo vs IA (Insanis)
                 </button>
                 <button 
                   onClick={() => { setIsTournamentOpen(true); setIsMenuOpen(false); }}
