@@ -144,6 +144,7 @@ export interface ProductPriceVariation {
   id?: string;
   name: string;
   price: string;
+  imageUrl?: string;
   description?: string;
   buttonLink?: string;
   buttonText?: string;
@@ -176,6 +177,7 @@ export interface ExclusiveProduct {
   price?: string;
   originalPrice?: string;
   priceVariations?: ProductPriceVariation[];
+  sameVariationPrice?: boolean;
   buttonText?: string;
   buttonLink?: string;
   isActive?: boolean;
@@ -234,6 +236,8 @@ export interface MarketplaceListing {
   language?: string;
   imageUrl: string;
   additionalImages?: string[];
+  priceVariations?: ProductPriceVariation[];
+  sameVariationPrice?: boolean;
   // Se for carta avulsa ou coleção vinculada a cartas do catálogo
   cardId?: string;
   cardName?: string;

@@ -81,16 +81,13 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
     setActiveMediaIndex(0);
   }, [product, initialVariationIndex, priceVariations.length]);
 
+  const [showingVariationPhoto, setShowingVariationPhoto] = useState<boolean>(true);
+
+  useEffect(() => {
+    setShowingVariationPhoto(true);
+  }, [selectedVariationIndex, product]);
+
   if (!product) return null;
-
-  const currentMedia = mediaList[activeMediaIndex] || mediaList[0];
-
-  const handleCopyDeckCode = () => {
-    if (!deckData.rawDeckBuilderCode) return;
-    navigator.clipboard.writeText(deckData.rawDeckBuilderCode);
-    setCopiedCode(true);
-    setTimeout(() => setCopiedCode(false), 2500);
-  };
 
   const activeVariationIndex = (selectedVariationIndex >= 0 && selectedVariationIndex < priceVariations.length)
     ? selectedVariationIndex
@@ -100,8 +97,23 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
     ? priceVariations[activeVariationIndex]
     : null;
 
+  const currentMedia =
+    showingVariationPhoto && selectedVariation?.imageUrl && selectedVariation.imageUrl.trim() !== ''
+      ? { type: 'image' as const, url: selectedVariation.imageUrl.trim() }
+      : mediaList[activeMediaIndex] || mediaList[0];
+
+  const handleCopyDeckCode = () => {
+    if (!deckData.rawDeckBuilderCode) return;
+    navigator.clipboard.writeText(deckData.rawDeckBuilderCode);
+    setCopiedCode(true);
+    setTimeout(() => setCopiedCode(false), 2500);
+  };
+
   const isButtonEnabled = product.isButtonActive !== false && product.isActive !== false;
-  const currentPrice = selectedVariation ? selectedVariation.price : (product.price || '');
+  const currentPrice =
+    selectedVariation && !product.sameVariationPrice && selectedVariation.price
+      ? selectedVariation.price
+      : product.price || selectedVariation?.price || '';
   const currentLink = (selectedVariation?.buttonLink && selectedVariation.buttonLink.trim() !== '')
     ? selectedVariation.buttonLink
     : product.buttonLink;
@@ -249,9 +261,12 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                   {mediaList.map((m, idx) => (
                     <button
                       key={idx}
-                      onClick={() => setActiveMediaIndex(idx)}
+                      onClick={() => {
+                        setShowingVariationPhoto(false);
+                        setActiveMediaIndex(idx);
+                      }}
                       className={`relative shrink-0 w-20 h-14 rounded-lg overflow-hidden border-2 transition-all duration-200 ${
-                        activeMediaIndex === idx 
+                        !showingVariationPhoto && activeMediaIndex === idx 
                           ? 'border-purple-500 ring-2 ring-purple-500/50 scale-105' 
                           : 'border-slate-800 opacity-60 hover:opacity-100'
                       }`}
@@ -319,7 +334,10 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                         return (
                           <div
                             key={idx}
-                            onClick={() => setSelectedVariationIndex(idx)}
+                            onClick={() => {
+                              setSelectedVariationIndex(idx);
+                              setShowingVariationPhoto(true);
+                            }}
                             className={`p-3.5 rounded-xl border-2 transition-all duration-200 cursor-pointer relative flex flex-col justify-between gap-2 text-left ${
                               isSelected
                                 ? 'bg-gradient-to-br from-purple-950/90 via-slate-900 to-indigo-950/90 border-purple-500 shadow-[0_0_20px_rgba(168,85,247,0.35)] ring-1 ring-purple-400'
@@ -327,13 +345,21 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                             }`}
                           >
                             <div className="flex items-start justify-between gap-2">
-                              <div className="flex items-center gap-2">
+                              <div className="flex items-center gap-2 min-w-0">
                                 <div className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${
                                   isSelected ? 'border-purple-400 bg-purple-600' : 'border-slate-600 bg-slate-950'
                                 }`}>
                                   {isSelected && <div className="w-1.5 h-1.5 bg-white rounded-full" />}
                                 </div>
-                                <span className={`font-bold text-sm ${isSelected ? 'text-white' : 'text-slate-200'}`}>
+                                {variation.imageUrl && (
+                                  <img
+                                    src={variation.imageUrl}
+                                    alt={variation.name}
+                                    referrerPolicy="no-referrer"
+                                    className="w-9 h-9 rounded-lg object-cover border border-white/20 shrink-0"
+                                  />
+                                )}
+                                <span className={`font-bold text-sm truncate ${isSelected ? 'text-white' : 'text-slate-200'}`}>
                                   {variation.name}
                                 </span>
                               </div>
@@ -360,7 +386,12 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                             <div className="flex items-center justify-between pt-1 border-t border-slate-800/80 pl-6 mt-0.5">
                               <span className="text-[10px] text-slate-400 font-medium">Preço desta versão:</span>
                               <span className={`font-black font-mono text-base ${isSelected ? 'text-emerald-400 font-bold' : 'text-slate-300'}`}>
-                                {variation.price.startsWith('R$') ? variation.price : `R$ ${variation.price}`}
+                                {(() => {
+                                  const vPriceStr = product.sameVariationPrice
+                                    ? product.price || variation.price || ''
+                                    : variation.price || product.price || '';
+                                  return vPriceStr.startsWith('R$') ? vPriceStr : `R$ ${vPriceStr}`;
+                                })()}
                               </span>
                             </div>
                           </div>

@@ -941,10 +941,25 @@ export const CardProvider = ({ children }: { children: ReactNode }) => {
           finalRarity
         );
 
+        const STALE_VEU_ARCHETYPES: Record<string, string> = {
+          '2026/0001/00306': 'Véu / Furtivo / Insano / Sortudo',
+          '2026/0001/00307': 'Cósmico / Véu',
+          '2026/0001/00309': 'Véu / Cósmico / Furtivo',
+          '2026/0001/00310': 'Véu / Divindade',
+          '2026/0001/00311': 'Furtivo / Insano / Cósmico',
+          '2026/0001/00312': 'Véu / Cósmico',
+        };
+        const resolvedArchetype = (
+          firestoreCard?.archetype !== undefined &&
+          !(defaultMatch && STALE_VEU_ARCHETYPES[baseCode] && firestoreCard.archetype === STALE_VEU_ARCHETYPES[baseCode])
+        )
+          ? firestoreCard.archetype
+          : (defaultMatch?.archetype || chosenCard.archetype);
+
         const customProps = firestoreCard ? {
           id: firestoreCard.id,
           name: firestoreCard.name || chosenCard.name,
-          archetype: firestoreCard.archetype !== undefined ? firestoreCard.archetype : chosenCard.archetype,
+          archetype: resolvedArchetype,
           type: firestoreCard.type || chosenCard.type,
           collection: firestoreCard.collection || chosenCard.collection,
           description: firestoreCard.description !== undefined ? firestoreCard.description : chosenCard.description,

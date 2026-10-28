@@ -54,6 +54,9 @@ export interface FieldFighter {
   jimLordTier5Plus?: boolean;
   jimLordTier6Mana?: boolean;
   jimLordTier9GemUsedThisRound?: boolean;
+  attacksThisTurnCount?: number;
+  immuneToCardEffectsRound?: number;
+  rebirthVeuTriggered?: boolean;
 }
 
 export interface FieldSupport {
@@ -62,6 +65,7 @@ export interface FieldSupport {
   slotIndex: number; // 0 to 5
   owner: PlayerId;
   usedOncePerRound: boolean;
+  stackedCards?: CardData[]; // Permite empilhar Camadas / equipamentos de jogador no mesmo espaço
 }
 
 export type DuelLogType =
@@ -98,6 +102,8 @@ export interface PlayerDuelState {
   frontline: (FieldFighter | null)[]; // 6 slots (0..5)
   backrow: (FieldSupport | null)[]; // 6 slots (0..5)
   ctReductionThisRound: number;
+  permCtReduction?: number;
+  permCtPenalty?: number;
   pendingPactoLifeLossNextRound: number;
   skipDrawsUntilGlobalTurn: number;
   hasAttackedInCurrentTurn: boolean;
@@ -106,6 +112,10 @@ export interface PlayerDuelState {
   heroDiedThisTurn: boolean;
   damageDealtToEnemyPlayerThisRound: number;
   alliedFightersLostWhileSelenaLuaActive: number;
+  pendingRitosFestival?: Array<{ card: CardData; summonOnRound: number }>;
+  pendingAtoFinalMahinaReturnRound?: number;
+  pendingComoPlanejadoCards?: CardData[];
+  floquinhoTreatedAsHeroCodes?: string[];
 }
 
 export interface PendingReactionWindow {
@@ -117,6 +127,7 @@ export interface PendingReactionWindow {
   effectiveCtOfTrigger?: number;
   canBeNegatedByMaxCt?: number;
   minCtToNegate?: number;
+  onlyNegatableByHero?: boolean;
   isSelamentoTrigger?: boolean;
   selamentoLifePaid?: number;
   selamentoDoubleLifeCost?: number;
@@ -157,9 +168,19 @@ export interface PendingCardChoiceModal {
     | 'DISFARCE_MESTRE'
     | 'FRAGMENTAR'
     | 'LAMENTO_DO_REI'
-    | 'REI_ELFO';
+    | 'REI_ELFO'
+    | 'APOTEOSE_CAMADA'
+    | 'APOTEOSE_ROUND_START'
+    | 'MAHINA_VEU_ZONES'
+    | 'MAHINA_VEU_COMBAT_ARCHETYPE'
+    | 'RITOS_DO_FESTIVAL'
+    | 'O_PAPAI_CHEGOU'
+    | 'FLOQUINHO_VEU_HP_SPEND';
   reiElfoSourceSlot?: number;
   disfarceTargetSlot?: number;
+  mahinaCombatSlot?: number;
+  floquinhoTargetSlot?: number;
+  floquinhoHandIdx?: number;
 }
 
 export interface DuelGameState {

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Bot,
   Check,
@@ -37,6 +37,7 @@ import {
   StructuralDeckId
 } from './botTypes';
 import {
+  ALL_OFFICIAL_ARCHETYPES,
   STRUCTURAL_DECK_OPTIONS,
   addLog,
   advanceTurn,
@@ -47,15 +48,23 @@ import {
   checkWinCondition,
   countJimsInErasedZone,
   createInitialDuelState,
+  discardCardDirectlyToZone,
+  equipSupportOrCamadaToBackrow,
   evaluateBoardHeuristic,
   evaluateBotReactionToPlayerAction,
   executeBotTurnStep,
   executeCombatResolution,
+  executeFriendlyAttackOnAquaCaotica,
+  getAllSupportCardsInSlot,
   getAvailableReactions,
   getCardAuthorityCt,
   getEffectiveArchetypes,
   getEffectiveCt,
   getFighterEffectiveAtk,
+  getMaxAttacksPerTurn,
+  hasActiveCamada,
+  hasArchetype,
+  isCamadaCard,
   isContinuousBackrowCard,
   isJimCard,
   loadBotAdaptiveMemory,
@@ -68,7 +77,8 @@ import {
   sendCardToDeadOrErasedZone,
   sendFighterFromFieldToZone,
   shuffleCards,
-  summonFighterToSlot
+  summonFighterToSlot,
+  summonFloquinhoCaoticaWithHp
 } from './insanisEngine';
 
 interface DuelBotModalProps {
@@ -76,20 +86,7 @@ interface DuelBotModalProps {
   onClose: () => void;
 }
 
-const GEMA_1_ARCHETYPE_POOL = [
-  'Caos',
-  'Ordem',
-  'Lúmen',
-  'Darkus',
-  'Conceito',
-  'Furtivo',
-  'Reativo',
-  'Insano',
-  'Sortudo',
-  'Azarado',
-  'Cósmico',
-  'Escolhido'
-];
+const GEMA_1_ARCHETYPE_POOL = [...ALL_OFFICIAL_ARCHETYPES];
 
 export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) => {
   const { cards: liveCards } = useCards();
@@ -137,6 +134,104 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
 
   // Retractable Combat Log state
   const [isLogOpen, setIsLogOpen] = useState<boolean>(true);
+
+  // Pacing / Speed Control ('lento' | 'normal' | 'rapido')
+  const [duelSpeed, setDuelSpeed] = useState<'lento' | 'normal' | 'rapido'>('normal');
+
+  const SPEED_CONFIG = {
+    lento: {
+      label: '🐢 Lento',
+      botStepMs: 2400,
+      attackWindupMs: 1250,
+      spotlightMs: 1800
+    },
+    normal: {
+      label: '⚔️ Normal',
+      botStepMs: 1650,
+      attackWindupMs: 900,
+      spotlightMs: 1350
+    },
+    rapido: {
+      label: '⚡ Rápido',
+      botStepMs: 950,
+      attackWindupMs: 520,
+      spotlightMs: 850
+    }
+  } as const;
+
+  // Active Combat Attack Arrow & Lunge Animation state
+  const [activeAttackAnim, setActiveAttackAnim] = useState<{
+    attackerSide: 'player' | 'bot';
+    attackerSlot: number;
+    targetSide: 'player' | 'bot';
+    targetSlot: number; // 0..5, or -1 for Direct Attack
+    attackerName: string;
+    targetName: string;
+    atkValue: number;
+    isSolador?: boolean;
+    isAquaRedirect?: boolean;
+    aquaEnemySlot?: number;
+  } | null>(null);
+
+  // Hovered target when Player has selected an attacker (for live preview Attack Arrow)
+  const [hoveredAttackTarget, setHoveredAttackTarget] = useState<{
+    side: 'bot' | 'player';
+    slot: number; // 0..5 or -1 for Direct Attack
+    isAquaRedirect?: boolean;
+  } | null>(null);
+
+  // Floating Damage / Heal / Status Popups over slots and HP bars
+  const [floatingPopups, setFloatingPopups] = useState<
+    Array<{
+      id: string;
+      targetKey: string; // 'bot_slot_0'..'bot_slot_5', 'player_slot_0'..'player_slot_5', 'bot_hp', 'player_hp'
+      text: string;
+      variant: 'damage' | 'heal' | 'ko' | 'summon' | 'effect';
+    }>
+  >([]);
+
+  // Slot visual impact states ('hit' | 'summon' | 'heal')
+  const [slotImpacts, setSlotImpacts] = useState<Record<string, 'hit' | 'summon' | 'heal'>>({});
+
+  // Center-screen Action Spotlight toast for readability
+  const [actionSpotlight, setActionSpotlight] = useState<{
+    id: string;
+    actor: 'player' | 'bot' | 'system';
+    text: string;
+    type: DuelLogType;
+  } | null>(null);
+
+  // DOM Refs for computing exact SVG Attack Arrow coordinates
+  const battlefieldRef = useRef<HTMLDivElement | null>(null);
+  const botSlotRefs = useRef<Array<HTMLDivElement | null>>([null, null, null, null, null, null]);
+  const playerSlotRefs = useRef<Array<HTMLDivElement | null>>([null, null, null, null, null, null]);
+  const botHpRef = useRef<HTMLDivElement | null>(null);
+  const playerHpRef = useRef<HTMLDivElement | null>(null);
+
+  const [arrowCoords, setArrowCoords] = useState<{
+    x1: number;
+    y1: number;
+    x2: number;
+    y2: number;
+    x3?: number;
+    y3?: number;
+    attackerSide: 'player' | 'bot';
+    atkValue: number;
+    attackerName: string;
+    targetName: string;
+    isSolador?: boolean;
+    isPreview?: boolean;
+    isReactionLock?: boolean;
+    isAquaRedirect?: boolean;
+  } | null>(null);
+
+  const prevSnapshotRef = useRef<{
+    botHp: number;
+    playerHp: number;
+    botFront: Array<{ instanceId: string; hp: number; name: string } | null>;
+    playerFront: Array<{ instanceId: string; hp: number; name: string } | null>;
+    lastLogId: string | null;
+  } | null>(null);
 
   // Adaptive Bot Memory & Post-Match Autopsy
   const [botMemory, setBotMemory] = useState<BotAdaptiveMemory>(() => loadBotAdaptiveMemory());
@@ -199,7 +294,15 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
               }
             : null
         ),
-        backrow: p.backrow.map((s) => (s ? { ...s, card: upgradeCard(s.card) } : null))
+        backrow: p.backrow.map((s) =>
+          s
+            ? {
+                ...s,
+                card: upgradeCard(s.card),
+                stackedCards: (s.stackedCards || []).map(upgradeCard)
+              }
+            : null
+        )
       });
 
       return {
@@ -242,11 +345,367 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
     }
   }, [gameState.phase, hasAnalyzedCurrentMatch, gameState]);
 
-  // Bot automated turn loop
+  // Clear hovered target when attacker selection is cleared
+  useEffect(() => {
+    if (selectedAttackerSlot === null) {
+      setHoveredAttackTarget(null);
+    }
+  }, [selectedAttackerSlot]);
+
+  // Detect HP changes, fighter hits, KOs, summons, and new log actions to trigger floating popups & spotlight
+  useEffect(() => {
+    const snap = {
+      botHp: gameState.bot.hp,
+      playerHp: gameState.player.hp,
+      botFront: gameState.bot.frontline.map((f) =>
+        f ? { instanceId: f.instanceId, hp: f.currentHp, name: f.card.name } : null
+      ),
+      playerFront: gameState.player.frontline.map((f) =>
+        f ? { instanceId: f.instanceId, hp: f.currentHp, name: f.card.name } : null
+      ),
+      lastLogId: gameState.logs[0]?.id ?? null
+    };
+
+    const prev = prevSnapshotRef.current;
+    prevSnapshotRef.current = snap;
+    if (!prev) return;
+
+    const newPopups: Array<{
+      id: string;
+      targetKey: string;
+      text: string;
+      variant: 'damage' | 'heal' | 'ko' | 'summon' | 'effect';
+    }> = [];
+    const newImpacts: Record<string, 'hit' | 'summon' | 'heal'> = {};
+    const nowId = `${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+
+    // Check Bot HP diff
+    if (snap.botHp < prev.botHp) {
+      newPopups.push({
+        id: `${nowId}_bot_hp_dmg`,
+        targetKey: 'bot_hp',
+        text: `-${prev.botHp - snap.botHp} PV`,
+        variant: 'damage'
+      });
+    } else if (snap.botHp > prev.botHp) {
+      newPopups.push({
+        id: `${nowId}_bot_hp_heal`,
+        targetKey: 'bot_hp',
+        text: `+${snap.botHp - prev.botHp} PV`,
+        variant: 'heal'
+      });
+    }
+
+    // Check Player HP diff
+    if (snap.playerHp < prev.playerHp) {
+      newPopups.push({
+        id: `${nowId}_player_hp_dmg`,
+        targetKey: 'player_hp',
+        text: `-${prev.playerHp - snap.playerHp} PV`,
+        variant: 'damage'
+      });
+    } else if (snap.playerHp > prev.playerHp) {
+      newPopups.push({
+        id: `${nowId}_player_hp_heal`,
+        targetKey: 'player_hp',
+        text: `+${snap.playerHp - prev.playerHp} PV`,
+        variant: 'heal'
+      });
+    }
+
+    // Check Bot & Player frontline slots
+    const checkSideSlots = (
+      side: 'bot' | 'player',
+      prevArr: typeof prev.botFront,
+      currArr: typeof snap.botFront
+    ) => {
+      for (let i = 0; i < 6; i++) {
+        const pSlot = prevArr[i];
+        const cSlot = currArr[i];
+        const key = `${side}_slot_${i}`;
+
+        if (!pSlot && cSlot) {
+          newImpacts[key] = 'summon';
+          newPopups.push({
+            id: `${nowId}_${key}_sum`,
+            targetKey: key,
+            text: `✨ INVOCADO`,
+            variant: 'summon'
+          });
+        } else if (pSlot && !cSlot) {
+          newImpacts[key] = 'hit';
+          newPopups.push({
+            id: `${nowId}_${key}_ko`,
+            targetKey: key,
+            text: `💥 ABATIDO!`,
+            variant: 'ko'
+          });
+        } else if (pSlot && cSlot) {
+          if (pSlot.instanceId !== cSlot.instanceId) {
+            newImpacts[key] = 'summon';
+            newPopups.push({
+              id: `${nowId}_${key}_swap`,
+              targetKey: key,
+              text: `✨ ${cSlot.name}`,
+              variant: 'summon'
+            });
+          } else if (cSlot.hp < pSlot.hp) {
+            newImpacts[key] = 'hit';
+            newPopups.push({
+              id: `${nowId}_${key}_dmg`,
+              targetKey: key,
+              text: `💥 -${pSlot.hp - cSlot.hp}`,
+              variant: 'damage'
+            });
+          } else if (cSlot.hp > pSlot.hp) {
+            newImpacts[key] = 'heal';
+            newPopups.push({
+              id: `${nowId}_${key}_heal`,
+              targetKey: key,
+              text: `💚 +${cSlot.hp - pSlot.hp}`,
+              variant: 'heal'
+            });
+          }
+        }
+      }
+    };
+
+    checkSideSlots('bot', prev.botFront, snap.botFront);
+    checkSideSlots('player', prev.playerFront, snap.playerFront);
+
+    if (newPopups.length > 0) {
+      setFloatingPopups((curr) => [...curr, ...newPopups]);
+      const popupIds = new Set(newPopups.map((p) => p.id));
+      setTimeout(() => {
+        setFloatingPopups((curr) => curr.filter((p) => !popupIds.has(p.id)));
+      }, 1550);
+    }
+
+    if (Object.keys(newImpacts).length > 0) {
+      setSlotImpacts((curr) => ({ ...curr, ...newImpacts }));
+      setTimeout(() => {
+        setSlotImpacts((curr) => {
+          const copy = { ...curr };
+          for (const k of Object.keys(newImpacts)) {
+            delete copy[k];
+          }
+          return copy;
+        });
+      }, 900);
+    }
+
+    // Action Spotlight Banner for latest log entry
+    const latestLog = gameState.logs[0];
+    if (
+      latestLog &&
+      latestLog.id !== prev.lastLogId &&
+      (latestLog.type === 'attack' ||
+        latestLog.type === 'summon' ||
+        latestLog.type === 'reaction' ||
+        latestLog.type === 'effect')
+    ) {
+      setActionSpotlight({
+        id: latestLog.id,
+        actor: latestLog.actor,
+        text: latestLog.text,
+        type: latestLog.type
+      });
+    }
+  }, [gameState]);
+
+  useEffect(() => {
+    if (!actionSpotlight) return;
+    const t = setTimeout(() => {
+      setActionSpotlight((curr) => (curr?.id === actionSpotlight.id ? null : curr));
+    }, SPEED_CONFIG[duelSpeed].spotlightMs);
+    return () => clearTimeout(t);
+  }, [actionSpotlight, duelSpeed]);
+
+  // Compute SVG Attack Arrow coordinates whenever activeAttackAnim, COMBAT_REACTION, or hover preview changes
+  useEffect(() => {
+    const computeCoords = () => {
+      const container = battlefieldRef.current;
+      if (!container) {
+        setArrowCoords(null);
+        return;
+      }
+      const cRect = container.getBoundingClientRect();
+      const getCenter = (el: HTMLElement | null) => {
+        if (!el) return null;
+        const r = el.getBoundingClientRect();
+        return {
+          x: r.left - cRect.left + r.width / 2,
+          y: r.top - cRect.top + r.height / 2
+        };
+      };
+
+      // Priority 1: Active staged attack animation
+      if (activeAttackAnim) {
+        const startEl =
+          activeAttackAnim.attackerSide === 'player'
+            ? playerSlotRefs.current[activeAttackAnim.attackerSlot]
+            : botSlotRefs.current[activeAttackAnim.attackerSlot];
+
+        const endEl =
+          activeAttackAnim.targetSlot === -1
+            ? activeAttackAnim.targetSide === 'bot'
+              ? botHpRef.current
+              : playerHpRef.current
+            : activeAttackAnim.targetSide === 'bot'
+            ? botSlotRefs.current[activeAttackAnim.targetSlot]
+            : playerSlotRefs.current[activeAttackAnim.targetSlot];
+
+        const p1 = getCenter(startEl);
+        const p2 = getCenter(endEl);
+        if (p1 && p2) {
+          let p3: { x: number; y: number } | null = null;
+          if (
+            activeAttackAnim.isAquaRedirect &&
+            activeAttackAnim.aquaEnemySlot !== undefined
+          ) {
+            p3 = getCenter(botSlotRefs.current[activeAttackAnim.aquaEnemySlot]);
+          }
+          setArrowCoords({
+            x1: p1.x,
+            y1: p1.y,
+            x2: p2.x,
+            y2: p2.y,
+            x3: p3?.x,
+            y3: p3?.y,
+            attackerSide: activeAttackAnim.attackerSide,
+            atkValue: activeAttackAnim.atkValue,
+            attackerName: activeAttackAnim.attackerName,
+            targetName: activeAttackAnim.targetName,
+            isSolador: activeAttackAnim.isSolador,
+            isAquaRedirect: activeAttackAnim.isAquaRedirect
+          });
+          return;
+        }
+      }
+
+      // Priority 2: Bot attack waiting in COMBAT_REACTION window
+      if (
+        gameState.phase === 'COMBAT_REACTION' &&
+        gameState.reactionWindow?.type === 'ATTACK_DECLARED' &&
+        gameState.reactionWindow.attackerSlot !== undefined &&
+        gameState.reactionWindow.targetSlot !== undefined
+      ) {
+        const atkSlot = gameState.reactionWindow.attackerSlot;
+        const tgtSlot = gameState.reactionWindow.targetSlot;
+        const botAtkFighter = gameState.bot.frontline[atkSlot];
+        const startEl = botSlotRefs.current[atkSlot];
+        const endEl = tgtSlot === -1 ? playerHpRef.current : playerSlotRefs.current[tgtSlot];
+        const p1 = getCenter(startEl);
+        const p2 = getCenter(endEl);
+        if (p1 && p2 && botAtkFighter) {
+          const tgtFighter = tgtSlot >= 0 ? gameState.player.frontline[tgtSlot] : null;
+          const defIsSolador = tgtFighter ? hasArchetype(gameState, tgtFighter, 'Solador') : false;
+          setArrowCoords({
+            x1: p1.x,
+            y1: p1.y,
+            x2: p2.x,
+            y2: p2.y,
+            attackerSide: 'bot',
+            atkValue: getFighterEffectiveAtk(gameState, botAtkFighter, true, defIsSolador),
+            attackerName: botAtkFighter.card.name,
+            targetName: tgtSlot === -1 ? 'Ataque Direto a Você!' : tgtFighter?.card.name || 'Alvo',
+            isSolador: hasArchetype(
+              gameState,
+              botAtkFighter,
+              'Solador',
+              false,
+              tgtSlot >= 0 ? tgtSlot : undefined
+            ),
+            isReactionLock: true
+          });
+          return;
+        }
+      }
+
+      // Priority 3: Player has selected an attacker and is hovering over a valid target
+      if (
+        selectedAttackerSlot !== null &&
+        hoveredAttackTarget !== null &&
+        gameState.phase === 'MAIN_PHASE' &&
+        gameState.activePlayer === 'player'
+      ) {
+        const playerAtkFighter = gameState.player.frontline[selectedAttackerSlot];
+        const startEl = playerSlotRefs.current[selectedAttackerSlot];
+        const endEl =
+          hoveredAttackTarget.slot === -1
+            ? botHpRef.current
+            : hoveredAttackTarget.side === 'bot'
+            ? botSlotRefs.current[hoveredAttackTarget.slot]
+            : playerSlotRefs.current[hoveredAttackTarget.slot];
+        const p1 = getCenter(startEl);
+        const p2 = getCenter(endEl);
+        if (p1 && p2 && playerAtkFighter) {
+          let p3: { x: number; y: number } | null = null;
+          if (hoveredAttackTarget.isAquaRedirect) {
+            p3 = getCenter(botSlotRefs.current[hoveredAttackTarget.slot]);
+          }
+          const tgtFighter =
+            hoveredAttackTarget.side === 'bot' && hoveredAttackTarget.slot >= 0
+              ? gameState.bot.frontline[hoveredAttackTarget.slot]
+              : null;
+          const defIsSolador = tgtFighter ? hasArchetype(gameState, tgtFighter, 'Solador') : false;
+          const effAtk = getFighterEffectiveAtk(gameState, playerAtkFighter, true, defIsSolador);
+          setArrowCoords({
+            x1: p1.x,
+            y1: p1.y,
+            x2: p2.x,
+            y2: p2.y,
+            x3: p3?.x,
+            y3: p3?.y,
+            attackerSide: 'player',
+            atkValue: hoveredAttackTarget.isAquaRedirect ? effAtk * 2 : effAtk,
+            attackerName: playerAtkFighter.card.name,
+            targetName:
+              hoveredAttackTarget.slot === -1
+                ? 'Ataque Direto ao Bot!'
+                : hoveredAttackTarget.isAquaRedirect
+                ? 'Aqua Caótica (2x Dano Reflexo!)'
+                : tgtFighter?.card.name || 'Alvo',
+            isSolador: hasArchetype(
+              gameState,
+              playerAtkFighter,
+              'Solador',
+              false,
+              hoveredAttackTarget.slot >= 0 ? hoveredAttackTarget.slot : undefined
+            ),
+            isPreview: true,
+            isAquaRedirect: hoveredAttackTarget.isAquaRedirect
+          });
+          return;
+        }
+      }
+
+      setArrowCoords(null);
+    };
+
+    computeCoords();
+    window.addEventListener('resize', computeCoords);
+    return () => window.removeEventListener('resize', computeCoords);
+  }, [
+    activeAttackAnim,
+    hoveredAttackTarget,
+    selectedAttackerSlot,
+    gameState.phase,
+    gameState.reactionWindow,
+    gameState.bot.frontline,
+    gameState.player.frontline,
+    isLogOpen
+  ]);
+
+  // Bot automated turn loop (respecting duelSpeed and staged attack animations)
   useEffect(() => {
     if (!isOpen || !isAuthenticated) return;
+    if (activeAttackAnim !== null) return;
     if (gameState.phase !== 'MAIN_PHASE' || gameState.activePlayer !== 'bot') return;
     if (gameState.pendingChoiceQueue.length > 0 || gameState.pendingGuerreiroSplashDamage) return;
+
+    const stepDelay = SPEED_CONFIG[duelSpeed].botStepMs;
+    const windupDelay = SPEED_CONFIG[duelSpeed].attackWindupMs;
 
     const timer = setTimeout(() => {
       setGameState((prev) => {
@@ -263,7 +722,9 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
             frontline: prev.player.frontline.map((f) =>
               f ? { ...f, equipments: [...f.equipments], archetypes: [...f.archetypes] } : null
             ),
-            backrow: prev.player.backrow.map((s) => (s ? { ...s } : null))
+            backrow: prev.player.backrow.map((s) =>
+              s ? { ...s, stackedCards: [...(s.stackedCards || [])] } : null
+            )
           },
           bot: {
             ...prev.bot,
@@ -275,25 +736,75 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
             frontline: prev.bot.frontline.map((f) =>
               f ? { ...f, equipments: [...f.equipments], archetypes: [...f.archetypes] } : null
             ),
-            backrow: prev.bot.backrow.map((s) => (s ? { ...s } : null))
+            backrow: prev.bot.backrow.map((s) =>
+              s ? { ...s, stackedCards: [...(s.stackedCards || [])] } : null
+            )
           },
           pendingChoiceQueue: [...prev.pendingChoiceQueue],
           logs: [...prev.logs]
         };
 
-        const step = executeBotTurnStep(next);
+        const step = executeBotTurnStep(next, true);
+        if (step.deferredBotAttack) {
+          const { attackerSlot, targetSlot } = step.deferredBotAttack;
+          const botAttacker = next.bot.frontline[attackerSlot];
+          const playerDefender = targetSlot >= 0 ? next.player.frontline[targetSlot] : null;
+          const defIsSolador = playerDefender
+            ? hasArchetype(next, playerDefender, 'Solador')
+            : false;
+          const atkVal = botAttacker
+            ? getFighterEffectiveAtk(next, botAttacker, true, defIsSolador)
+            : 0;
+          const atkIsSolador = botAttacker
+            ? hasArchetype(
+                next,
+                botAttacker,
+                'Solador',
+                false,
+                targetSlot >= 0 ? targetSlot : undefined
+              )
+            : false;
+
+          setActiveAttackAnim({
+            attackerSide: 'bot',
+            attackerSlot,
+            targetSide: 'player',
+            targetSlot,
+            attackerName: botAttacker?.card.name || 'Bot',
+            targetName:
+              targetSlot === -1 ? 'Você (Ataque Direto!)' : playerDefender?.card.name || 'Alvo',
+            atkValue: atkVal,
+            isSolador: atkIsSolador
+          });
+
+          setTimeout(() => {
+            setGameState((afterWindup) => {
+              const resolvedState = cloneState(afterWindup);
+              executeCombatResolution(resolvedState, 'bot', attackerSlot, targetSlot);
+              return resolvedState;
+            });
+            setTimeout(() => {
+              setActiveAttackAnim(null);
+            }, 320);
+          }, windupDelay);
+
+          return next;
+        }
+
         if (!step.acted && !step.triggeredReactionWindow && next.phase === 'MAIN_PHASE') {
           addLog(next, 'bot', `Bot encerrou seu turno.`, 'info');
           advanceTurn(next);
         }
         return next;
       });
-    }, 850);
+    }, stepDelay);
 
     return () => clearTimeout(timer);
   }, [
     isOpen,
     isAuthenticated,
+    activeAttackAnim,
+    duelSpeed,
     gameState.phase,
     gameState.activePlayer,
     gameState.logs.length,
@@ -409,7 +920,9 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
       frontline: prev.player.frontline.map((f) =>
         f ? { ...f, equipments: [...f.equipments], archetypes: [...f.archetypes] } : null
       ),
-      backrow: prev.player.backrow.map((s) => (s ? { ...s } : null))
+      backrow: prev.player.backrow.map((s) =>
+        s ? { ...s, stackedCards: [...(s.stackedCards || [])] } : null
+      )
     },
     bot: {
       ...prev.bot,
@@ -421,7 +934,9 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
       frontline: prev.bot.frontline.map((f) =>
         f ? { ...f, equipments: [...f.equipments], archetypes: [...f.archetypes] } : null
       ),
-      backrow: prev.bot.backrow.map((s) => (s ? { ...s } : null))
+      backrow: prev.bot.backrow.map((s) =>
+        s ? { ...s, stackedCards: [...(s.stackedCards || [])] } : null
+      )
     },
     pendingChoiceQueue: [...prev.pendingChoiceQueue],
     logs: [...prev.logs]
@@ -697,6 +1212,160 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
           }
           break;
         }
+
+        // =====================================================================
+        // ESCOLHAS INTERATIVAS DO DECK INVASÃO DO CAOS (VÉU)
+        // =====================================================================
+        case 'APOTEOSE_CAMADA': {
+          const cand = chosenCandidates[0];
+          if (cand && removeCardFromZone(cand.sourceZone, cand.card)) {
+            if (cand.sourceZone === 'deck') p.deck = shuffleCards(p.deck);
+            equipSupportOrCamadaToBackrow(next, 'player', cand.card, 0);
+            addLog(
+              next,
+              'player',
+              `✨ «Apoteose do Véu»: Você escolheu e colocou «${cand.card.name}» (${cand.subtitle}) em campo!`,
+              'effect'
+            );
+          }
+          break;
+        }
+
+        case 'APOTEOSE_ROUND_START': {
+          const cand = chosenCandidates[0];
+          if (cand && p.hp > 5 && removeCardFromZone(cand.sourceZone, cand.card)) {
+            p.hp -= 5;
+            if (cand.sourceZone === 'deck') p.deck = shuffleCards(p.deck);
+            equipSupportOrCamadaToBackrow(next, 'player', cand.card, 0);
+            addLog(
+              next,
+              'player',
+              `💔 «Apoteose do Véu» (Começo da Rodada): Você pagou 5 PV (Vida: ${p.hp} PV) e colocou «${cand.card.name}» em campo!`,
+              'life_loss'
+            );
+          } else {
+            addLog(
+              next,
+              'player',
+              `«Apoteose do Véu»: Você optou por não pagar 5 PV no começo desta rodada.`,
+              'info'
+            );
+          }
+          break;
+        }
+
+        case 'MAHINA_VEU_ZONES': {
+          const cand = chosenCandidates[0];
+          if (cand && removeCardFromZone(cand.sourceZone, cand.card)) {
+            p.hand.push(cand.card);
+            addLog(
+              next,
+              'player',
+              `👑 «Mahina - O Arauto do Véu» (Começo do Turno): Você trouxe «${cand.card.name}» (${cand.subtitle}) para a sua mão!`,
+              'effect'
+            );
+          }
+          break;
+        }
+
+        case 'MAHINA_VEU_COMBAT_ARCHETYPE': {
+          const cand = chosenCandidates[0];
+          const chosenArch = cand?.archetypeValue;
+          const mahinaSlot = modal.targetSlotForChosenCard ?? 0;
+          const mahinaF =
+            p.frontline[mahinaSlot] && p.frontline[mahinaSlot]!.card.code === '2026/0001/00301'
+              ? p.frontline[mahinaSlot]
+              : p.frontline.find((f) => f !== null && f.card.code === '2026/0001/00301');
+          if (mahinaF && chosenArch) {
+            if (!mahinaF.archetypes.includes(chosenArch)) {
+              mahinaF.archetypes.push(chosenArch);
+            }
+            addLog(
+              next,
+              'player',
+              `👑 «Mahina - O Arauto do Véu»: Ganhou o arquétipo [${chosenArch}] após receber ataque e permanecer em campo!`,
+              'effect'
+            );
+          }
+          break;
+        }
+
+        case 'RITOS_DO_FESTIVAL': {
+          const cand = chosenCandidates[0];
+          if (cand && removeCardFromZone('deck', cand.card)) {
+            p.deck = shuffleCards(p.deck);
+            discardCardDirectlyToZone(next, 'player', cand.card, false);
+            p.pendingRitosFestival.push({
+              card: cand.card,
+              summonOnRound: next.round + 2
+            });
+            addLog(
+              next,
+              'player',
+              `🕯️ «Ritos do Festival»: Você enviou «${cand.card.name}» do seu Deck para a Zona Morta! Ele será invocado na Rodada ${
+                next.round + 2
+              } imune a efeitos de cartas!`,
+              'effect'
+            );
+          }
+          break;
+        }
+
+        case 'O_PAPAI_CHEGOU': {
+          const cand = chosenCandidates[0];
+          const slot =
+            modal.targetSlotForChosenCard !== undefined &&
+            p.frontline[modal.targetSlotForChosenCard] === null
+              ? modal.targetSlotForChosenCard
+              : p.frontline.findIndex((s) => s === null);
+          if (cand && slot !== -1 && removeCardFromZone(cand.sourceZone, cand.card)) {
+            summonFighterToSlot(next, 'player', cand.card, slot);
+            addLog(
+              next,
+              'player',
+              `🎉 «O Papai Chegou»: Você retornou «${cand.card.name}» (${cand.subtitle}) para o campo na Coluna ${
+                slot + 1
+              }!`,
+              'summon'
+            );
+          }
+          break;
+        }
+
+        case 'FLOQUINHO_VEU_HP_SPEND': {
+          const cand = chosenCandidates[0];
+          const hpSpent = cand?.hpSpendValue || 1;
+          const slot =
+            modal.targetSlotForChosenCard !== undefined &&
+            p.frontline[modal.targetSlotForChosenCard] === null
+              ? modal.targetSlotForChosenCard
+              : p.frontline.findIndex((s) => s === null);
+          const floqIdx = p.hand.findIndex((c) => c.code === '2026/0001/00314');
+          if (floqIdx !== -1 && slot !== -1) {
+            const [floqCard] = p.hand.splice(floqIdx, 1);
+            const authorityCt = hpSpent * 3;
+            const botReaction = evaluateBotReactionToPlayerAction(
+              next,
+              'CARD_PLAYED',
+              floqCard,
+              authorityCt,
+              undefined,
+              undefined,
+              (activeState) => {
+                summonFloquinhoCaoticaWithHp(activeState, 'player', floqCard, slot, hpSpent);
+              }
+            );
+            if (next.reactionWindow?.isCounterChain) {
+              return next;
+            }
+            if (botReaction.botNegatedPlayerAction) {
+              sendCardToDeadOrErasedZone(next, 'player', floqCard);
+              return next;
+            }
+            summonFloquinhoCaoticaWithHp(next, 'player', floqCard, slot, hpSpent);
+          }
+          break;
+        }
       }
 
       return next;
@@ -759,6 +1428,39 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
         return next;
       }
 
+      // Floquinho Caótica do Véu (2026/0001/00314): abre modal para o jogador escolher quanta Vida gastar!
+      if (card.code === '2026/0001/00314') {
+        const maxHpSpend = Math.max(1, next.player.hp - 1);
+        const hpCandidates: ChoiceCandidate[] = [];
+        for (let hpVal = 1; hpVal <= maxHpSpend; hpVal++) {
+          hpCandidates.push({
+            id: `floq_hp_${hpVal}`,
+            card: {
+              ...card,
+              name: `Gastar ${hpVal} PV → ${hpVal * 3}/${hpVal * 3} (CT ${hpVal * 3})`,
+              ct: hpVal * 3,
+              attack: hpVal * 3,
+              defense: hpVal * 3
+            },
+            sourceZone: 'hand',
+            sourceIndex: handIndex,
+            subtitle: `Pagar ${hpVal} PV (Vida restante: ${next.player.hp - hpVal} PV)`,
+            hpSpendValue: hpVal
+          });
+        }
+        next.pendingChoiceQueue.push({
+          title: '«Floquinho Caótica do Véu» — Escolha quanta Vida gastar na invocação',
+          description:
+            'Para cada 1 de Vida de Jogador gasto, «Floquinho Caótica do Véu» recebe +3 de Custo (CT), +3 de Ataque e +3 de Vida:',
+          candidates: hpCandidates,
+          minSelect: 1,
+          maxSelect: 1,
+          targetSlotForChosenCard: targetSlot,
+          effectKind: 'FLOQUINHO_VEU_HP_SPEND'
+        });
+        return next;
+      }
+
       const effCt = getEffectiveCt(next.player, card);
       const authorityCt = getCardAuthorityCt(next.player, card);
       next.player.mana -= effCt;
@@ -788,7 +1490,10 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
       }
 
       if (botReaction.botNegatedPlayerAction) {
-        sendCardToDeadOrErasedZone(next, 'player', card);
+        // Se o Bot usou Como Planejado, a carta já foi movida para a Zona Apagada do Bot
+        if (!next.bot.erasedZone.includes(card)) {
+          sendCardToDeadOrErasedZone(next, 'player', card);
+        }
         return next;
       }
 
@@ -892,7 +1597,9 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
       }
 
       if (botReact.botNegatedPlayerAction) {
-        sendCardToDeadOrErasedZone(next, 'player', heroCard);
+        if (!next.bot.erasedZone.includes(heroCard)) {
+          sendCardToDeadOrErasedZone(next, 'player', heroCard);
+        }
         return next;
       }
 
@@ -924,7 +1631,7 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
         const lifeCost = rw.effectiveCtOfTrigger ?? 0;
         next.player.hand.splice(handIdx, 1);
         next.player.hp = Math.max(0, next.player.hp - lifeCost);
-        next.player.deadZone.push(card);
+        discardCardDirectlyToZone(next, 'player', card, false);
 
         const triggerCt = rw.effectiveCtOfTrigger ?? 0;
         const myCt = getCardAuthorityCt(next.player, card);
@@ -939,7 +1646,6 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
           return next;
         }
 
-        // Check if Bot counter-chains on top of Player's Selamento Verdadeiro!
         const botCounter = evaluateBotReactionToPlayerAction(
           next,
           'CARD_PLAYED',
@@ -982,20 +1688,156 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
         return next;
       }
 
+      // Como Planejado (2026/0002/00322): "Negue o uso de uma carta e envie-a para a sua Zona Apagada. Na próxima rodada, use-a sem pagar custos."
+      if (card.code === '2026/0002/00322' && rw.type === 'CARD_PLAYED') {
+        const effCt = getEffectiveCt(next.player, card, true);
+        const myCt = getCardAuthorityCt(next.player, card);
+        next.player.mana -= effCt;
+        next.player.hand.splice(handIdx, 1);
+        discardCardDirectlyToZone(next, 'player', card, false);
+
+        const finalizeComoPlanejado = (activeState: DuelGameState) => {
+          if (rw.isCounterChain && rw.onNegatedPayload) {
+            rw.onNegatedPayload(activeState);
+          } else if (rw.triggerCard) {
+            activeState.player.erasedZone.push(rw.triggerCard);
+            activeState.player.pendingComoPlanejadoCards.push({
+              card: rw.triggerCard,
+              readyOnRound: activeState.round + 1
+            });
+            addLog(
+              activeState,
+              'player',
+              `🛡️ «Como Planejado»: Você NEGOU «${rw.triggerCard.name}» do Bot, enviou-a para a sua Zona Apagada e irá usá-la sem pagar custos no começo da Rodada ${
+                activeState.round + 1
+              }!`,
+              'reaction'
+            );
+          }
+        };
+
+        const botCounter = evaluateBotReactionToPlayerAction(
+          next,
+          'CARD_PLAYED',
+          card,
+          myCt,
+          undefined,
+          undefined,
+          finalizeComoPlanejado
+        );
+
+        if (next.reactionWindow?.isCounterChain) {
+          return next;
+        }
+
+        if (botCounter.botNegatedPlayerAction) {
+          addLog(
+            next,
+            'bot',
+            `⛓️ Corrente de Reação! O Bot negou seu «Como Planejado» — a ação original do Bot prossegue!`,
+            'reaction'
+          );
+          if (!checkWinCondition(next)) {
+            rw.pendingPayload(next);
+          }
+          return next;
+        }
+
+        finalizeComoPlanejado(next);
+        checkWinCondition(next);
+        return next;
+      }
+
+      // Negar na Base do Soco (2025/0001/00201)
+      if (card.code === '2025/0001/00201' && rw.type === 'CARD_PLAYED') {
+        const effCt = getEffectiveCt(next.player, card, true);
+        next.player.mana -= effCt;
+        next.player.hand.splice(handIdx, 1);
+        discardCardDirectlyToZone(next, 'player', card, false);
+        addLog(
+          next,
+          'player',
+          `🛡️ Reação! Você ativou «${card.name}» (CT ${effCt}) e NEGOU «${rw.triggerCard?.name}» do Bot!`,
+          'reaction'
+        );
+        if (rw.isCounterChain && rw.onNegatedPayload) {
+          rw.onNegatedPayload(next);
+        } else if (rw.triggerCard) {
+          sendCardToDeadOrErasedZone(next, 'bot', rw.triggerCard);
+        }
+        checkWinCondition(next);
+        return next;
+      }
+
       if (rw.type === 'ATTACK_DECLARED') {
-        const effCt = getEffectiveCt(next.player, card);
+        const effCt = getEffectiveCt(next.player, card, true);
         const authorityCt = getCardAuthorityCt(next.player, card);
         next.player.mana -= effCt;
         next.player.hand.splice(handIdx, 1);
-        next.player.deadZone.push(card);
+        discardCardDirectlyToZone(next, 'player', card, false);
 
         const executePlayerCombatReactionEffect = (activeState: DuelGameState) => {
+          // Coragem ao Contrário (2026/0002/00317): Cancela ataque, retorna combatente aliado para a mão e compra 1 carta
+          if (card.code === '2026/0002/00317') {
+            const targetDefSlot =
+              rw.targetSlot !== undefined && rw.targetSlot >= 0 ? rw.targetSlot : chosenSlot;
+            const defFighter = activeState.player.frontline[targetDefSlot];
+            if (defFighter && !defFighter.isHero) {
+              activeState.player.frontline[targetDefSlot] = null;
+              for (const eq of defFighter.equipments) {
+                discardCardDirectlyToZone(activeState, 'player', eq.card, false);
+              }
+              activeState.player.hand.push(defFighter.card);
+            }
+            if (activeState.player.deck.length > 0) {
+              activeState.player.hand.push(activeState.player.deck.shift()!);
+            }
+            if (rw.attackerSlot !== undefined && activeState.bot.frontline[rw.attackerSlot]) {
+              const botAtt = activeState.bot.frontline[rw.attackerSlot]!;
+              botAtt.attacksUsedThisTurn += 1;
+              botAtt.hasAttackedThisTurn =
+                botAtt.attacksUsedThisTurn >=
+                getMaxAttacksPerTurn(activeState, activeState.bot, botAtt);
+              activeState.bot.hasAttackedInCurrentTurn = true;
+            }
+            addLog(
+              activeState,
+              'player',
+              `🛡️ Reação de Combate! «Coragem ao Contrário» cancelou o ataque do Bot${
+                defFighter && !defFighter.isHero
+                  ? `, retornou «${defFighter.card.name}» para a sua mão`
+                  : ''
+              } e você comprou 1 carta!`,
+              'reaction'
+            );
+            return;
+          }
+
+          // Férias (2025/0001/00112) ou Sedução de Afrodite (2025/0001/00285)
+          if (card.code === '2025/0001/00112' || card.code === '2025/0001/00285') {
+            if (rw.attackerSlot !== undefined && activeState.bot.frontline[rw.attackerSlot]) {
+              const botAtt = activeState.bot.frontline[rw.attackerSlot]!;
+              botAtt.attacksUsedThisTurn += 1;
+              botAtt.hasAttackedThisTurn =
+                botAtt.attacksUsedThisTurn >=
+                getMaxAttacksPerTurn(activeState, activeState.bot, botAtt);
+              activeState.bot.hasAttackedInCurrentTurn = true;
+            }
+            addLog(
+              activeState,
+              'player',
+              `🛡️ Reação de Combate! «${card.name}» NEGOU o ataque do Bot!`,
+              'reaction'
+            );
+            return;
+          }
+
           if (card.code === '2025/0001/00024') {
             const defFighter = activeState.player.frontline[chosenSlot];
             if (defFighter) {
               activeState.player.frontline[chosenSlot] = null;
               for (const eq of defFighter.equipments) {
-                activeState.player.deadZone.push(eq.card);
+                discardCardDirectlyToZone(activeState, 'player', eq.card, false);
               }
               activeState.player.deck.push(defFighter.card);
               activeState.player.deck = shuffleCards(activeState.player.deck);
@@ -1009,7 +1851,11 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
               );
             }
             if (rw.attackerSlot !== undefined && activeState.bot.frontline[rw.attackerSlot]) {
-              activeState.bot.frontline[rw.attackerSlot]!.hasAttackedThisTurn = true;
+              const botAtt = activeState.bot.frontline[rw.attackerSlot]!;
+              botAtt.attacksUsedThisTurn += 1;
+              botAtt.hasAttackedThisTurn =
+                botAtt.attacksUsedThisTurn >=
+                getMaxAttacksPerTurn(activeState, activeState.bot, botAtt);
               activeState.bot.hasAttackedInCurrentTurn = true;
             }
             return;
@@ -1017,7 +1863,11 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
 
           if (card.code === '2025/0001/00028') {
             if (rw.attackerSlot !== undefined && activeState.bot.frontline[rw.attackerSlot]) {
-              activeState.bot.frontline[rw.attackerSlot]!.hasAttackedThisTurn = true;
+              const botAtt = activeState.bot.frontline[rw.attackerSlot]!;
+              botAtt.attacksUsedThisTurn += 1;
+              botAtt.hasAttackedThisTurn =
+                botAtt.attacksUsedThisTurn >=
+                getMaxAttacksPerTurn(activeState, activeState.bot, botAtt);
               activeState.bot.hasAttackedInCurrentTurn = true;
             }
 
@@ -1079,7 +1929,6 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
           }
         };
 
-        // Check if Bot chains a counter-negation on top of Player's Combat Reaction!
         const botCounter = evaluateBotReactionToPlayerAction(
           next,
           'CARD_PLAYED',
@@ -1109,7 +1958,7 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
         return next;
       }
 
-      const myCt = getEffectiveCt(next.player, card);
+      const myCt = getEffectiveCt(next.player, card, true);
       const authorityCt = getCardAuthorityCt(next.player, card);
       const triggerCt = rw.effectiveCtOfTrigger ?? 0;
       next.player.mana -= myCt;
@@ -1158,6 +2007,25 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
         card.code === '2025/0001/00023'
       );
     }
+    // Cartas globais que NÃO exigem clique em slot no campo:
+    if (
+      card.code === '2025/0001/00018' || // Lamento do Rei
+      card.code === '2025/0001/00022' || // Pacto Forçado
+      card.code === '2025/0001/00026' || // Manipulação das Realidades
+      card.code === '2025/0001/00029' || // Selamento Verdadeiro
+      card.code === '2025/0001/00030' || // Destruição das Variantes
+      card.code === '2025/0001/00112' || // Férias
+      card.code === '2025/0001/00116' || // Alteração de Realidade
+      card.code === '2025/0001/00201' || // Negar na Base do Soco
+      card.code === '2026/0002/00316' || // AQUI FOI...
+      card.code === '2026/0002/00317' || // Coragem ao Contrário
+      card.code === '2026/0002/00318' || // O Papai Chegou
+      card.code === '2026/0002/00319' || // Ritos do Festival
+      card.code === '2026/0002/00320' || // Ato Final
+      card.code === '2026/0002/00322'    // Como Planejado
+    ) {
+      return false;
+    }
     if (card.type === 'Combatente' || card.type === 'Herói' || card.type === 'Equipamento') {
       return true;
     }
@@ -1171,7 +2039,9 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
       card.code === '2025/0001/00020' ||
       card.code === '2025/0001/00021' ||
       card.code === '2025/0001/00025' ||
-      card.code === '2025/0001/00027'
+      card.code === '2025/0001/00027' ||
+      card.code === '2026/0002/00321' || // Festival de Sangue
+      card.code === '2026/0002/00323'    // Olho por Olho
     ) {
       return true;
     }
@@ -1222,18 +2092,49 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
       return;
     }
 
-    if (
-      card.code === '2025/0001/00018' ||
-      card.code === '2025/0001/00022' ||
-      card.code === '2025/0001/00026' ||
-      card.code === '2025/0001/00030' ||
-      (!doesCardNeedSlotSelection(card, false) && card.type === 'Efeito')
-    ) {
+    if (!doesCardNeedSlotSelection(card, false) && card.type === 'Efeito') {
       executePlayerCardPlay(idx, 0);
       return;
     }
 
     setSelectedHandIndex(idx);
+  };
+
+  // Friendly attack on Aqua Caótica (2026/0001/00310):
+  // "Aliados em seu lado do campo podem atacar «Aqua Caótica» para que o combatente inimigo à frente dela receba o dobro do dano que ela sofrer (ignorando arquétipos)."
+  const handleFriendlyAttackAquaCaotica = (attackerSlot: number, aquaSlot: number) => {
+    if (activeAttackAnim !== null) return;
+    const attacker = gameState.player.frontline[attackerSlot];
+    const aqua = gameState.player.frontline[aquaSlot];
+    if (!attacker || !aqua) return;
+
+    const effAtk = getFighterEffectiveAtk(gameState, attacker, true);
+    const windupDelay = SPEED_CONFIG[duelSpeed].attackWindupMs;
+
+    setSelectedAttackerSlot(null);
+    setHoveredAttackTarget(null);
+    setActiveAttackAnim({
+      attackerSide: 'player',
+      attackerSlot,
+      targetSide: 'player',
+      targetSlot: aquaSlot,
+      attackerName: attacker.card.name,
+      targetName: `Aqua Caótica → 2x Dano (${effAtk * 2})`,
+      atkValue: effAtk * 2,
+      isAquaRedirect: true,
+      aquaEnemySlot: aquaSlot
+    });
+
+    setTimeout(() => {
+      setGameState((prev) => {
+        const next = cloneState(prev);
+        executeFriendlyAttackOnAquaCaotica(next, 'player', attackerSlot, aquaSlot);
+        return next;
+      });
+      setTimeout(() => {
+        setActiveAttackAnim(null);
+      }, 320);
+    }, windupDelay);
   };
 
   // Click on Player Frontline Slot (0..5)
@@ -1286,7 +2187,8 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
         if (
           (reactCard.type === 'Combatente' ||
             reactCard.code === '2025/0001/00021' ||
-            reactCard.code === '2025/0001/00027') &&
+            reactCard.code === '2025/0001/00027' ||
+            reactCard.code === '2026/0002/00321') &&
           slotFighter === null
         ) {
           executePlayerReactionCardOnSlot(pendingReactionHandIndex, slotIndex);
@@ -1381,7 +2283,9 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
       }
 
       if (
-        (card.code === '2025/0001/00021' || card.code === '2025/0001/00027') &&
+        (card.code === '2025/0001/00021' ||
+          card.code === '2025/0001/00027' ||
+          card.code === '2026/0002/00321') &&
         slotFighter === null
       ) {
         executePlayerCardPlay(selectedHandIndex, slotIndex);
@@ -1390,6 +2294,18 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
     }
 
     if (slotFighter) {
+      // Se já houver um atacante aliado selecionado e o jogador clicar em «Aqua Caótica» aliada:
+      if (
+        selectedAttackerSlot !== null &&
+        selectedAttackerSlot !== slotIndex &&
+        slotFighter.card.code === '2026/0001/00310' &&
+        gameState.round >= 2 &&
+        gameState.bot.frontline[slotIndex] !== null
+      ) {
+        handleFriendlyAttackAquaCaotica(selectedAttackerSlot, slotIndex);
+        return;
+      }
+
       if (selectedAttackerSlot === slotIndex) {
         setSelectedAttackerSlot(null);
       } else {
@@ -1401,11 +2317,17 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
 
   // Click on Player Backrow Support / Equipment Slot (0..5)
   const handlePlayerSupportSlotClick = (slotIndex: number) => {
+    const curBackSlot = gameState.player.backrow[slotIndex];
+
     if (gameState.phase === 'CARD_REACTION' && pendingReactionHandIndex !== null) {
       const reactCard = gameState.player.hand[pendingReactionHandIndex];
       if (!reactCard) return;
 
-      if (isContinuousBackrowCard(reactCard) && gameState.player.backrow[slotIndex] === null) {
+      const canPlaceBackrow =
+        isContinuousBackrowCard(reactCard) &&
+        (curBackSlot === null || (isCamadaCard(reactCard) && isCamadaCard(curBackSlot.card)));
+
+      if (canPlaceBackrow) {
         executePlayerReactionCardOnSlot(pendingReactionHandIndex, slotIndex);
         return;
       }
@@ -1427,7 +2349,11 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
     const card = gameState.player.hand[selectedHandIndex];
     if (!card) return;
 
-    if (isContinuousBackrowCard(card) && gameState.player.backrow[slotIndex] === null) {
+    const canPlaceBackrow =
+      isContinuousBackrowCard(card) &&
+      (curBackSlot === null || (isCamadaCard(card) && isCamadaCard(curBackSlot.card)));
+
+    if (canPlaceBackrow) {
       executePlayerCardPlay(selectedHandIndex, slotIndex);
       return;
     }
@@ -1498,7 +2424,7 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
       return;
     }
 
-    // «Salazar - Grande Mestre da Dualidade» (00183): "Uma vez por rodada, a qualquer momento, coloque em campo «Salazar - Guia dos Escolhidos» ou «Salazar - O Poderoso Líder» (podendo ter mais de um Herói em campo)."
+    // «Salazar - Grande Mestre da Dualidade» (00183)
     if (fighter.card.code === '2025/0001/00183' && !fighter.usedOncePerRoundAbility) {
       setGameState((prev) => {
         const next = cloneState(prev);
@@ -1661,7 +2587,10 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
       if (
         reactCard &&
         (reactCard.code === '2025/0001/00025' ||
-          (reactCard.type === 'Efeito' && reactCard.description.toLowerCase().includes('cause')))
+          reactCard.code === '2026/0002/00323' ||
+          (reactCard.type === 'Efeito' &&
+            doesCardNeedSlotSelection(reactCard, false) &&
+            reactCard.description.toLowerCase().includes('cause')))
       ) {
         executePlayerReactionCardOnSlot(pendingReactionHandIndex, botSlotIndex);
         return;
@@ -1675,7 +2604,10 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
       if (
         card &&
         (card.code === '2025/0001/00025' ||
-          (card.type === 'Efeito' && card.description.toLowerCase().includes('cause'))) &&
+          card.code === '2026/0002/00323' ||
+          (card.type === 'Efeito' &&
+            doesCardNeedSlotSelection(card, false) &&
+            card.description.toLowerCase().includes('cause'))) &&
         enemyFighter
       ) {
         executePlayerCardPlay(selectedHandIndex, botSlotIndex);
@@ -1688,14 +2620,15 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
     }
   };
 
-  // Declare Player Attack
+  // Declare Player Attack (with dynamic SVG Attack Arrow & Lunge animation)
   const handleDeclarePlayerAttack = (attackerSlot: number, targetSlot: number) => {
-    setGameState((prev) => {
-      const next = cloneState(prev);
-      const attacker = next.player.frontline[attackerSlot];
-      if (!attacker) return prev;
+    if (activeAttackAnim !== null) return;
+    const currentAttacker = gameState.player.frontline[attackerSlot];
+    if (!currentAttacker) return;
 
-      if (next.round === 1) {
+    if (gameState.round === 1) {
+      setGameState((prev) => {
+        const next = cloneState(prev);
         addLog(
           next,
           'system',
@@ -1703,9 +2636,14 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
           'info'
         );
         return next;
-      }
+      });
+      setSelectedAttackerSlot(null);
+      return;
+    }
 
-      if (next.player.lockedFromAttackingThisTurn) {
+    if (gameState.player.lockedFromAttackingThisTurn) {
+      setGameState((prev) => {
+        const next = cloneState(prev);
         addLog(
           next,
           'system',
@@ -1713,46 +2651,147 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
           'info'
         );
         return next;
-      }
+      });
+      setSelectedAttackerSlot(null);
+      return;
+    }
 
-      if (attacker.hasAttackedThisTurn) {
-        addLog(next, 'system', `«${attacker.card.name}» já atacou neste turno!`, 'info');
+    const maxAttacks = getMaxAttacksPerTurn(gameState, gameState.player, currentAttacker);
+    if (currentAttacker.attacksUsedThisTurn >= maxAttacks) {
+      setGameState((prev) => {
+        const next = cloneState(prev);
+        addLog(
+          next,
+          'system',
+          `«${currentAttacker.card.name}» já realizou todos os seus ataques neste turno (${currentAttacker.attacksUsedThisTurn}/${maxAttacks})!`,
+          'info'
+        );
         return next;
-      }
+      });
+      setSelectedAttackerSlot(null);
+      return;
+    }
 
-      const botReaction = evaluateBotReactionToPlayerAction(
-        next,
-        'ATTACK_DECLARED',
-        attacker.card,
-        attacker.card.ct,
-        attackerSlot,
-        targetSlot,
-        (activeState) => {
-          executeCombatResolution(activeState, 'player', attackerSlot, targetSlot);
-        }
-      );
-
-      if (next.reactionWindow?.isCounterChain) {
-        return next;
-      }
-
-      if (botReaction.botNegatedPlayerAction) {
-        attacker.hasAttackedThisTurn = true;
-        next.player.hasAttackedInCurrentTurn = true;
-        return next;
-      }
-
-      executeCombatResolution(next, 'player', attackerSlot, targetSlot);
-      return next;
-    });
+    const botDefender = targetSlot >= 0 ? gameState.bot.frontline[targetSlot] : null;
+    const defIsSolador = botDefender ? hasArchetype(gameState, botDefender, 'Solador') : false;
+    const effAtk = getFighterEffectiveAtk(gameState, currentAttacker, true, defIsSolador);
+    const atkIsSolador = hasArchetype(
+      gameState,
+      currentAttacker,
+      'Solador',
+      false,
+      targetSlot >= 0 ? targetSlot : undefined
+    );
+    const windupDelay = SPEED_CONFIG[duelSpeed].attackWindupMs;
 
     setSelectedAttackerSlot(null);
+    setHoveredAttackTarget(null);
+    setActiveAttackAnim({
+      attackerSide: 'player',
+      attackerSlot,
+      targetSide: 'bot',
+      targetSlot,
+      attackerName: currentAttacker.card.name,
+      targetName: targetSlot === -1 ? 'Ataque Direto ao Bot!' : botDefender?.card.name || 'Alvo',
+      atkValue: effAtk,
+      isSolador: atkIsSolador
+    });
+
+    setTimeout(() => {
+      setGameState((prev) => {
+        const next = cloneState(prev);
+        const attacker = next.player.frontline[attackerSlot];
+        if (!attacker) return prev;
+
+        const botReaction = evaluateBotReactionToPlayerAction(
+          next,
+          'ATTACK_DECLARED',
+          attacker.card,
+          attacker.card.ct,
+          attackerSlot,
+          targetSlot,
+          (activeState) => {
+            executeCombatResolution(activeState, 'player', attackerSlot, targetSlot);
+          }
+        );
+
+        if (next.reactionWindow?.isCounterChain) {
+          return next;
+        }
+
+        if (botReaction.botNegatedPlayerAction) {
+          attacker.attacksUsedThisTurn += 1;
+          attacker.hasAttackedThisTurn =
+            attacker.attacksUsedThisTurn >= getMaxAttacksPerTurn(next, next.player, attacker);
+          next.player.hasAttackedInCurrentTurn = true;
+          return next;
+        }
+
+        executeCombatResolution(next, 'player', attackerSlot, targetSlot);
+        return next;
+      });
+
+      setTimeout(() => {
+        setActiveAttackAnim(null);
+      }, 320);
+    }, windupDelay);
   };
 
   const handlePassReaction = () => {
     setPendingReactionHandIndex(null);
     setTrocaFirstSlot(null);
     setSelectingSlotForHero(false);
+
+    // If passing on a Bot attack reaction window, briefly animate the Bot's attack lunge before damage lands
+    if (
+      gameState.phase === 'COMBAT_REACTION' &&
+      gameState.reactionWindow?.type === 'ATTACK_DECLARED' &&
+      gameState.reactionWindow.attackerSlot !== undefined &&
+      gameState.reactionWindow.targetSlot !== undefined
+    ) {
+      const atkSlot = gameState.reactionWindow.attackerSlot;
+      const tgtSlot = gameState.reactionWindow.targetSlot;
+      const botAttacker = gameState.bot.frontline[atkSlot];
+      const playerDef = tgtSlot >= 0 ? gameState.player.frontline[tgtSlot] : null;
+      const defIsSolador = playerDef ? hasArchetype(gameState, playerDef, 'Solador') : false;
+
+      if (botAttacker) {
+        setActiveAttackAnim({
+          attackerSide: 'bot',
+          attackerSlot: atkSlot,
+          targetSide: 'player',
+          targetSlot: tgtSlot,
+          attackerName: botAttacker.card.name,
+          targetName: tgtSlot === -1 ? 'Você (Ataque Direto!)' : playerDef?.card.name || 'Alvo',
+          atkValue: getFighterEffectiveAtk(gameState, botAttacker, true, defIsSolador),
+          isSolador: hasArchetype(
+            gameState,
+            botAttacker,
+            'Solador',
+            false,
+            tgtSlot >= 0 ? tgtSlot : undefined
+          )
+        });
+      }
+
+      const resolveDelay = Math.round(SPEED_CONFIG[duelSpeed].attackWindupMs * 0.65);
+      setTimeout(() => {
+        setGameState((prev) => {
+          if (!prev.reactionWindow) return prev;
+          const next = cloneState(prev);
+          const rw = next.reactionWindow!;
+          next.reactionWindow = null;
+          next.phase = 'MAIN_PHASE';
+          rw.pendingPayload(next);
+          return next;
+        });
+        setTimeout(() => {
+          setActiveAttackAnim(null);
+        }, 320);
+      }, resolveDelay);
+      return;
+    }
+
     setGameState((prev) => {
       if (!prev.reactionWindow) return prev;
       const next = cloneState(prev);
@@ -1817,7 +2856,6 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
         'reaction'
       );
 
-      // Check if Bot counter-chains on top of Player's Jim - Mago!
       const botCounter = evaluateBotReactionToPlayerAction(
         next,
         'CARD_PLAYED',
@@ -1850,6 +2888,106 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
         }
         return next;
       }
+
+      if (rw.isCounterChain && rw.onNegatedPayload) {
+        rw.onNegatedPayload(next);
+      } else if (rw.triggerCard) {
+        sendCardToDeadOrErasedZone(next, 'bot', rw.triggerCard);
+      }
+      return next;
+    });
+  };
+
+  // Negar com «Mahina - O Arauto do Véu» (2026/0001/00301): Descarta uma carta «Véu» do seu lado do campo para a Zona Apagada
+  const handleReactWithMahinaVeu = () => {
+    setPendingReactionHandIndex(null);
+    setGameState((prev) => {
+      if (!prev.reactionWindow) return prev;
+      const next = cloneState(prev);
+      const rw = next.reactionWindow!;
+      const p = next.player;
+
+      const hasMahinaHero = p.frontline.some(
+        (f) => f !== null && f.card.code === '2026/0001/00301'
+      );
+      if (!hasMahinaHero) return prev;
+
+      let sacrificedName = '';
+      // Prioriza descartar combatente não-Herói com «Véu», depois suporte «Véu», depois o próprio Mahina se for o único
+      const nonHeroVeuSlot = p.frontline.findIndex(
+        (f) =>
+          f !== null &&
+          !f.isHero &&
+          (f.card.name.includes('Véu') || hasArchetype(next, f, 'Véu'))
+      );
+      if (nonHeroVeuSlot !== -1) {
+        sacrificedName = p.frontline[nonHeroVeuSlot]!.card.name;
+        sendFighterFromFieldToZone(next, 'player', nonHeroVeuSlot, true, false);
+      } else {
+        const backrowVeuIdx = p.backrow.findIndex((s) =>
+          getAllSupportCardsInSlot(s).some(
+            (c) => c.name.includes('Véu') || (c.archetype || '').includes('Véu')
+          )
+        );
+        if (backrowVeuIdx !== -1 && p.backrow[backrowVeuIdx]) {
+          const sup = p.backrow[backrowVeuIdx]!;
+          sacrificedName = sup.card.name;
+          p.erasedZone.push(sup.card);
+          if (sup.stackedCards && sup.stackedCards.length > 0) {
+            sup.card = sup.stackedCards.pop()!;
+          } else {
+            p.backrow[backrowVeuIdx] = null;
+          }
+        } else {
+          const mahinaSlot = p.frontline.findIndex(
+            (f) => f !== null && f.card.code === '2026/0001/00301'
+          );
+          if (mahinaSlot === -1) return prev;
+          sacrificedName = p.frontline[mahinaSlot]!.card.name;
+          sendFighterFromFieldToZone(next, 'player', mahinaSlot, true, false);
+        }
+      }
+
+      next.reactionWindow = null;
+      next.phase = 'MAIN_PHASE';
+
+      addLog(
+        next,
+        'player',
+        `🛡️ Reação «A Qualquer Momento»! «Mahina - O Arauto do Véu» descartou «${sacrificedName}» do campo para a Zona Apagada e NEGOU «${rw.triggerCard?.name}» do Bot!`,
+        'reaction'
+      );
+
+      if (rw.isCounterChain && rw.onNegatedPayload) {
+        rw.onNegatedPayload(next);
+      } else if (rw.triggerCard) {
+        sendCardToDeadOrErasedZone(next, 'bot', rw.triggerCard);
+      }
+      return next;
+    });
+  };
+
+  // Negar com «Quinta Camada» (2026/0002/00328): Gaste 3 Runas para negar o uso de uma carta inimiga
+  const handleReactWithQuintaCamada = () => {
+    setPendingReactionHandIndex(null);
+    setGameState((prev) => {
+      if (!prev.reactionWindow) return prev;
+      const next = cloneState(prev);
+      const rw = next.reactionWindow!;
+      const p = next.player;
+
+      if (!hasActiveCamada(p, '2026/0002/00328') || p.runes < 3) return prev;
+
+      p.runes -= 3;
+      next.reactionWindow = null;
+      next.phase = 'MAIN_PHASE';
+
+      addLog(
+        next,
+        'player',
+        `🛡️ Reação! Você gastou 3 Runas com «Quinta Camada» e NEGOU «${rw.triggerCard?.name}» do Bot (Runas restantes: ${p.runes})!`,
+        'reaction'
+      );
 
       if (rw.isCounterChain && rw.onNegatedPayload) {
         rw.onNegatedPayload(next);
@@ -1898,6 +3036,12 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
     selectedAttackerSlot !== null &&
     !gameState.bot.frontline.some((f) => f !== null);
 
+  const botAttackerInReaction =
+    gameState.reactionWindow?.type === 'ATTACK_DECLARED' &&
+    gameState.reactionWindow.attackerSlot !== undefined
+      ? gameState.bot.frontline[gameState.reactionWindow.attackerSlot]
+      : null;
+
   const availablePlayerReactions =
     (gameState.phase === 'CARD_REACTION' || gameState.phase === 'COMBAT_REACTION') &&
     gameState.reactionWindow
@@ -1906,9 +3050,16 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
           'player',
           gameState.reactionWindow.type,
           gameState.reactionWindow.effectiveCtOfTrigger ?? 0,
-          false
+          botAttackerInReaction ? hasArchetype(gameState, botAttackerInReaction, 'Solador') : false,
+          Boolean(gameState.reactionWindow.onlyNegatableByHero)
         )
-      : { handCards: [], canUseJimMagoFieldNegate: false, canSummonHeroJimLord: false };
+      : {
+          handCards: [],
+          canUseJimMagoFieldNegate: false,
+          canUseMahinaVeuFieldNegate: false,
+          canUseQuintaCamadaNegate: false,
+          canSummonHeroJimLord: false
+        };
 
   const isReactionPhase =
     gameState.phase === 'CARD_REACTION' || gameState.phase === 'COMBAT_REACTION';
@@ -2056,6 +3207,26 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
             );
           })()}
 
+          {/* Pacing / Speed Selector */}
+          <div
+            className="flex items-center bg-slate-900 border border-slate-700/80 rounded-lg p-0.5 text-[11px] font-bold"
+            title="Controle a velocidade das ações, animações de ataque e turnos do Bot"
+          >
+            {(['lento', 'normal', 'rapido'] as DuelSpeed[]).map((spd) => (
+              <button
+                key={spd}
+                onClick={() => setDuelSpeed(spd)}
+                className={`px-2 py-1 rounded-md transition-all ${
+                  duelSpeed === spd
+                    ? 'bg-purple-600 text-white shadow font-black'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                {SPEED_CONFIG[spd].label}
+              </button>
+            ))}
+          </div>
+
           <button
             onClick={() => setShowRulesModal(true)}
             className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold flex items-center gap-1.5 border border-slate-700 transition-colors"
@@ -2098,7 +3269,198 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
       {/* MAIN DUEL TABLE + RETRACTABLE LOG SIDEBAR */}
       <div className="flex-1 flex overflow-hidden relative">
         {/* LEFT / CENTER: THE BATTLEFIELD */}
-        <div className="flex-1 flex flex-col justify-between p-2 sm:p-3 overflow-y-auto bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-purple-950/20 via-slate-950 to-slate-950 relative">
+        <div
+          ref={battlefieldRef}
+          className="flex-1 flex flex-col justify-between p-2 sm:p-3 overflow-y-auto bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-purple-950/20 via-slate-950 to-slate-950 relative"
+        >
+          {/* ============================================================
+              DYNAMIC SVG ATTACK ARROW & TELEMETRY OVERLAY
+             ============================================================ */}
+          {arrowCoords && (
+            <div className="pointer-events-none absolute inset-0 z-40 overflow-visible">
+              <svg className="w-full h-full overflow-visible">
+                <defs>
+                  <marker
+                    id="insanis-attack-arrowhead"
+                    markerWidth="10"
+                    markerHeight="10"
+                    refX="7"
+                    refY="5"
+                    orient="auto"
+                  >
+                    <path
+                      d="M 0 1 L 9 5 L 0 9 z"
+                      fill={
+                        arrowCoords.isAquaRedirect
+                          ? '#e879f9'
+                          : arrowCoords.isSolador
+                          ? '#f59e0b'
+                          : arrowCoords.isPreview
+                          ? '#38bdf8'
+                          : '#f43f5e'
+                      }
+                    />
+                  </marker>
+                  <filter id="insanis-arrow-glow" x="-25%" y="-25%" width="150%" height="150%">
+                    <feGaussianBlur stdDeviation="4" result="blur" />
+                    <feComposite in="SourceGraphic" in2="blur" operator="over" />
+                  </filter>
+                </defs>
+
+                {/* Origin Pulse Ring */}
+                <circle
+                  cx={arrowCoords.x1}
+                  cy={arrowCoords.y1}
+                  r="16"
+                  fill="none"
+                  stroke={
+                    arrowCoords.isSolador
+                      ? '#f59e0b'
+                      : arrowCoords.isPreview
+                      ? '#38bdf8'
+                      : '#f43f5e'
+                  }
+                  strokeWidth="3"
+                  className="animate-ping opacity-60"
+                />
+
+                {arrowCoords.isAquaRedirect &&
+                arrowCoords.midX !== undefined &&
+                arrowCoords.midY !== undefined ? (
+                  <>
+                    {/* Segment 1: Attacker -> Friendly Aqua Caótica */}
+                    <line
+                      x1={arrowCoords.x1}
+                      y1={arrowCoords.y1}
+                      x2={arrowCoords.midX}
+                      y2={arrowCoords.midY}
+                      stroke="#e879f9"
+                      strokeWidth="4"
+                      strokeDasharray="8 5"
+                      filter="url(#insanis-arrow-glow)"
+                    />
+                    {/* Segment 2: Friendly Aqua Caótica -> Enemy Frontline (2x Damage) */}
+                    <line
+                      x1={arrowCoords.midX}
+                      y1={arrowCoords.midY}
+                      x2={arrowCoords.x2}
+                      y2={arrowCoords.y2}
+                      stroke="#f43f5e"
+                      strokeWidth="5"
+                      markerEnd="url(#insanis-attack-arrowhead)"
+                      filter="url(#insanis-arrow-glow)"
+                    />
+                  </>
+                ) : (
+                  <>
+                    {/* Outer Glow Line */}
+                    <line
+                      x1={arrowCoords.x1}
+                      y1={arrowCoords.y1}
+                      x2={arrowCoords.x2}
+                      y2={arrowCoords.y2}
+                      stroke={
+                        arrowCoords.isSolador
+                          ? '#f59e0b'
+                          : arrowCoords.isPreview
+                          ? '#38bdf8'
+                          : '#f43f5e'
+                      }
+                      strokeWidth={arrowCoords.isPreview ? '4' : '7'}
+                      strokeOpacity="0.35"
+                      filter="url(#insanis-arrow-glow)"
+                    />
+                    {/* Core Vector Line */}
+                    <line
+                      x1={arrowCoords.x1}
+                      y1={arrowCoords.y1}
+                      x2={arrowCoords.x2}
+                      y2={arrowCoords.y2}
+                      stroke={
+                        arrowCoords.isSolador
+                          ? '#fbbf24'
+                          : arrowCoords.isPreview
+                          ? '#38bdf8'
+                          : '#fb7185'
+                      }
+                      strokeWidth={arrowCoords.isPreview ? '3' : '4.5'}
+                      strokeDasharray={arrowCoords.isPreview ? '8 6' : undefined}
+                      markerEnd="url(#insanis-attack-arrowhead)"
+                    />
+                  </>
+                )}
+
+                {/* Target Crosshair Reticle */}
+                <circle
+                  cx={arrowCoords.x2}
+                  cy={arrowCoords.y2}
+                  r="22"
+                  fill="none"
+                  stroke={
+                    arrowCoords.isAquaRedirect
+                      ? '#e879f9'
+                      : arrowCoords.isSolador
+                      ? '#fbbf24'
+                      : arrowCoords.isPreview
+                      ? '#38bdf8'
+                      : '#f43f5e'
+                  }
+                  strokeWidth="3"
+                  strokeDasharray="6 4"
+                  className="animate-spin"
+                />
+                <circle
+                  cx={arrowCoords.x2}
+                  cy={arrowCoords.y2}
+                  r="12"
+                  fill="none"
+                  stroke="#ffffff"
+                  strokeWidth="2"
+                  className="animate-ping opacity-75"
+                />
+              </svg>
+
+              {/* Floating Mid-Arrow Combat Callout Pill */}
+              <div
+                style={{
+                  left: `${
+                    arrowCoords.isAquaRedirect && arrowCoords.midX !== undefined
+                      ? (arrowCoords.midX + arrowCoords.x2) / 2
+                      : (arrowCoords.x1 + arrowCoords.x2) / 2
+                  }px`,
+                  top: `${
+                    arrowCoords.isAquaRedirect && arrowCoords.midY !== undefined
+                      ? (arrowCoords.midY + arrowCoords.y2) / 2
+                      : (arrowCoords.y1 + arrowCoords.y2) / 2
+                  }px`
+                }}
+                className=" -translate-x-1/2 -translate-y-1/2 absolute z-50 pointer-events-none"
+              >
+                <div
+                  className={`px-3 py-1 rounded-full border-2 shadow-2xl flex items-center gap-1.5 whitespace-nowrap text-xs font-black tracking-wide ${
+                    arrowCoords.isAquaRedirect
+                      ? 'bg-fuchsia-950/95 border-fuchsia-400 text-fuchsia-100 shadow-fuchsia-500/40'
+                      : arrowCoords.isSolador
+                      ? 'bg-amber-950/95 border-amber-400 text-amber-100 shadow-amber-500/40'
+                      : arrowCoords.isPreview
+                      ? 'bg-sky-950/95 border-sky-400 text-sky-100 shadow-sky-500/30'
+                      : 'bg-rose-950/95 border-rose-400 text-white shadow-rose-500/50 scale-105'
+                  }`}
+                >
+                  <span>⚔️ {arrowCoords.atkValue} Dano</span>
+                  {arrowCoords.isSolador && (
+                    <span className="px-1.5 py-0.5 rounded bg-amber-500 text-slate-950 text-[10px] font-black uppercase">
+                      ☀️ [Solador]
+                    </span>
+                  )}
+                  <span className="opacity-80 text-[10px] font-bold hidden sm:inline">
+                    ({arrowCoords.attackerName} ➔ {arrowCoords.targetName})
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* ============================================================
               BOT STATUS BAR & ZONES (TOP)
              ============================================================ */}
@@ -2124,9 +3486,32 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
                   )}
                 </div>
                 <div className="flex items-center gap-3 text-xs mt-0.5">
-                  <span className="flex items-center gap-1 text-rose-400 font-black">
+                  <span
+                    ref={botHpRef}
+                    className={`relative flex items-center gap-1 text-rose-400 font-black px-1.5 py-0.5 rounded transition-all ${
+                      slotImpacts['bot_hp'] === 'hit'
+                        ? 'bg-rose-500/40 ring-2 ring-rose-400 scale-110'
+                        : slotImpacts['bot_hp'] === 'heal'
+                        ? 'bg-emerald-500/30 ring-2 ring-emerald-400 scale-110'
+                        : ''
+                    }`}
+                  >
                     <Heart size={13} className="fill-rose-500 text-rose-500" />
                     {gameState.bot.hp} PV
+                    {floatingPopups
+                      .filter((p) => p.targetKey === 'bot_hp')
+                      .map((p) => (
+                        <span
+                          key={p.id}
+                          className={`pointer-events-none absolute -bottom-6 left-1/2 -translate-x-1/2 z-50 px-2 py-0.5 rounded-full text-[11px] font-black whitespace-nowrap shadow-lg animate-bounce ${
+                            p.kind === 'damage'
+                              ? 'bg-rose-600 text-white border border-rose-300'
+                              : 'bg-emerald-600 text-white border border-emerald-300'
+                          }`}
+                        >
+                          {p.text}
+                        </span>
+                      ))}
                   </span>
                   <span className="flex items-center gap-1 text-cyan-400 font-black">
                     <Zap size={13} className="fill-cyan-400 text-cyan-400" />
@@ -2144,6 +3529,8 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
             <div className="flex items-center gap-1.5 flex-wrap">
               {canDirectAttackBot && (
                 <button
+                  onMouseEnter={() => setHoveredAttackTarget({ side: 'bot', slot: -1 })}
+                  onMouseLeave={() => setHoveredAttackTarget(null)}
                   onClick={() => handleDeclarePlayerAttack(selectedAttackerSlot!, -1)}
                   className="px-3 py-1.5 rounded-lg bg-gradient-to-r from-rose-600 to-amber-600 hover:from-rose-500 hover:to-amber-500 text-white font-black text-xs uppercase tracking-wider shadow-lg shadow-rose-600/30 animate-pulse flex items-center gap-1.5"
                 >
@@ -2221,7 +3608,11 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
                               setInspectedCard(sup.card);
                             }}
                             className="flex items-center gap-1 min-w-0 flex-1"
-                            title={`Suporte: ${sup.card.name}`}
+                            title={
+                              sup.stackedCards && sup.stackedCards.length > 0
+                                ? `Suporte: ${sup.card.name} (+${sup.stackedCards.length} empilhada(s): ${sup.stackedCards.map((c) => c.name).join(', ')})`
+                                : `Suporte: ${sup.card.name}`
+                            }
                           >
                             {getModernImage(sup.card) && (
                               <img
@@ -2234,7 +3625,11 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
                               <span className="text-[8px] font-black uppercase text-indigo-200 truncate block">
                                 {sup.card.name}
                               </span>
-                              <span className="text-[7px] text-slate-400 block">Efeito</span>
+                              <span className="text-[7px] text-slate-400 block">
+                                {sup.stackedCards && sup.stackedCards.length > 0
+                                  ? `📚 ${sup.stackedCards.length + 1} Camadas`
+                                  : 'Efeito'}
+                              </span>
                             </div>
                           </div>
                         )}
@@ -2303,18 +3698,74 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
                 const effArchs = fighter ? getEffectiveArchetypes(gameState, fighter) : [];
                 const imgUrl = fighter ? getModernImage(fighter.card) : undefined;
 
+                const isBotSlotAttackerAnim =
+                  (activeAttackAnim?.attackerSide === 'bot' &&
+                    activeAttackAnim.attackerSlot === idx) ||
+                  (gameState.phase === 'COMBAT_REACTION' &&
+                    gameState.combatPending?.attackerPlayer === 'bot' &&
+                    gameState.combatPending.attackerSlot === idx);
+
+                const isBotSlotTargetAnim =
+                  activeAttackAnim?.targetSide === 'bot' && activeAttackAnim.targetSlot === idx;
+
+                const botSlotImpact = slotImpacts[`bot_slot_${idx}`];
+                const botSlotPopups = floatingPopups.filter(
+                  (p) => p.targetKey === `bot_slot_${idx}`
+                );
+
                 return (
                   <div
                     key={`bot_front_${idx}`}
+                    ref={(el) => {
+                      botSlotRefs.current[idx] = el;
+                    }}
+                    onMouseEnter={() => {
+                      if (isAttackTargetable) {
+                        setHoveredAttackTarget({ side: 'bot', slot: idx });
+                      }
+                    }}
+                    onMouseLeave={() => {
+                      if (hoveredAttackTarget?.side === 'bot' && hoveredAttackTarget.slot === idx) {
+                        setHoveredAttackTarget(null);
+                      }
+                    }}
                     onClick={() => handleBotFrontSlotClick(idx)}
-                    className={`h-32 sm:h-36 rounded-xl border p-1.5 flex flex-col justify-between relative overflow-hidden transition-all ${
-                      fighter
+                    className={`h-32 sm:h-36 rounded-xl border p-1.5 flex flex-col justify-between relative overflow-hidden transition-all duration-300 ${
+                      isBotSlotAttackerAnim
+                        ? 'translate-y-3 scale-105 ring-4 ring-rose-500 border-rose-300 z-30 shadow-2xl shadow-rose-500/50 bg-rose-950/90'
+                        : isBotSlotTargetAnim || botSlotImpact === 'hit'
+                        ? 'ring-4 ring-rose-500 border-rose-300 bg-rose-900/80 scale-95 z-20'
+                        : botSlotImpact === 'summon'
+                        ? 'ring-2 ring-amber-400 border-amber-300 bg-slate-900/95 scale-[1.03]'
+                        : botSlotImpact === 'heal'
+                        ? 'ring-2 ring-emerald-400 border-emerald-300 bg-slate-900/95'
+                        : fighter
                         ? isAttackTargetable || isVingancaTargetable || isGuerreiroSplashTarget
                           ? 'bg-rose-950/80 border-rose-400 ring-2 ring-rose-500/70 cursor-pointer scale-[1.02]'
                           : 'bg-slate-900/95 border-rose-500/40 hover:border-rose-400 cursor-pointer'
                         : 'bg-slate-900/30 border-slate-800/70 text-slate-600 items-center justify-center'
                     }`}
                   >
+                    {/* Floating Damage / Heal / KO / Summon Popups */}
+                    {botSlotPopups.length > 0 && (
+                      <div className="pointer-events-none absolute inset-x-0 top-1/2 -translate-y-1/2 z-40 flex flex-col items-center gap-1">
+                        {botSlotPopups.map((p) => (
+                          <span
+                            key={p.id}
+                            className={`px-2 py-0.5 rounded-full text-[11px] font-black uppercase tracking-wider shadow-xl border animate-bounce ${
+                              p.kind === 'damage' || p.kind === 'ko'
+                                ? 'bg-rose-600/95 text-white border-rose-200'
+                                : p.kind === 'heal'
+                                ? 'bg-emerald-600/95 text-white border-emerald-200'
+                                : 'bg-amber-500/95 text-slate-950 border-amber-200'
+                            }`}
+                          >
+                            {p.text}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+
                     {fighter ? (
                       <>
                         {imgUrl && (
@@ -2336,7 +3787,9 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
                                 : 'bg-rose-500/30 text-rose-200'
                             }`}
                           >
-                            {fighter.isHero ? '👑 Herói' : `CT ${fighter.card.ct}`}
+                            {fighter.isHero
+                              ? '👑 Herói'
+                              : `CT ${Math.max(0, (fighter.card.ct || 0) + (fighter.summonHpSpentBonusCt || 0) - gameState.bot.permanentCtReduction)}`}
                           </span>
                           <button
                             onClick={(e) => {
@@ -2452,7 +3905,7 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
                           <strong className="text-amber-300 underline">
                             criar uma Corrente (Contra-Negar)
                           </strong>{' '}
-                          usando uma carta destacada na mão, «Jim - Mago» no campo, ou aceitar a
+                          usando uma carta destacada na mão, habilidade de campo ou aceitar a
                           reação do Bot:
                         </span>
                       ) : (
@@ -2490,6 +3943,26 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
                         : 'Negar com «Jim - Mago»'}
                     </button>
                   )}
+                  {availablePlayerReactions.canUseMahinaVeuFieldNegate && (
+                    <button
+                      onClick={handleReactWithMahinaVeu}
+                      className="px-3 py-1.5 rounded-lg bg-fuchsia-600 hover:bg-fuchsia-500 text-white font-black text-xs flex items-center gap-1.5 shadow border border-fuchsia-400/50"
+                    >
+                      <Crown size={14} />
+                      {gameState.reactionWindow.isCounterChain
+                        ? 'Contra-Negar com «Mahina Véu» (Apagar 1 Véu)'
+                        : 'Negar com «Mahina Véu» (Apagar 1 Véu)'}
+                    </button>
+                  )}
+                  {availablePlayerReactions.canUseQuintaCamadaNegate && (
+                    <button
+                      onClick={handleReactWithQuintaCamada}
+                      className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-black text-xs flex items-center gap-1.5 shadow border border-indigo-400/50"
+                    >
+                      <Shield size={14} />
+                      Negar com «Quinta Camada»
+                    </button>
+                  )}
                   {(() => {
                     const jimHeroiSlot = gameState.player.frontline.findIndex(
                       (f) => f !== null && f.card.code === '2025/0001/00007' && !f.usedOncePerRoundAbility
@@ -2515,28 +3988,49 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
                 </div>
               </div>
             ) : (
-              <div className="px-4 py-1 rounded-full bg-slate-900/90 border border-purple-500/30 text-[11px] font-bold text-slate-300 flex items-center gap-2 shadow">
-                {selectingSlotForHero ? (
-                  <span className="text-amber-300 font-black">
-                    👑 Invocação de Herói: Clique em qual Coluna (1 a 6) deseja posicionar o seu
-                    Herói!
-                  </span>
-                ) : selectedHandCard ? (
-                  <span className="text-purple-300">
-                    Carta selecionada: <strong>«{selectedHandCard.name}»</strong> — Clique na Coluna
-                    correspondente do campo para jogar!
-                  </span>
-                ) : selectedAttackerSlot !== null ? (
-                  <span className="text-amber-300">
-                    Atacante selecionado na Coluna {selectedAttackerSlot + 1} — Clique em um
-                    combatente inimigo {canDirectAttackBot ? 'ou em "Ataque Direto"' : ''}!
-                  </span>
-                ) : (
-                  <span>
-                    ⬆️ Colunas Alinhadas (1 a 6) — Arquétipo <strong>[Véu]</strong> anula arquétipos
-                    do combatente na mesma coluna ⬆️
-                  </span>
-                )}
+              <div className="flex flex-col items-center gap-1 w-full">
+                {actionSpotlight &&
+                  !selectingSlotForHero &&
+                  !selectedHandCard &&
+                  selectedAttackerSlot === null && (
+                    <div
+                      key={actionSpotlight.id}
+                      className={`px-4 py-1 rounded-full border text-xs font-black tracking-wide shadow-lg flex items-center gap-2 transition-all ${
+                        actionSpotlight.tone === 'combat'
+                          ? 'bg-rose-950/95 border-rose-400 text-rose-100 shadow-rose-500/30'
+                          : actionSpotlight.tone === 'reaction'
+                          ? 'bg-cyan-950/95 border-cyan-400 text-cyan-100 shadow-cyan-500/30'
+                          : actionSpotlight.tone === 'summon'
+                          ? 'bg-amber-950/95 border-amber-400 text-amber-100 shadow-amber-500/30'
+                          : 'bg-purple-950/95 border-purple-400 text-purple-100 shadow-purple-500/30'
+                      }`}
+                    >
+                      <span>{actionSpotlight.text}</span>
+                    </div>
+                  )}
+                <div className="px-4 py-1 rounded-full bg-slate-900/90 border border-purple-500/30 text-[11px] font-bold text-slate-300 flex items-center gap-2 shadow">
+                  {selectingSlotForHero ? (
+                    <span className="text-amber-300 font-black">
+                      👑 Invocação de Herói: Clique em qual Coluna (1 a 6) deseja posicionar o seu
+                      Herói!
+                    </span>
+                  ) : selectedHandCard ? (
+                    <span className="text-purple-300">
+                      Carta selecionada: <strong>«{selectedHandCard.name}»</strong> — Clique na Coluna
+                      correspondente do campo para jogar!
+                    </span>
+                  ) : selectedAttackerSlot !== null ? (
+                    <span className="text-amber-300">
+                      Atacante selecionado na Coluna {selectedAttackerSlot + 1} — Passe o mouse ou clique em um
+                      combatente inimigo, em «Aqua Caótica» aliada (2x dano) {canDirectAttackBot ? 'ou em "Ataque Direto"' : ''}!
+                    </span>
+                  ) : !actionSpotlight ? (
+                    <span>
+                      ⬆️ Colunas Alinhadas (1 a 6) — Arquétipo <strong>[Véu]</strong> anula arquétipos
+                      do combatente na mesma coluna ⬆️
+                    </span>
+                  ) : null}
+                </div>
               </div>
             )}
           </div>
@@ -2549,6 +4043,16 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
             <div className="grid grid-cols-6 gap-1.5">
               {gameState.player.frontline.map((fighter, idx) => {
                 const isSelectedAttacker = selectedAttackerSlot === idx;
+
+                const isFriendlyAquaTarget =
+                  gameState.phase === 'MAIN_PHASE' &&
+                  gameState.activePlayer === 'player' &&
+                  gameState.round >= 2 &&
+                  selectedAttackerSlot !== null &&
+                  selectedAttackerSlot !== idx &&
+                  fighter !== null &&
+                  fighter.card.code === '2026/0001/00310' &&
+                  gameState.bot.frontline[idx] !== null;
 
                 const isSummonTargetMain =
                   gameState.phase === 'MAIN_PHASE' &&
@@ -2622,14 +4126,56 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
                       !fighter.jimLordTier9GemUsedThisRound &&
                       countJimsInErasedZone(gameState.player) >= 9));
 
+                const isPlayerSlotAttackerAnim =
+                  activeAttackAnim?.attackerSide === 'player' &&
+                  activeAttackAnim.attackerSlot === idx;
+
+                const isPlayerSlotTargetAnim =
+                  (activeAttackAnim?.targetSide === 'player' &&
+                    activeAttackAnim.targetSlot === idx) ||
+                  (gameState.phase === 'COMBAT_REACTION' &&
+                    gameState.combatPending?.attackerPlayer === 'bot' &&
+                    gameState.combatPending.targetSlot === idx);
+
+                const playerSlotImpact = slotImpacts[`player_slot_${idx}`];
+                const playerSlotPopups = floatingPopups.filter(
+                  (p) => p.targetKey === `player_slot_${idx}`
+                );
+
                 return (
                   <div
                     key={`player_front_${idx}`}
+                    ref={(el) => {
+                      playerSlotRefs.current[idx] = el;
+                    }}
+                    onMouseEnter={() => {
+                      if (isFriendlyAquaTarget) {
+                        setHoveredAttackTarget({ side: 'player', slot: idx });
+                      }
+                    }}
+                    onMouseLeave={() => {
+                      if (
+                        hoveredAttackTarget?.side === 'player' &&
+                        hoveredAttackTarget.slot === idx
+                      ) {
+                        setHoveredAttackTarget(null);
+                      }
+                    }}
                     onClick={() => handlePlayerFrontSlotClick(idx)}
-                    className={`h-32 sm:h-36 rounded-xl border p-1.5 flex flex-col justify-between relative overflow-hidden transition-all cursor-pointer ${
-                      fighter
+                    className={`h-32 sm:h-36 rounded-xl border p-1.5 flex flex-col justify-between relative overflow-hidden transition-all duration-300 cursor-pointer ${
+                      isPlayerSlotAttackerAnim
+                        ? '-translate-y-3 scale-105 ring-4 ring-amber-400 border-amber-300 z-30 shadow-2xl shadow-amber-500/50 bg-amber-950/90'
+                        : isPlayerSlotTargetAnim || playerSlotImpact === 'hit'
+                        ? 'ring-4 ring-rose-500 border-rose-300 bg-rose-950/85 scale-95 z-20'
+                        : playerSlotImpact === 'summon'
+                        ? 'ring-2 ring-amber-400 border-amber-300 bg-slate-900/95 scale-[1.03]'
+                        : playerSlotImpact === 'heal'
+                        ? 'ring-2 ring-emerald-400 border-emerald-300 bg-slate-900/95'
+                        : fighter
                         ? isSelectedAttacker
                           ? 'bg-amber-950/70 border-amber-400 ring-2 ring-amber-400/70 scale-[1.02]'
+                          : isFriendlyAquaTarget
+                          ? 'bg-fuchsia-950/80 border-fuchsia-400 ring-2 ring-fuchsia-400/80 scale-[1.02] animate-pulse'
                           : isEquipOrAllyTargetMain || isHeroSlotTarget || isReactionSlotTarget
                           ? 'bg-cyan-950/70 border-cyan-400 ring-2 ring-cyan-400/80 scale-[1.02]'
                           : 'bg-slate-900/95 border-purple-500/40 hover:border-purple-400'
@@ -2638,6 +4184,26 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
                         : 'bg-slate-900/30 border-slate-800/70 text-slate-600 items-center justify-center'
                     }`}
                   >
+                    {/* Floating Damage / Heal / KO / Summon Popups */}
+                    {playerSlotPopups.length > 0 && (
+                      <div className="pointer-events-none absolute inset-x-0 top-1/2 -translate-y-1/2 z-40 flex flex-col items-center gap-1">
+                        {playerSlotPopups.map((p) => (
+                          <span
+                            key={p.id}
+                            className={`px-2 py-0.5 rounded-full text-[11px] font-black uppercase tracking-wider shadow-xl border animate-bounce ${
+                              p.kind === 'damage' || p.kind === 'ko'
+                                ? 'bg-rose-600/95 text-white border-rose-200'
+                                : p.kind === 'heal'
+                                ? 'bg-emerald-600/95 text-white border-emerald-200'
+                                : 'bg-amber-500/95 text-slate-950 border-amber-200'
+                            }`}
+                          >
+                            {p.text}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+
                     {fighter ? (
                       <>
                         {imgUrl && (
@@ -2659,9 +4225,19 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
                                 : 'bg-purple-500/30 text-purple-200'
                             }`}
                           >
-                            {fighter.isHero ? '👑 Herói' : `CT ${fighter.card.ct}`}
+                            {fighter.isHero
+                              ? '👑 Herói'
+                              : `CT ${Math.max(0, (fighter.card.ct || 0) + (fighter.summonHpSpentBonusCt || 0) - gameState.player.permanentCtReduction)}`}
                           </span>
                           <div className="flex items-center gap-1">
+                            {isFriendlyAquaTarget && (
+                              <span
+                                className="text-[8px] px-1 rounded bg-fuchsia-500 text-white font-black uppercase"
+                                title="Clique para atacar Aqua Caótica e refletir 2x dano ao inimigo à frente!"
+                              >
+                                2x Dano!
+                              </span>
+                            )}
                             {fighter.hasAttackedThisTurn && (
                               <span
                                 className="text-[8px] px-1 rounded bg-slate-800 text-slate-400"
@@ -2764,14 +4340,17 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
                 const equippedList = frontFighter?.equipments ?? [];
                 const hasContent = sup !== null || equippedList.length > 0;
 
+                const activeSupportCard =
+                  gameState.phase === 'MAIN_PHASE'
+                    ? selectedHandCard
+                    : gameState.phase === 'CARD_REACTION'
+                    ? selectedReactionCard
+                    : null;
+
                 const isSupportTarget =
-                  ((gameState.phase === 'MAIN_PHASE' &&
-                    selectedHandCard &&
-                    isContinuousBackrowCard(selectedHandCard)) ||
-                    (gameState.phase === 'CARD_REACTION' &&
-                      selectedReactionCard &&
-                      isContinuousBackrowCard(selectedReactionCard))) &&
-                  sup === null;
+                  activeSupportCard !== null &&
+                  isContinuousBackrowCard(activeSupportCard) &&
+                  (sup === null || (isCamadaCard(activeSupportCard) && isCamadaCard(sup.card)));
 
                 const isEquipSupportTarget =
                   frontFighter !== null &&
@@ -2823,7 +4402,11 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
                               }
                             }}
                             className="flex items-center gap-1.5 min-w-0 flex-1"
-                            title={`Efeito Contínuo: ${sup.card.name}`}
+                            title={
+                              sup.stackedCards && sup.stackedCards.length > 0
+                                ? `Efeito Contínuo: ${sup.card.name} (+${sup.stackedCards.length} empilhada(s): ${sup.stackedCards.map((c) => c.name).join(', ')})`
+                                : `Efeito Contínuo: ${sup.card.name}`
+                            }
                           >
                             {getModernImage(sup.card) && (
                               <img
@@ -2852,6 +4435,8 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
                                     ? sup.usedOncePerRound
                                       ? 'Usado na rodada'
                                       : `Runas: ${gameState.player.runes}`
+                                    : sup.stackedCards && sup.stackedCards.length > 0
+                                    ? `📚 ${sup.stackedCards.length + 1} Camadas`
                                     : 'Efeito Ativo'}
                                 </span>
                               )}
@@ -2919,9 +4504,32 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
             <div className="flex flex-wrap items-center justify-between gap-2">
               {/* Player Stats */}
               <div className="flex items-center gap-2.5">
-                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-rose-950/60 border border-rose-500/30 text-rose-300 font-black text-xs">
+                <div
+                  ref={playerHpRef}
+                  className={`relative flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-rose-950/60 border border-rose-500/30 text-rose-300 font-black text-xs transition-all ${
+                    slotImpacts['player_hp'] === 'hit'
+                      ? 'ring-2 ring-rose-400 bg-rose-600/40 scale-110'
+                      : slotImpacts['player_hp'] === 'heal'
+                      ? 'ring-2 ring-emerald-400 bg-emerald-600/30 scale-110'
+                      : ''
+                  }`}
+                >
                   <Heart size={14} className="fill-rose-500 text-rose-500" />
                   {gameState.player.hp} PV
+                  {floatingPopups
+                    .filter((p) => p.targetKey === 'player_hp')
+                    .map((p) => (
+                      <span
+                        key={p.id}
+                        className={`pointer-events-none absolute -top-7 left-1/2 -translate-x-1/2 z-50 px-2 py-0.5 rounded-full text-[11px] font-black whitespace-nowrap shadow-lg animate-bounce ${
+                          p.kind === 'damage'
+                            ? 'bg-rose-600 text-white border border-rose-300'
+                            : 'bg-emerald-600 text-white border border-emerald-300'
+                        }`}
+                      >
+                        {p.text}
+                      </span>
+                    ))}
                 </div>
                 <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-cyan-950/60 border border-cyan-500/30 text-cyan-300 font-black text-xs">
                   <Zap size={14} className="fill-cyan-400 text-cyan-400" />
@@ -2934,6 +4542,16 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
                 {gameState.player.ctReductionThisRound > 0 && (
                   <span className="px-2 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/40 text-[10px] font-black">
                     -{gameState.player.ctReductionThisRound} CT nesta rodada
+                  </span>
+                )}
+                {gameState.player.permanentCtReduction > 0 && (
+                  <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[10px] font-black">
+                    -{gameState.player.permanentCtReduction} CT Permanente
+                  </span>
+                )}
+                {gameState.player.nextRoundExtraCtCost > 0 && (
+                  <span className="px-2 py-0.5 rounded bg-rose-500/20 text-rose-300 border border-rose-500/40 text-[10px] font-black">
+                    +{gameState.player.nextRoundExtraCtCost} CT Penalidade
                   </span>
                 )}
               </div>
@@ -3514,6 +5132,17 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
             </div>
 
             <div className="flex items-center justify-end gap-3 pt-2 border-t border-slate-800">
+              {activePendingChoice.minSelect === 0 && (
+                <button
+                  onClick={() => {
+                    setSelectedChoiceIds([]);
+                    setTimeout(() => handleConfirmPendingChoice(false), 0);
+                  }}
+                  className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs uppercase tracking-wider border border-slate-700 transition-colors"
+                >
+                  Não Ativar / Pular
+                </button>
+              )}
               <button
                 disabled={selectedChoiceIds.length < Math.max(1, activePendingChoice.minSelect)}
                 onClick={() => handleConfirmPendingChoice(false)}

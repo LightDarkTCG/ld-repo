@@ -1176,7 +1176,10 @@ export const StoreModal: React.FC<StoreModalProps> = ({
                         : defaultVarIdx;
                     const chosenVar = hasVars ? variations[activeVarIdx] || variations[0] : null;
 
-                    const rawPrice = chosenVar ? chosenVar.price : prod.price || 'R$ 89,90';
+                    const rawPrice =
+                      chosenVar && !prod.sameVariationPrice && chosenVar.price
+                        ? chosenVar.price
+                        : prod.price || chosenVar?.price || 'R$ 89,90';
                     const numericPrice = parseBRLPrice(rawPrice) || 89.9;
                     const numericOriginalPrice = prod.originalPrice
                       ? parseBRLPrice(prod.originalPrice)
@@ -1201,7 +1204,9 @@ export const StoreModal: React.FC<StoreModalProps> = ({
                         : prod.mediaUrl
                         ? [{ type: prod.mediaType || 'image', url: prod.mediaUrl }]
                         : [];
-                    const coverMedia = medias[0];
+                    const coverMedia = chosenVar?.imageUrl?.trim()
+                      ? { type: 'image' as const, url: chosenVar.imageUrl.trim() }
+                      : medias[0];
 
                     return (
                       <div
@@ -1297,7 +1302,7 @@ export const StoreModal: React.FC<StoreModalProps> = ({
                             </h3>
 
                             <p className="text-xs text-slate-400 line-clamp-2 leading-relaxed">
-                              {prod.description}
+                              {chosenVar?.description || prod.description}
                             </p>
 
                             {/* Pre-order Release Notice */}
@@ -1316,11 +1321,14 @@ export const StoreModal: React.FC<StoreModalProps> = ({
                             {hasVars && (
                               <div className="space-y-1.5 pt-1">
                                 <label className="text-[11px] text-slate-400 font-semibold block">
-                                  Escolha a Versão:
+                                  Escolha a Versão / Variação:
                                 </label>
                                 <div className="grid grid-cols-2 gap-1.5">
                                   {variations.map((v, vIdx) => {
                                     const isSel = activeVarIdx === vIdx;
+                                    const varDisplayPrice = prod.sameVariationPrice
+                                      ? formatBRL(parseBRLPrice(prod.price || v.price))
+                                      : formatBRL(parseBRLPrice(v.price || prod.price));
                                     return (
                                       <button
                                         key={vIdx}
@@ -1331,17 +1339,27 @@ export const StoreModal: React.FC<StoreModalProps> = ({
                                             [idx]: vIdx
                                           }))
                                         }
-                                        className={`p-2 rounded-lg border text-left transition cursor-pointer ${
+                                        className={`p-2 rounded-lg border text-left transition cursor-pointer flex items-center gap-2 ${
                                           isSel
                                             ? 'bg-purple-950/80 border-purple-500 text-white'
                                             : 'bg-slate-950/70 border-slate-800 text-slate-300 hover:border-slate-700'
                                         }`}
                                       >
-                                        <div className="text-[11px] font-bold truncate">
-                                          {v.name}
-                                        </div>
-                                        <div className="text-xs font-mono font-bold text-emerald-400 tabular-nums">
-                                          {formatBRL(parseBRLPrice(v.price))}
+                                        {v.imageUrl && (
+                                          <img
+                                            src={v.imageUrl}
+                                            alt={v.name}
+                                            referrerPolicy="no-referrer"
+                                            className="w-8 h-8 rounded object-cover border border-white/20 shrink-0"
+                                          />
+                                        )}
+                                        <div className="min-w-0 flex-1">
+                                          <div className="text-[11px] font-bold truncate">
+                                            {v.name}
+                                          </div>
+                                          <div className="text-xs font-mono font-bold text-emerald-400 tabular-nums">
+                                            {varDisplayPrice}
+                                          </div>
                                         </div>
                                       </button>
                                     );

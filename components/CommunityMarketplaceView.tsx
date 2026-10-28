@@ -25,7 +25,10 @@ import {
   Box,
   ShieldCheck,
   Copy,
-  Heart
+  Heart,
+  Upload,
+  Image as ImageIcon,
+  Loader2
 } from 'lucide-react';
 import {
   CardCondition,
@@ -35,6 +38,7 @@ import {
   MarketplaceListing,
   MarketplaceListingType,
   MarketplaceSellerReview,
+  ProductPriceVariation,
   StoreProductCategory
 } from '../types';
 import {
@@ -49,7 +53,8 @@ import {
   parseBRLPrice,
   saveOfficialProductToStore,
   subscribeMarketplaceSellerReviews,
-  updateMarketplaceListing
+  updateMarketplaceListing,
+  uploadMarketplaceImage
 } from '../storeService';
 import { encodeDeckCode, parseDeckFromCode } from '../deckUtils';
 import { useUserWishlist } from '../wishlistService';
@@ -191,6 +196,12 @@ export const CommunityMarketplaceView: React.FC<CommunityMarketplaceViewProps> =
   const [condition, setCondition] = useState<CardCondition>('Near Mint (NM)');
   const [isFoil, setIsFoil] = useState(false);
   const [imageUrl, setImageUrl] = useState('');
+  const [additionalImages, setAdditionalImages] = useState<string[]>([]);
+  const [priceVariations, setPriceVariations] = useState<ProductPriceVariation[]>([]);
+  const [sameVariationPrice, setSameVariationPrice] = useState<boolean>(false);
+  const [uploadingPhotoTarget, setUploadingPhotoTarget] = useState<string | null>(null);
+  const [selectedListingVarMap, setSelectedListingVarMap] = useState<Record<string, number>>({});
+  const [inspectVariationIdx, setInspectVariationIdx] = useState<number>(0);
   const [selectedCardCode, setSelectedCardCode] = useState('');
   const [cardSearchTerm, setCardSearchTerm] = useState('');
   const [includedCards, setIncludedCards] = useState<MarketplaceCardEntry[]>([]);
@@ -581,13 +592,16 @@ export const CommunityMarketplaceView: React.FC<CommunityMarketplaceViewProps> =
     return arr;
   }, [listings, reviews, sellerStatsMap]);
 
-  const buildSellerWhatsAppUrl = (item: MarketplaceListing) => {
+  const buildSellerWhatsAppUrl = (item: MarketplaceListing, chosenVar?: ProductPriceVariation) => {
     const cleanPhone = (item.sellerWhatsapp || '').replace(/\D/g, '');
     if (!cleanPhone) return null;
     const fullPhone = cleanPhone.startsWith('55') ? cleanPhone : `55${cleanPhone}`;
-    const msg = `Olá ${item.sellerName}! Vi seu anúncio *"${item.title}"* (${formatBRL(
-      item.price
-    )}) no Mercado de Jogadores do *Light Dark TCG* e tenho interesse em negociar!`;
+    const varLabel = chosenVar?.name ? ` [Variação: ${chosenVar.name}]` : '';
+    const displayPrice =
+      chosenVar && !item.sameVariationPrice && chosenVar.price
+        ? formatBRL(parseBRLPrice(chosenVar.price) || item.price)
+        : formatBRL(item.price);
+    const msg = `Olá ${item.sellerName}! Vi seu anúncio *"${item.title}"*${varLabel} (${displayPrice}) no Mercado de Jogadores do *Light Dark TCG* e tenho interesse em negociar!`;
     return `https://wa.me/${fullPhone}?text=${encodeURIComponent(msg)}`;
   };
 
@@ -731,6 +745,10 @@ export const CommunityMarketplaceView: React.FC<CommunityMarketplaceViewProps> =
     setCondition('Near Mint (NM)');
     setIsFoil(false);
     setImageUrl('');
+    setAdditionalImages([]);
+    setPriceVariations([]);
+    setSameVariationPrice(false);
+    setUploadingPhotoTarget(null);
     setSelectedCardCode('');
     setIncludedCards([]);
     setDeckCodeInput('');
@@ -740,6 +758,51 @@ export const CommunityMarketplaceView: React.FC<CommunityMarketplaceViewProps> =
     setOfficialIsPreOrder(false);
     setOfficialPreOrderDate('');
     setFormError('');
+  };
+
+  const handleUploadCoverPhoto = async (file: File) => {
+    setFormError('');
+    setUploadingPhotoTarget('cover');
+    try {
+      const url = await uploadMarketplaceImage(file, 'marketplace_covers');
+      setImageUrl(url);
+    } catch (err: any) {
+      setFormError('Erro ao subir foto do produto: ' + (err.message || 'Tente novamente'));
+    } finally {
+      setUploadingPhotoTarget(null);
+    }
+  };
+
+  const handleUploadExtraPhoto = async (file: File) => {
+    setFormError('');
+    setUploadingPhotoTarget('extra');
+    try {
+      const url = await uploadMarketplaceImage(file, 'marketplace_gallery');
+      setAdditionalImages((prev) => [...prev, url]);
+    } catch (err: any) {
+      setFormError('Erro ao subir foto adicional: ' + (err.message || 'Tente novamente'));
+    } finally {
+      setUploadingPhotoTarget(null);
+    }
+  };
+
+  const handleUploadVariationPhoto = async (varIdx: number, file: File) => {
+    setFormError('');
+    setUploadingPhotoTarget(`var-${varIdx}`);
+    try {
+      const url = await uploadMarketplaceImage(file, 'marketplace_variations');
+      setPriceVariations((prev) => {
+        const next = [...prev];
+        if (next[varIdx]) {
+          next[varIdx] = { ...next[varIdx], imageUrl: url };
+        }
+        return next;
+      });
+    } catch (err: any) {
+      setFormError('Erro ao subir foto da variação: ' + (err.message || 'Tente novamente'));
+    } finally {
+      setUploadingPhotoTarget(null);
+    }
   };
 
   const handleStartEdit = (item: MarketplaceListing) => {
@@ -763,6 +826,9 @@ export const CommunityMarketplaceView: React.FC<CommunityMarketplaceViewProps> =
     setCondition(item.condition);
     setIsFoil(Boolean(item.isFoil));
     setImageUrl(item.imageUrl || '');
+    setAdditionalImages(item.additionalImages || []);
+    setPriceVariations(item.priceVariations || []);
+    setSameVariationPrice(Boolean(item.sameVariationPrice));
     setSelectedCardCode(item.cardId || '');
     setIncludedCards(item.includedCards || []);
     setSellerWhatsapp(item.sellerWhatsapp || '');
@@ -833,13 +899,37 @@ export const CommunityMarketplaceView: React.FC<CommunityMarketplaceViewProps> =
       previewFromDeckCode.mainDeck[0]?.card?.imageUrl ||
       '';
 
+    const cleanedVariations: ProductPriceVariation[] = priceVariations
+      .filter((v) => v && v.name && v.name.trim() !== '')
+      .map((v, idx) => {
+        const varNumPrice = sameVariationPrice
+          ? parsedPrice
+          : parseBRLPrice(v.price) || parsedPrice;
+        return {
+          id: v.id || `var_${Date.now()}_${idx}`,
+          name: v.name.trim(),
+          price: formatBRL(varNumPrice),
+          imageUrl: (v.imageUrl || '').trim(),
+          description: (v.description || '').trim(),
+          badge: (v.badge || '').trim(),
+          stock: v.stock !== undefined ? Math.max(0, Number(v.stock)) : undefined,
+          isDefault: priceVariations.some((pv) => pv.isDefault) ? Boolean(v.isDefault) : idx === 0
+        };
+      });
+
     const finalImage =
       imageUrl.trim() ||
+      cleanedVariations.find((v) => v.imageUrl)?.imageUrl ||
       matchedCatalogCard?.catalogCoverImageUrl ||
       matchedCatalogCard?.imageUrl ||
       includedCards[0]?.cardImageUrl ||
       firstDeckCardImage ||
       'https://i.imgur.com/cDLxOtO.png';
+
+    const allGalleryUrls = [
+      finalImage,
+      ...additionalImages.filter((u) => u && u.trim() !== '' && u !== finalImage)
+    ];
 
     // =========================================================================
     // REGRA OFICIAL: SE CONTA OFICIAL ESTÁ LOGADA -> SALVA COMO PRODUTO OFICIAL!
@@ -879,7 +969,7 @@ export const CommunityMarketplaceView: React.FC<CommunityMarketplaceViewProps> =
           originalPrice: parsedOrig > parsedPrice ? formatBRL(parsedOrig) : '',
           mediaType: 'image',
           mediaUrl: finalImage,
-          mediaList: [{ url: finalImage, type: 'image' }],
+          mediaList: allGalleryUrls.map((url) => ({ url, type: 'image' as const })),
           buttonText: officialIsPreOrder ? 'Garantir Pré-Venda' : 'Comprar Agora',
           buttonLink: '', // Carrinho Interno + Mercado Pago Oficial
           badge:
@@ -889,13 +979,15 @@ export const CommunityMarketplaceView: React.FC<CommunityMarketplaceViewProps> =
           isPreOrder: officialIsPreOrder || officialStoreCategory === 'pre_venda',
           preOrderReleaseDate: officialPreOrderDate.trim() || '',
           isPromotion: parsedOrig > parsedPrice || officialStoreCategory === 'promocoes',
-          stockCount: Math.max(1, Number(stockQuantity) || 25),
-          weightGrams: creationMode === 'single_card' ? 50 : 250
+          stock: Math.max(1, Number(stockQuantity) || 25),
+          weightGrams: creationMode === 'single_card' ? 50 : 250,
+          sameVariationPrice,
+          priceVariations: cleanedVariations
         };
 
         await saveOfficialProductToStore(newOfficialProduct);
         setFormSuccess(
-          '✓ Produto Oficial publicado com sucesso no catálogo de Produtos Oficiais (com Carrinho + Mercado Pago)!'
+          '✓ Produto Oficial publicado com sucesso no catálogo de Produtos Oficiais (com Variações, Fotos e Carrinho + Mercado Pago)!'
         );
         resetForm();
         setTimeout(() => {
@@ -946,6 +1038,9 @@ export const CommunityMarketplaceView: React.FC<CommunityMarketplaceViewProps> =
         condition,
         isFoil: creationMode === 'single_card' ? isFoil : false,
         imageUrl: finalImage,
+        additionalImages: additionalImages.filter((u) => u && u.trim() !== ''),
+        priceVariations: cleanedVariations.length > 0 ? cleanedVariations : undefined,
+        sameVariationPrice,
         cardId: creationMode === 'single_card' ? selectedCardCode || undefined : undefined,
         cardName:
           creationMode === 'single_card'
@@ -1232,7 +1327,21 @@ export const CommunityMarketplaceView: React.FC<CommunityMarketplaceViewProps> =
               <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5">
                 {activeListings.map((item) => {
                   const sellerStats = getSellerStats(item.sellerId);
-                  const waUrl = buildSellerWhatsAppUrl(item);
+                  const itemVars = Array.isArray(item.priceVariations)
+                    ? item.priceVariations.filter((v) => v && v.name && v.name.trim() !== '')
+                    : [];
+                  const activeVarIdx =
+                    selectedListingVarMap[item.id] !== undefined
+                      ? selectedListingVarMap[item.id]
+                      : Math.max(0, itemVars.findIndex((v) => v.isDefault));
+                  const chosenVar = itemVars.length > 0 ? itemVars[activeVarIdx] || itemVars[0] : undefined;
+                  const activeImageUrl =
+                    chosenVar?.imageUrl?.trim() || item.imageUrl || 'https://i.imgur.com/cDLxOtO.png';
+                  const activeNumericPrice =
+                    chosenVar && !item.sameVariationPrice && chosenVar.price
+                      ? parseBRLPrice(chosenVar.price) || item.price
+                      : item.price;
+                  const waUrl = buildSellerWhatsAppUrl(item, chosenVar);
 
                   return (
                     <div
@@ -1242,11 +1351,14 @@ export const CommunityMarketplaceView: React.FC<CommunityMarketplaceViewProps> =
                       <div>
                         {/* Image Header */}
                         <div
-                          onClick={() => setInspectListing(item)}
+                          onClick={() => {
+                            setInspectVariationIdx(activeVarIdx >= 0 ? activeVarIdx : 0);
+                            setInspectListing(item);
+                          }}
                           className="relative aspect-[4/3] bg-black overflow-hidden cursor-pointer group"
                         >
                           <img
-                            src={item.imageUrl || 'https://i.imgur.com/cDLxOtO.png'}
+                            src={activeImageUrl}
                             alt={item.title}
                             referrerPolicy="no-referrer"
                             className="w-full h-full object-contain bg-slate-950 group-hover:scale-105 transition-transform duration-300"
@@ -1270,6 +1382,11 @@ export const CommunityMarketplaceView: React.FC<CommunityMarketplaceViewProps> =
                                 : `Coleção (${item.totalCardsCount || item.includedCards?.length || 1} cartas)`}
                             </span>
 
+                            {itemVars.length > 0 && (
+                              <span className="text-[10px] font-black uppercase bg-amber-500/90 text-slate-950 px-2 py-0.5 rounded-md">
+                                {itemVars.length} {itemVars.length === 1 ? 'Opção' : 'Variações'}
+                              </span>
+                            )}
                             {item.isFoil && (
                               <span className="text-[10px] font-black uppercase bg-gradient-to-r from-amber-400 to-purple-400 text-slate-950 px-2 py-0.5 rounded-md">
                                 ✨ FOIL
@@ -1348,20 +1465,72 @@ export const CommunityMarketplaceView: React.FC<CommunityMarketplaceViewProps> =
                               <span>Envio direto com vendedor</span>
                             )}
                             <span className="font-mono text-amber-300">
-                              {item.stockQuantity} disp.
+                              {chosenVar?.stock !== undefined ? chosenVar.stock : item.stockQuantity} disp.
                             </span>
                           </div>
 
                           <h3
-                            onClick={() => setInspectListing(item)}
+                            onClick={() => {
+                              setInspectVariationIdx(activeVarIdx >= 0 ? activeVarIdx : 0);
+                              setInspectListing(item);
+                            }}
                             className="text-sm sm:text-base font-bold text-white leading-snug hover:text-purple-300 cursor-pointer line-clamp-1"
                           >
                             {item.title}
                           </h3>
 
                           <p className="text-xs text-slate-400 line-clamp-2 leading-relaxed">
-                            {item.description}
+                            {chosenVar?.description || item.description}
                           </p>
+
+                          {/* Variations Selector Pills */}
+                          {itemVars.length > 0 && (
+                            <div className="pt-1 space-y-1.5">
+                              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
+                                Escolha a Variação:
+                              </span>
+                              <div className="flex flex-wrap gap-1.5">
+                                {itemVars.map((v, vIdx) => {
+                                  const isSelected = vIdx === (activeVarIdx >= 0 ? activeVarIdx : 0);
+                                  const vPrice = item.sameVariationPrice
+                                    ? formatBRL(item.price)
+                                    : formatBRL(parseBRLPrice(v.price) || item.price);
+                                  return (
+                                    <button
+                                      key={vIdx}
+                                      type="button"
+                                      onClick={() =>
+                                        setSelectedListingVarMap((prev) => ({
+                                          ...prev,
+                                          [item.id]: vIdx
+                                        }))
+                                      }
+                                      className={`px-2 py-1 rounded-lg border text-[11px] font-semibold transition flex items-center gap-1.5 cursor-pointer ${
+                                        isSelected
+                                          ? 'bg-purple-600/30 border-purple-400 text-white shadow-sm'
+                                          : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700'
+                                      }`}
+                                    >
+                                      {v.imageUrl && (
+                                        <img
+                                          src={v.imageUrl}
+                                          alt={v.name}
+                                          referrerPolicy="no-referrer"
+                                          className="w-4 h-4 rounded object-cover border border-white/20 shrink-0"
+                                        />
+                                      )}
+                                      <span className="truncate max-w-[100px]">{v.name}</span>
+                                      {!item.sameVariationPrice && (
+                                        <span className="text-[10px] font-mono text-emerald-400 font-bold">
+                                          {vPrice}
+                                        </span>
+                                      )}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          )}
 
                           {item.listingType === 'collection' &&
                             item.includedCards &&
@@ -1390,10 +1559,10 @@ export const CommunityMarketplaceView: React.FC<CommunityMarketplaceViewProps> =
                         <div className="flex items-baseline justify-between">
                           <div>
                             <span className="text-[10px] text-slate-400 block">
-                              Valor pedido pelo jogador
+                              {chosenVar ? `Valor (${chosenVar.name})` : 'Valor pedido pelo jogador'}
                             </span>
                             <span className="text-lg font-black text-emerald-400 font-mono tabular-nums">
-                              {formatBRL(item.price)}
+                              {formatBRL(activeNumericPrice)}
                             </span>
                           </div>
                           <button
@@ -2050,17 +2219,464 @@ export const CommunityMarketplaceView: React.FC<CommunityMarketplaceViewProps> =
                       )}
                     </div>
 
-                    <div>
-                      <label className="text-xs font-bold text-slate-300 block mb-1">
-                        URL da Imagem de Capa (preenchida automaticamente pelo Deck/Coleção ou cole a sua)
-                      </label>
-                      <input
-                        type="url"
-                        value={imageUrl}
-                        onChange={(e) => setImageUrl(e.target.value)}
-                        placeholder="https://... (deixe em branco para usar a arte oficial do Deck/Carta)"
-                        className="w-full bg-slate-950 border border-slate-800 focus:border-purple-500 rounded-xl px-3.5 py-2 text-xs text-white outline-none"
-                      />
+                    {/* Foto de Capa do Produto (Upload do Dispositivo + URL) */}
+                    <div className="bg-slate-950 border border-slate-800 rounded-2xl p-4 space-y-3">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                        <div>
+                          <label className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+                            <ImageIcon size={14} className="text-purple-400" />
+                            <span>Foto Principal do Produto / Anúncio</span>
+                          </label>
+                          <p className="text-[11px] text-slate-400">
+                            Suba uma foto direto do seu computador/celular ou cole o link de uma imagem.
+                          </p>
+                        </div>
+
+                        <div className="flex items-center gap-2 shrink-0">
+                          <label className="px-3.5 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-md shadow-purple-950/50">
+                            {uploadingPhotoTarget === 'cover' ? (
+                              <Loader2 size={14} className="animate-spin" />
+                            ) : (
+                              <Upload size={14} />
+                            )}
+                            <span>
+                              {uploadingPhotoTarget === 'cover'
+                                ? 'Subindo Foto...'
+                                : 'Subir Foto do Produto'}
+                            </span>
+                            <input
+                              type="file"
+                              accept="image/*"
+                              className="hidden"
+                              onChange={(e) => {
+                                if (e.target.files?.[0]) {
+                                  handleUploadCoverPhoto(e.target.files[0]);
+                                  e.target.value = '';
+                                }
+                              }}
+                            />
+                          </label>
+
+                          <label className="px-3 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer">
+                            {uploadingPhotoTarget === 'extra' ? (
+                              <Loader2 size={13} className="animate-spin text-purple-400" />
+                            ) : (
+                              <Plus size={13} className="text-purple-400" />
+                            )}
+                            <span>+ Foto Extra</span>
+                            <input
+                              type="file"
+                              accept="image/*"
+                              className="hidden"
+                              onChange={(e) => {
+                                if (e.target.files?.[0]) {
+                                  handleUploadExtraPhoto(e.target.files[0]);
+                                  e.target.value = '';
+                                }
+                              }}
+                            />
+                          </label>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
+                        <div className="w-20 h-20 rounded-xl bg-black border border-slate-800 overflow-hidden shrink-0 flex items-center justify-center">
+                          {imageUrl ? (
+                            <img
+                              src={imageUrl}
+                              alt="Capa"
+                              referrerPolicy="no-referrer"
+                              className="w-full h-full object-contain"
+                            />
+                          ) : (
+                            <ImageIcon size={22} className="text-slate-600" />
+                          )}
+                        </div>
+
+                        <div className="flex-1 w-full space-y-2">
+                          <input
+                            type="text"
+                            value={imageUrl}
+                            onChange={(e) => setImageUrl(e.target.value)}
+                            placeholder="Ou cole a URL da imagem (https://...) — preenchida automaticamente pelo Deck/Carta"
+                            className="w-full bg-slate-900 border border-slate-800 focus:border-purple-500 rounded-xl px-3.5 py-2 text-xs text-white outline-none"
+                          />
+                          {imageUrl && (
+                            <button
+                              type="button"
+                              onClick={() => setImageUrl('')}
+                              className="text-[11px] text-red-400 hover:text-red-300 underline cursor-pointer"
+                            >
+                              Remover foto principal
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      {additionalImages.length > 0 && (
+                        <div className="pt-2 border-t border-slate-800/80 space-y-2">
+                          <span className="text-[11px] font-bold text-slate-400 block">
+                            Fotos Adicionais na Galeria ({additionalImages.length}):
+                          </span>
+                          <div className="flex flex-wrap gap-2">
+                            {additionalImages.map((extraUrl, idx) => (
+                              <div
+                                key={idx}
+                                className="relative w-16 h-16 rounded-lg bg-black border border-slate-700 overflow-hidden group"
+                              >
+                                <img
+                                  src={extraUrl}
+                                  alt={`Foto extra ${idx + 1}`}
+                                  referrerPolicy="no-referrer"
+                                  className="w-full h-full object-cover"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setAdditionalImages((prev) =>
+                                      prev.filter((_, i) => i !== idx)
+                                    )
+                                  }
+                                  className="absolute top-1 right-1 p-1 rounded-full bg-black/80 text-red-400 hover:text-red-300"
+                                  title="Remover foto"
+                                >
+                                  <X size={11} />
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Variações do Produto no Mesmo Anúncio (Fotos Independentes + Preços Iguais ou Independentes) */}
+                    <div className="bg-slate-950 border border-amber-500/40 rounded-2xl p-4 space-y-4">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 border-b border-slate-800 pb-3">
+                        <div>
+                          <h4 className="text-xs font-black uppercase tracking-wider text-amber-300 flex items-center gap-1.5">
+                            <Sparkles size={15} />
+                            <span>Variações de Produtos no Mesmo Anúncio</span>
+                          </h4>
+                          <p className="text-[11px] text-slate-400 mt-0.5">
+                            Adicione opções ou modelos no mesmo anúncio com <strong className="text-slate-200">fotos independentes</strong> e escolha entre <strong className="text-emerald-300">preços iguais</strong> ou <strong className="text-amber-300">preços independentes</strong>.
+                          </p>
+                        </div>
+
+                        <div className="flex items-center gap-2 flex-wrap shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setPriceVariations((prev) => {
+                                const isFirst = prev.length === 0;
+                                return [
+                                  ...prev,
+                                  {
+                                    id: `var_${Date.now()}_${prev.length}`,
+                                    name: isFirst
+                                      ? 'Variação 1 (Ex: Normal)'
+                                      : `Variação ${prev.length + 1}`,
+                                    price: priceInput || '49,90',
+                                    imageUrl: '',
+                                    description: '',
+                                    badge: '',
+                                    isDefault: isFirst
+                                  }
+                                ];
+                              });
+                            }}
+                            className="px-3 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
+                          >
+                            <Plus size={13} />
+                            <span>+ Adicionar Variação</span>
+                          </button>
+
+                          {priceVariations.length === 0 && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setPriceVariations([
+                                  {
+                                    id: `var_${Date.now()}_0`,
+                                    name: 'Versão Normal',
+                                    price: priceInput || '89,90',
+                                    imageUrl: imageUrl || '',
+                                    description: 'Acabamento padrão tradicional',
+                                    badge: 'Normal',
+                                    isDefault: true
+                                  },
+                                  {
+                                    id: `var_${Date.now()}_1`,
+                                    name: 'Versão Full Foil',
+                                    price: '149,90',
+                                    imageUrl: '',
+                                    description: 'Acabamento especial 100% Holográfico Foil',
+                                    badge: 'Full Foil',
+                                    isDefault: false
+                                  }
+                                ]);
+                              }}
+                              className="px-3 py-1.5 rounded-xl bg-purple-950/80 hover:bg-purple-900 border border-purple-700/60 text-purple-200 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
+                            >
+                              <Sparkles size={13} className="text-amber-400" />
+                              <span>Criar 2 Opções (Ex: Normal & Foil)</span>
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      {priceVariations.length > 0 ? (
+                        <div className="space-y-3">
+                          {/* Modo de Preço: Preços Iguais vs Preços Independentes */}
+                          <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                            <span className="text-xs font-bold text-slate-200">
+                              Modo de Preço das Variações:
+                            </span>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <button
+                                type="button"
+                                onClick={() => setSameVariationPrice(true)}
+                                className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition cursor-pointer ${
+                                  sameVariationPrice
+                                    ? 'bg-emerald-600/30 border-emerald-400 text-emerald-200'
+                                    : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200'
+                                }`}
+                              >
+                                Preços Iguais ({formatBRL(parsedPrice)} em todas)
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setSameVariationPrice(false)}
+                                className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition cursor-pointer ${
+                                  !sameVariationPrice
+                                    ? 'bg-amber-500/25 border-amber-400 text-amber-200'
+                                    : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200'
+                                }`}
+                              >
+                                Preços Independentes por Variação
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Lista de Variações */}
+                          <div className="space-y-3">
+                            {priceVariations.map((v, vIdx) => (
+                              <div
+                                key={v.id || vIdx}
+                                className="bg-slate-900/90 border border-slate-800 rounded-xl p-3.5 space-y-3"
+                              >
+                                <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                                  <div className="flex items-center gap-2">
+                                    <span className="w-5 h-5 rounded-full bg-amber-500/20 border border-amber-500/40 text-amber-300 text-[11px] font-bold flex items-center justify-center font-mono">
+                                      {vIdx + 1}
+                                    </span>
+                                    <span className="text-xs font-bold text-white">
+                                      {v.name || `Variação #${vIdx + 1}`}
+                                    </span>
+                                  </div>
+
+                                  <div className="flex items-center gap-3">
+                                    <label className="flex items-center gap-1.5 text-[11px] text-slate-300 cursor-pointer">
+                                      <input
+                                        type="radio"
+                                        name="defaultVariationRadio"
+                                        checked={Boolean(v.isDefault)}
+                                        onChange={() =>
+                                          setPriceVariations((prev) =>
+                                            prev.map((item, idx) => ({
+                                              ...item,
+                                              isDefault: idx === vIdx
+                                            }))
+                                          )
+                                        }
+                                        className="accent-amber-400"
+                                      />
+                                      <span>Opção Padrão</span>
+                                    </label>
+
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        setPriceVariations((prev) =>
+                                          prev.filter((_, idx) => idx !== vIdx)
+                                        )
+                                      }
+                                      className="text-red-400 hover:text-red-300 p-1 rounded hover:bg-red-950/40 transition cursor-pointer"
+                                      title="Remover variação"
+                                    >
+                                      <Trash2 size={14} />
+                                    </button>
+                                  </div>
+                                </div>
+
+                                {/* Foto Independente da Variação + Nome + Preço */}
+                                <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-start">
+                                  {/* Foto Independente */}
+                                  <div className="md:col-span-5 bg-slate-950 border border-slate-800 rounded-xl p-2.5 flex items-center gap-2.5">
+                                    <div className="w-14 h-14 rounded-lg bg-black border border-slate-800 overflow-hidden shrink-0 flex items-center justify-center">
+                                      {v.imageUrl ? (
+                                        <img
+                                          src={v.imageUrl}
+                                          alt={v.name}
+                                          referrerPolicy="no-referrer"
+                                          className="w-full h-full object-contain"
+                                        />
+                                      ) : (
+                                        <ImageIcon size={18} className="text-slate-600" />
+                                      )}
+                                    </div>
+                                    <div className="flex-1 min-w-0 space-y-1.5">
+                                      <div className="flex items-center gap-1.5">
+                                        <label className="px-2.5 py-1 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-[11px] font-bold transition flex items-center gap-1 cursor-pointer shrink-0">
+                                          {uploadingPhotoTarget === `var-${vIdx}` ? (
+                                            <Loader2 size={12} className="animate-spin" />
+                                          ) : (
+                                            <Upload size={12} />
+                                          )}
+                                          <span>
+                                            {uploadingPhotoTarget === `var-${vIdx}`
+                                              ? 'Subindo...'
+                                              : 'Subir Foto'}
+                                          </span>
+                                          <input
+                                            type="file"
+                                            accept="image/*"
+                                            className="hidden"
+                                            onChange={(e) => {
+                                              if (e.target.files?.[0]) {
+                                                handleUploadVariationPhoto(vIdx, e.target.files[0]);
+                                                e.target.value = '';
+                                              }
+                                            }}
+                                          />
+                                        </label>
+                                        {v.imageUrl && (
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              setPriceVariations((prev) =>
+                                                prev.map((item, idx) =>
+                                                  idx === vIdx ? { ...item, imageUrl: '' } : item
+                                                )
+                                              )
+                                            }
+                                            className="text-[10px] text-red-400 hover:underline cursor-pointer"
+                                          >
+                                            Limpar
+                                          </button>
+                                        )}
+                                      </div>
+                                      <input
+                                        type="text"
+                                        value={v.imageUrl || ''}
+                                        onChange={(e) => {
+                                          const val = e.target.value;
+                                          setPriceVariations((prev) =>
+                                            prev.map((item, idx) =>
+                                              idx === vIdx ? { ...item, imageUrl: val } : item
+                                            )
+                                          );
+                                        }}
+                                        placeholder="Ou URL da foto desta variação..."
+                                        className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2 py-1 text-[11px] text-white outline-none"
+                                      />
+                                    </div>
+                                  </div>
+
+                                  {/* Nome da Variação */}
+                                  <div className="md:col-span-4">
+                                    <label className="text-[11px] text-slate-400 block mb-1">
+                                      Nome da Variação *
+                                    </label>
+                                    <input
+                                      type="text"
+                                      value={v.name}
+                                      onChange={(e) => {
+                                        const val = e.target.value;
+                                        setPriceVariations((prev) =>
+                                          prev.map((item, idx) =>
+                                            idx === vIdx ? { ...item, name: val } : item
+                                          )
+                                        );
+                                      }}
+                                      placeholder="Ex: Versão Full Foil, Modelo B..."
+                                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white font-bold outline-none"
+                                    />
+                                  </div>
+
+                                  {/* Preço da Variação */}
+                                  <div className="md:col-span-3">
+                                    <label className="text-[11px] text-slate-400 block mb-1">
+                                      {sameVariationPrice
+                                        ? 'Preço (Igual p/ Todas)'
+                                        : 'Preço desta Variação (R$)'}
+                                    </label>
+                                    {sameVariationPrice ? (
+                                      <div className="w-full bg-slate-950/60 border border-emerald-500/30 rounded-xl px-3 py-2 text-xs font-mono font-bold text-emerald-300">
+                                        {formatBRL(parsedPrice)} (Igual)
+                                      </div>
+                                    ) : (
+                                      <input
+                                        type="text"
+                                        value={v.price}
+                                        onChange={(e) => {
+                                          const val = e.target.value;
+                                          setPriceVariations((prev) =>
+                                            prev.map((item, idx) =>
+                                              idx === vIdx ? { ...item, price: val } : item
+                                            )
+                                          );
+                                        }}
+                                        placeholder="Ex: 149,90"
+                                        className="w-full bg-slate-950 border border-emerald-500/50 rounded-xl px-3 py-2 text-xs font-mono font-bold text-emerald-300 outline-none"
+                                      />
+                                    )}
+                                  </div>
+                                </div>
+
+                                {/* Descrição Rápida & Estoque Opcional da Variação */}
+                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                                  <div className="sm:col-span-2">
+                                    <input
+                                      type="text"
+                                      value={v.description || ''}
+                                      onChange={(e) => {
+                                        const val = e.target.value;
+                                        setPriceVariations((prev) =>
+                                          prev.map((item, idx) =>
+                                            idx === vIdx ? { ...item, description: val } : item
+                                          )
+                                        );
+                                      }}
+                                      placeholder="Detalhe opcional desta variação (ex: Acompanha Sleeves, Cartas Holográficas...)"
+                                      className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-[11px] text-slate-300 outline-none"
+                                    />
+                                  </div>
+                                  <div>
+                                    <input
+                                      type="text"
+                                      value={v.badge || ''}
+                                      onChange={(e) => {
+                                        const val = e.target.value;
+                                        setPriceVariations((prev) =>
+                                          prev.map((item, idx) =>
+                                            idx === vIdx ? { ...item, badge: val } : item
+                                          )
+                                        );
+                                      }}
+                                      placeholder="Selo opcional (ex: Foil, Raro)"
+                                      className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-[11px] text-amber-300 outline-none"
+                                    />
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ) : (
+                        <p className="text-[11px] text-slate-400">
+                          Nenhuma variação adicionada. O anúncio usará apenas a foto principal e o preço único ao lado. Clique em <strong className="text-amber-300">+ Adicionar Variação</strong> caso queira oferecer múltiplas opções no mesmo anúncio.
+                        </p>
+                      )}
                     </div>
 
                     <div>
@@ -2586,103 +3202,204 @@ export const CommunityMarketplaceView: React.FC<CommunityMarketplaceViewProps> =
               </button>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-              <div className="bg-black rounded-xl border border-slate-800 p-3 flex items-center justify-center">
-                <img
-                  src={inspectListing.imageUrl || 'https://i.imgur.com/cDLxOtO.png'}
-                  alt={inspectListing.title}
-                  referrerPolicy="no-referrer"
-                  className="max-h-72 object-contain rounded"
-                />
-              </div>
+            {(() => {
+              const modalVars = Array.isArray(inspectListing.priceVariations)
+                ? inspectListing.priceVariations.filter((v) => v && v.name && v.name.trim() !== '')
+                : [];
+              const chosenModalVar =
+                modalVars.length > 0
+                  ? modalVars[inspectVariationIdx] || modalVars[0]
+                  : undefined;
+              const modalImageUrl =
+                chosenModalVar?.imageUrl?.trim() ||
+                inspectListing.imageUrl ||
+                'https://i.imgur.com/cDLxOtO.png';
+              const modalPrice =
+                chosenModalVar && !inspectListing.sameVariationPrice && chosenModalVar.price
+                  ? parseBRLPrice(chosenModalVar.price) || inspectListing.price
+                  : inspectListing.price;
+              const modalWaUrl = buildSellerWhatsAppUrl(inspectListing, chosenModalVar);
 
-              <div className="space-y-3">
-                <div className="bg-slate-950 border border-slate-800 rounded-xl p-3 space-y-2 text-xs">
-                  <div className="flex items-center justify-between">
-                    <span className="text-slate-400">Vendedor:</span>
-                    <span className="font-bold text-white">{inspectListing.sellerName}</span>
-                  </div>
-
-                  <div className="flex items-center justify-between">
-                    <span className="text-slate-400">Reputação:</span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const target = inspectListing;
-                        setInspectListing(null);
-                        openSellerReviewsModal(
-                          target.sellerId,
-                          target.sellerName,
-                          target.sellerAvatar,
-                          target.id,
-                          target.title
-                        );
-                      }}
-                      className="text-amber-300 font-bold flex items-center gap-1 hover:underline cursor-pointer"
-                    >
-                      <Star size={12} className="fill-amber-400 text-amber-400" />
-                      <span>
-                        {getSellerStats(inspectListing.sellerId).count > 0
-                          ? `${getSellerStats(inspectListing.sellerId).average.toFixed(1)} (${
-                              getSellerStats(inspectListing.sellerId).count
-                            } avaliações)`
-                          : 'Ver / Avaliar Vendedor'}
-                      </span>
-                    </button>
-                  </div>
-
-                  <div className="flex justify-between">
-                    <span className="text-slate-400">Condição:</span>
-                    <span className="font-bold text-emerald-400">{inspectListing.condition}</span>
-                  </div>
-
-                  {inspectListing.isFoil && (
-                    <div className="flex justify-between">
-                      <span className="text-slate-400">Acabamento:</span>
-                      <span className="font-bold text-amber-300">✨ Foil / Holográfica</span>
+              return (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                  <div className="space-y-2.5">
+                    <div className="bg-black rounded-xl border border-slate-800 p-3 flex items-center justify-center">
+                      <img
+                        src={modalImageUrl}
+                        alt={inspectListing.title}
+                        referrerPolicy="no-referrer"
+                        className="max-h-72 object-contain rounded"
+                      />
                     </div>
-                  )}
 
-                  {inspectListing.sellerCity && (
-                    <div className="flex justify-between">
-                      <span className="text-slate-400">Localização:</span>
-                      <span className="text-slate-200">
-                        {inspectListing.sellerCity}/{inspectListing.sellerState}
-                      </span>
-                    </div>
-                  )}
-
-                  {inspectListing.deliveryNotes && (
-                    <div className="pt-1.5 border-t border-slate-800 text-[11px] text-slate-300 flex items-start gap-1.5">
-                      <Truck size={13} className="text-purple-400 shrink-0 mt-0.5" />
-                      <span>{inspectListing.deliveryNotes}</span>
-                    </div>
-                  )}
-                </div>
-
-                <p className="text-xs text-slate-300 leading-relaxed whitespace-pre-line">
-                  {inspectListing.description}
-                </p>
-
-                <div className="pt-2 border-t border-slate-800">
-                  <div className="text-xs text-slate-400">Valor pedido pelo vendedor:</div>
-                  <div className="text-2xl font-black text-emerald-400 font-mono">
-                    {formatBRL(inspectListing.price)}
+                    {/* Galeria de Fotos Extras + Fotos das Variações */}
+                    {(inspectListing.additionalImages &&
+                      inspectListing.additionalImages.length > 0) && (
+                      <div className="flex items-center gap-2 overflow-x-auto pb-1">
+                        {[
+                          inspectListing.imageUrl,
+                          ...(inspectListing.additionalImages || [])
+                        ]
+                          .filter(Boolean)
+                          .map((imgUrl, gIdx) => (
+                            <img
+                              key={gIdx}
+                              src={imgUrl}
+                              alt=""
+                              referrerPolicy="no-referrer"
+                              onClick={() =>
+                                setInspectListing({ ...inspectListing, imageUrl: imgUrl })
+                              }
+                              className="w-14 h-14 rounded-lg object-cover border border-slate-700 hover:border-purple-400 cursor-pointer shrink-0"
+                            />
+                          ))}
+                      </div>
+                    )}
                   </div>
-                </div>
 
-                <div className="space-y-2 pt-1">
-                  {buildSellerWhatsAppUrl(inspectListing) && (
-                    <a
-                      href={buildSellerWhatsAppUrl(inspectListing)!}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg"
-                    >
-                      <MessageCircle size={15} />
-                      <span>Chamar Vendedor no WhatsApp ({inspectListing.sellerWhatsapp})</span>
-                    </a>
-                  )}
+                  <div className="space-y-3">
+                    <div className="bg-slate-950 border border-slate-800 rounded-xl p-3 space-y-2 text-xs">
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-400">Vendedor:</span>
+                        <span className="font-bold text-white">{inspectListing.sellerName}</span>
+                      </div>
+
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-400">Reputação:</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const target = inspectListing;
+                            setInspectListing(null);
+                            openSellerReviewsModal(
+                              target.sellerId,
+                              target.sellerName,
+                              target.sellerAvatar,
+                              target.id,
+                              target.title
+                            );
+                          }}
+                          className="text-amber-300 font-bold flex items-center gap-1 hover:underline cursor-pointer"
+                        >
+                          <Star size={12} className="fill-amber-400 text-amber-400" />
+                          <span>
+                            {getSellerStats(inspectListing.sellerId).count > 0
+                              ? `${getSellerStats(inspectListing.sellerId).average.toFixed(1)} (${
+                                  getSellerStats(inspectListing.sellerId).count
+                                } avaliações)`
+                              : 'Ver / Avaliar Vendedor'}
+                          </span>
+                        </button>
+                      </div>
+
+                      <div className="flex justify-between">
+                        <span className="text-slate-400">Condição:</span>
+                        <span className="font-bold text-emerald-400">
+                          {inspectListing.condition}
+                        </span>
+                      </div>
+
+                      {inspectListing.isFoil && (
+                        <div className="flex justify-between">
+                          <span className="text-slate-400">Acabamento:</span>
+                          <span className="font-bold text-amber-300">✨ Foil / Holográfica</span>
+                        </div>
+                      )}
+
+                      {inspectListing.sellerCity && (
+                        <div className="flex justify-between">
+                          <span className="text-slate-400">Localização:</span>
+                          <span className="text-slate-200">
+                            {inspectListing.sellerCity}/{inspectListing.sellerState}
+                          </span>
+                        </div>
+                      )}
+
+                      {inspectListing.deliveryNotes && (
+                        <div className="pt-1.5 border-t border-slate-800 text-[11px] text-slate-300 flex items-start gap-1.5">
+                          <Truck size={13} className="text-purple-400 shrink-0 mt-0.5" />
+                          <span>{inspectListing.deliveryNotes}</span>
+                        </div>
+                      )}
+                    </div>
+
+                    {modalVars.length > 0 && (
+                      <div className="bg-slate-950 border border-amber-500/30 rounded-xl p-3 space-y-2">
+                        <span className="text-[11px] font-bold uppercase tracking-wider text-amber-300 block">
+                          Variações Disponíveis neste Anúncio:
+                        </span>
+                        <div className="grid grid-cols-1 gap-1.5">
+                          {modalVars.map((v, vIdx) => {
+                            const isSel = vIdx === inspectVariationIdx;
+                            const vPriceStr = inspectListing.sameVariationPrice
+                              ? formatBRL(inspectListing.price)
+                              : formatBRL(parseBRLPrice(v.price) || inspectListing.price);
+                            return (
+                              <button
+                                key={vIdx}
+                                type="button"
+                                onClick={() => setInspectVariationIdx(vIdx)}
+                                className={`p-2 rounded-lg border text-left transition flex items-center justify-between gap-2 cursor-pointer ${
+                                  isSel
+                                    ? 'bg-purple-600/25 border-purple-400 text-white'
+                                    : 'bg-slate-900 border-slate-800 text-slate-300 hover:border-slate-700'
+                                }`}
+                              >
+                                <div className="flex items-center gap-2 min-w-0">
+                                  {v.imageUrl && (
+                                    <img
+                                      src={v.imageUrl}
+                                      alt={v.name}
+                                      referrerPolicy="no-referrer"
+                                      className="w-8 h-8 rounded object-cover border border-white/20 shrink-0"
+                                    />
+                                  )}
+                                  <div className="min-w-0">
+                                    <div className="text-xs font-bold truncate">{v.name}</div>
+                                    {v.description && (
+                                      <div className="text-[10px] text-slate-400 truncate">
+                                        {v.description}
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                                <span className="text-xs font-mono font-black text-emerald-400 shrink-0">
+                                  {vPriceStr}
+                                </span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    <p className="text-xs text-slate-300 leading-relaxed whitespace-pre-line">
+                      {chosenModalVar?.description || inspectListing.description}
+                    </p>
+
+                    <div className="pt-2 border-t border-slate-800">
+                      <div className="text-xs text-slate-400">
+                        {chosenModalVar
+                          ? `Valor da variação (${chosenModalVar.name}):`
+                          : 'Valor pedido pelo vendedor:'}
+                      </div>
+                      <div className="text-2xl font-black text-emerald-400 font-mono">
+                        {formatBRL(modalPrice)}
+                      </div>
+                    </div>
+
+                    <div className="space-y-2 pt-1">
+                      {modalWaUrl && (
+                        <a
+                          href={modalWaUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg"
+                        >
+                          <MessageCircle size={15} />
+                          <span>Chamar Vendedor no WhatsApp ({inspectListing.sellerWhatsapp})</span>
+                        </a>
+                      )}
 
                   {inspectListing.sellerExternalLink && (
                     <a
@@ -2736,6 +3453,8 @@ export const CommunityMarketplaceView: React.FC<CommunityMarketplaceViewProps> =
                 </div>
               </div>
             </div>
+              );
+            })()}
 
             {(() => {
               const displayCards: MarketplaceCardEntry[] =

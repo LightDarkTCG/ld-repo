@@ -318,12 +318,124 @@ export function sendCardToDeadOrErasedZone(
   return 'deadZone';
 }
 
+export const ALL_OFFICIAL_ARCHETYPES: string[] = [
+  'Macroversal',
+  'Furtivo',
+  'Divindade',
+  'Conceito',
+  'Escolhido',
+  'Insano',
+  'Reativo',
+  'Solador',
+  'Sortudo',
+  'Azarado',
+  'Caos',
+  'Ordem',
+  'Lúmen',
+  'Darkus',
+  'Cósmico',
+  'Véu'
+];
+
+const AUTHORITATIVE_VEU_ARCHETYPES: Record<string, string> = {
+  '2026/0001/00306': 'Véu / Caos / Cósmico / Sortudo',
+  '2026/0001/00307': 'Véu / Lúmen',
+  '2026/0001/00309': 'Véu / Macroversal / Insano',
+  '2026/0001/00310': 'Véu / Lúmen',
+  '2026/0001/00311': 'Véu / Cósmico / Macroversal',
+  '2026/0001/00312': 'Véu / Macroversal'
+};
+
 export function parseBaseArchetypes(card: CardData): string[] {
-  if (!card.archetype || !card.archetype.trim()) return [];
-  return card.archetype
+  const authoritative = AUTHORITATIVE_VEU_ARCHETYPES[card.code];
+  const raw = authoritative || card.archetype;
+  if (!raw || !raw.trim()) return [];
+  return raw
     .split('/')
     .map((s) => s.trim())
-    .filter(Boolean);
+    .filter((s) => Boolean(s) && s !== 'Desconhecido' && s !== 'Nenhum');
+}
+
+/**
+ * Descarta uma carta diretamente da Mão ou do Deck para uma Zona (Morta ou Apagada),
+ * disparando o Arquétipo [Cósmico]: "Ao entrar em campo ou ser descartado diretamente para alguma Zona, gera 1 Runa no seu lado do campo."
+ */
+export function discardCardDirectlyToZone(
+  state: DuelGameState,
+  ownerId: PlayerId,
+  card: CardData,
+  targetZone: 'deadZone' | 'erasedZone'
+): void {
+  const owner = getPlayerState(state, ownerId);
+  if (targetZone === 'erasedZone') {
+    owner.erasedZone.push(card);
+  } else {
+    owner.deadZone.push(card);
+  }
+  const archs = parseBaseArchetypes(card);
+  if ((card.type === 'Combatente' || card.type === 'Herói') && archs.includes('Cósmico')) {
+    owner.runes += 1;
+    addLog(
+      state,
+      ownerId,
+      `✨ Arquétipo [Cósmico]: «${card.name}» foi descartado diretamente para a ${
+        targetZone === 'erasedZone' ? 'Zona Apagada' : 'Zona Morta'
+      } e gerou +1 Runa para ${owner.name} (Total: ${owner.runes} Runas)!`,
+      'effect'
+    );
+    checkOttoAscensionToAsmonious(state, ownerId);
+  }
+}
+
+/**
+ * Rolagem oficial de dados respeitando o Arquétipo [Sortudo]:
+ * "Sempre que algum dado for rolado contra ou a favor do jogador que possui combatentes com 'Sortudo' em campo,
+ * ele rola um dado extra (para cada Sortudo) e escolhe o melhor resultado para ele."
+ */
+export function rollDieWithSortudo(
+  state: DuelGameState,
+  beneficiaryId: PlayerId,
+  sides: number,
+  preferFn?: (candidate: number, currentBest: number) => boolean
+): { result: number; rolls: number[]; sortudoCount: number } {
+  const p = getPlayerState(state, beneficiaryId);
+  const sortudoCount = p.frontline.filter(
+    (f) => f !== null && hasArchetype(state, f, 'Sortudo')
+  ).length;
+  const totalRolls = 1 + sortudoCount;
+  const rolls: number[] = [];
+  for (let i = 0; i < totalRolls; i++) {
+    rolls.push(Math.floor(Math.random() * sides) + 1);
+  }
+  let best = rolls[0];
+  for (let i = 1; i < rolls.length; i++) {
+    const r = rolls[i];
+    const isBetter = preferFn ? preferFn(r, best) : r > best;
+    if (isBetter) best = r;
+  }
+  return { result: best, rolls, sortudoCount };
+}
+
+export function dealPrimordialDamageToDeck(
+  state: DuelGameState,
+  targetPlayerId: PlayerId,
+  sourcePlayerId: PlayerId,
+  amount: number,
+  sourceLabel: string
+): number {
+  const target = getPlayerState(state, targetPlayerId);
+  const milledCount = Math.min(amount, target.deck.length);
+  const milled = target.deck.splice(0, milledCount);
+  for (const c of milled) {
+    discardCardDirectlyToZone(state, targetPlayerId, c, 'erasedZone');
+  }
+  addLog(
+    state,
+    sourcePlayerId,
+    `🌌 ${sourceLabel}: Causou ${amount} de Dano Primordial no Deck de ${target.name} (${milledCount} carta(s) enviada(s) do topo do Deck para a Zona Apagada)!`,
+    'effect'
+  );
+  return milledCount;
 }
 
 export function shuffleCards<T>(arr: T[]): T[] {
@@ -409,6 +521,8 @@ export function createInitialPlayerState(
     frontline: [null, null, null, null, null, null],
     backrow: [null, null, null, null, null, null],
     ctReductionThisRound: 0,
+    permCtReduction: 0,
+    permCtPenalty: 0,
     pendingPactoLifeLossNextRound: 0,
     skipDrawsUntilGlobalTurn: 0,
     hasAttackedInCurrentTurn: false,
@@ -416,7 +530,10 @@ export function createInitialPlayerState(
     lostFighterInBattleThisTurn: false,
     heroDiedThisTurn: false,
     damageDealtToEnemyPlayerThisRound: 0,
-    alliedFightersLostWhileSelenaLuaActive: 0
+    alliedFightersLostWhileSelenaLuaActive: 0,
+    pendingRitosFestival: [],
+    pendingComoPlanejadoCards: [],
+    floquinhoTreatedAsHeroCodes: []
   };
 }
 
@@ -520,12 +637,26 @@ export function countJimsInErasedZone(p: PlayerDuelState): number {
   return p.erasedZone.filter((c) => isJimCard(c)).length;
 }
 
+export function getAllSupportCardsInSlot(s: { card: CardData; stackedCards?: CardData[] } | null): CardData[] {
+  if (!s) return [];
+  return [s.card, ...(s.stackedCards || [])];
+}
+
 export function countCamadasOnField(p: PlayerDuelState): number {
-  return p.backrow.filter((s) => s !== null && isCamadaCard(s.card)).length;
+  let total = 0;
+  for (const s of p.backrow) {
+    if (!s) continue;
+    for (const c of getAllSupportCardsInSlot(s)) {
+      if (isCamadaCard(c)) total += 1;
+    }
+  }
+  return total;
 }
 
 export function hasActiveCamada(p: PlayerDuelState, camadaCode: string): boolean {
-  return p.backrow.some((s) => s !== null && s.card.code === camadaCode);
+  return p.backrow.some(
+    (s) => s !== null && getAllSupportCardsInSlot(s).some((c) => c.code === camadaCode)
+  );
 }
 
 export function countVeuFightersOnField(state: DuelGameState, p: PlayerDuelState): number {
@@ -537,15 +668,9 @@ export function countVeuFightersOnField(state: DuelGameState, p: PlayerDuelState
 export function countVeuCardsOnPlayerField(p: PlayerDuelState): number {
   let count = 0;
   for (const f of p.frontline) {
-    if (f) {
-      if (f.archetypes.includes('Véu') || isVeuCard(f.card)) count += 1;
-      for (const eq of f.equipments) {
-        if (isVeuCard(eq.card) || (eq.grantedArchetypes || []).includes('Véu')) count += 1;
-      }
+    if (f && (f.archetypes.includes('Véu') || isVeuCard(f.card))) {
+      count += 1;
     }
-  }
-  for (const s of p.backrow) {
-    if (s && isVeuCard(s.card)) count += 1;
   }
   return count;
 }
@@ -612,14 +737,14 @@ export function canSummonHeroDirectly(
           allowed: true,
           reason: hasMahinaHeroOnField
             ? 'Requisito cumprido: Descartar Herói «Mahina» do campo para a Zona Apagada.'
-            : `Requisito cumprido: ${veuCardsOnField}/4 cartas com «Véu» em seu lado do campo.`,
+            : `Requisito cumprido: ${veuCardsOnField}/4 combatentes com «Véu» em seu lado do campo.`,
           badgeText: `Pronto (${veuCardsOnField}/4 Véu em campo)`
         };
       }
       return {
         allowed: false,
-        reason: `Requer 4 cartas com «Véu» em seu lado do campo (atual: ${veuCardsOnField}/4) ou descartar um Herói «Mahina» do campo.`,
-        badgeText: `Requer 4 Cartas Véu (${veuCardsOnField}/4)`
+        reason: `Requer 4 combatentes com «Véu» em seu lado do campo (atual: ${veuCardsOnField}/4) ou descartar um Herói «Mahina» do campo.`,
+        badgeText: `Requer 4 Combatentes Véu (${veuCardsOnField}/4)`
       };
     }
 
@@ -969,7 +1094,14 @@ export function payDirectHeroSummonCost(
 
 export function getEffectiveCt(p: PlayerDuelState, card: CardData, extraReduction = 0): number {
   if (card.type === 'Herói') return 0;
-  if (card.code === '2025/0001/00029' || card.code === '2025/0001/00112') return 0;
+  // Floquinho Caótica do Véu (2026/0001/00314): "Para invocar esse combatente, gaste Vida de Jogador em vez de mana."
+  if (
+    card.code === '2025/0001/00029' ||
+    card.code === '2025/0001/00112' ||
+    card.code === '2026/0001/00314'
+  ) {
+    return 0;
+  }
 
   let baseCt = card.ct;
 
@@ -1020,56 +1152,101 @@ export function getEffectiveCt(p: PlayerDuelState, card: CardData, extraReductio
     baseCt = Math.max(0, baseCt - 4);
   }
 
-  // Sexta Camada (2026/0002/00329): "Reduz o CT de suas cartas em 1 para cada carta com «Camada» em seu nome em campo."
+  // Sexta Camada (2026/0002/00329): "Reduz o CT de suas cartas em 1 para cada carta com «Camada» em seu nome do seu lado do campo."
   let camadaReduction = 0;
   if (hasActiveCamada(p, '2026/0002/00329')) {
     camadaReduction += countCamadasOnField(p);
   }
 
-  const raw = baseCt - p.ctReductionThisRound - camadaReduction - extraReduction;
+  const permRed = p.permCtReduction || 0;
+  const permPen = p.permCtPenalty || 0;
+  const raw = baseCt - p.ctReductionThisRound - permRed + permPen - camadaReduction - extraReduction;
   return Math.max(0, raw);
 }
 
 export function getCardAuthorityCt(p: PlayerDuelState, card: CardData): number {
   if (card.type === 'Herói') return card.ct;
+  if (card.code === '2026/0001/00314') return card.ct;
   return getEffectiveCt(p, card);
 }
 
 export function getEffectiveArchetypes(
   state: DuelGameState,
-  fighter: FieldFighter
+  fighter: FieldFighter,
+  ignoreEquipments = false,
+  combatTargetEnemySlot?: number
 ): string[] {
   const opp = getPlayerState(state, getOpponentId(fighter.owner));
   const oppositeFighter = opp.frontline[fighter.slotIndex];
 
+  const rawHasSolador =
+    fighter.archetypes.includes('Solador') ||
+    (!ignoreEquipments &&
+      fighter.equipments.some((e) => (e.grantedArchetypes || []).includes('Solador')));
+
   // O HORROR DO VÉU (2026/0001/00313): "Enquanto esta carta estiver em campo, os combatentes inimigos perdem seus Arquétipos."
-  if (opp.frontline.some((f) => f !== null && f.card.code === '2026/0001/00313')) {
+  // Se este combatente tem [Solador] e está em combate contra um alvo específico, ignora outras cartas inimigas fora a carta alvo.
+  const horrorApplies = opp.frontline.some(
+    (f) =>
+      f !== null &&
+      f.card.code === '2026/0001/00313' &&
+      (!rawHasSolador || combatTargetEnemySlot === undefined || f.slotIndex === combatTargetEnemySlot)
+  );
+  if (horrorApplies) {
     return [];
   }
 
   // Arquétipo [Véu]: Anula arquétipos do combatente inimigo na mesma coluna
-  if (oppositeFighter) {
+  // (em caso de dois combatentes com Véu um em frente ao outro, ambos ficam sem os Arquétipos)
+  if (
+    oppositeFighter &&
+    (!rawHasSolador ||
+      combatTargetEnemySlot === undefined ||
+      oppositeFighter.slotIndex === combatTargetEnemySlot)
+  ) {
     const oppRawArchs = [
       ...oppositeFighter.archetypes,
-      ...oppositeFighter.equipments.flatMap((e) => e.grantedArchetypes || [])
+      ...(rawHasSolador
+        ? []
+        : oppositeFighter.equipments.flatMap((e) => e.grantedArchetypes || []))
     ];
     if (oppRawArchs.includes('Véu')) {
       return [];
     }
   }
 
-  const list = [...fighter.archetypes];
+  let list = [...fighter.archetypes];
   const hasDivindade = list.includes('Divindade');
 
-  for (const eq of fighter.equipments) {
-    if (eq.grantedArchetypes && eq.grantedArchetypes.length > 0) {
-      for (const a of eq.grantedArchetypes) {
-        list.push(a);
-        if (hasDivindade && (a === 'Lúmen' || a === 'Darkus')) {
+  if (!ignoreEquipments) {
+    for (const eq of fighter.equipments) {
+      if (eq.grantedArchetypes && eq.grantedArchetypes.length > 0) {
+        for (const a of eq.grantedArchetypes) {
           list.push(a);
+          if (
+            hasDivindade &&
+            eq.grantedArchetypes.length === 1 &&
+            (a === 'Lúmen' || a === 'Darkus')
+          ) {
+            list.push(a);
+          }
         }
       }
     }
+  }
+
+  // Floquinho Caótica do Véu (2026/0001/00314):
+  // "Esse combatente remove o Arquétipo Macroversal dos Heróis inimigos enquanto estiver em campo."
+  if (
+    fighter.isHero &&
+    opp.frontline.some(
+      (f) =>
+        f !== null &&
+        f.card.code === '2026/0001/00314' &&
+        (!rawHasSolador || combatTargetEnemySlot === undefined || f.slotIndex === combatTargetEnemySlot)
+    )
+  ) {
+    list = list.filter((a) => a !== 'Macroversal');
   }
 
   return list;
@@ -1078,23 +1255,32 @@ export function getEffectiveArchetypes(
 export function countArchetypeStacks(
   state: DuelGameState,
   fighter: FieldFighter,
-  archName: string
+  archName: string,
+  ignoreEquipments = false,
+  combatTargetEnemySlot?: number
 ): number {
-  return getEffectiveArchetypes(state, fighter).filter((a) => a === archName).length;
+  return getEffectiveArchetypes(state, fighter, ignoreEquipments, combatTargetEnemySlot).filter(
+    (a) => a === archName
+  ).length;
 }
 
 export function hasArchetype(
   state: DuelGameState,
   fighter: FieldFighter,
-  archName: string
+  archName: string,
+  ignoreEquipments = false,
+  combatTargetEnemySlot?: number
 ): boolean {
-  return countArchetypeStacks(state, fighter, archName) > 0;
+  return (
+    countArchetypeStacks(state, fighter, archName, ignoreEquipments, combatTargetEnemySlot) > 0
+  );
 }
 
 export function getFighterEffectiveAtk(
   state: DuelGameState,
   fighter: FieldFighter,
-  inCombat = false
+  inCombat = false,
+  ignoredByEnemySolador = false
 ): number {
   const ownerState = getPlayerState(state, fighter.owner);
   const oppState = getPlayerState(state, getOpponentId(fighter.owner));
@@ -1144,7 +1330,9 @@ export function getFighterEffectiveAtk(
 
   // Salazar - Guia dos Escolhidos (2025/0001/00181):
   // "Seus combatentes com «Blair» ou «Hyummeng» no nome ganham +5 de Ataque."
+  // Se o oponente tem [Solador], ignora outras cartas inimigas fora a carta alvo (como um Salazar em outra coluna).
   if (
+    !ignoredByEnemySolador &&
     (fighter.card.name.includes('Blair') || fighter.card.name.includes('Hyummeng')) &&
     ownerState.frontline.some((f) => f !== null && f.card.code === '2025/0001/00181')
   ) {
@@ -1173,19 +1361,20 @@ export function getFighterEffectiveAtk(
   }
 
   // PRIMEIRA CAMADA (2026/0002/00324):
-  // "Seus combatentes recebem +1 de ataque para cada carta com «Camada» em seu nome em campo.
-  // Combatentes com o Arquétipo Véu recebem +3 de ataque para cada carta com «Camada» em seu nome em campo."
-  if (hasActiveCamada(ownerState, '2026/0002/00324')) {
-    const totalCamadasOnBoard = countCamadasOnField(ownerState) + countCamadasOnField(oppState);
+  // "Seus combatentes recebem 1 de ataque para cada carta com «Camada» em seu nome do seu lado do campo.
+  // Seus combatentes com Arquétipo Véu recebem 3 de ataque para cada carta com «Camada» em seu nome do seu lado do campo."
+  // Se o oponente tem [Solador], ignora outras cartas inimigas fora a carta alvo (como Primeira Camada no suporte).
+  if (!ignoredByEnemySolador && hasActiveCamada(ownerState, '2026/0002/00324')) {
+    const ownCamadasCount = countCamadasOnField(ownerState);
     const hasVeu = hasArchetype(state, fighter, 'Véu');
-    atk += totalCamadasOnBoard * (hasVeu ? 3 : 1);
+    atk += ownCamadasCount * (hasVeu ? 3 : 1);
   }
 
   // Crystal Caótica do Véu (2026/0001/00306): "Recebe +5 de ataque para cada carta no campo inimigo."
   if (fighter.card.code === '2026/0001/00306') {
     const enemyCardsOnField =
       oppState.frontline.filter((f) => f !== null).length +
-      oppState.backrow.filter((s) => s !== null).length;
+      oppState.backrow.reduce((acc, s) => acc + (s ? getAllSupportCardsInSlot(s).length : 0), 0);
     atk += enemyCardsOnField * 5;
   }
 
@@ -1196,24 +1385,135 @@ export function getFighterEffectiveAtk(
     ).length;
     const veuInZones =
       ownerState.deadZone.filter(
-        (c) => (c.type === 'Combatente' || c.type === 'Herói') && (c.archetype || '').includes('Véu')
+        (c) => (c.type === 'Combatente' || c.type === 'Herói') && parseBaseArchetypes(c).includes('Véu')
       ).length +
       ownerState.erasedZone.filter(
-        (c) => (c.type === 'Combatente' || c.type === 'Herói') && (c.archetype || '').includes('Véu')
+        (c) => (c.type === 'Combatente' || c.type === 'Herói') && parseBaseArchetypes(c).includes('Véu')
       ).length;
     atk += (veuOnField + veuInZones) * 3;
   }
 
   // Bônus de ATK de Equipamentos acoplados ao combatente
-  for (const eq of fighter.equipments) {
-    const desc = eq.card.description || '';
-    const atkMatch = desc.match(/\+(\d+)\s*de\s*(?:Ataque|ataque)/i);
-    if (atkMatch) {
-      atk += parseInt(atkMatch[1], 10);
+  // Respeita [Solador] (ignora equipamentos inimigos no combate, pois são outras cartas fora a carta alvo) e [Divindade]
+  if (!ignoredByEnemySolador) {
+    const equipMult = hasArchetype(state, fighter, 'Divindade') ? 2 : 1;
+    for (const eq of fighter.equipments) {
+      const desc = eq.card.description || '';
+      const atkPlusMatch = desc.match(/\+(\d+)\s*de\s*(?:Ataque|ataque)/i);
+      if (atkPlusMatch) {
+        atk += parseInt(atkPlusMatch[1], 10) * equipMult;
+      }
+      const atkMinusMatch = desc.match(/-(\d+)\s*de\s*(?:Ataque|ataque)/i);
+      if (atkMinusMatch) {
+        atk -= parseInt(atkMinusMatch[1], 10) * equipMult;
+      }
     }
   }
 
   return Math.max(0, atk);
+}
+
+/**
+ * Quantidade máxima de ataques que um combatente pode realizar no turno atual.
+ */
+export function getMaxAttacksPerTurn(state: DuelGameState, fighter: FieldFighter): number {
+  const owner = getPlayerState(state, fighter.owner);
+
+  // Crystal Caótica do Véu (2026/0001/00306):
+  // "Se alguma carta com «Jim» ou «Mahina» em seu nome estiver do seu lado do campo, «Crystal Caótica do Véu» ataca duas vezes por turno."
+  if (fighter.card.code === '2026/0001/00306') {
+    const hasJimOrMahinaOnSide =
+      owner.frontline.some(
+        (f) => f !== null && (f.card.name.includes('Jim') || f.card.name.includes('Mahina'))
+      ) ||
+      owner.backrow.some(
+        (s) =>
+          s !== null &&
+          getAllSupportCardsInSlot(s).some(
+            (c) => c.name.includes('Jim') || c.name.includes('Mahina')
+          )
+      );
+    if (hasJimOrMahinaOnSide) return 2;
+  }
+
+  // Jenos Corrompido (2025/0001/00032), Longinus Duelista (2025/0001/00068), Zeus (2025/0001/00215)
+  if (
+    fighter.card.code === '2025/0001/00032' ||
+    fighter.card.code === '2025/0001/00068' ||
+    fighter.card.code === '2025/0001/00215'
+  ) {
+    return 2;
+  }
+
+  // Spear Vellret (2025/0001/00061): "Pode atacar 2 vezes por turno caso haja 2 ou mais cartas «Errante» em seu lado do campo."
+  if (fighter.card.code === '2025/0001/00061') {
+    const errantes =
+      owner.frontline.filter((f) => f !== null && f.card.name.includes('Errante')).length +
+      owner.backrow.filter((s) => s !== null && s.card.name.includes('Errante')).length;
+    if (errantes >= 2) return 2;
+  }
+
+  return 1;
+}
+
+/**
+ * Sincroniza o efeito contínuo de «Crystal Caótica do Véu» (2026/0001/00306):
+ * "Enquanto este combatente estiver em campo, o ataque e vida de todos os combatentes inimigos são invertidos
+ * (caso a vida se torne 0, ele é enviado para a Zona Morta)."
+ */
+export function syncCrystalCaoticaStatInversion(state: DuelGameState): void {
+  for (const sideId of ['player', 'bot'] as PlayerId[]) {
+    const side = getPlayerState(state, sideId);
+    const opp = getPlayerState(state, getOpponentId(sideId));
+    const oppHasCrystal = opp.frontline.some(
+      (f) => f !== null && f.card.code === '2026/0001/00306'
+    );
+
+    for (let slot = 0; slot < 6; slot++) {
+      const f = side.frontline[slot];
+      if (!f) continue;
+      const alreadyInverted = Boolean((f as any).crystalInverted);
+
+      if (oppHasCrystal && !alreadyInverted) {
+        const prevAtk = Math.max(0, f.baseAtk + f.permAtkBonus + f.tempAtkBonus);
+        const prevHp = f.currentHp;
+        f.baseAtk = prevHp;
+        f.permAtkBonus = 0;
+        f.tempAtkBonus = 0;
+        f.baseHp = prevAtk;
+        f.currentHp = prevAtk;
+        f.maxHp = Math.max(1, prevAtk);
+        (f as any).crystalInverted = true;
+
+        addLog(
+          state,
+          opp.id,
+          `💎 «Crystal Caótica do Véu»: Status de «${f.card.name}» invertidos (${prevAtk}/${prevHp} → ATK ${f.baseAtk} / Vida ${f.currentHp})!`,
+          'effect'
+        );
+
+        if (f.currentHp <= 0) {
+          addLog(
+            state,
+            opp.id,
+            `💀 «Crystal Caótica do Véu»: A vida de «${f.card.name}» tornou-se 0 após a inversão e ele foi enviado para a Zona Morta!`,
+            'life_loss'
+          );
+          sendFighterFromFieldToZone(state, sideId, slot, false, false);
+        }
+      } else if (!oppHasCrystal && alreadyInverted) {
+        const prevAtk = Math.max(0, f.baseAtk + f.permAtkBonus + f.tempAtkBonus);
+        const prevHp = f.currentHp;
+        f.baseAtk = prevHp;
+        f.permAtkBonus = 0;
+        f.tempAtkBonus = 0;
+        f.baseHp = prevAtk;
+        f.currentHp = Math.max(1, prevAtk);
+        f.maxHp = Math.max(1, prevAtk);
+        (f as any).crystalInverted = false;
+      }
+    }
+  }
 }
 
 export function isProtectedByJimAnciao(
@@ -1507,6 +1807,19 @@ export function sendFighterFromFieldToZone(
   }
 
   if (!withoutActivatingEffects) {
+    // 0. Floquinho Caótica do Véu (2026/0001/00314):
+    // "Quando enviada do campo para qualquer Zona, você recebe 5 Runas."
+    if (fighter.card.code === '2026/0001/00314') {
+      owner.runes += 5;
+      addLog(
+        state,
+        ownerId,
+        `✨ «Floquinho Caótica do Véu» foi enviada do campo para as Zonas e concedeu +5 Runas a ${owner.name} (Total: ${owner.runes} Runas)!`,
+        'effect'
+      );
+      checkOttoAscensionToAsmonious(state, ownerId);
+    }
+
     // 1. A SENHORA DO VÉU (2026/0001/00312):
     // "Caso um Herói com «Véu» em seu nome seja enviado do seu campo para alguma Zona, descarte esta carta do campo e invoque de qualquer lugar «O Horror do Véu»."
     if (fighter.isHero && fighter.card.name.includes('Véu')) {
@@ -1545,7 +1858,6 @@ export function sendFighterFromFieldToZone(
     // "Ao ser enviado para Zona Morta ou Apagada, invoque do seu lado do campo, qualquer outro Herói com «Donnie» em seu nome que ainda não foi usado no jogo."
     if (fighter.isHero && fighter.card.name.includes('Donnie')) {
       if (fighter.card.code === '2025/0001/00124') {
-        // Donnie - O Fogo Primordial: "Quando sair de campo, busque uma carta com «Conceito Fogo» do Deck para a mão."
         const cfIdx = owner.deck.findIndex((c) => c.name.includes('Conceito Fogo'));
         if (cfIdx !== -1) {
           const [cfCard] = owner.deck.splice(cfIdx, 1);
@@ -1593,8 +1905,6 @@ export function sendFighterFromFieldToZone(
     }
 
     // 4. Otto - Arauto da Corrupção (2025/0001/00151) & Asmonious - O Corruptor (2025/0001/00152):
-    // Otto: "Quando enviado para uma Zona, envie 2 cartas do topo do seu Deck para a Zona Apagada e retorne-o ao campo."
-    // Asmonious: "Quando enviado para uma Zona, envie 1 carta do topo do seu Deck para a Zona Apagada e retorne-o ao campo."
     if (
       (fighter.card.code === '2025/0001/00151' || fighter.card.code === '2025/0001/00152') &&
       owner.deck.length > 0 &&
@@ -1621,7 +1931,6 @@ export function sendFighterFromFieldToZone(
     }
 
     // 5. Selena - Deusa da Lua (2025/0001/00211):
-    // "Quando 3 combatentes seus forem enviados do campo para a Zona Morta ou Apagada enquanto esta carta estiver em campo, retorne esta carta para o Deck e invoque «Selena - Conceito da Criação»."
     const selenaLuaSlot = owner.frontline.findIndex(
       (f) => f !== null && f.card.code === '2025/0001/00211'
     );
@@ -1652,6 +1961,7 @@ export function sendFighterFromFieldToZone(
     }
   }
 
+  syncCrystalCaoticaStatInversion(state);
   return fighter;
 }
 
@@ -1662,16 +1972,17 @@ export function applyEffectDamageToFighter(
   targetSlotIndex: number,
   rawDamage: number,
   sourceCard: CardData,
-  sourceEffectiveCt: number
-) {
+  sourceEffectiveCt: number,
+  skipAzaradoRedirect = false
+): boolean {
   const targetOwner = getPlayerState(state, targetOwnerId);
   let actualSlot = targetSlotIndex;
   let targetFighter = targetOwner.frontline[actualSlot];
-  if (!targetFighter) return;
+  if (!targetFighter) return false;
 
   const isEnemyEffect = sourcePlayerId !== targetOwnerId;
 
-  if (isEnemyEffect) {
+  if (isEnemyEffect && !skipAzaradoRedirect) {
     const azaradoFighter = targetOwner.frontline.find(
       (f) => f !== null && !f.azaradoUsedThisRound && hasArchetype(state, f, 'Azarado')
     );
@@ -1690,6 +2001,17 @@ export function applyEffectDamageToFighter(
     }
   }
 
+  // Imunidade a efeitos de cartas concedida por «Ritos do Festival» na rodada em que é invocado
+  if (targetFighter.immuneToCardEffectsRound === state.round) {
+    addLog(
+      state,
+      targetOwnerId,
+      `🛡️ «${targetFighter.card.name}» está imune a efeitos de cartas nesta rodada («Ritos do Festival»)!`,
+      'effect'
+    );
+    return false;
+  }
+
   if (
     isEnemyEffect &&
     !targetFighter.macroversalUsedThisRound &&
@@ -1703,7 +2025,7 @@ export function applyEffectDamageToFighter(
       `Arquétipo [Macroversal] disparou obrigatoriamente! «${targetFighter.card.name}» (CT ${targetFighter.card.ct}) negou o efeito de «${sourceCard.name}» (CT ${sourceEffectiveCt})!`,
       'reaction'
     );
-    return;
+    return false;
   }
 
   const darkusStacks = countArchetypeStacks(state, targetFighter, 'Darkus');
@@ -1735,7 +2057,7 @@ export function applyEffectDamageToFighter(
       `«${targetFighter.card.name}» não sofreu dano do efeito de «${sourceCard.name}».`,
       'info'
     );
-    return;
+    return false;
   }
 
   targetFighter.currentHp -= finalDamage;
@@ -1748,7 +2070,70 @@ export function applyEffectDamageToFighter(
 
   if (targetFighter.currentHp <= 0) {
     sendFighterFromFieldToZone(state, targetOwnerId, actualSlot, false, false);
+    return true;
   }
+  return false;
+}
+
+/**
+ * Aplica dano de efeito em área (AoE) a todos os combatentes inimigos.
+ * Regra Oficial de [Azarado]: "Inclusive efeitos em área (concentrando todo o efeito apenas no portador)".
+ */
+export function applyAoEEffectDamageToEnemyFighters(
+  state: DuelGameState,
+  sourcePlayerId: PlayerId,
+  targetOwnerId: PlayerId,
+  damagePerTarget: number,
+  sourceCard: CardData,
+  sourceEffectiveCt: number
+): number {
+  if (damagePerTarget <= 0) return 0;
+  const targetOwner = getPlayerState(state, targetOwnerId);
+  const activeTargets = targetOwner.frontline.filter((f): f is FieldFighter => f !== null);
+  if (activeTargets.length === 0) return 0;
+
+  const azaradoFighter = activeTargets.find(
+    (f) => !f.azaradoUsedThisRound && hasArchetype(state, f, 'Azarado')
+  );
+  if (azaradoFighter) {
+    azaradoFighter.azaradoUsedThisRound = true;
+    const totalConcentratedDmg = damagePerTarget * activeTargets.length;
+    addLog(
+      state,
+      targetOwnerId,
+      `🎯 Arquétipo [Azarado]: «${azaradoFighter.card.name}» concentrou todo o efeito em área de «${sourceCard.name}» (${activeTargets.length}x ${damagePerTarget} = ${totalConcentratedDmg} de dano) apenas em si!`,
+      'reaction'
+    );
+    const killed = applyEffectDamageToFighter(
+      state,
+      sourcePlayerId,
+      targetOwnerId,
+      azaradoFighter.slotIndex,
+      totalConcentratedDmg,
+      sourceCard,
+      sourceEffectiveCt,
+      true
+    );
+    return killed ? 1 : 0;
+  }
+
+  let killedCount = 0;
+  for (let slot = 0; slot < 6; slot++) {
+    if (targetOwner.frontline[slot]) {
+      const killed = applyEffectDamageToFighter(
+        state,
+        sourcePlayerId,
+        targetOwnerId,
+        slot,
+        damagePerTarget,
+        sourceCard,
+        sourceEffectiveCt,
+        true
+      );
+      if (killed) killedCount++;
+    }
+  }
+  return killedCount;
 }
 
 export function equipSupportOrCamadaToBackrow(
@@ -1758,6 +2143,47 @@ export function equipSupportOrCamadaToBackrow(
   preferredSlot = -1
 ): boolean {
   const owner = getPlayerState(state, ownerId);
+
+  // Regra das Camadas: "Como todas equipam o jogador, elas podem ser empilhadas no mesmo espaço!"
+  if (isCamadaCard(card)) {
+    if (
+      preferredSlot >= 0 &&
+      preferredSlot < 6 &&
+      owner.backrow[preferredSlot] !== null &&
+      isCamadaCard(owner.backrow[preferredSlot]!.card)
+    ) {
+      const targetSup = owner.backrow[preferredSlot]!;
+      targetSup.stackedCards = targetSup.stackedCards || [];
+      targetSup.stackedCards.push(card);
+      addLog(
+        state,
+        ownerId,
+        `✨ ${owner.name} empilhou «${card.name}» na Zona de Suporte ${preferredSlot + 1} (${countCamadasOnField(owner)} «Camada(s)» em seu lado do campo).`,
+        'effect'
+      );
+      return true;
+    }
+
+    const existingCamadaSlot = owner.backrow.findIndex(
+      (s) => s !== null && isCamadaCard(s.card)
+    );
+    if (
+      existingCamadaSlot !== -1 &&
+      (preferredSlot === -1 || !owner.backrow.some((s) => s === null))
+    ) {
+      const targetSup = owner.backrow[existingCamadaSlot]!;
+      targetSup.stackedCards = targetSup.stackedCards || [];
+      targetSup.stackedCards.push(card);
+      addLog(
+        state,
+        ownerId,
+        `✨ ${owner.name} empilhou «${card.name}» na Zona de Suporte ${existingCamadaSlot + 1} (${countCamadasOnField(owner)} «Camada(s)» em seu lado do campo).`,
+        'effect'
+      );
+      return true;
+    }
+  }
+
   const slot =
     preferredSlot >= 0 &&
     preferredSlot < 6 &&
@@ -1770,6 +2196,7 @@ export function equipSupportOrCamadaToBackrow(
   owner.backrow[slot] = {
     instanceId: nextUid('sup'),
     card,
+    stackedCards: [],
     slotIndex: slot,
     owner: ownerId,
     usedOncePerRound: false
@@ -1779,11 +2206,60 @@ export function equipSupportOrCamadaToBackrow(
     state,
     ownerId,
     `✨ ${owner.name} equipou/ativou «${card.name}» na Zona de Suporte ${slot + 1}${
-      isCamadaCard(card) ? ` (${countCamadasOnField(owner)} «Camada(s)» em campo)` : ''
+      isCamadaCard(card) ? ` (${countCamadasOnField(owner)} «Camada(s)» em seu lado do campo)` : ''
     }.`,
     'effect'
   );
   return true;
+}
+
+export function getCamadaCandidatesForPlayer(p: PlayerDuelState): ChoiceCandidate[] {
+  const candidates: ChoiceCandidate[] = [];
+  p.deck.forEach((c, idx) => {
+    if (isCamadaCard(c)) {
+      candidates.push({
+        id: `camada_deck_${idx}_${c.code}`,
+        card: c,
+        sourceZone: 'deck',
+        sourceIndex: idx,
+        subtitle: 'No seu Deck'
+      });
+    }
+  });
+  p.hand.forEach((c, idx) => {
+    if (isCamadaCard(c)) {
+      candidates.push({
+        id: `camada_hand_${idx}_${c.code}`,
+        card: c,
+        sourceZone: 'hand',
+        sourceIndex: idx,
+        subtitle: 'Na sua Mão'
+      });
+    }
+  });
+  p.deadZone.forEach((c, idx) => {
+    if (isCamadaCard(c)) {
+      candidates.push({
+        id: `camada_dead_${idx}_${c.code}`,
+        card: c,
+        sourceZone: 'deadZone',
+        sourceIndex: idx,
+        subtitle: 'Na Zona Morta'
+      });
+    }
+  });
+  p.erasedZone.forEach((c, idx) => {
+    if (isCamadaCard(c)) {
+      candidates.push({
+        id: `camada_erased_${idx}_${c.code}`,
+        card: c,
+        sourceZone: 'erasedZone',
+        sourceIndex: idx,
+        subtitle: 'Na Zona Apagada'
+      });
+    }
+  });
+  return candidates;
 }
 
 export function pullAndEquipCamadaFromAnywhere(
@@ -1791,7 +2267,10 @@ export function pullAndEquipCamadaFromAnywhere(
   ownerId: PlayerId
 ): CardData | null {
   const owner = getPlayerState(state, ownerId);
-  if (!owner.backrow.some((s) => s === null)) return null;
+  const canPlaceCamada =
+    owner.backrow.some((s) => s === null) ||
+    owner.backrow.some((s) => s !== null && isCamadaCard(s.card));
+  if (!canPlaceCamada) return null;
 
   const dIdx = owner.deck.findIndex((c) => isCamadaCard(c));
   if (dIdx !== -1) {
@@ -1864,11 +2343,14 @@ export function summonFighterToSlot(
 ): FieldFighter {
   const owner = getPlayerState(state, ownerId);
   const opp = getPlayerState(state, getOpponentId(ownerId));
-  // O HORROR DO VÉU (2026/0001/00313): "Esta carta é tratada como um Herói."
-  const isHero = card.type === 'Herói' || card.code === '2026/0001/00313';
+  // O HORROR DO VÉU (2026/0001/00313) ou Floquinho buscada por Rebirth do Véu ("tratado como um Herói para efeito de outras cartas")
+  const isTreatedAsHeroByRebirth =
+    (owner.floquinhoTreatedAsHeroCodes || []).includes(card.code) ||
+    (card.name.includes('Floquinho') && (owner.floquinhoTreatedAsHeroCodes || []).length > 0);
+  const isHero =
+    card.type === 'Herói' || card.code === '2026/0001/00313' || isTreatedAsHeroByRebirth;
 
-  if (isHero) {
-    // Salazar - Grande Mestre da Dualidade (2025/0001/00183) e Solus (2025/0001/00337) permitem múltiplos Heróis em campo
+  if (card.type === 'Herói') {
     const allowsMultipleHeroes =
       owner.frontline.some(
         (f) =>
@@ -1876,7 +2358,9 @@ export function summonFighterToSlot(
           (f.card.code === '2025/0001/00183' || f.card.code === '2025/0001/00337')
       ) || card.code === '2025/0001/00183';
     if (!allowsMultipleHeroes) {
-      const existingHeroSlot = owner.frontline.findIndex((f) => f !== null && f.isHero);
+      const existingHeroSlot = owner.frontline.findIndex(
+        (f) => f !== null && f.card.type === 'Herói'
+      );
       if (existingHeroSlot !== -1 && existingHeroSlot !== slotIndex) {
         addLog(
           state,
@@ -1976,6 +2460,7 @@ export function summonFighterToSlot(
     summonedRound: state.round,
     summonedTurnGlobal: state.globalTurn,
     hasAttackedThisTurn: false,
+    attacksThisTurnCount: 0,
     usedOncePerRoundAbility: false,
     macroversalUsedThisRound: false,
     azaradoUsedThisRound: false,
@@ -2001,7 +2486,9 @@ export function summonFighterToSlot(
   addLog(
     state,
     ownerId,
-    `✨ ${owner.name} invocou «${card.name}» na Coluna ${slotIndex + 1} (ATK ${getFighterEffectiveAtk(state, fighter)} / Vida ${fighter.currentHp}).`,
+    `✨ ${owner.name} invocou «${card.name}» na Coluna ${slotIndex + 1} (ATK ${getFighterEffectiveAtk(state, fighter)} / Vida ${fighter.currentHp})${
+      isTreatedAsHeroByRebirth ? ' [Tratada como Herói por Rebirth do Véu]' : ''
+    }.`,
     'summon'
   );
 
@@ -2316,7 +2803,100 @@ export function summonFighterToSlot(
     }
   }
 
+  syncCrystalCaoticaStatInversion(state);
   return fighter;
+}
+
+/**
+ * Invoca «Floquinho Caótica do Véu» (2026/0001/00314) gastando Vida de Jogador em vez de Mana.
+ * "Ao ser invocada, você não gasta mana, em vez disso, gaste qualquer quantidade de Vida de Jogador,
+ * e então, ela ganha 3 de CT, 3 de Ataque e 3 de Vida para cada 1 de Vida de Jogador gasto."
+ */
+export function summonFloquinhoCaoticaWithHp(
+  state: DuelGameState,
+  ownerId: PlayerId,
+  card: CardData,
+  slotIndex: number,
+  hpToSpend: number
+): FieldFighter {
+  const owner = getPlayerState(state, ownerId);
+  const actualHpSpent = Math.max(1, Math.min(hpToSpend, Math.max(1, owner.hp - 1)));
+  owner.hp = Math.max(1, owner.hp - actualHpSpent);
+  const statBonus = actualHpSpent * 3;
+  const scaledCard: CardData = {
+    ...card,
+    ct: statBonus,
+    attack: statBonus,
+    defense: statBonus
+  };
+  addLog(
+    state,
+    ownerId,
+    `💔 «Floquinho Caótica do Véu»: ${owner.name} gastou ${actualHpSpent} de Vida de Jogador (Vida restante: ${owner.hp} PV) → Status: CT ${statBonus} / ATK ${statBonus} / Vida ${statBonus}!`,
+    'life_loss'
+  );
+  return summonFighterToSlot(state, ownerId, scaledCard, slotIndex);
+}
+
+/**
+ * «Aqua Caótica» (2026/0001/00310):
+ * "Seus outros combatentes podem atacar esta carta, fazendo com que o combatente a frente dela
+ * receba 2x o dano que ela receber (ignorando arquétipos)."
+ */
+export function executeFriendlyAttackOnAquaCaotica(
+  state: DuelGameState,
+  ownerId: PlayerId,
+  attackerSlot: number,
+  aquaSlot: number
+) {
+  const owner = getPlayerState(state, ownerId);
+  const oppId = getOpponentId(ownerId);
+  const opp = getPlayerState(state, oppId);
+
+  const attacker = owner.frontline[attackerSlot];
+  const aqua = owner.frontline[aquaSlot];
+  if (!attacker || !aqua || attackerSlot === aquaSlot || aqua.card.code !== '2026/0001/00310') {
+    return;
+  }
+
+  attacker.attacksThisTurnCount = (attacker.attacksThisTurnCount || 0) + 1;
+  if (attacker.attacksThisTurnCount >= getMaxAttacksPerTurn(state, attacker)) {
+    attacker.hasAttackedThisTurn = true;
+  }
+  owner.hasAttackedInCurrentTurn = true;
+
+  const atkVal = getFighterEffectiveAtk(state, attacker, true);
+  const aquaLumen = countArchetypeStacks(state, aqua, 'Lúmen');
+  const dmgReceivedByAqua = Math.max(0, atkVal - aquaLumen * 3);
+
+  aqua.currentHp -= dmgReceivedByAqua;
+  addLog(
+    state,
+    ownerId,
+    `🌊 «Aqua Caótica»: «${attacker.card.name}» atacou a aliada «Aqua Caótica» causando ${dmgReceivedByAqua} de dano (Vida de Aqua: ${Math.max(0, aqua.currentHp)})!`,
+    'attack'
+  );
+
+  const enemyFront = opp.frontline[aquaSlot];
+  if (enemyFront && dmgReceivedByAqua > 0) {
+    const reflectedDmg = dmgReceivedByAqua * 2;
+    enemyFront.currentHp -= reflectedDmg;
+    addLog(
+      state,
+      ownerId,
+      `💥 Efeito de «Aqua Caótica»: O combatente inimigo à frente («${enemyFront.card.name}» na Coluna ${aquaSlot + 1}) recebeu 2x o dano (${reflectedDmg}) ignorando arquétipos!`,
+      'attack'
+    );
+    if (enemyFront.currentHp <= 0) {
+      sendFighterFromFieldToZone(state, oppId, aquaSlot, false, true);
+    }
+  }
+
+  if (aqua.currentHp <= 0) {
+    sendFighterFromFieldToZone(state, ownerId, aquaSlot, false, true);
+  }
+
+  checkWinCondition(state);
 }
 
 export function executeCombatResolution(
@@ -2332,12 +2912,35 @@ export function executeCombatResolution(
   const attacker = atkOwner.frontline[attackerSlot];
   if (!attacker) return;
 
-  attacker.hasAttackedThisTurn = true;
+  attacker.attacksThisTurnCount = (attacker.attacksThisTurnCount || 0) + 1;
+  if (attacker.attacksThisTurnCount >= getMaxAttacksPerTurn(state, attacker)) {
+    attacker.hasAttackedThisTurn = true;
+  }
   atkOwner.hasAttackedInCurrentTurn = true;
 
-  const attackerAtk = getFighterEffectiveAtk(state, attacker, true);
-  const hasGema3 = attacker.equipments.some((e) => e.card.code === '2025/0001/00014');
-  const isAttackerDivindade = hasArchetype(state, attacker, 'Divindade');
+  const defenderForSoladorCheck = targetSlot >= 0 ? defOwner.frontline[targetSlot] : null;
+  const attackerIsSolador = hasArchetype(
+    state,
+    attacker,
+    'Solador',
+    false,
+    targetSlot >= 0 ? targetSlot : undefined
+  );
+  const defenderIsSolador = defenderForSoladorCheck
+    ? hasArchetype(state, defenderForSoladorCheck, 'Solador', attackerIsSolador, attackerSlot)
+    : false;
+  const anySolador = attackerIsSolador || defenderIsSolador;
+
+  const attackerAtk = getFighterEffectiveAtk(state, attacker, true, defenderIsSolador);
+  const hasGema3 =
+    !defenderIsSolador && attacker.equipments.some((e) => e.card.code === '2025/0001/00014');
+  const isAttackerDivindade = hasArchetype(
+    state,
+    attacker,
+    'Divindade',
+    defenderIsSolador,
+    targetSlot >= 0 ? targetSlot : undefined
+  );
   const playerDmgMultiplier = hasGema3 ? (isAttackerDivindade ? 4 : 2) : 1;
 
   if (targetSlot === -1) {
@@ -2358,13 +2961,23 @@ export function executeCombatResolution(
       `⚔️ «${attacker.card.name}» realizou um Ataque Direto causando ${finalDirectDmg} de dano!`,
       'attack'
     );
-    dealDamageToPlayer(
+    const dealt = dealDamageToPlayer(
       state,
       defOwnerId,
       attackerOwnerId,
       finalDirectDmg,
       `Ataque Direto de «${attacker.card.name}»`
     );
+    // Floquinho Caótica do Véu (2026/0001/00314): "Sempre que causar dano na Vida do Jogador inimigo, aumente o custo das cartas do oponente em 2."
+    if (dealt > 0 && attacker.card.code === '2026/0001/00314') {
+      defOwner.permCtPenalty = (defOwner.permCtPenalty || 0) + 2;
+      addLog(
+        state,
+        attackerOwnerId,
+        `❄️ «Floquinho Caótica do Véu»: Aumentou o custo (CT) de todas as cartas de ${defOwner.name} em +2 (Penalidade total: +${defOwner.permCtPenalty} CT)!`,
+        'effect'
+      );
+    }
     return;
   }
 
@@ -2379,20 +2992,17 @@ export function executeCombatResolution(
     return;
   }
 
-  const attackerIsSolador = hasArchetype(state, attacker, 'Solador');
-  const defenderIsSolador = hasArchetype(state, defender, 'Solador');
-  const anySolador = attackerIsSolador || defenderIsSolador;
-
   if (anySolador) {
     addLog(
       state,
       'system',
-      `Arquétipo [Solador] ativo: Nenhuma carta, equipamento ou efeito externo pode interferir neste combate!`,
+      `Arquétipo [Solador] ativo: Ignora todas as outras cartas inimigas fora a carta alvo (arquétipos e efeitos da própria carta alvo permanecem ativos)!`,
       'attack'
     );
   }
 
   // Jenos Senhor da Guerra (2025/0001/00034): "Sempre que é alvo de um ataque, ganha +3 de mana."
+  // É efeito da própria carta alvo, portanto NÃO é ignorado por [Solador]!
   if (defender.card.code === '2025/0001/00034') {
     defOwner.mana += 3;
     addLog(
@@ -2403,11 +3013,12 @@ export function executeCombatResolution(
     );
   }
 
-  const defenderAtk = getFighterEffectiveAtk(state, defender, true);
+  const defenderAtk = getFighterEffectiveAtk(state, defender, true, attackerIsSolador);
 
   let dmgToDefender = attackerAtk;
   // Jenos Senhor da Guerra (2025/0001/00034): "Causa o dobro de dano contra combatentes que possuam ao menos 1 equipamento."
-  if (attacker.card.code === '2025/0001/00034' && defender.equipments.length > 0) {
+  // Se o atacante tem [Solador], ele ignora os equipamentos do alvo; caso contrário, verifica normalmente.
+  if (!attackerIsSolador && attacker.card.code === '2025/0001/00034' && defender.equipments.length > 0) {
     dmgToDefender *= 2;
   }
   // Vellret - Condenado do Jim (2025/0001/00063): "Ao atacar combatentes com «Dragão» no nome, ganha +20 de Ataque."
@@ -2424,7 +3035,14 @@ export function executeCombatResolution(
       'effect'
     );
   } else {
-    const defLumen = countArchetypeStacks(state, defender, 'Lúmen');
+    // [Solador] NÃO ignora arquétipos inimigos da carta alvo (apenas ignora equipamentos externos caso attackerIsSolador seja true)
+    const defLumen = countArchetypeStacks(
+      state,
+      defender,
+      'Lúmen',
+      attackerIsSolador,
+      attackerSlot
+    );
     if (defLumen > 0) {
       dmgToDefender = Math.max(0, dmgToDefender - defLumen * 3);
       addLog(
@@ -2437,7 +3055,7 @@ export function executeCombatResolution(
   }
 
   let dmgToAttacker = defenderAtk;
-  if (hasArchetype(state, attacker, 'Furtivo')) {
+  if (hasArchetype(state, attacker, 'Furtivo', defenderIsSolador, targetSlot)) {
     dmgToAttacker = 0;
     addLog(
       state,
@@ -2454,7 +3072,13 @@ export function executeCombatResolution(
       'effect'
     );
   } else {
-    const atkLumen = countArchetypeStacks(state, attacker, 'Lúmen');
+    const atkLumen = countArchetypeStacks(
+      state,
+      attacker,
+      'Lúmen',
+      defenderIsSolador,
+      targetSlot
+    );
     if (atkLumen > 0) {
       dmgToAttacker = Math.max(0, dmgToAttacker - atkLumen * 3);
       addLog(
@@ -2477,9 +3101,11 @@ export function executeCombatResolution(
     'attack'
   );
 
+  // Regra Oficial de [Caos] e [Ordem]:
+  // "Tanto o Arquétipo Ordem quanto o Caos só funcionam quando você está declarando ataques no seu turno e nunca recebendo ataques!"
   const excessDamage = dmgToDefender - defenderHpBefore;
-  if (excessDamage > 0) {
-    if (hasArchetype(state, attacker, 'Caos')) {
+  if (excessDamage > 0 && state.activePlayer === attackerOwnerId) {
+    if (hasArchetype(state, attacker, 'Caos', defenderIsSolador, targetSlot)) {
       const caosDmg = excessDamage * playerDmgMultiplier;
       addLog(
         state,
@@ -2487,15 +3113,24 @@ export function executeCombatResolution(
         `Arquétipo [Caos]: ${caosDmg} de dano excedente perfurou para a vida de ${defOwner.name}!`,
         'life_loss'
       );
-      dealDamageToPlayer(
+      const dealtCaos = dealDamageToPlayer(
         state,
         defOwnerId,
         attackerOwnerId,
         caosDmg,
         `Dano Excedente [Caos] de «${attacker.card.name}»`
       );
+      if (dealtCaos > 0 && attacker.card.code === '2026/0001/00314') {
+        defOwner.permCtPenalty = (defOwner.permCtPenalty || 0) + 2;
+        addLog(
+          state,
+          attackerOwnerId,
+          `❄️ «Floquinho Caótica do Véu»: Aumentou o custo (CT) de todas as cartas de ${defOwner.name} em +2 (Penalidade total: +${defOwner.permCtPenalty} CT)!`,
+          'effect'
+        );
+      }
     }
-    if (hasArchetype(state, attacker, 'Ordem')) {
+    if (hasArchetype(state, attacker, 'Ordem', defenderIsSolador, targetSlot)) {
       atkOwner.hp += excessDamage;
       addLog(
         state,
@@ -2509,63 +3144,83 @@ export function executeCombatResolution(
   // Mahina - O Arauto do Véu (2026/0001/00301):
   // "Não pode deixar o campo por resultado de combate, em vez disso, recebe um Arquétipo."
   // O HORROR DO VÉU (2026/0001/00313): "Não pode ser eliminada em combate."
+  const triggerMahinaVeuCombatSurvival = (mahinaFighter: FieldFighter, mahinaOwnerId: PlayerId) => {
+    mahinaFighter.currentHp = 1;
+    if (mahinaFighter.card.code === '2026/0001/00313') {
+      addLog(
+        state,
+        mahinaOwnerId,
+        `👁️ «O Horror do Véu» não pode ser eliminado em combate!`,
+        'effect'
+      );
+      return;
+    }
+
+    if (mahinaOwnerId === 'player') {
+      const archCandidates: ChoiceCandidate[] = ALL_OFFICIAL_ARCHETYPES.map((arch, idx) => ({
+        id: `mahina_arch_${idx}_${arch}`,
+        card: {
+          ...mahinaFighter.card,
+          name: `Arquétipo [${arch}]`,
+          archetype: arch,
+          description: `Concede o Arquétipo [${arch}] permanentemente a «Mahina - O Arauto do Véu».`
+        },
+        sourceZone: 'field',
+        sourceIndex: mahinaFighter.slotIndex,
+        subtitle: mahinaFighter.archetypes.includes(arch) ? 'Já possui (acumula se aplicável)' : 'Novo Arquétipo'
+      }));
+      state.pendingChoiceQueue.push({
+        title: '«Mahina - O Arauto do Véu» — Escolha o Arquétipo Recebido',
+        description:
+          '«Mahina - O Arauto do Véu» não pode deixar o campo por resultado de combate! Escolha qual Arquétipo ele recebe:',
+        candidates: archCandidates,
+        minSelect: 1,
+        maxSelect: 1,
+        targetSlotForChosenCard: mahinaFighter.slotIndex,
+        effectKind: 'MAHINA_VEU_COMBAT_ARCHETYPE'
+      });
+      addLog(
+        state,
+        'player',
+        `✨ «Mahina - O Arauto do Véu» sobreviveu ao combate com 1 de Vida! Escolha qual Arquétipo ele receberá.`,
+        'effect'
+      );
+    } else {
+      const bonusPool = ['Solador', 'Caos', 'Ordem', 'Lúmen', 'Darkus', 'Furtivo', 'Conceito', 'Divindade'];
+      const nextArch = bonusPool.find((a) => !mahinaFighter.archetypes.includes(a)) || 'Lúmen';
+      mahinaFighter.archetypes.push(nextArch);
+      addLog(
+        state,
+        mahinaOwnerId,
+        `✨ «Mahina - O Arauto do Véu» não pode deixar o campo por resultado de combate! Permaneceu com 1 de Vida e recebeu o Arquétipo [${nextArch}]!`,
+        'effect'
+      );
+    }
+  };
+
   if (defender.currentHp <= 0) {
     if (defender.card.code === '2026/0001/00301' || defender.card.code === '2026/0001/00313') {
-      defender.currentHp = 1;
-      if (defender.card.code === '2026/0001/00301') {
-        const bonusPool = ['Caos', 'Ordem', 'Lúmen', 'Darkus', 'Furtivo', 'Conceito', 'Solador'];
-        const nextArch = bonusPool.find((a) => !defender.archetypes.includes(a)) || 'Lúmen';
-        defender.archetypes.push(nextArch);
-        addLog(
-          state,
-          defOwnerId,
-          `✨ «Mahina - O Arauto do Véu» não pode deixar o campo por resultado de combate! Permaneceu com 1 de Vida e recebeu o Arquétipo [${nextArch}]!`,
-          'effect'
-        );
-      } else {
-        addLog(
-          state,
-          defOwnerId,
-          `👁️ «O Horror do Véu» não pode ser eliminado em combate!`,
-          'effect'
-        );
-      }
+      triggerMahinaVeuCombatSurvival(defender, defOwnerId);
     }
   }
 
   if (attacker.currentHp <= 0) {
     if (attacker.card.code === '2026/0001/00301' || attacker.card.code === '2026/0001/00313') {
-      attacker.currentHp = 1;
-      if (attacker.card.code === '2026/0001/00301') {
-        const bonusPool = ['Caos', 'Ordem', 'Lúmen', 'Darkus', 'Furtivo', 'Conceito', 'Solador'];
-        const nextArch = bonusPool.find((a) => !attacker.archetypes.includes(a)) || 'Caos';
-        attacker.archetypes.push(nextArch);
-        addLog(
-          state,
-          attackerOwnerId,
-          `✨ «Mahina - O Arauto do Véu» não pode deixar o campo por resultado de combate! Permaneceu com 1 de Vida e recebeu o Arquétipo [${nextArch}]!`,
-          'effect'
-        );
-      } else {
-        addLog(
-          state,
-          attackerOwnerId,
-          `👁️ «O Horror do Véu» não pode ser eliminado em combate!`,
-          'effect'
-        );
-      }
+      triggerMahinaVeuCombatSurvival(attacker, attackerOwnerId);
     }
   }
 
   const defenderDied = defender.currentHp <= 0;
 
   if (defenderDied) {
-    const defHadInsano = hasArchetype(state, defender, 'Insano');
+    // [Solador] NÃO ignora arquétipos inimigos da carta alvo (como [Insano] nativo do alvo)!
+    const defHadInsano =
+      !hasArchetype(state, attacker, 'Véu', defenderIsSolador, targetSlot) &&
+      hasArchetype(state, defender, 'Insano', attackerIsSolador, attackerSlot);
     const isFeiticeira = defender.card.code === '2025/0001/00009';
 
     sendFighterFromFieldToZone(state, defOwnerId, targetSlot, false, true);
 
-    // Jenos Senhor da Guerra (2025/0001/00034): "Sempre que elimina um combatente inimigo, ganha +3 de Ataque e +3 de Vida."
     if (attacker.card.code === '2025/0001/00034' && atkOwner.frontline[attackerSlot]) {
       attacker.permAtkBonus += 3;
       attacker.permHpBonus += 3;
@@ -2579,7 +3234,6 @@ export function executeCombatResolution(
       );
     }
 
-    // Donnie - Grande General (2025/0001/00122): "Sempre que eliminar um combatente inimigo, cause dano na vida do jogador inimigo igual ao CT do combatente eliminado."
     if (attacker.card.code === '2025/0001/00122' && defender.card.ct > 0) {
       dealDamageToPlayer(
         state,
@@ -2625,8 +3279,7 @@ export function executeCombatResolution(
       }
     }
 
-    // Jim - Guerreiro (2025/0001/00002): "Sempre que este combatente eliminar outro combatente, cause 5 de dano a outro combatente no campo."
-    if (attacker.card.code === '2025/0001/00002' && !anySolador) {
+    if (attacker.card.code === '2025/0001/00002') {
       const otherEnemies = defOwner.frontline.filter((f): f is FieldFighter => f !== null);
       if (otherEnemies.length > 0) {
         if (attackerOwnerId === 'player') {
@@ -2660,21 +3313,24 @@ export function executeCombatResolution(
   }
 
   if (atkOwner.frontline[attackerSlot] && atkOwner.frontline[attackerSlot]!.currentHp <= 0) {
-    const atkHadInsano = hasArchetype(state, attacker, 'Insano');
+    const survivingDef = defOwner.frontline[targetSlot];
+    const atkHadInsano =
+      (!survivingDef || !hasArchetype(state, survivingDef, 'Véu', attackerIsSolador, attackerSlot)) &&
+      hasArchetype(state, attacker, 'Insano', defenderIsSolador, targetSlot);
     const atkIsFeiticeira = attacker.card.code === '2025/0001/00009';
 
     sendFighterFromFieldToZone(state, attackerOwnerId, attackerSlot, false, true);
 
     if (atkHadInsano && defOwner.frontline[targetSlot]) {
-      const survivingDef = defOwner.frontline[targetSlot]!;
-      survivingDef.currentHp -= 5;
+      const defAfter = defOwner.frontline[targetSlot]!;
+      defAfter.currentHp -= 5;
       addLog(
         state,
         attackerOwnerId,
-        `💔 Arquétipo [Insano]: «${attacker.card.name}» causou 5 de dano direto em «${survivingDef.card.name}»!`,
+        `💔 Arquétipo [Insano]: «${attacker.card.name}» causou 5 de dano direto em «${defAfter.card.name}»!`,
         'life_loss'
       );
-      if (survivingDef.currentHp <= 0) {
+      if (defAfter.currentHp <= 0) {
         sendFighterFromFieldToZone(state, defOwnerId, targetSlot, false, true);
       }
     }
@@ -2705,7 +3361,9 @@ export function executeCombatResolution(
     }
   }
 
-  if (!anySolador) {
+  // [Reativo] vem de OUTROS combatentes inimigos fora a carta alvo (`ally.slotIndex !== targetSlot`).
+  // Portanto, se o atacante tiver [Solador], ele ignora todos os outros combatentes inimigos fora o alvo!
+  if (!attackerIsSolador) {
     for (const ally of defOwner.frontline) {
       if (
         ally &&
@@ -2757,6 +3415,124 @@ export function processStartOfRound(state: DuelGameState) {
       if (checkWinCondition(state)) return;
     }
 
+    // 1. Ato Final (2026/0002/00320):
+    // "Caso esse Herói tenha «Mahina» em seu nome, na próxima rodada após o uso desta carta, retorne ele para o Deck de Herói."
+    if (p.pendingAtoFinalMahinaReturnRound && state.round >= p.pendingAtoFinalMahinaReturnRound) {
+      p.pendingAtoFinalMahinaReturnRound = undefined;
+      const isMahinaHero = (c: CardData) => c.type === 'Herói' && c.name.includes('Mahina');
+      const dzIdx = p.deadZone.findIndex(isMahinaHero);
+      const ezIdx = p.erasedZone.findIndex(isMahinaHero);
+      let returnedHero: CardData | null = null;
+      if (dzIdx !== -1) returnedHero = p.deadZone.splice(dzIdx, 1)[0];
+      else if (ezIdx !== -1) returnedHero = p.erasedZone.splice(ezIdx, 1)[0];
+      if (returnedHero) {
+        p.heroDeck.push(returnedHero);
+        addLog(
+          state,
+          pid,
+          `👑 «Ato Final»: O Herói «${returnedHero.name}» retornou das Zonas para o Deck de Herói de ${p.name}!`,
+          'effect'
+        );
+      }
+    }
+
+    // 2. Ritos do Festival (2026/0002/00319):
+    // "Após 2 rodadas, invoque ele no campo. Na rodada que este combatente é invocado por este efeito, ele fica imune a efeitos de cartas."
+    if (p.pendingRitosFestival && p.pendingRitosFestival.length > 0) {
+      const remainingRitos: typeof p.pendingRitosFestival = [];
+      for (const entry of p.pendingRitosFestival) {
+        if (state.round >= entry.summonOnRound) {
+          const freeSlot = p.frontline.findIndex((s) => s === null);
+          if (freeSlot !== -1) {
+            const dzIdx = p.deadZone.findIndex((c) => c.code === entry.card.code);
+            const ezIdx = p.erasedZone.findIndex((c) => c.code === entry.card.code);
+            let cardToSummon: CardData = entry.card;
+            if (dzIdx !== -1) cardToSummon = p.deadZone.splice(dzIdx, 1)[0];
+            else if (ezIdx !== -1) cardToSummon = p.erasedZone.splice(ezIdx, 1)[0];
+            const summoned = summonFighterToSlot(state, pid, cardToSummon, freeSlot);
+            summoned.immuneToCardEffectsRound = state.round;
+            addLog(
+              state,
+              pid,
+              `🩸 «Ritos do Festival»: «${cardToSummon.name}» foi invocado da Zona Morta para o campo e está IMUNE a efeitos de cartas nesta rodada!`,
+              'summon'
+            );
+          } else {
+            remainingRitos.push(entry);
+          }
+        } else {
+          remainingRitos.push(entry);
+        }
+      }
+      p.pendingRitosFestival = remainingRitos;
+    }
+
+    // 3. Como Planejado (2026/0002/00322):
+    // "No início da próxima rodada, a carta negada é usada automaticamente sem custo (caso não possa ser usada, retorne ela para o seu Deck)."
+    if (p.pendingComoPlanejadoCards && p.pendingComoPlanejadoCards.length > 0) {
+      const remainingPlanned: typeof p.pendingComoPlanejadoCards = [];
+      for (const entry of p.pendingComoPlanejadoCards) {
+        if (state.round >= entry.triggerOnRound) {
+          const ezIdx = p.erasedZone.findIndex((c) => c.code === entry.card.code);
+          if (ezIdx !== -1) p.erasedZone.splice(ezIdx, 1);
+          const plannedCard = entry.card;
+
+          let canAutoUse = true;
+          if (plannedCard.type === 'Combatente' || plannedCard.type === 'Herói') {
+            canAutoUse = p.frontline.some((s) => s === null);
+          } else if (isContinuousBackrowCard(plannedCard)) {
+            canAutoUse =
+              p.backrow.some((s) => s === null) ||
+              (isCamadaCard(plannedCard) &&
+                p.backrow.some((s) => s !== null && isCamadaCard(s.card)));
+          } else if (plannedCard.type === 'Equipamento') {
+            canAutoUse = p.frontline.some((f) => f !== null);
+          } else {
+            const desc = (plannedCard.description || '').toLowerCase();
+            if (
+              plannedCard.code === '2025/0001/00023' ||
+              plannedCard.code === '2025/0001/00024' ||
+              plannedCard.code === '2025/0001/00028' ||
+              plannedCard.code === '2025/0001/00029' ||
+              plannedCard.code === '2026/0002/00317' ||
+              plannedCard.code === '2026/0002/00322' ||
+              desc.includes('negue')
+            ) {
+              canAutoUse = false;
+            }
+          }
+
+          if (canAutoUse) {
+            addLog(
+              state,
+              pid,
+              `🎯 «Como Planejado»: A carta «${plannedCard.name}» da Zona Apagada foi usada automaticamente sem custo para ${p.name}!`,
+              'effect'
+            );
+            const targetSlot =
+              plannedCard.type === 'Combatente' || plannedCard.type === 'Herói'
+                ? p.frontline.findIndex((s) => s === null)
+                : isContinuousBackrowCard(plannedCard)
+                ? p.backrow.findIndex((s) => s === null)
+                : 0;
+            resolveInsanisCardEffect(state, pid, plannedCard, Math.max(0, targetSlot));
+          } else {
+            p.deck.push(plannedCard);
+            p.deck = shuffleCards(p.deck);
+            addLog(
+              state,
+              pid,
+              `🎯 «Como Planejado»: Como «${plannedCard.name}» não pôde ser usada no início da rodada, ela foi retornada para o Deck de ${p.name}!`,
+              'info'
+            );
+          }
+        } else {
+          remainingPlanned.push(entry);
+        }
+      }
+      p.pendingComoPlanejadoCards = remainingPlanned;
+    }
+
     // Selena - Deusa da Lua (2025/0001/00211): "No início da 5ª Rodada, invoque esta carta em campo."
     if (state.round === 5) {
       const selenaIdx = p.heroDeck.findIndex((c) => c.code === '2025/0001/00211');
@@ -2775,8 +3551,9 @@ export function processStartOfRound(state: DuelGameState) {
 
     // =========================================================================
     // EFEITOS OFICIAIS DE INÍCIO DE RODADA DAS CAMADAS DO VÉU (INVASÃO DO CAOS)
+    // "Para cada carta com «Camada» em seu nome em seu lado do campo..."
     // =========================================================================
-    const camadasCount = countCamadasOnField(p) + countCamadasOnField(opp);
+    const camadasCount = countCamadasOnField(p);
     const veuFightersCount = countVeuFightersOnField(state, p);
 
     if (camadasCount > 0) {
@@ -2786,7 +3563,7 @@ export function processStartOfRound(state: DuelGameState) {
         addLog(
           state,
           pid,
-          `⚡ «Terceira Camada»: ${p.name} recebeu +${extraMana} de Mana pelas ${camadasCount} «Camada(s)» em campo (Mana: ${p.mana})!`,
+          `⚡ «Terceira Camada»: ${p.name} recebeu +${extraMana} de Mana pelas ${camadasCount} «Camada(s)» em seu lado do campo (Mana: ${p.mana})!`,
           'effect'
         );
       }
@@ -2797,7 +3574,7 @@ export function processStartOfRound(state: DuelGameState) {
         addLog(
           state,
           pid,
-          `💚 «Quarta Camada»: ${p.name} recebeu +${healAmt} de Vida de Jogador pelas ${camadasCount} «Camada(s)» em campo (Vida: ${p.hp} PV)!`,
+          `💚 «Quarta Camada»: ${p.name} recebeu +${healAmt} de Vida de Jogador pelas ${camadasCount} «Camada(s)» em seu lado do campo (Vida: ${p.hp} PV)!`,
           'life_gain'
         );
       }
@@ -2807,7 +3584,7 @@ export function processStartOfRound(state: DuelGameState) {
         addLog(
           state,
           pid,
-          `✨ «Quinta Camada»: ${p.name} recebeu +${camadasCount} Runa(s) pelas ${camadasCount} «Camada(s)» em campo (Total: ${p.runes} Runas)!`,
+          `✨ «Quinta Camada»: ${p.name} recebeu +${camadasCount} Runa(s) pelas ${camadasCount} «Camada(s)» em seu lado do campo (Total: ${p.runes} Runas)!`,
           'effect'
         );
       }
@@ -2831,7 +3608,6 @@ export function processStartOfRound(state: DuelGameState) {
         }
 
         // Jenos Senhor do Macroverso (2025/0001/00031):
-        // "Após 1 rodada em campo, retorne todas as cartas das suas Zonas para o Deck e recupere sua vida para 20. Após 3 rodadas em campo, cause 99999 de dano na vida do jogador inimigo."
         if (f.card.code === '2025/0001/00031') {
           if (state.round === f.summonedRound + 1) {
             const returnedCount = p.deadZone.length + p.erasedZone.length;
@@ -2859,7 +3635,6 @@ export function processStartOfRound(state: DuelGameState) {
         }
 
         // Spear Vellret (2025/0001/00061):
-        // "No começo da rodada, o jogador ganha +1 de vida para cada carta com «Longinus» no nome em seu lado do campo."
         if (f.card.code === '2025/0001/00061') {
           let longinusCount = 0;
           for (const af of p.frontline) {
@@ -2869,7 +3644,9 @@ export function processStartOfRound(state: DuelGameState) {
             }
           }
           for (const s of p.backrow) {
-            if (s && s.card.name.includes('Longinus')) longinusCount++;
+            for (const c of getAllSupportCardsInSlot(s)) {
+              if (c.name.includes('Longinus')) longinusCount++;
+            }
           }
           if (longinusCount > 0) {
             p.hp += longinusCount;
@@ -2883,7 +3660,6 @@ export function processStartOfRound(state: DuelGameState) {
         }
 
         // Spear Kiara (2025/0001/0073):
-        // "No começo da rodada, caso esteja equipada com um equipamento com «Longinus» no nome, invoque um Herói com «Vellret» no nome de qualquer lugar."
         if (
           f.card.code === '2025/0001/0073' &&
           f.equipments.some((e) => e.card.name.includes('Longinus')) &&
@@ -2904,13 +3680,8 @@ export function processStartOfRound(state: DuelGameState) {
         }
 
         // Equilíbrio Imperfeito Mahina (2025/0001/00092):
-        // "No começo da rodada, cause 3 de dano a todos os combatentes inimigos e busque do Deck ou Zona Morta para a mão uma «Energia Lúmen» e uma «Energia Darkus»."
         if (f.card.code === '2025/0001/00092') {
-          for (let slot = 0; slot < 6; slot++) {
-            if (opp.frontline[slot]) {
-              applyEffectDamageToFighter(state, pid, oppId, slot, 3, f.card, f.card.ct);
-            }
-          }
+          applyAoEEffectDamageToEnemyFighters(state, pid, oppId, 3, f.card, f.card.ct);
           for (const targetName of ['Energia Lúmen', 'Energia Darkus']) {
             const dIdx = p.deck.findIndex((c) => c.name.includes(targetName));
             const zIdx = p.deadZone.findIndex((c) => c.name.includes(targetName));
@@ -2926,7 +3697,6 @@ export function processStartOfRound(state: DuelGameState) {
         }
 
         // Donnie - Samurai das Chamas (2025/0001/00121):
-        // "No começo da rodada, busque do seu Deck ou Zonas uma carta «Corte Ígneo» para a sua mão."
         if (f.card.code === '2025/0001/00121') {
           const isCorte = (c: CardData) => c.code === '2025/0001/00149' || c.name.includes('Corte Ígneo');
           const dIdx = p.deck.findIndex(isCorte);
@@ -2941,10 +3711,9 @@ export function processStartOfRound(state: DuelGameState) {
         }
 
         // Donnie - Grande General (2025/0001/00122):
-        // "No começo da rodada, envie 1 carta do topo de ambos os Decks para a Zona Apagada."
         if (f.card.code === '2025/0001/00122') {
-          if (p.deck.length > 0) p.erasedZone.push(p.deck.shift()!);
-          if (opp.deck.length > 0) opp.erasedZone.push(opp.deck.shift()!);
+          if (p.deck.length > 0) discardCardDirectlyToZone(state, pid, p.deck.shift()!, 'erasedZone');
+          if (opp.deck.length > 0) discardCardDirectlyToZone(state, oppId, opp.deck.shift()!, 'erasedZone');
           addLog(
             state,
             pid,
@@ -2954,7 +3723,6 @@ export function processStartOfRound(state: DuelGameState) {
         }
 
         // Lordes do Corruptor Profano (2025/0001/00155 a 2025/0001/00161):
-        // "No começo da rodada, receba 1 Runa."
         if (
           f.card.code === '2025/0001/00155' ||
           f.card.code === '2025/0001/00156' ||
@@ -2975,7 +3743,6 @@ export function processStartOfRound(state: DuelGameState) {
         }
 
         // Asmonious - O Corruptor (2025/0001/00152):
-        // "No começo da rodada, invoque um combatente com «Corrompido(a)» no nome de qualquer lugar."
         if (f.card.code === '2025/0001/00152' && p.frontline.some((s) => s === null)) {
           const freeSlot = p.frontline.findIndex((s) => s === null);
           const isCorrompido = (c: CardData) =>
@@ -3015,7 +3782,7 @@ export function processStartOfRound(state: DuelGameState) {
           if (checkWinCondition(state)) return;
         }
 
-        // Eizen do Véu (2026/0001/00304): "No começo da rodada, invoque de qualquer lugar um combatente não Herói com «Véu» em seu nome ou com o Arquétipo Véu."
+        // Eizen do Véu (2026/0001/00304):
         if (f.card.code === '2026/0001/00304' && p.frontline.some((s) => s === null)) {
           const freeSlot = p.frontline.findIndex((s) => s === null);
           const isValidEizenTarget = (c: CardData) =>
@@ -3046,12 +3813,11 @@ export function processStartOfRound(state: DuelGameState) {
         }
 
         // Três do Véu (2026/0001/00305):
-        // "No começo da rodada, role 3 dados D6. Caso saia o número 3 em qualquer um dos dados, cause 3 de Dano Primordial no Deck inimigo ou retorne uma carta do campo para o Deck de seu dono."
         if (f.card.code === '2026/0001/00305') {
-          const r1 = Math.floor(Math.random() * 6) + 1;
-          const r2 = Math.floor(Math.random() * 6) + 1;
-          const r3 = Math.floor(Math.random() * 6) + 1;
-          const hitThree = r1 === 3 || r2 === 3 || r3 === 3;
+          const r1 = rollDieWithSortudo(state, pid, 6, (v) => v === 3);
+          const r2 = rollDieWithSortudo(state, pid, 6, (v) => v === 3);
+          const r3 = rollDieWithSortudo(state, pid, 6, (v) => v === 3);
+          const hitThree = r1.result === 3 || r2.result === 3 || r3.result === 3;
           if (hitThree) {
             const enemyFighter = opp.frontline.find((ef) => ef !== null && !ef.isHero);
             if (enemyFighter) {
@@ -3060,31 +3826,23 @@ export function processStartOfRound(state: DuelGameState) {
               addLog(
                 state,
                 pid,
-                `🎲 «Três do Véu» rolou 3D6 (${r1}, ${r2}, ${r3}) → Saiu 3! Retornou «${enemyFighter.card.name}» do campo inimigo para o Deck!`,
+                `🎲 «Três do Véu» rolou 3D6 (${r1.result}, ${r2.result}, ${r3.result}) → Saiu 3! Retornou «${enemyFighter.card.name}» do campo inimigo para o Deck!`,
                 'effect'
               );
             } else {
-              const milled = opp.deck.splice(0, Math.min(3, opp.deck.length));
-              opp.erasedZone.push(...milled);
-              addLog(
-                state,
-                pid,
-                `🎲 «Três do Véu» rolou 3D6 (${r1}, ${r2}, ${r3}) → Saiu 3! Causou ${milled.length} de Dano Primordial no Deck de ${opp.name}!`,
-                'effect'
-              );
+              dealPrimordialDamageToDeck(state, pid, oppId, 3, '«Três do Véu» (Saiu 3 nos 3D6)');
             }
           } else {
             addLog(
               state,
               pid,
-              `🎲 «Três do Véu» rolou 3D6 (${r1}, ${r2}, ${r3}) — nenhum 3 saiu nesta rodada.`,
+              `🎲 «Três do Véu» rolou 3D6 (${r1.result}, ${r2.result}, ${r3.result}) — nenhum 3 saiu nesta rodada.`,
               'info'
             );
           }
         }
 
         // O HORROR DO VÉU (2026/0001/00313):
-        // "No começo da rodada, cause 10 de dano na Vida do Jogador Inimigo para cada Arquétipo diferente em campo."
         if (f.card.code === '2026/0001/00313') {
           const uniqueArchs = new Set<string>();
           for (const af of [...p.frontline, ...opp.frontline]) {
@@ -3108,9 +3866,15 @@ export function processStartOfRound(state: DuelGameState) {
         }
 
         // Rebirth do Véu (2026/0001/00311):
-        // "Após 1 rodada em campo, esta carta adiciona para a sua mão de qualquer lugar um combatente com «Floquinho» em seu nome."
-        if (f.card.code === '2026/0001/00311' && state.round === f.summonedRound + 1) {
-          const isFloquinho = (c: CardData) => c.name.includes('Floquinho');
+        // "Após 1 rodada em campo, esta carta adiciona para a sua mão de qualquer lugar um combatente com «Floquinho» em seu nome, sendo tratado como um Herói para efeito de outras cartas."
+        if (
+          f.card.code === '2026/0001/00311' &&
+          state.round >= f.summonedRound + 1 &&
+          !f.rebirthVeuTriggered
+        ) {
+          f.rebirthVeuTriggered = true;
+          const isFloquinho = (c: CardData) =>
+            (c.type === 'Combatente' || c.type === 'Herói') && c.name.includes('Floquinho');
           let floq: CardData | null = null;
           const dIdx = p.deck.findIndex(isFloquinho);
           const zIdx = p.deadZone.findIndex(isFloquinho);
@@ -3121,11 +3885,22 @@ export function processStartOfRound(state: DuelGameState) {
 
           if (floq) {
             p.hand.push(floq);
+            p.floquinhoTreatedAsHeroCodes = p.floquinhoTreatedAsHeroCodes || [];
+            if (!p.floquinhoTreatedAsHeroCodes.includes(floq.code)) {
+              p.floquinhoTreatedAsHeroCodes.push(floq.code);
+            }
             addLog(
               state,
               pid,
-              `✨ «Rebirth do Véu» (Após 1 rodada em campo): Adicionou «${floq.name}» para a mão de ${p.name}!`,
+              `✨ «Rebirth do Véu» (Após 1 rodada em campo): Adicionou «${floq.name}» para a mão de ${p.name} (tratada como Herói para efeitos de outras cartas)!`,
               'effect'
+            );
+          } else {
+            addLog(
+              state,
+              pid,
+              `«Rebirth do Véu» ativou após 1 rodada, mas não havia nenhuma «Floquinho» no Deck ou nas Zonas de ${p.name}.`,
+              'info'
             );
           }
         }
@@ -3145,7 +3920,7 @@ export function processStartOfRound(state: DuelGameState) {
           }
         }
 
-        // «Jim - Rei Elfo» (2025/0001/00005): Invoca automaticamente 1 «Jim» do DECK na rodada seguinte à sua invocação!
+        // «Jim - Rei Elfo» (2025/0001/00005):
         if (
           f.card.code === '2025/0001/00005' &&
           state.round === f.summonedRound + 1 &&
@@ -3209,80 +3984,93 @@ export function processStartOfRound(state: DuelGameState) {
     for (const s of p.backrow) {
       if (s) {
         s.usedOncePerRound = false;
-        if (s.card.code === '2025/0001/00016') {
-          if (pid === 'player') {
-            const deckJims: ChoiceCandidate[] = p.deck
-              .map((c, idx) => ({ c, idx }))
-              .filter((item) => isJimCard(item.c) && item.c.type === 'Combatente')
-              .map((item) => ({
-                id: `ascensao_${item.idx}_${item.c.code}`,
-                card: item.c,
-                sourceZone: 'deck',
-                sourceIndex: item.idx,
-                subtitle: 'No seu Deck'
-              }));
-            if (deckJims.length > 0) {
-              state.pendingChoiceQueue.push({
-                title: '«Ascensão do Rei» (Início da Rodada)',
-                description: 'Escolha 1 combatente «Jim» do seu Deck para enviar à sua Zona Apagada:',
-                candidates: deckJims,
-                minSelect: 1,
-                maxSelect: 1,
-                effectKind: 'ASCENSAO_DO_REI'
-              });
+        for (const supCard of getAllSupportCardsInSlot(s)) {
+          if (supCard.code === '2025/0001/00016') {
+            if (pid === 'player') {
+              const deckJims: ChoiceCandidate[] = p.deck
+                .map((c, idx) => ({ c, idx }))
+                .filter((item) => isJimCard(item.c) && item.c.type === 'Combatente')
+                .map((item) => ({
+                  id: `ascensao_${item.idx}_${item.c.code}`,
+                  card: item.c,
+                  sourceZone: 'deck',
+                  sourceIndex: item.idx,
+                  subtitle: 'No seu Deck'
+                }));
+              if (deckJims.length > 0) {
+                state.pendingChoiceQueue.push({
+                  title: '«Ascensão do Rei» (Início da Rodada)',
+                  description: 'Escolha 1 combatente «Jim» do seu Deck para enviar à sua Zona Apagada:',
+                  candidates: deckJims,
+                  minSelect: 1,
+                  maxSelect: 1,
+                  effectKind: 'ASCENSAO_DO_REI'
+                });
+              }
+            } else {
+              const jimIdx = p.deck.findIndex((c) => isJimCard(c) && c.type === 'Combatente');
+              if (jimIdx !== -1) {
+                const [sentJim] = p.deck.splice(jimIdx, 1);
+                discardCardDirectlyToZone(state, pid, sentJim, 'erasedZone');
+                addLog(
+                  state,
+                  pid,
+                  `«Ascensão do Rei»: Bot enviou «${sentJim.name}» do Deck para a Zona Apagada (${countJimsInErasedZone(p)} «Jim» na Zona Apagada).`,
+                  'effect'
+                );
+              }
             }
-          } else {
-            const jimIdx = p.deck.findIndex((c) => isJimCard(c) && c.type === 'Combatente');
-            if (jimIdx !== -1) {
-              const [sentJim] = p.deck.splice(jimIdx, 1);
-              p.erasedZone.push(sentJim);
+          } else if (supCard.code === '2025/0001/00110') {
+            const mahinaIdx = p.heroDeck.findIndex((c) => c.code === '2025/0001/00091');
+            const freeSlot = p.frontline.findIndex((slot) => slot === null);
+            if (mahinaIdx !== -1 && freeSlot !== -1) {
+              const [mahinaHero] = p.heroDeck.splice(mahinaIdx, 1);
               addLog(
                 state,
                 pid,
-                `«Ascensão do Rei»: Bot enviou «${sentJim.name}» do Deck para a Zona Apagada (${countJimsInErasedZone(p)} «Jim» na Zona Apagada).`,
-                'effect'
+                `👑 «Coroa Lúmeni»: Invocou o Herói «${mahinaHero.name}» em campo!`,
+                'summon'
               );
+              summonFighterToSlot(state, pid, mahinaHero, freeSlot);
             }
-          }
-        } else if (s.card.code === '2025/0001/00110') {
-          // Coroa Lúmeni (2025/0001/00110):
-          // Invoca «Mahina - O Herdeiro de Lúmeni» (2025/0001/00091) da Zona do Herói!
-          const mahinaIdx = p.heroDeck.findIndex((c) => c.code === '2025/0001/00091');
-          const freeSlot = p.frontline.findIndex((slot) => slot === null);
-          if (mahinaIdx !== -1 && freeSlot !== -1) {
-            const [mahinaHero] = p.heroDeck.splice(mahinaIdx, 1);
-            addLog(
-              state,
-              pid,
-              `👑 «Coroa Lúmeni»: Invocou o Herói «${mahinaHero.name}» em campo!`,
-              'summon'
-            );
-            summonFighterToSlot(state, pid, mahinaHero, freeSlot);
-          }
-        } else if (s.card.code === '2026/0002/00315') {
-          // APOTEOSE DO VÉU: "No começo da Rodada, caso queira, perca 5 de Vida de Jogador e coloque em campo de qualquer lugar uma carta com «Camada» em seu nome."
-          if (p.hp > 5 && p.backrow.some((slot) => slot === null)) {
-            const equipped = pullAndEquipCamadaFromAnywhere(state, pid);
-            if (equipped) {
-              p.hp -= 5;
-              addLog(
-                state,
-                pid,
-                `💔 «Apoteose do Véu»: ${p.name} perdeu 5 PV no começo da rodada e colocou «${equipped.name}» em campo (Vida: ${p.hp} PV)!`,
-                'life_loss'
-              );
+          } else if (supCard.code === '2026/0002/00315') {
+            // APOTEOSE DO VÉU: "No começo da Rodada, caso queira, perca 5 de Vida de Jogador e coloque em campo de qualquer lugar uma carta com «Camada» em seu nome."
+            const canPlaceCamada =
+              p.backrow.some((slot) => slot === null) ||
+              p.backrow.some((slot) => slot !== null && isCamadaCard(slot.card));
+            if (p.hp > 5 && canPlaceCamada) {
+              if (pid === 'player') {
+                const camadaCandidates = getCamadaCandidatesForPlayer(p);
+                if (camadaCandidates.length > 0) {
+                  state.pendingChoiceQueue.push({
+                    title: '«Apoteose do Véu» (Início da Rodada • Opcional)',
+                    description:
+                      'Caso queira pagar 5 PV, selecione qual «Camada» deseja colocar em campo (ou confirme sem selecionar nenhuma para não pagar 5 PV):',
+                    candidates: camadaCandidates,
+                    minSelect: 0,
+                    maxSelect: 1,
+                    effectKind: 'APOTEOSE_ROUND_START'
+                  });
+                }
+              } else {
+                const equipped = pullAndEquipCamadaFromAnywhere(state, pid);
+                if (equipped) {
+                  p.hp -= 5;
+                  addLog(
+                    state,
+                    pid,
+                    `💔 «Apoteose do Véu»: ${p.name} perdeu 5 PV no começo da rodada e colocou «${equipped.name}» em campo (Vida: ${p.hp} PV)!`,
+                    'life_loss'
+                  );
+                }
+              }
             }
-          }
-        } else if (
-          s.card.code === '2025/0001/00137' ||
-          s.card.code === '2025/0001/00138' ||
-          s.card.code === '2025/0001/00139'
-        ) {
-          // Conceito Fogo 1, 2 e 3: "Este equipamento equipa o jogador. No começo da rodada, cause 1 de dano a todos os combatentes inimigos em campo."
-          for (let slot = 0; slot < 6; slot++) {
-            if (opp.frontline[slot]) {
-              applyEffectDamageToFighter(state, pid, oppId, slot, 1, s.card, s.card.ct);
-            }
+          } else if (
+            supCard.code === '2025/0001/00137' ||
+            supCard.code === '2025/0001/00138' ||
+            supCard.code === '2025/0001/00139'
+          ) {
+            applyAoEEffectDamageToEnemyFighters(state, pid, oppId, 1, supCard, supCard.ct);
           }
         }
       }
@@ -3331,7 +4119,6 @@ export function processStartOfRound(state: DuelGameState) {
 
 export function hasPlayerAnytimeActionsAvailable(state: DuelGameState): boolean {
   const p = state.player;
-  // APENAS «Jim - O Senhor do Macroverso» (2025/0001/00001) pode ser invocado "A Qualquer Momento"
   const heroCard = p.heroDeck[0];
   if (heroCard && canSummonHeroDirectly(state, 'player', heroCard, true).allowed) {
     return true;
@@ -3360,7 +4147,10 @@ export function processStartOfTurn(state: DuelGameState) {
   nonActive.heroDiedThisTurn = false;
 
   for (const f of active.frontline) {
-    if (f) f.hasAttackedThisTurn = false;
+    if (f) {
+      f.hasAttackedThisTurn = false;
+      f.attacksThisTurnCount = 0;
+    }
   }
 
   if (state.globalTurn >= 2) {
@@ -3413,7 +4203,7 @@ export function processStartOfTurn(state: DuelGameState) {
         );
       }
 
-      // Jenos Destinado (2025/0001/00033): "No começo do seu turno, compre +1 carta adicional para cada carta com «Destinado(a)» no nome em seu lado do campo."
+      // Jenos Destinado (2025/0001/00033):
       if (f.card.code === '2025/0001/00033' && pid === state.activePlayer) {
         const destinadosCount =
           p.frontline.filter((af) => af !== null && /destinad[oa]/i.test(af.card.name)).length +
@@ -3433,10 +4223,10 @@ export function processStartOfTurn(state: DuelGameState) {
         }
       }
 
-      // Jenos Caído (2025/0001/00035): "No começo do turno, ambos os jogadores perdem 1D6 de vida."
+      // Jenos Caído (2025/0001/00035):
       if (f.card.code === '2025/0001/00035' && pid === state.activePlayer) {
-        const d1 = Math.floor(Math.random() * 6) + 1;
-        const d2 = Math.floor(Math.random() * 6) + 1;
+        const d1 = rollDieWithSortudo(state, pid, 6, (v) => v <= 2).result;
+        const d2 = rollDieWithSortudo(state, pid, 6).result;
         p.hp = Math.max(0, p.hp - d1);
         opp.hp = Math.max(0, opp.hp - d2);
         addLog(
@@ -3448,7 +4238,7 @@ export function processStartOfTurn(state: DuelGameState) {
         if (checkWinCondition(state)) return;
       }
 
-      // Vellret - Escolhido de Salazar (2025/0001/00062): "No começo do seu turno, busque do seu Deck uma carta com «Manga» no nome para a sua mão."
+      // Vellret - Escolhido de Salazar (2025/0001/00062):
       if (f.card.code === '2025/0001/00062' && pid === state.activePlayer) {
         const mangaIdx = p.deck.findIndex((c) => c.name.includes('Manga'));
         if (mangaIdx !== -1) {
@@ -3463,7 +4253,7 @@ export function processStartOfTurn(state: DuelGameState) {
         }
       }
 
-      // Mahina - O Herdeiro de Lúmeni (2025/0001/00091): "No começo do seu turno, ganha +3 de Ataque e +3 de Vida."
+      // Mahina - O Herdeiro de Lúmeni (2025/0001/00091):
       if (f.card.code === '2025/0001/00091' && pid === state.activePlayer) {
         f.permAtkBonus += 3;
         f.permHpBonus += 3;
@@ -3477,7 +4267,7 @@ export function processStartOfTurn(state: DuelGameState) {
         );
       }
 
-      // Salazar - Guia dos Escolhidos (2025/0001/00181): "No final/início do turno, remove 2 de mana do oponente."
+      // Salazar - Guia dos Escolhidos (2025/0001/00181):
       if (f.card.code === '2025/0001/00181' && pid === state.activePlayer) {
         const rem = Math.min(2, opp.mana);
         opp.mana -= rem;
@@ -3491,13 +4281,13 @@ export function processStartOfTurn(state: DuelGameState) {
         }
       }
 
-      // Salazar - O Poderoso Líder (2025/0001/00182): "Remove 1 de vida do jogador inimigo por turno."
+      // Salazar - O Poderoso Líder (2025/0001/00182):
       if (f.card.code === '2025/0001/00182' && pid === state.activePlayer) {
         dealDamageToPlayer(state, oppId, pid, 1, '«Salazar - O Poderoso Líder»');
         if (checkWinCondition(state)) return;
       }
 
-      // Salazar - O Falho (2025/0001/00184): "No começo do seu turno, retorne 1 carta das suas Zonas para o fundo do seu Deck."
+      // Salazar - O Falho (2025/0001/00184):
       if (f.card.code === '2025/0001/00184' && pid === state.activePlayer) {
         const recovered = p.deadZone.shift() || p.erasedZone.shift();
         if (recovered) {
@@ -3515,13 +4305,8 @@ export function processStartOfTurn(state: DuelGameState) {
       }
 
       // Salazar - Destruidor do Macroverso (2025/0001/00185):
-      // "No começo do turno, cause 10 de dano a todos os combatentes inimigos. No final do turno, recupere 5 de vida de jogador."
       if (f.card.code === '2025/0001/00185' && pid === state.activePlayer) {
-        for (let slot = 0; slot < 6; slot++) {
-          if (opp.frontline[slot]) {
-            applyEffectDamageToFighter(state, pid, oppId, slot, 10, f.card, f.card.ct);
-          }
-        }
+        applyAoEEffectDamageToEnemyFighters(state, pid, oppId, 10, f.card, f.card.ct);
         p.hp += 5;
         addLog(
           state,
@@ -3531,7 +4316,7 @@ export function processStartOfTurn(state: DuelGameState) {
         );
       }
 
-      // Selena - Deusa da Lua (2025/0001/00211): "A cada turno, aumente o Ataque e Vida de todos os seus combatentes em 1."
+      // Selena - Deusa da Lua (2025/0001/00211):
       if (f.card.code === '2025/0001/00211') {
         for (const ally of p.frontline) {
           if (ally) {
@@ -3549,7 +4334,7 @@ export function processStartOfTurn(state: DuelGameState) {
         );
       }
 
-      // Selena - Macroverso Inverso (2025/0001/00214): "A cada turno, recupere 5 de vida de jogador."
+      // Selena - Macroverso Inverso (2025/0001/00214):
       if (f.card.code === '2025/0001/00214' && pid === state.activePlayer) {
         p.hp += 5;
         addLog(
@@ -3562,32 +4347,76 @@ export function processStartOfTurn(state: DuelGameState) {
 
       // Mahina - O Arauto do Véu (2026/0001/00301):
       // "No começo do turno, recebe +5 de Ataque. No começo do turno, pode selecionar uma carta com «Véu» ou «Camada» em seu nome ou um combatente com o Arquétipo Véu das suas Zonas e adicionar à sua mão."
-      if (f.card.code === '2026/0001/00301') {
+      if (f.card.code === '2026/0001/00301' && pid === state.activePlayer) {
         f.permAtkBonus += 5;
         const isVeuOrCamada = (c: CardData) =>
-          c.name.includes('Véu') || c.name.includes('Camada') || (c.archetype || '').includes('Véu');
-
-        let recovered: CardData | null = null;
-        const zIdx = p.deadZone.findIndex(isVeuOrCamada);
-        const eIdx = p.erasedZone.findIndex(isVeuOrCamada);
-        if (zIdx !== -1) recovered = p.deadZone.splice(zIdx, 1)[0];
-        else if (eIdx !== -1) recovered = p.erasedZone.splice(eIdx, 1)[0];
+          c.name.includes('Véu') ||
+          c.name.includes('Camada') ||
+          (c.archetype || '').includes('Véu') ||
+          (AUTHORITATIVE_VEU_ARCHETYPES[c.code] || '').includes('Véu');
 
         addLog(
           state,
           pid,
-          `👑 «Mahina - O Arauto do Véu» (Início do Turno): Recebeu +5 de Ataque (ATK ${getFighterEffectiveAtk(state, f)})${
-            recovered ? ` e recuperou «${recovered.name}» das Zonas para a mão!` : '!'
-          }`,
+          `👑 «Mahina - O Arauto do Véu» (Início do Turno): Recebeu +5 de Ataque (ATK ${getFighterEffectiveAtk(state, f)})!`,
           'effect'
         );
-        if (recovered) {
-          p.hand.push(recovered);
+
+        if (pid === 'player') {
+          const zoneCandidates: ChoiceCandidate[] = [];
+          p.deadZone.forEach((c, idx) => {
+            if (isVeuOrCamada(c)) {
+              zoneCandidates.push({
+                id: `mahina_dead_${idx}_${c.code}`,
+                card: c,
+                sourceZone: 'deadZone',
+                sourceIndex: idx,
+                subtitle: 'Na Zona Morta'
+              });
+            }
+          });
+          p.erasedZone.forEach((c, idx) => {
+            if (isVeuOrCamada(c)) {
+              zoneCandidates.push({
+                id: `mahina_erased_${idx}_${c.code}`,
+                card: c,
+                sourceZone: 'erasedZone',
+                sourceIndex: idx,
+                subtitle: 'Na Zona Apagada'
+              });
+            }
+          });
+
+          if (zoneCandidates.length > 0) {
+            state.pendingChoiceQueue.push({
+              title: '«Mahina - O Arauto do Véu» (Início do Turno)',
+              description:
+                'Selecione até 1 carta com «Véu», «Camada» ou combatente com Arquétipo Véu das suas Zonas para adicionar à sua mão:',
+              candidates: zoneCandidates,
+              minSelect: 0,
+              maxSelect: 1,
+              effectKind: 'MAHINA_VEU_ZONES'
+            });
+          }
+        } else {
+          let recovered: CardData | null = null;
+          const zIdx = p.deadZone.findIndex(isVeuOrCamada);
+          const eIdx = p.erasedZone.findIndex(isVeuOrCamada);
+          if (zIdx !== -1) recovered = p.deadZone.splice(zIdx, 1)[0];
+          else if (eIdx !== -1) recovered = p.erasedZone.splice(eIdx, 1)[0];
+          if (recovered) {
+            p.hand.push(recovered);
+            addLog(
+              state,
+              pid,
+              `👑 «Mahina - O Arauto do Véu»: Bot recuperou «${recovered.name}» das Zonas para a mão!`,
+              'effect'
+            );
+          }
         }
       }
 
       // Zwey (2026/0001/00307):
-      // "Uma vez por rodada, reduza o ataque de outro combatente (não Herói) para 0. Para cada combatente com 0 de ataque em campo, no começo do turno você recebe 3 de mana."
       if (f.card.code === '2026/0001/00307' && pid === state.activePlayer) {
         const enemyNonHero = opp.frontline
           .filter((ef): ef is FieldFighter => ef !== null && !ef.isHero && getFighterEffectiveAtk(state, ef) > 0)
@@ -3620,20 +4449,13 @@ export function processStartOfTurn(state: DuelGameState) {
       }
 
       if (f.card.code === '2025/0001/00008' && pid === state.activePlayer) {
-        const sortudoCount = p.frontline.filter(
-          (ally) => ally !== null && hasArchetype(state, ally, 'Sortudo')
-        ).length;
-        let bestRoll = Math.floor(Math.random() * 4) + 1;
-        for (let i = 0; i < sortudoCount; i++) {
-          const extra = Math.floor(Math.random() * 4) + 1;
-          if (extra > bestRoll) bestRoll = extra;
-        }
-        const removed = Math.min(opp.mana, bestRoll);
+        const rollRes = rollDieWithSortudo(state, pid, 4);
+        const removed = Math.min(opp.mana, rollRes.result);
         opp.mana -= removed;
         addLog(
           state,
           pid,
-          `«Jim - Arqueira» rolou 1D4 (${bestRoll}) e removeu ${removed} de Mana de ${opp.name} (Mana restante: ${opp.mana})!`,
+          `🎲 «Jim - Arqueira» rolou 1D4 (${rollRes.rolls.join(', ')} → ${rollRes.result}) e removeu ${removed} de Mana de ${opp.name} (Mana restante: ${opp.mana})!`,
           'effect'
         );
       }
@@ -3700,6 +4522,20 @@ export function canPlayCardInMainPhase(
     return { allowed: heroCheck.allowed, reason: heroCheck.reason };
   }
 
+  // Floquinho Caótica do Véu (2026/0001/00314) usa Vida de Jogador ao invés de Mana!
+  if (card.code === '2026/0001/00314') {
+    if (p.hp <= 1) {
+      return {
+        allowed: false,
+        reason: '«Floquinho Caótica do Véu» exige gastar pelo menos 1 de Vida de Jogador para ser invocada.'
+      };
+    }
+    if (!p.frontline.some((s) => s === null)) {
+      return { allowed: false, reason: 'Todas as 6 colunas de Combatentes estão ocupadas.' };
+    }
+    return { allowed: true };
+  }
+
   if (p.mana < effCt) {
     return { allowed: false, reason: `Mana insuficiente (${p.mana}/${effCt} CT).` };
   }
@@ -3719,6 +4555,16 @@ export function canPlayCardInMainPhase(
   }
 
   if (isContinuousBackrowCard(card)) {
+    // Camadas podem ser empilhadas no mesmo espaço de qualquer outra Camada já em campo!
+    if (isCamadaCard(card)) {
+      const canStackOrPlace =
+        p.backrow.some((s) => s === null) ||
+        p.backrow.some((s) => s !== null && isCamadaCard(s.card));
+      if (!canStackOrPlace) {
+        return { allowed: false, reason: 'Suas 6 zonas de suporte atrás estão cheias.' };
+      }
+      return { allowed: true };
+    }
     if (!p.backrow.some((s) => s === null)) {
       return { allowed: false, reason: 'Suas 6 zonas de suporte atrás estão cheias.' };
     }
@@ -3783,11 +4629,14 @@ export function canPlayCardInMainPhase(
 
     case '2025/0001/00022':
     case '2025/0001/00026':
+    case '2025/0001/00116': // Alteração de Realidade
       return { allowed: true };
 
     case '2025/0001/00023':
     case '2025/0001/00024':
     case '2025/0001/00028':
+    case '2025/0001/00112': // Férias
+    case '2026/0002/00317': // Coragem ao Contrário
       return { allowed: false, reason: 'Esta carta só pode ser usada como reação durante o combate.' };
 
     case '2025/0001/00025':
@@ -3813,13 +4662,54 @@ export function canPlayCardInMainPhase(
     }
 
     case '2025/0001/00029':
-      return { allowed: false, reason: '«Selamento Verdadeiro» é usado em reação para negar uma carta do oponente.' };
+    case '2026/0002/00322': // Como Planejado
+      return { allowed: false, reason: `«${card.name}» é usada em reação para negar uma carta do oponente.` };
 
     case '2025/0001/00030':
       if (p.hp <= 8) {
         return { allowed: false, reason: 'Você precisa ter mais de 8 PV para pagar o custo de 8 de vida.' };
       }
       return { allowed: true };
+
+    // CARTAS DO DECK INVASÃO DO CAOS (VÉU)
+    case '2026/0002/00316': { // AQUI FOI...
+      if (p.hp >= 20) {
+        return { allowed: false, reason: '«AQUI FOI...» requer que você tenha perdido pelo menos 1 de Vida de Jogador (abaixo de 20 PV).' };
+      }
+      if (!opp.frontline.some((f) => f !== null)) {
+        return { allowed: false, reason: 'Não há combatentes inimigos em campo.' };
+      }
+      return { allowed: true };
+    }
+
+    case '2026/0002/00318': { // O Papai Chegou
+      const anyFighterOnField =
+        p.frontline.some((f) => f !== null) || opp.frontline.some((f) => f !== null);
+      if (!anyFighterOnField) {
+        return { allowed: false, reason: 'Requer pelo menos 1 combatente em campo.' };
+      }
+      return { allowed: true };
+    }
+
+    case '2026/0002/00319': { // Ritos do Festival
+      const hasDeckFighter = p.deck.some((c) => c.type === 'Combatente' && !isTreatedAsHeroCard(p, c));
+      if (!hasDeckFighter) {
+        return { allowed: false, reason: 'Não há combatentes (não-Herói) disponíveis no seu Deck.' };
+      }
+      return { allowed: true };
+    }
+
+    case '2026/0002/00320': { // Ato Final
+      const hasHeroAvailable =
+        p.frontline.some((f) => f !== null && f.isHero) ||
+        p.heroDeck.length > 0 ||
+        p.hand.some((c) => c.type === 'Herói' || isTreatedAsHeroCard(p, c)) ||
+        p.deck.some((c) => c.type === 'Herói' || isTreatedAsHeroCard(p, c));
+      if (!hasHeroAvailable) {
+        return { allowed: false, reason: 'Você precisa de um Herói disponível (em campo, Deck de Herói, Mão ou Deck) para enviar às Zonas.' };
+      }
+      return { allowed: true };
+    }
 
     // CARTAS DE INVOCAÇÃO DE HERÓI DOS OUTROS DECKS ESTRUTURAIS
     case '2025/0001/00079': { // Mensagem Final -> Invoca Spear Vellret (2025/0001/00061)
@@ -3957,6 +4847,11 @@ export function resolveInsanisCardEffect(
   }
 
   if (card.type === 'Combatente' || card.type === 'Herói') {
+    if (card.code === '2026/0001/00314') {
+      const hpToSpend = Math.max(1, Math.min(5, Math.floor((p.hp - 1) / 2)));
+      summonFloquinhoCaoticaWithHp(state, actorId, card, targetSlot, hpToSpend);
+      return;
+    }
     summonFighterToSlot(state, actorId, card, targetSlot);
     return;
   }
@@ -3965,19 +4860,33 @@ export function resolveInsanisCardEffect(
   if (isContinuousBackrowCard(card)) {
     const placed = equipSupportOrCamadaToBackrow(state, actorId, card, targetSlot);
     if (!placed) {
-      p.deadZone.push(card);
+      discardCardDirectlyToZone(state, actorId, card, false);
       return;
     }
 
-    if (card.code === '2026/0002/00315' && p.backrow.some((s) => s === null)) {
-      const equipped = pullAndEquipCamadaFromAnywhere(state, actorId);
-      if (equipped) {
-        addLog(
-          state,
-          actorId,
-          `✨ «Apoteose do Véu»: Colocou «${equipped.name}» em campo ao ser ativada!`,
-          'effect'
-        );
+    if (card.code === '2026/0002/00315') {
+      const camadaCandidates = getCamadaCandidatesForPlayer(p);
+      if (camadaCandidates.length > 0) {
+        if (actorId === 'player') {
+          state.pendingChoiceQueue.push({
+            title: '«Apoteose do Véu» — Escolha qual «Camada» colocar em campo',
+            description: 'Selecione qual carta com «Camada» no nome (do seu Deck, Mão ou Zonas) deseja colocar em campo:',
+            candidates: camadaCandidates,
+            minSelect: 1,
+            maxSelect: 1,
+            effectKind: 'APOTEOSE_CAMADA'
+          });
+        } else {
+          const equipped = pullAndEquipCamadaFromAnywhere(state, actorId);
+          if (equipped) {
+            addLog(
+              state,
+              actorId,
+              `✨ «Apoteose do Véu»: Colocou «${equipped.name}» em campo ao ser ativada!`,
+              'effect'
+            );
+          }
+        }
       }
     }
 
@@ -3996,32 +4905,35 @@ export function resolveInsanisCardEffect(
       }
     }
 
-    const ownCamadasSlots = p.backrow
-      .map((s, idx) => (s !== null && isCamadaCard(s.card) ? idx : -1))
-      .filter((idx) => idx !== -1);
-    const oppCamadasSlots = opp.backrow
-      .map((s, idx) => (s !== null && isCamadaCard(s.card) ? idx : -1))
-      .filter((idx) => idx !== -1);
+    const totalCamadasInField = countCamadasOnField(p) + countCamadasOnField(opp);
 
-    if (
-      hasActiveCamada(p, '2026/0002/00330') &&
-      ownCamadasSlots.length + oppCamadasSlots.length >= 7
-    ) {
+    if (hasActiveCamada(p, '2026/0002/00330') && totalCamadasInField >= 7) {
       let discardedCamadas = 0;
-      for (const idx of ownCamadasSlots) {
-        if (discardedCamadas < 7 && p.backrow[idx]) {
-          p.erasedZone.push(p.backrow[idx]!.card);
-          p.backrow[idx] = null;
-          discardedCamadas++;
+      const discardCamadasFromBackrow = (owner: PlayerDuelState) => {
+        for (let idx = 0; idx < 6; idx++) {
+          const sup = owner.backrow[idx];
+          if (!sup || discardedCamadas >= 7) continue;
+          const remaining: CardData[] = [];
+          const allCards = getAllSupportCardsInSlot(sup);
+          for (const c of allCards) {
+            if (isCamadaCard(c) && discardedCamadas < 7) {
+              owner.erasedZone.push(c);
+              discardedCamadas++;
+            } else {
+              remaining.push(c);
+            }
+          }
+          if (remaining.length === 0) {
+            owner.backrow[idx] = null;
+          } else {
+            sup.card = remaining[remaining.length - 1];
+            sup.stackedCards = remaining.slice(0, -1);
+          }
         }
-      }
-      for (const idx of oppCamadasSlots) {
-        if (discardedCamadas < 7 && opp.backrow[idx]) {
-          opp.erasedZone.push(opp.backrow[idx]!.card);
-          opp.backrow[idx] = null;
-          discardedCamadas++;
-        }
-      }
+      };
+
+      discardCamadasFromBackrow(p);
+      discardCamadasFromBackrow(opp);
 
       let sentEnemyCards = 0;
       for (let slot = 0; slot < 6; slot++) {
@@ -4030,9 +4942,12 @@ export function resolveInsanisCardEffect(
           sentEnemyCards++;
         }
         if (opp.backrow[slot]) {
-          opp.deadZone.push(opp.backrow[slot]!.card);
+          const allCards = getAllSupportCardsInSlot(opp.backrow[slot]);
+          for (const sc of allCards) {
+            opp.deadZone.push(sc);
+            sentEnemyCards++;
+          }
           opp.backrow[slot] = null;
-          sentEnemyCards++;
         }
       }
       while (opp.hand.length > 0) {
@@ -4524,7 +5439,7 @@ export function resolveInsanisCardEffect(
 
     case '2025/0001/00030': { // Destruição das Variantes
       p.hp = Math.max(0, p.hp - 8);
-      p.deadZone.push(card);
+      discardCardDirectlyToZone(state, actorId, card, false);
       addLog(
         state,
         actorId,
@@ -4575,8 +5490,334 @@ export function resolveInsanisCardEffect(
       break;
     }
 
+    // =====================================================================
+    // ALTERAÇÃO DE REALIDADE (2025/0001/00116)
+    // "Todas as suas cartas (usadas ou não) têm -3 de CT pelo resto da partida."
+    // =====================================================================
+    case '2025/0001/00116': {
+      p.permCtReduction = (p.permCtReduction || 0) + 3;
+      discardCardDirectlyToZone(state, actorId, card, false);
+      addLog(
+        state,
+        actorId,
+        `🌀 «Alteração de Realidade»: Todas as cartas de ${p.name} (usadas ou não) têm -3 de CT permanente pelo resto da partida (Redução permanente total: -${p.permCtReduction} CT)!`,
+        'effect'
+      );
+      break;
+    }
+
+    // =====================================================================
+    // CARTAS DE EFEITO DO DECK INVASÃO DO CAOS (VÉU)
+    // =====================================================================
+    case '2026/0002/00316': { // AQUI FOI...
+      // "Cause 3 de dano para cada 1 de vida de jogador perdida a todos os combatentes inimigos em campo.
+      //  Caso «Floquinho Caótica» esteja em seu lado do campo, ganhe 3 Runas para cada combatente enviado às Zonas por este efeito."
+      discardCardDirectlyToZone(state, actorId, card, false);
+      const hpLost = Math.max(0, 20 - p.hp);
+      const dmgPerEnemy = hpLost * 3;
+      if (dmgPerEnemy > 0) {
+        addLog(
+          state,
+          actorId,
+          `💥 «AQUI FOI...»: ${p.name} perdeu ${hpLost} de Vida (20 -> ${p.hp} PV) e causará ${dmgPerEnemy} de dano (${hpLost} x 3) a TODOS os combatentes de ${opp.name}!`,
+          'effect'
+        );
+        const killedCount = applyAoEEffectDamageToEnemyFighters(
+          state,
+          actorId,
+          oppId,
+          dmgPerEnemy,
+          card,
+          getCardAuthorityCt(p, card)
+        );
+        const hasFloquinhoCaoticaOnField = p.frontline.some(
+          (f) => f !== null && f.card.name.includes('Floquinho Caótica')
+        );
+        if (hasFloquinhoCaoticaOnField && killedCount > 0) {
+          const gainedRunes = killedCount * 3;
+          p.runes += gainedRunes;
+          addLog(
+            state,
+            actorId,
+            `🔮 «AQUI FOI...» + «Floquinho Caótica»: ${p.name} ganhou +${gainedRunes} Runas por enviar ${killedCount} combatente(s) inimigo(s) às Zonas (Total: ${p.runes} Runas)!`,
+            'effect'
+          );
+        }
+      }
+      break;
+    }
+
+    case '2026/0002/00318': { // O Papai Chegou
+      // "O jogador com o combatente de maior custo em campo compra 5 cartas.
+      //  O jogador com o combatente de menor custo em campo retorna 1 combatente de qualquer Zona para o campo.
+      //  Em caso de empate em qualquer um dos efeitos, nenhum efeito acontece."
+      discardCardDirectlyToZone(state, actorId, card, false);
+
+      const getFighterCost = (owner: PlayerDuelState, f: FieldFighter) =>
+        Math.max(0, (f.card.ct || 0) + (f.summonHpSpentBonusCt || 0) - (owner.permCtReduction || 0));
+
+      const playerCosts = state.player.frontline
+        .filter((f): f is FieldFighter => f !== null)
+        .map((f) => getFighterCost(state.player, f));
+      const botCosts = state.bot.frontline
+        .filter((f): f is FieldFighter => f !== null)
+        .map((f) => getFighterCost(state.bot, f));
+
+      const pMax = playerCosts.length > 0 ? Math.max(...playerCosts) : -1;
+      const bMax = botCosts.length > 0 ? Math.max(...botCosts) : -1;
+
+      if (pMax === bMax) {
+        addLog(
+          state,
+          actorId,
+          `⚖️ «O Papai Chegou» (Maior Custo): Empate no maior custo em campo (${pMax === -1 ? 'nenhum' : pMax + ' CT'}) — ninguém compra 5 cartas.`,
+          'info'
+        );
+      } else {
+        const highWinnerId: PlayerId = pMax > bMax ? 'player' : 'bot';
+        const highWinner = getPlayerState(state, highWinnerId);
+        let drawn = 0;
+        for (let i = 0; i < 5; i++) {
+          if (highWinner.deck.length > 0) {
+            highWinner.hand.push(highWinner.deck.shift()!);
+            drawn++;
+          }
+        }
+        addLog(
+          state,
+          highWinnerId,
+          `🃏 «O Papai Chegou» (Maior Custo: ${Math.max(pMax, bMax)} CT): ${highWinner.name} comprou ${drawn} carta(s)!`,
+          'effect'
+        );
+      }
+
+      const pMin = playerCosts.length > 0 ? Math.min(...playerCosts) : 999;
+      const bMin = botCosts.length > 0 ? Math.min(...botCosts) : 999;
+
+      if (pMin === bMin) {
+        addLog(
+          state,
+          actorId,
+          `⚖️ «O Papai Chegou» (Menor Custo): Empate no menor custo em campo (${pMin === 999 ? 'nenhum' : pMin + ' CT'}) — ninguém retorna combatente das Zonas.`,
+          'info'
+        );
+      } else {
+        const lowWinnerId: PlayerId = pMin < bMin ? 'player' : 'bot';
+        const lowWinner = getPlayerState(state, lowWinnerId);
+        const freeSlot = lowWinner.frontline.findIndex((s) => s === null);
+        if (freeSlot !== -1) {
+          if (lowWinnerId === 'player') {
+            const zoneCandidates: ChoiceCandidate[] = [
+              ...lowWinner.deadZone
+                .map((c, idx) => ({ c, idx }))
+                .filter((item) => item.c.type === 'Combatente')
+                .map((item) => ({
+                  id: `papai_dead_${item.idx}`,
+                  card: item.c,
+                  sourceZone: 'deadZone' as const,
+                  sourceIndex: item.idx,
+                  subtitle: `Zona Morta • CT ${item.c.ct}`
+                })),
+              ...lowWinner.erasedZone
+                .map((c, idx) => ({ c, idx }))
+                .filter((item) => item.c.type === 'Combatente')
+                .map((item) => ({
+                  id: `papai_erased_${item.idx}`,
+                  card: item.c,
+                  sourceZone: 'erasedZone' as const,
+                  sourceIndex: item.idx,
+                  subtitle: `Zona Apagada • CT ${item.c.ct}`
+                }))
+            ];
+            if (zoneCandidates.length > 0) {
+              state.pendingChoiceQueue.push({
+                title: '«O Papai Chegou» — Menor Custo em Campo',
+                description:
+                  'Você possui o combatente de menor custo! Escolha 1 combatente de qualquer Zona para retornar ao seu campo:',
+                candidates: zoneCandidates,
+                minSelect: 1,
+                maxSelect: 1,
+                targetSlotForChosenCard: freeSlot,
+                effectKind: 'O_PAPAI_CHEGOU'
+              });
+            }
+          } else {
+            const deadIdx = lowWinner.deadZone.findIndex((c) => c.type === 'Combatente');
+            if (deadIdx !== -1) {
+              const [revived] = lowWinner.deadZone.splice(deadIdx, 1);
+              summonFighterToSlot(state, 'bot', revived, freeSlot);
+            } else {
+              const erasedIdx = lowWinner.erasedZone.findIndex((c) => c.type === 'Combatente');
+              if (erasedIdx !== -1) {
+                const [revived] = lowWinner.erasedZone.splice(erasedIdx, 1);
+                summonFighterToSlot(state, 'bot', revived, freeSlot);
+              }
+            }
+          }
+        }
+      }
+      break;
+    }
+
+    case '2026/0002/00319': { // Ritos do Festival
+      // "Selecione um combatente (não-Herói) do seu Deck e envie para a Zona Morta.
+      //  Após 2 rodadas, invoque-o em seu lado do campo, imune a efeitos de cartas na rodada em que for invocado."
+      discardCardDirectlyToZone(state, actorId, card, false);
+      if (actorId === 'player') {
+        const candidates: ChoiceCandidate[] = p.deck
+          .map((c, idx) => ({ c, idx }))
+          .filter((item) => item.c.type === 'Combatente' && !isTreatedAsHeroCard(p, item.c))
+          .map((item) => ({
+            id: `ritos_deck_${item.idx}`,
+            card: item.c,
+            sourceZone: 'deck' as const,
+            sourceIndex: item.idx,
+            subtitle: `Deck • ATK ${item.c.attack} / HP ${item.c.defense}`
+          }));
+        if (candidates.length > 0) {
+          state.pendingChoiceQueue.push({
+            title: '«Ritos do Festival» — Escolha 1 Combatente do Deck',
+            description:
+              'Selecione 1 combatente (não-Herói) do seu Deck para enviar à Zona Morta. Após 2 rodadas, ele será invocado imune a efeitos de cartas:',
+            candidates,
+            minSelect: 1,
+            maxSelect: 1,
+            effectKind: 'RITOS_DO_FESTIVAL'
+          });
+        }
+      } else {
+        const deckFighters = p.deck
+          .map((c, idx) => ({ c, idx }))
+          .filter((item) => item.c.type === 'Combatente' && !isTreatedAsHeroCard(p, item.c))
+          .sort((a, b) => scoreJimFighterForBot(state, b.c) - scoreJimFighterForBot(state, a.c));
+        if (deckFighters.length > 0) {
+          const chosenIdx = deckFighters[0].idx;
+          const [chosenCard] = p.deck.splice(chosenIdx, 1);
+          discardCardDirectlyToZone(state, 'bot', chosenCard, false);
+          p.pendingRitosFestival.push({
+            card: chosenCard,
+            summonOnRound: state.round + 2
+          });
+          addLog(
+            state,
+            'bot',
+            `🕯️ «Ritos do Festival»: Bot enviou «${chosenCard.name}» do Deck para a Zona Morta (será invocado na Rodada ${state.round + 2} imune a efeitos)!`,
+            'effect'
+          );
+        }
+      }
+      break;
+    }
+
+    case '2026/0002/00320': { // Ato Final
+      // "Envie seu Herói para as Zonas e cause 5 de Dano Primordial no Deck inimigo.
+      //  Caso o Herói possua «Mahina» em seu nome, retorne-o ao Deck de Herói na próxima rodada."
+      discardCardDirectlyToZone(state, actorId, card, false);
+      let sacrificedHero: CardData | null = null;
+
+      const fieldHeroSlot = p.frontline.findIndex((f) => f !== null && f.isHero);
+      if (fieldHeroSlot !== -1 && p.frontline[fieldHeroSlot]) {
+        sacrificedHero = p.frontline[fieldHeroSlot]!.card;
+        sendFighterFromFieldToZone(state, actorId, fieldHeroSlot, false, false);
+      } else if (p.heroDeck.length > 0) {
+        sacrificedHero = p.heroDeck.shift()!;
+        discardCardDirectlyToZone(state, actorId, sacrificedHero, false);
+      } else {
+        const handHeroIdx = p.hand.findIndex((c) => c.type === 'Herói' || isTreatedAsHeroCard(p, c));
+        if (handHeroIdx !== -1) {
+          sacrificedHero = p.hand.splice(handHeroIdx, 1)[0];
+          discardCardDirectlyToZone(state, actorId, sacrificedHero, false);
+        } else {
+          const deckHeroIdx = p.deck.findIndex((c) => c.type === 'Herói' || isTreatedAsHeroCard(p, c));
+          if (deckHeroIdx !== -1) {
+            sacrificedHero = p.deck.splice(deckHeroIdx, 1)[0];
+            discardCardDirectlyToZone(state, actorId, sacrificedHero, false);
+          }
+        }
+      }
+
+      if (sacrificedHero) {
+        addLog(
+          state,
+          actorId,
+          `🌑 «Ato Final»: ${p.name} enviou o Herói «${sacrificedHero.name}» para as Zonas!`,
+          'effect'
+        );
+        dealPrimordialDamageToDeck(state, actorId, oppId, 5, '«Ato Final»');
+
+        if (sacrificedHero.name.includes('Mahina')) {
+          p.pendingAtoFinalMahinaReturnRound = state.round + 1;
+          addLog(
+            state,
+            actorId,
+            `👑 «Ato Final»: Como «${sacrificedHero.name}» possui «Mahina» no nome, retornará ao Deck de Herói na Rodada ${state.round + 1}!`,
+            'info'
+          );
+        }
+      }
+      break;
+    }
+
+    case '2026/0002/00321': { // Festival de Sangue
+      // "Invoque 1 combatente «Véu» das suas Zonas ignorando custos. Ele ganha +5 de Ataque nesta rodada e é enviado para a Zona Apagada no fim do turno."
+      discardCardDirectlyToZone(state, actorId, card, false);
+      const freeSlot =
+        p.frontline[targetSlot] === null ? targetSlot : p.frontline.findIndex((s) => s === null);
+      if (freeSlot !== -1) {
+        const deadIdx = p.deadZone.findIndex(
+          (c) => c.type === 'Combatente' && (c.name.includes('Véu') || (c.archetype || '').includes('Véu'))
+        );
+        const erasedIdx = p.erasedZone.findIndex(
+          (c) => c.type === 'Combatente' && (c.name.includes('Véu') || (c.archetype || '').includes('Véu'))
+        );
+        let revived: CardData | null = null;
+        if (deadIdx !== -1) revived = p.deadZone.splice(deadIdx, 1)[0];
+        else if (erasedIdx !== -1) revived = p.erasedZone.splice(erasedIdx, 1)[0];
+
+        if (revived) {
+          summonFighterToSlot(state, actorId, revived, freeSlot);
+          const summoned = p.frontline[freeSlot];
+          if (summoned) {
+            summoned.tempAtkBonus += 5;
+            addLog(
+              state,
+              actorId,
+              `🩸 «Festival de Sangue»: Invocou «${revived.name}» com +5 de Ataque nesta rodada!`,
+              'summon'
+            );
+          }
+        }
+      }
+      break;
+    }
+
+    case '2026/0002/00323': { // Olho por Olho
+      // "Pague 5 de Vida de Jogador. Envie 1 combatente inimigo de custo igual ou menor que o número de cartas «Véu» em suas Zonas para a Zona Apagada."
+      discardCardDirectlyToZone(state, actorId, card, false);
+      if (p.hp > 5) {
+        p.hp -= 5;
+        const veuInZones =
+          p.deadZone.filter((c) => c.name.includes('Véu') || (c.archetype || '').includes('Véu')).length +
+          p.erasedZone.filter((c) => c.name.includes('Véu') || (c.archetype || '').includes('Véu')).length;
+        const enemyTarget =
+          opp.frontline[targetSlot] ||
+          opp.frontline.find((f) => f !== null && !f.isHero && f.card.ct <= Math.max(8, veuInZones * 2)) ||
+          opp.frontline.find((f) => f !== null && !f.isHero);
+        if (enemyTarget) {
+          addLog(
+            state,
+            actorId,
+            `👁️ «Olho por Olho»: ${p.name} pagou 5 PV e enviou «${enemyTarget.card.name}» de ${opp.name} para a Zona Apagada!`,
+            'effect'
+          );
+          sendFighterFromFieldToZone(state, oppId, enemyTarget.slotIndex, true, false);
+        }
+      }
+      break;
+    }
+
     default: {
-      p.deadZone.push(card);
+      discardCardDirectlyToZone(state, actorId, card, false);
       const desc = card.description || '';
       const lower = desc.toLowerCase();
       let triggeredAny = false;
@@ -4718,56 +5959,107 @@ export function getAvailableReactions(
   responderId: PlayerId,
   windowType: 'CARD_PLAYED' | 'ATTACK_DECLARED',
   triggerAuthorityCt = 0,
-  attackerIsSolador = false
+  attackerIsSolador = false,
+  onlyNegatableByHero = false
 ): {
   handCards: CardData[];
   canUseJimMagoFieldNegate: boolean;
+  canUseMahinaVeuFieldNegate: boolean;
+  canUseQuintaCamadaNegate: boolean;
   canSummonHeroJimLord: boolean;
 } {
   const resp = getPlayerState(state, responderId);
 
   if (windowType === 'ATTACK_DECLARED' && attackerIsSolador) {
-    return { handCards: [], canUseJimMagoFieldNegate: false, canSummonHeroJimLord: false };
+    return {
+      handCards: [],
+      canUseJimMagoFieldNegate: false,
+      canUseMahinaVeuFieldNegate: false,
+      canUseQuintaCamadaNegate: false,
+      canSummonHeroJimLord: false
+    };
   }
 
   const handCards: CardData[] = [];
 
-  for (const c of resp.hand) {
-    const effCt = getEffectiveCt(resp, c);
+  if (!onlyNegatableByHero) {
+    for (const c of resp.hand) {
+      const effCt = getEffectiveCt(resp, c, true);
 
-    if (c.code === '2025/0001/00029' && windowType === 'CARD_PLAYED') {
-      if (resp.hp > triggerAuthorityCt) {
-        handCards.push(c);
+      // Selamento Verdadeiro (2025/0001/00029): paga Vida equivalente ao CT da carta inimiga
+      if (c.code === '2025/0001/00029' && windowType === 'CARD_PLAYED') {
+        if (resp.hp > triggerAuthorityCt) {
+          handCards.push(c);
+        }
+        continue;
       }
-      continue;
-    }
 
-    if (resp.mana < effCt) continue;
+      if (resp.mana < effCt) continue;
 
-    if (windowType === 'ATTACK_DECLARED') {
-      if (c.code === '2025/0001/00023') {
-        const fightersCount = resp.frontline.filter((f) => f !== null).length;
-        if (fightersCount >= 2) handCards.push(c);
-      } else if (c.code === '2025/0001/00024') {
-        handCards.push(c);
-      } else if (c.code === '2025/0001/00028') {
-        const hasSwapCandidate =
-          resp.hand.some((hc) => hc.type === 'Combatente') ||
-          resp.erasedZone.some((ec) => ec.type === 'Combatente');
-        if (hasSwapCandidate) handCards.push(c);
-      }
-    } else {
-      const check = canPlayCardInMainPhase(state, responderId, c);
-      if (check.allowed) {
-        handCards.push(c);
+      if (windowType === 'ATTACK_DECLARED') {
+        if (c.code === '2025/0001/00023') {
+          const fightersCount = resp.frontline.filter((f) => f !== null).length;
+          if (fightersCount >= 2) handCards.push(c);
+        } else if (
+          c.code === '2025/0001/00024' || // Barreira Dimensional
+          c.code === '2025/0001/00112' || // Férias
+          c.code === '2026/0002/00317' || // Coragem ao Contrário
+          c.code === '2025/0001/00285'    // Sedução de Afrodite
+        ) {
+          handCards.push(c);
+        } else if (c.code === '2025/0001/00028') {
+          const hasSwapCandidate =
+            resp.hand.some((hc) => hc.type === 'Combatente') ||
+            resp.erasedZone.some((ec) => ec.type === 'Combatente');
+          if (hasSwapCandidate) handCards.push(c);
+        }
+      } else {
+        // CARD_PLAYED reactions
+        if (
+          c.code === '2026/0002/00322' || // Como Planejado
+          c.code === '2025/0001/00201'    // Negar na Base do Soco
+        ) {
+          handCards.push(c);
+        } else {
+          const check = canPlayCardInMainPhase(state, responderId, c);
+          if (check.allowed) {
+            handCards.push(c);
+          }
+        }
       }
     }
   }
 
   const canUseJimMagoFieldNegate =
+    !onlyNegatableByHero &&
     windowType === 'CARD_PLAYED' &&
     triggerAuthorityCt <= 8 &&
     resp.frontline.some((f) => f !== null && f.card.code === '2025/0001/00003');
+
+  // Mahina - O Arauto do Véu (2026/0001/00301):
+  // "A Qualquer Momento, você pode descartar uma carta com «Véu» em seu nome do seu lado do campo para a Zona Apagada para negar o uso de uma carta."
+  const hasMahinaVeuHeroOnField = resp.frontline.some(
+    (f) => f !== null && f.card.code === '2026/0001/00301'
+  );
+  const hasVeuCardOnFieldToDiscard =
+    resp.frontline.some(
+      (f) => f !== null && (f.card.name.includes('Véu') || hasArchetype(state, f, 'Véu'))
+    ) ||
+    resp.backrow.some((s) =>
+      getAllSupportCardsInSlot(s).some(
+        (c) => c.name.includes('Véu') || (c.archetype || '').includes('Véu')
+      )
+    );
+  const canUseMahinaVeuFieldNegate =
+    windowType === 'CARD_PLAYED' && hasMahinaVeuHeroOnField && hasVeuCardOnFieldToDiscard;
+
+  // Quinta Camada (2026/0002/00328):
+  // "Gaste 3 Runas para negar o uso de uma carta inimiga."
+  const canUseQuintaCamadaNegate =
+    !onlyNegatableByHero &&
+    windowType === 'CARD_PLAYED' &&
+    hasActiveCamada(resp, '2026/0002/00328') &&
+    resp.runes >= 3;
 
   // APENAS «Jim - O Senhor do Macroverso» (2025/0001/00001) pode ser invocado "A Qualquer Momento" / em Reação!
   const heroCard = resp.heroDeck[0];
@@ -4777,6 +6069,8 @@ export function getAvailableReactions(
   return {
     handCards,
     canUseJimMagoFieldNegate,
+    canUseMahinaVeuFieldNegate,
+    canUseQuintaCamadaNegate,
     canSummonHeroJimLord
   };
 }
@@ -5355,9 +6649,13 @@ export function evaluateBoardHeuristic(state: DuelGameState): HeuristicEvaluatio
   };
 }
 
-export function executeBotTurnStep(state: DuelGameState): {
+export function executeBotTurnStep(
+  state: DuelGameState,
+  deferAttackResolution = false
+): {
   acted: boolean;
   triggeredReactionWindow: boolean;
+  deferredBotAttack?: { attackerSlot: number; targetSlot: number };
 } {
   if (state.phase !== 'MAIN_PHASE' || state.activePlayer !== 'bot') {
     return { acted: false, triggeredReactionWindow: false };
@@ -5802,7 +7100,8 @@ export function executeBotTurnStep(state: DuelGameState): {
       return queueBotAttackWithReactionCheck(
         state,
         attackDecision.attackerSlot,
-        attackDecision.targetSlot
+        attackDecision.targetSlot,
+        deferAttackResolution
       );
     }
   }
@@ -5867,7 +7166,9 @@ function chooseBestBotAttack(
 
   const readyAttackers = bot.frontline.filter(
     (f): f is FieldFighter =>
-      f !== null && !f.hasAttackedThisTurn && getFighterEffectiveAtk(state, f, true) > 0
+      f !== null &&
+      f.attacksUsedThisTurn < getMaxAttacksPerTurn(state, bot, f) &&
+      getFighterEffectiveAtk(state, f, true) > 0
   );
   if (readyAttackers.length === 0) return null;
 
@@ -5900,17 +7201,12 @@ function chooseBestBotAttack(
       botHasAnciao && isJimCard(atk.card) && atk.card.code !== '2025/0001/00010';
     const atkLumenRed = countArchetypeStacks(state, atk, 'Lúmen') * 3;
 
-    // Protect key utility units from suiciding:
-    // - Jim - Rei Elfo waiting for next round summon
-    // - Jim - Ancião (board protector)
-    // - Jim - Mago (spell negator)
     const isProtectedUtility =
       (atk.card.code === '2025/0001/00005' && state.round === atk.summonedRound) ||
       atk.card.code === '2025/0001/00010' ||
       atk.card.code === '2025/0001/00003';
 
     for (const def of playerFighters) {
-      // Check if defender is immune due to Player's Jim - Ancião
       const defProtectedByPlayerAnciao =
         !atkIsSolador &&
         playerAnciao !== undefined &&
@@ -5918,43 +7214,41 @@ function chooseBestBotAttack(
         isJimCard(def.card);
 
       if (defProtectedByPlayerAnciao) {
-        continue; // Deals 0 damage — never waste an attack on an Ancião-protected target!
+        continue;
       }
 
-      const defLumenRed = atkIsSolador ? 0 : countArchetypeStacks(state, def, 'Lúmen') * 3;
+      // [Solador] ignora todas as outras cartas inimigas fora a carta alvo (como equipamentos acoplados ao alvo ou suporte),
+      // mas NÃO ignora os arquétipos da própria carta alvo (como [Lúmen] ou [Insano] da carta alvo)!
+      const defLumenRed =
+        countArchetypeStacks(state, def, 'Lúmen', atkIsSolador, atk.slotIndex) * 3;
       const netDmgToDef = Math.max(0, atkVal - defLumenRed);
-      if (netDmgToDef === 0) continue; // Deals 0 damage!
+      if (netDmgToDef === 0) continue;
 
       const killsDef = netDmgToDef >= def.currentHp;
-      const defAtkVal = getFighterEffectiveAtk(state, def, false);
+      const defAtkVal = getFighterEffectiveAtk(state, def, true, atkIsSolador);
       const netRetaliationDmg =
         atkIsFurtivo || atkProtectedByAnciao ? 0 : Math.max(0, defAtkVal - atkLumenRed);
       const insanoBacklash =
-        killsDef && !atkIsSolador && hasArchetype(state, def, 'Insano') ? 5 : 0;
+        killsDef && hasArchetype(state, def, 'Insano', atkIsSolador, atk.slotIndex) ? 5 : 0;
       const atkSurvives = atk.currentHp > netRetaliationDmg + insanoBacklash;
 
-      // Never suicide utility units!
       if (isProtectedUtility && !atkSurvives) continue;
 
       let score = 0;
 
-      // 1. Lethal on Player via Caos piercing!
       if (atkIsCaos && netDmgToDef > def.currentHp) {
         const pierce = netDmgToDef - def.currentHp;
         if (pierce >= player.hp) score += 10000;
         else score += pierce * 25;
       }
 
-      // 2. Clean Kill (kills defender and attacker survives!)
       if (killsDef && atkSurvives) {
         score += 500 + def.card.ct * 25 + defAtkVal * 15;
-        if (def.card.code === '2025/0001/00010') score += 300; // Killing Player's Ancião unlocks the board!
+        if (def.card.code === '2025/0001/00010') score += 300;
         if (def.isHero) score += 400;
-        if (atk.card.code === '2025/0001/00002') score += 180; // Jim - Guerreiro triggers 5 splash damage on kill!
-      }
-      // 3. Favorable Trade (kills defender, attacker dies)
-      else if (killsDef && !atkSurvives) {
-        const isFeiticeiraBomb = atk.card.code === '2025/0001/00009'; // Deals 8 extra dmg on death!
+        if (atk.card.code === '2025/0001/00002') score += 180;
+      } else if (killsDef && !atkSurvives) {
+        const isFeiticeiraBomb = atk.card.code === '2025/0001/00009';
         const defValue = def.isHero ? 500 : def.card.ct * 30 + defAtkVal * 12;
         const atkValue = atk.isHero ? 900 : atk.card.ct * 25 + atkVal * 10;
         if (isFeiticeiraBomb || defValue >= atkValue) {
@@ -5962,16 +7256,11 @@ function chooseBestBotAttack(
         } else {
           score -= 200;
         }
-      }
-      // 4. Safe Chip Damage (attacker takes 0 damage via Furtivo / Ancião / 0 ATK defender)
-      else if (netRetaliationDmg === 0) {
+      } else if (netRetaliationDmg === 0) {
         score += 150 + netDmgToDef * 15;
-      }
-      // 5. Coordinated Team Kill / Chip on high-priority target when attacker survives
-      else if (atkSurvives) {
+      } else if (atkSurvives) {
         score += 60 + netDmgToDef * 10 - netRetaliationDmg * 8;
       } else {
-        // Attacker dies and doesn't even kill defender -> Only do this with Jim - Feiticeira if it kills via 8 deathrattle!
         if (atk.card.code === '2025/0001/00009' && netDmgToDef + 8 >= def.currentHp) {
           score += 220;
         } else {
@@ -5992,15 +7281,13 @@ function chooseBestBotSummonSlot(state: DuelGameState, cardToSummon?: CardData):
   const bot = state.bot;
   const player = state.player;
 
-  // If summoning a fighter with Véu, align directly in front of the strongest Player fighter!
-  if (cardToSummon && cardToSummon.archetype.includes('Véu')) {
+  if (cardToSummon && (cardToSummon.archetype || '').includes('Véu')) {
     const enemyTargets = player.frontline
       .filter((f): f is FieldFighter => f !== null && bot.frontline[f.slotIndex] === null)
       .sort((a, b) => b.card.ct - a.card.ct);
     if (enemyTargets.length > 0) return enemyTargets[0].slotIndex;
   }
 
-  // Otherwise avoid columns where Player has a fighter with [Véu]
   for (let i = 0; i < 6; i++) {
     if (bot.frontline[i] === null) {
       const oppF = player.frontline[i];
@@ -6031,17 +7318,23 @@ function queueBotCardWithReactionCheck(
     isHero || isFighter ? 'summon' : 'effect'
   );
 
+  // Apoteose do Véu (2026/0002/00315): "Apenas efeitos de Heróis podem negar esta carta."
+  const onlyNegatableByHero = card.code === '2026/0002/00315';
+
   const playerReactions = getAvailableReactions(
     state,
     'player',
     'CARD_PLAYED',
     authorityCt,
-    false
+    false,
+    onlyNegatableByHero
   );
 
   const hasAnyPlayerReaction =
     playerReactions.handCards.length > 0 ||
     playerReactions.canUseJimMagoFieldNegate ||
+    playerReactions.canUseMahinaVeuFieldNegate ||
+    playerReactions.canUseQuintaCamadaNegate ||
     playerReactions.canSummonHeroJimLord;
 
   if (hasAnyPlayerReaction) {
@@ -6058,6 +7351,7 @@ function queueBotCardWithReactionCheck(
         : `Bot ativou «${card.name}» (CT ${authorityCt})`,
       effectiveCtOfTrigger: authorityCt,
       canBeNegatedByMaxCt: card.code === '2025/0001/00001' ? 12 : undefined,
+      onlyNegatableByHero,
       pendingPayload: (activeState: DuelGameState) => {
         resolveInsanisCardEffect(activeState, 'bot', card, targetSlot);
       }
@@ -6072,15 +7366,26 @@ function queueBotCardWithReactionCheck(
 function queueBotAttackWithReactionCheck(
   state: DuelGameState,
   attackerSlot: number,
-  targetSlot: number
-): { acted: boolean; triggeredReactionWindow: boolean } {
+  targetSlot: number,
+  deferAttackResolution = false
+): {
+  acted: boolean;
+  triggeredReactionWindow: boolean;
+  deferredBotAttack?: { attackerSlot: number; targetSlot: number };
+} {
   const attacker = state.bot.frontline[attackerSlot]!;
   const targetName =
     targetSlot === -1
       ? 'Você (Ataque Direto)'
       : `«${state.player.frontline[targetSlot]?.card.name || 'Alvo'}» (Coluna ${targetSlot + 1})`;
 
-  const attackerIsSolador = hasArchetype(state, attacker, 'Solador');
+  const attackerIsSolador = hasArchetype(
+    state,
+    attacker,
+    'Solador',
+    false,
+    targetSlot >= 0 ? targetSlot : undefined
+  );
 
   addLog(
     state,
@@ -6117,6 +7422,14 @@ function queueBotAttackWithReactionCheck(
     return { acted: true, triggeredReactionWindow: true };
   }
 
+  if (deferAttackResolution) {
+    return {
+      acted: true,
+      triggeredReactionWindow: false,
+      deferredBotAttack: { attackerSlot, targetSlot }
+    };
+  }
+
   executeCombatResolution(state, 'bot', attackerSlot, targetSlot);
   return { acted: true, triggeredReactionWindow: false };
 }
@@ -6133,23 +7446,42 @@ function canPlayerCounterNegateBotReaction(
 ): boolean {
   const p = state.player;
 
-  // If Bot used Selamento Verdadeiro, Player can counter-negate if Player has Selamento Verdadeiro OR pays double life (2 * L)
   if (isBotSelamento) {
     const doubleCost = Math.max(2, botSelamentoLifePaid * 2);
     return p.hp > doubleCost;
   }
 
-  // Player has Selamento Verdadeiro (00029) in hand and enough HP to pay botReactionAuthorityCt
   if (p.hand.some((c) => c.code === '2025/0001/00029') && p.hp > botReactionAuthorityCt) {
     return true;
   }
 
-  // Player has Jim - Mago (00003) on field and Bot's reaction card is an Effect card with CT <= 8
+  if (
+    p.hand.some((c) => c.code === '2026/0002/00322' && p.mana >= getEffectiveCt(p, c, true))
+  ) {
+    return true;
+  }
+
   if (
     botReactionCard.type === 'Efeito' &&
     botReactionAuthorityCt <= 8 &&
     p.frontline.some((f) => f !== null && f.card.code === '2025/0001/00003')
   ) {
+    return true;
+  }
+
+  if (
+    p.frontline.some((f) => f !== null && f.card.code === '2026/0001/00301') &&
+    (p.frontline.some((f) => f !== null && (f.card.name.includes('Véu') || hasArchetype(state, f, 'Véu'))) ||
+      p.backrow.some((s) =>
+        getAllSupportCardsInSlot(s).some(
+          (c) => c.name.includes('Véu') || (c.archetype || '').includes('Véu')
+        )
+      ))
+  ) {
+    return true;
+  }
+
+  if (hasActiveCamada(p, '2026/0002/00328') && p.runes >= 3) {
     return true;
   }
 
@@ -6182,67 +7514,226 @@ export function evaluateBotReactionToPlayerAction(
   }
 
   if (windowType === 'CARD_PLAYED') {
-    // 1. «Jim - Mago» (00003) on Bot's field: sacrifice to Erased Zone to negate Player Effect card (CT <= 8)
-    const highValueEffectCodes = new Set([
-      '2025/0001/00016', // Ascensão do Rei
-      '2025/0001/00017', // Busca Pela Eternidade
-      '2025/0001/00018', // Lamento do Rei
-      '2025/0001/00019', // Insanidade (if CT reduced <= 8)
-      '2025/0001/00020', // Fragmentar
-      '2025/0001/00021', // Portal dos Variantes
-      '2025/0001/00022', // Pacto Forçado
-      '2025/0001/00025', // Vingança Satisfatória
-      '2025/0001/00026', // Manipulação das Realidades
-      '2025/0001/00027', // Chamado da Variante
-      '2025/0001/00030'  // Destruição das Variantes
-    ]);
+    const onlyHeroCanNegate = playerCard.code === '2026/0002/00315'; // Apoteose do Véu
 
+    // 1A. «Mahina - O Arauto do Véu» (2026/0001/00301) em campo do Bot:
+    // "A Qualquer Momento, você pode descartar uma carta com «Véu» em seu nome do seu lado do campo para a Zona Apagada para negar o uso de uma carta."
+    const mahinaHeroOnBotField = bot.frontline.find(
+      (f) => f !== null && f.card.code === '2026/0001/00301'
+    );
+    const nonHeroVeuFighterSlot = bot.frontline.findIndex(
+      (f) =>
+        f !== null &&
+        !f.isHero &&
+        (f.card.name.includes('Véu') || hasArchetype(state, f, 'Véu'))
+    );
     if (
-      playerCard.type === 'Efeito' &&
-      playerCard.code !== '2025/0001/00029' &&
-      playerCardAuthorityCt <= 8 &&
-      (highValueEffectCodes.has(playerCard.code) || playerCardAuthorityCt >= 3)
+      mahinaHeroOnBotField &&
+      nonHeroVeuFighterSlot !== -1 &&
+      (playerCard.type === 'Herói' || playerCardAuthorityCt >= 4 || isContinuousBackrowCard(playerCard))
     ) {
-      const magoSlot = bot.frontline.findIndex(
-        (f) => f !== null && f.card.code === '2025/0001/00003'
+      const sacrificedVeu = bot.frontline[nonHeroVeuFighterSlot]!.card;
+      sendFighterFromFieldToZone(state, 'bot', nonHeroVeuFighterSlot, true, false);
+      addLog(
+        state,
+        'bot',
+        `🛡️ Reação «A Qualquer Momento» do Bot! «Mahina - O Arauto do Véu» descartou «${sacrificedVeu.name}» do campo para a Zona Apagada para NEGAR «${playerCard.name}»!`,
+        'reaction'
       );
-      if (magoSlot !== -1) {
-        const magoCard = bot.frontline[magoSlot]!.card;
-        sendFighterFromFieldToZone(state, 'bot', magoSlot, true, false);
+      return { botNegatedPlayerAction: true };
+    }
+
+    if (!onlyHeroCanNegate) {
+      // 1B. «Quinta Camada» (2026/0002/00328) em campo do Bot: Gasta 3 Runas para negar carta inimiga
+      if (
+        hasActiveCamada(bot, '2026/0002/00328') &&
+        bot.runes >= 3 &&
+        (playerCard.type === 'Herói' || playerCardAuthorityCt >= 4 || isContinuousBackrowCard(playerCard))
+      ) {
+        bot.runes -= 3;
         addLog(
           state,
           'bot',
-          `🛡️ Reação do Bot! Bot descartou «Jim - Mago» do campo para a Zona Apagada para NEGAR «${playerCard.name}»!`,
+          `🛡️ Reação do Bot! Bot gastou 3 Runas com «Quinta Camada» para NEGAR «${playerCard.name}» (Runas restantes: ${bot.runes})!`,
+          'reaction'
+        );
+        return { botNegatedPlayerAction: true };
+      }
+
+      // 1C. «Jim - Mago» (00003) on Bot's field: sacrifice to Erased Zone to negate Player Effect card (CT <= 8)
+      const highValueEffectCodes = new Set([
+        '2025/0001/00016', // Ascensão do Rei
+        '2025/0001/00017', // Busca Pela Eternidade
+        '2025/0001/00018', // Lamento do Rei
+        '2025/0001/00019', // Insanidade
+        '2025/0001/00020', // Fragmentar
+        '2025/0001/00021', // Portal dos Variantes
+        '2025/0001/00022', // Pacto Forçado
+        '2025/0001/00025', // Vingança Satisfatória
+        '2025/0001/00026', // Manipulação das Realidades
+        '2025/0001/00027', // Chamado da Variante
+        '2025/0001/00030', // Destruição das Variantes
+        '2025/0001/00116', // Alteração de Realidade
+        '2026/0002/00316', // AQUI FOI...
+        '2026/0002/00318', // O Papai Chegou
+        '2026/0002/00319', // Ritos do Festival
+        '2026/0002/00320'  // Ato Final
+      ]);
+
+      if (
+        playerCard.type === 'Efeito' &&
+        playerCard.code !== '2025/0001/00029' &&
+        playerCardAuthorityCt <= 8 &&
+        (highValueEffectCodes.has(playerCard.code) || playerCardAuthorityCt >= 3)
+      ) {
+        const magoSlot = bot.frontline.findIndex(
+          (f) => f !== null && f.card.code === '2025/0001/00003'
+        );
+        if (magoSlot !== -1) {
+          const magoCard = bot.frontline[magoSlot]!.card;
+          sendFighterFromFieldToZone(state, 'bot', magoSlot, true, false);
+          addLog(
+            state,
+            'bot',
+            `🛡️ Reação do Bot! Bot descartou «Jim - Mago» do campo para a Zona Apagada para NEGAR «${playerCard.name}»!`,
+            'reaction'
+          );
+
+          if (
+            onPlayerActionResolvedIfCountered &&
+            canPlayerCounterNegateBotReaction(state, magoCard, magoCard.ct, false, 0)
+          ) {
+            state.phase = 'CARD_REACTION';
+            state.reactionWindow = {
+              type: 'CARD_PLAYED',
+              sourceActor: 'bot',
+              responder: 'player',
+              triggerCard: magoCard,
+              triggerActionLabel: `⛓️ CORRENTE: Bot ativou «Jim - Mago» (CT ${magoCard.ct}) para negar «${playerCard.name}»!`,
+              effectiveCtOfTrigger: magoCard.ct,
+              isCounterChain: true,
+              pendingPayload: (activeState: DuelGameState) => {
+                sendCardToDeadOrErasedZone(activeState, 'player', playerCard);
+                addLog(
+                  activeState,
+                  'bot',
+                  `⛓️ Corrente encerrada: A negação de «Jim - Mago» do Bot prevaleceu e «${playerCard.name}» foi negada!`,
+                  'reaction'
+                );
+              },
+              onNegatedPayload: (activeState: DuelGameState) => {
+                addLog(
+                  activeState,
+                  'player',
+                  `⛓️ CONTRA-NEGAÇÃO! Você anulou «Jim - Mago» do Bot na corrente! «${playerCard.name}» resolve normalmente!`,
+                  'reaction'
+                );
+                onPlayerActionResolvedIfCountered(activeState);
+              }
+            };
+            return { botNegatedPlayerAction: false, openedCounterChainWindow: true };
+          }
+
+          return { botNegatedPlayerAction: true };
+        }
+      }
+
+      // 2A. «Como Planejado» (2026/0002/00322, CT 6) na mão do Bot:
+      // "Negue o uso de uma carta e envie-a para a sua Zona Apagada. Na próxima rodada, use-a sem pagar custos."
+      const comoPlanejadoIdx = bot.hand.findIndex((c) => c.code === '2026/0002/00322');
+      if (comoPlanejadoIdx !== -1) {
+        const cpCard = bot.hand[comoPlanejadoIdx];
+        const cpCost = getEffectiveCt(bot, cpCard, true);
+        const worthStealing =
+          playerCard.type === 'Herói' ||
+          isContinuousBackrowCard(playerCard) ||
+          playerCardAuthorityCt >= 3;
+        if (bot.mana >= cpCost && worthStealing) {
+          bot.hand.splice(comoPlanejadoIdx, 1);
+          bot.mana -= cpCost;
+          discardCardDirectlyToZone(state, 'bot', cpCard, false);
+
+          // Envia a carta negada do jogador para a Zona Apagada do Bot e agenda para a próxima rodada!
+          bot.erasedZone.push(playerCard);
+          bot.pendingComoPlanejadoCards.push({
+            card: playerCard,
+            readyOnRound: state.round + 1
+          });
+
+          addLog(
+            state,
+            'bot',
+            `🛡️ Reação do Bot! Bot ativou «Como Planejado» (CT ${cpCost}) para NEGAR «${playerCard.name}», enviou-a para a Zona Apagada do Bot e irá usá-la sem custos na Rodada ${state.round + 1}!`,
+            'reaction'
+          );
+          return { botNegatedPlayerAction: true };
+        }
+      }
+
+      // 2B. «Selamento Verdadeiro» (00029) in Bot's hand: pay life equal to Player's card CT to negate!
+      const selamentoIdx = bot.hand.findIndex((c) => c.code === '2025/0001/00029');
+      const isCriticalCardToNegate =
+        playerCard.type === 'Herói' ||
+        isContinuousBackrowCard(playerCard) ||
+        playerCard.code === '2025/0001/00019' || // Insanidade
+        playerCard.code === '2025/0001/00030' || // Destruição das Variantes
+        playerCard.code === '2025/0001/00018' || // Lamento do Rei
+        playerCard.code === '2025/0001/00012' || // Crueldade
+        playerCard.code === '2025/0001/00022' || // Pacto Forçado
+        playerCard.code === '2025/0001/00026' || // Manipulação das Realidades
+        playerCard.code === '2025/0001/00116' || // Alteração de Realidade
+        playerCard.code === '2026/0002/00316' || // AQUI FOI...
+        playerCard.code === '2026/0002/00318' || // O Papai Chegou
+        playerCard.code === '2026/0002/00320' || // Ato Final
+        playerCardAuthorityCt >= 4;
+
+      if (
+        selamentoIdx !== -1 &&
+        isCriticalCardToNegate &&
+        bot.hp > playerCardAuthorityCt + 3
+      ) {
+        const [selamento] = bot.hand.splice(selamentoIdx, 1);
+        bot.hp -= playerCardAuthorityCt;
+        addLog(
+          state,
+          'bot',
+          `🛡️ Reação «A Qualquer Momento» do Bot! Bot ativou «Selamento Verdadeiro» pagando ${playerCardAuthorityCt} PV para NEGAR «${playerCard.name}»!`,
           'reaction'
         );
 
         if (
           onPlayerActionResolvedIfCountered &&
-          canPlayerCounterNegateBotReaction(state, magoCard, magoCard.ct, false, 0)
+          canPlayerCounterNegateBotReaction(state, selamento, 0, true, playerCardAuthorityCt)
         ) {
+          const doubleLifeCost = Math.max(2, playerCardAuthorityCt * 2);
           state.phase = 'CARD_REACTION';
           state.reactionWindow = {
             type: 'CARD_PLAYED',
             sourceActor: 'bot',
             responder: 'player',
-            triggerCard: magoCard,
-            triggerActionLabel: `⛓️ CORRENTE: Bot ativou «Jim - Mago» (CT ${magoCard.ct}) para negar «${playerCard.name}»!`,
-            effectiveCtOfTrigger: magoCard.ct,
+            triggerCard: selamento,
+            triggerActionLabel: `⛓️ CORRENTE: Bot usou «Selamento Verdadeiro» (pagou ${playerCardAuthorityCt} PV) para negar «${playerCard.name}»!`,
+            effectiveCtOfTrigger: 0,
+            isSelamentoTrigger: true,
+            selamentoLifePaid: playerCardAuthorityCt,
+            selamentoDoubleLifeCost: doubleLifeCost,
             isCounterChain: true,
             pendingPayload: (activeState: DuelGameState) => {
+              discardCardDirectlyToZone(activeState, 'bot', selamento, false);
               sendCardToDeadOrErasedZone(activeState, 'player', playerCard);
               addLog(
                 activeState,
                 'bot',
-                `⛓️ Corrente encerrada: A negação de «Jim - Mago» do Bot prevaleceu e «${playerCard.name}» foi negada!`,
+                `⛓️ Corrente encerrada: «Selamento Verdadeiro» do Bot prevaleceu e «${playerCard.name}» foi negada!`,
                 'reaction'
               );
             },
             onNegatedPayload: (activeState: DuelGameState) => {
+              discardCardDirectlyToZone(activeState, 'bot', selamento, false);
               addLog(
                 activeState,
                 'player',
-                `⛓️ CONTRA-NEGAÇÃO! Você anulou «Jim - Mago» do Bot na corrente! «${playerCard.name}» resolve normalmente!`,
+                `⛓️ CONTRA-NEGAÇÃO! Você anulou o «Selamento Verdadeiro» do Bot na corrente! «${playerCard.name}» resolve normalmente!`,
                 'reaction'
               );
               onPlayerActionResolvedIfCountered(activeState);
@@ -6251,79 +7742,9 @@ export function evaluateBotReactionToPlayerAction(
           return { botNegatedPlayerAction: false, openedCounterChainWindow: true };
         }
 
+        discardCardDirectlyToZone(state, 'bot', selamento, false);
         return { botNegatedPlayerAction: true };
       }
-    }
-
-    // 2. «Selamento Verdadeiro» (00029) in Bot's hand: pay life equal to Player's card CT to negate!
-    const selamentoIdx = bot.hand.findIndex((c) => c.code === '2025/0001/00029');
-    const isCriticalCardToNegate =
-      playerCard.type === 'Herói' ||
-      playerCard.code === '2025/0001/00019' || // Insanidade
-      playerCard.code === '2025/0001/00030' || // Destruição das Variantes
-      playerCard.code === '2025/0001/00018' || // Lamento do Rei
-      playerCard.code === '2025/0001/00012' || // Crueldade
-      playerCard.code === '2025/0001/00022' || // Pacto Forçado
-      playerCard.code === '2025/0001/00026' || // Manipulação das Realidades
-      playerCardAuthorityCt >= 5;
-
-    if (
-      selamentoIdx !== -1 &&
-      isCriticalCardToNegate &&
-      bot.hp > playerCardAuthorityCt + 3
-    ) {
-      const [selamento] = bot.hand.splice(selamentoIdx, 1);
-      bot.hp -= playerCardAuthorityCt;
-      addLog(
-        state,
-        'bot',
-        `🛡️ Reação «A Qualquer Momento» do Bot! Bot ativou «Selamento Verdadeiro» pagando ${playerCardAuthorityCt} PV para NEGAR «${playerCard.name}»!`,
-        'reaction'
-      );
-
-      if (
-        onPlayerActionResolvedIfCountered &&
-        canPlayerCounterNegateBotReaction(state, selamento, 0, true, playerCardAuthorityCt)
-      ) {
-        const doubleLifeCost = Math.max(2, playerCardAuthorityCt * 2);
-        state.phase = 'CARD_REACTION';
-        state.reactionWindow = {
-          type: 'CARD_PLAYED',
-          sourceActor: 'bot',
-          responder: 'player',
-          triggerCard: selamento,
-          triggerActionLabel: `⛓️ CORRENTE: Bot usou «Selamento Verdadeiro» (pagou ${playerCardAuthorityCt} PV) para negar «${playerCard.name}»!`,
-          effectiveCtOfTrigger: 0,
-          isSelamentoTrigger: true,
-          selamentoLifePaid: playerCardAuthorityCt,
-          selamentoDoubleLifeCost: doubleLifeCost,
-          isCounterChain: true,
-          pendingPayload: (activeState: DuelGameState) => {
-            activeState.bot.deadZone.push(selamento);
-            sendCardToDeadOrErasedZone(activeState, 'player', playerCard);
-            addLog(
-              activeState,
-              'bot',
-              `⛓️ Corrente encerrada: «Selamento Verdadeiro» do Bot prevaleceu e «${playerCard.name}» foi negada!`,
-              'reaction'
-            );
-          },
-          onNegatedPayload: (activeState: DuelGameState) => {
-            activeState.bot.deadZone.push(selamento);
-            addLog(
-              activeState,
-              'player',
-              `⛓️ CONTRA-NEGAÇÃO! Você anulou o «Selamento Verdadeiro» do Bot na corrente! «${playerCard.name}» resolve normalmente!`,
-              'reaction'
-            );
-            onPlayerActionResolvedIfCountered(activeState);
-          }
-        };
-        return { botNegatedPlayerAction: false, openedCounterChainWindow: true };
-      }
-
-      bot.deadZone.push(selamento);
-      return { botNegatedPlayerAction: true };
     }
 
     // 3. Reactive Hero Summon ("A Qualquer Momento") — APENAS «Jim - O Senhor do Macroverso» (2025/0001/00001) possui "Invoque a qualquer momento"!
@@ -6369,6 +7790,68 @@ export function evaluateBotReactionToPlayerAction(
       }
     }
 
+    // 1B. «Coragem ao Contrário» (2026/0002/00317, CT 3) ou «Férias» (2025/0001/00112, CT 4) em resposta a ataque letal ou direto!
+    if (!attackerIsSolador && attacker) {
+      const coragemIdx = bot.hand.findIndex((c) => c.code === '2026/0002/00317');
+      if (coragemIdx !== -1) {
+        const cost = getEffectiveCt(bot, bot.hand[coragemIdx], true);
+        const defender = targetSlot !== undefined && targetSlot >= 0 ? bot.frontline[targetSlot] : null;
+        const incomingDmg = getFighterEffectiveAtk(state, attacker, true);
+        if (
+          bot.mana >= cost &&
+          (targetSlot === -1 || (defender && incomingDmg >= defender.currentHp))
+        ) {
+          const [coragem] = bot.hand.splice(coragemIdx, 1);
+          bot.mana -= cost;
+          discardCardDirectlyToZone(state, 'bot', coragem, false);
+          if (defender && !defender.isHero) {
+            bot.frontline[defender.slotIndex] = null;
+            for (const eq of defender.equipments) discardCardDirectlyToZone(state, 'bot', eq.card, false);
+            bot.hand.push(defender.card);
+          }
+          const drawn = bot.deck.shift();
+          if (drawn) bot.hand.push(drawn);
+          attacker.attacksUsedThisTurn += 1;
+          attacker.hasAttackedThisTurn =
+            attacker.attacksUsedThisTurn >= getMaxAttacksPerTurn(state, state.player, attacker);
+          state.player.hasAttackedInCurrentTurn = true;
+          addLog(
+            state,
+            'bot',
+            `🛡️ Reação de Combate do Bot! Bot ativou «Coragem ao Contrário» (CT ${cost}), cancelou o ataque de «${attacker.card.name}» e comprou 1 carta!`,
+            'reaction'
+          );
+          return { botNegatedPlayerAction: true };
+        }
+      }
+
+      const feriasIdx = bot.hand.findIndex((c) => c.code === '2025/0001/00112');
+      if (feriasIdx !== -1) {
+        const cost = getEffectiveCt(bot, bot.hand[feriasIdx], true);
+        const defender = targetSlot !== undefined && targetSlot >= 0 ? bot.frontline[targetSlot] : null;
+        const incomingDmg = getFighterEffectiveAtk(state, attacker, true);
+        if (
+          bot.mana >= cost &&
+          (targetSlot === -1 || (defender && incomingDmg >= defender.currentHp))
+        ) {
+          const [ferias] = bot.hand.splice(feriasIdx, 1);
+          bot.mana -= cost;
+          discardCardDirectlyToZone(state, 'bot', ferias, false);
+          attacker.attacksUsedThisTurn += 1;
+          attacker.hasAttackedThisTurn =
+            attacker.attacksUsedThisTurn >= getMaxAttacksPerTurn(state, state.player, attacker);
+          state.player.hasAttackedInCurrentTurn = true;
+          addLog(
+            state,
+            'bot',
+            `🛡️ Reação de Combate do Bot! Bot ativou «Férias» (CT ${cost}) e negou o ataque de «${attacker.card.name}»!`,
+            'reaction'
+          );
+          return { botNegatedPlayerAction: true };
+        }
+      }
+    }
+
     if (targetSlot !== undefined && targetSlot >= 0 && attacker && !attackerIsSolador) {
       const defender = bot.frontline[targetSlot];
       if (defender) {
@@ -6377,10 +7860,10 @@ export function evaluateBotReactionToPlayerAction(
         const netIncoming = Math.max(0, incomingDmg - defLumenRed);
 
         if (netIncoming >= defender.currentHp) {
-          // 2A. «Ligação das Variantes» (2025/0001/00023, CT 1): Redirect attack to a tanky ally (Hero, Ancião, Jim - Herói)!
+          // 2A. «Ligação das Variantes» (2025/0001/00023, CT 1)
           const ligacaoIdx = bot.hand.findIndex((c) => c.code === '2025/0001/00023');
           if (ligacaoIdx !== -1) {
-            const cost = getEffectiveCt(bot, bot.hand[ligacaoIdx]);
+            const cost = getEffectiveCt(bot, bot.hand[ligacaoIdx], true);
             const tankAlly = bot.frontline.find(
               (f) =>
                 f !== null &&
@@ -6390,7 +7873,7 @@ export function evaluateBotReactionToPlayerAction(
             if (bot.mana >= cost && tankAlly) {
               const [ligacao] = bot.hand.splice(ligacaoIdx, 1);
               bot.mana -= cost;
-              bot.deadZone.push(ligacao);
+              discardCardDirectlyToZone(state, 'bot', ligacao, false);
               const fA = bot.frontline[targetSlot]!;
               const fB = bot.frontline[tankAlly.slotIndex]!;
               bot.frontline[targetSlot] = { ...fB, slotIndex: targetSlot };
@@ -6405,10 +7888,10 @@ export function evaluateBotReactionToPlayerAction(
             }
           }
 
-          // 2B. «Disfarce de Mestre» (2025/0001/00028, CT 7): Swap defender with a strong Jim from Hand or Erased Zone!
+          // 2B. «Disfarce de Mestre» (2025/0001/00028, CT 7)
           const disfarceIdx = bot.hand.findIndex((c) => c.code === '2025/0001/00028');
           if (disfarceIdx !== -1 && !defender.isHero) {
-            const cost = getEffectiveCt(bot, bot.hand[disfarceIdx]);
+            const cost = getEffectiveCt(bot, bot.hand[disfarceIdx], true);
             if (bot.mana >= cost) {
               const swapCandidates = [
                 ...bot.erasedZone
@@ -6427,7 +7910,7 @@ export function evaluateBotReactionToPlayerAction(
               if (swapCandidates.length > 0) {
                 const [disfarce] = bot.hand.splice(disfarceIdx, 1);
                 bot.mana -= cost;
-                bot.deadZone.push(disfarce);
+                discardCardDirectlyToZone(state, 'bot', disfarce, false);
                 const chosen = swapCandidates[0];
                 if (chosen.zone === 'erased') {
                   const eIdx = bot.erasedZone.indexOf(chosen.card);
@@ -6449,25 +7932,31 @@ export function evaluateBotReactionToPlayerAction(
             }
           }
 
-          // 2C. «Sobrevivência Covarde» (2025/0001/00024, CT 3): Negate attack and return defender to Deck!
+          // 2C. «Sobrevivência Covarde» (2025/0001/00024, CT 3)
           const sobrevIdx = bot.hand.findIndex((c) => c.code === '2025/0001/00024');
           if (sobrevIdx !== -1 && !defender.isHero) {
-            const cost = getEffectiveCt(bot, bot.hand[sobrevIdx]);
+            const cost = getEffectiveCt(bot, bot.hand[sobrevIdx], true);
             if (bot.mana >= cost) {
               const [sobrev] = bot.hand.splice(sobrevIdx, 1);
               bot.mana -= cost;
 
               const executeSobrevivencia = (activeState: DuelGameState) => {
-                activeState.bot.deadZone.push(sobrev);
+                discardCardDirectlyToZone(activeState, 'bot', sobrev, false);
                 const curDef = activeState.bot.frontline[targetSlot];
                 if (curDef) {
                   activeState.bot.frontline[targetSlot] = null;
-                  for (const eq of curDef.equipments) activeState.bot.deadZone.push(eq.card);
+                  for (const eq of curDef.equipments) {
+                    discardCardDirectlyToZone(activeState, 'bot', eq.card, false);
+                  }
                   activeState.bot.deck.push(curDef.card);
                   activeState.bot.deck = shuffleCards(activeState.bot.deck);
                 }
                 if (attackerSlot !== undefined && activeState.player.frontline[attackerSlot]) {
-                  activeState.player.frontline[attackerSlot]!.hasAttackedThisTurn = true;
+                  const attF = activeState.player.frontline[attackerSlot]!;
+                  attF.attacksUsedThisTurn += 1;
+                  attF.hasAttackedThisTurn =
+                    attF.attacksUsedThisTurn >=
+                    getMaxAttacksPerTurn(activeState, activeState.player, attF);
                   activeState.player.hasAttackedInCurrentTurn = true;
                 }
               };
@@ -6502,7 +7991,7 @@ export function evaluateBotReactionToPlayerAction(
                     );
                   },
                   onNegatedPayload: (activeState: DuelGameState) => {
-                    activeState.bot.deadZone.push(sobrev);
+                    discardCardDirectlyToZone(activeState, 'bot', sobrev, false);
                     addLog(
                       activeState,
                       'player',

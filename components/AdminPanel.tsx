@@ -400,7 +400,30 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
       setHomeSettings({ ...homeSettings, exclusiveProducts: np });
     } catch (err: any) {
       console.error(err);
-      alert('Erro ao enviar arquivo de mídia: ' + (err.message || err));
+      setError('Erro ao enviar arquivo de mídia: ' + (err.message || err));
+    } finally {
+      setUploadingProductMedia(null);
+      setLoading(false);
+    }
+  };
+
+  const handleUploadVariationMedia = async (productIndex: number, variationIndex: number, file: File) => {
+    const uploadKey = `var-${productIndex}-${variationIndex}`;
+    setUploadingProductMedia(uploadKey);
+    setLoading(true);
+    try {
+      const fileRef = ref(storage, `home_images/var_${Date.now()}_${file.name}`);
+      await uploadBytes(fileRef, file);
+      const url = await getDownloadURL(fileRef);
+
+      const np = [...(homeSettings.exclusiveProducts || [])];
+      if (np[productIndex] && Array.isArray(np[productIndex].priceVariations) && np[productIndex].priceVariations[variationIndex]) {
+        np[productIndex].priceVariations[variationIndex].imageUrl = url;
+        setHomeSettings({ ...homeSettings, exclusiveProducts: np });
+      }
+    } catch (err: any) {
+      console.error(err);
+      setError('Erro ao enviar foto da variação: ' + (err.message || err));
     } finally {
       setUploadingProductMedia(null);
       setLoading(false);
@@ -1606,12 +1629,81 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
                                   {/* Lista de Variações Existentes */}
                                   {prod.priceVariations && prod.priceVariations.length > 0 ? (
                                     <div className="flex flex-col gap-3">
+                                      {/* Modo de Preço: Preços Iguais vs Preços Independentes */}
+                                      <div className="bg-slate-900 border border-slate-800 px-3.5 py-2.5 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                                        <span className="text-xs font-bold text-slate-200">
+                                          Modo de Preço das Variações:
+                                        </span>
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              const np = [...(homeSettings.exclusiveProducts || [])];
+                                              np[i].sameVariationPrice = true;
+                                              const baseP = np[i].price || np[i].priceVariations?.[0]?.price || 'R$ 89,90';
+                                              np[i].price = baseP;
+                                              np[i].priceVariations = (np[i].priceVariations || []).map((pv: any) => ({
+                                                ...pv,
+                                                price: baseP
+                                              }));
+                                              setHomeSettings({ ...homeSettings, exclusiveProducts: np });
+                                            }}
+                                            className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition ${
+                                              prod.sameVariationPrice
+                                                ? 'bg-emerald-600/30 border-emerald-400 text-emerald-200'
+                                                : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200'
+                                            }`}
+                                          >
+                                            Preços Iguais ({prod.price || prod.priceVariations?.[0]?.price || 'R$ 89,90'} em todas)
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              const np = [...(homeSettings.exclusiveProducts || [])];
+                                              np[i].sameVariationPrice = false;
+                                              setHomeSettings({ ...homeSettings, exclusiveProducts: np });
+                                            }}
+                                            className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition ${
+                                              !prod.sameVariationPrice
+                                                ? 'bg-amber-500/25 border-amber-400 text-amber-200'
+                                                : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200'
+                                            }`}
+                                          >
+                                            Preços Independentes por Variação
+                                          </button>
+                                        </div>
+                                      </div>
+
+                                      {prod.sameVariationPrice && (
+                                        <div className="bg-slate-900/80 border border-emerald-500/40 px-3.5 py-2.5 rounded-xl flex items-center justify-between gap-3">
+                                          <span className="text-xs font-bold text-emerald-300">
+                                            Preço Único Aplicado a Todas as Variações (R$):
+                                          </span>
+                                          <input
+                                            type="text"
+                                            value={prod.price || ''}
+                                            onChange={(e) => {
+                                              const val = e.target.value;
+                                              const np = [...(homeSettings.exclusiveProducts || [])];
+                                              np[i].price = val;
+                                              np[i].priceVariations = (np[i].priceVariations || []).map((pv: any) => ({
+                                                ...pv,
+                                                price: val
+                                              }));
+                                              setHomeSettings({ ...homeSettings, exclusiveProducts: np });
+                                            }}
+                                            placeholder="Ex: R$ 89,90"
+                                            className="w-44 bg-slate-950 border border-emerald-500/60 rounded p-1.5 text-emerald-300 font-mono font-bold text-xs"
+                                          />
+                                        </div>
+                                      )}
+
                                       <div className="bg-amber-950/30 border border-amber-500/30 px-3 py-2 rounded-lg flex items-center justify-between text-xs text-amber-300 font-mono">
                                         <span>
-                                          ✨ {prod.priceVariations.length} {prod.priceVariations.length === 1 ? 'variação configurada' : 'variações configuradas'} para este deck:
+                                          ✨ {prod.priceVariations.length} {prod.priceVariations.length === 1 ? 'variação configurada' : 'variações configuradas'} para este produto:
                                         </span>
                                         <span className="text-emerald-400 font-bold">
-                                          {prod.priceVariations.map((v: any) => `${v.name || 'Sem nome'}: ${v.price || 'R$ 0,00'}`).join('  |  ')}
+                                          {prod.priceVariations.map((v: any) => `${v.name || 'Sem nome'}: ${prod.sameVariationPrice ? (prod.price || v.price || 'R$ 0,00') : (v.price || 'R$ 0,00')}`).join('  |  ')}
                                         </span>
                                       </div>
 
@@ -1626,9 +1718,12 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
                                                 {vIdx + 1}
                                               </span>
                                               <span>{v.name || `Variação #${vIdx + 1}`}</span>
-                                              {v.price && (
+                                              {(prod.sameVariationPrice ? prod.price : v.price) && (
                                                 <span className="ml-2 text-emerald-400 font-mono text-xs font-bold">
-                                                  ({v.price.startsWith('R$') ? v.price : `R$ ${v.price}`})
+                                                  ({(() => {
+                                                    const p = prod.sameVariationPrice ? (prod.price || v.price) : v.price;
+                                                    return p.startsWith('R$') ? p : `R$ ${p}`;
+                                                  })()})
                                                 </span>
                                               )}
                                             </span>
@@ -1683,6 +1778,56 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
                                             </div>
                                           </div>
 
+                                          {/* Foto Independente da Variação */}
+                                          <div className="bg-slate-950 border border-slate-800 rounded-lg p-2.5 flex flex-col sm:flex-row sm:items-center gap-3">
+                                            <div className="w-14 h-14 rounded bg-black border border-slate-700 overflow-hidden shrink-0 flex items-center justify-center">
+                                              {v.imageUrl ? (
+                                                <img src={v.imageUrl} alt={v.name} className="w-full h-full object-contain" />
+                                              ) : (
+                                                <ImageIcon size={18} className="text-slate-600" />
+                                              )}
+                                            </div>
+                                            <div className="flex-1 space-y-1.5">
+                                              <label className="text-[11px] text-purple-300 font-bold block">
+                                                Foto Independente desta Variação (opcional)
+                                              </label>
+                                              <div className="flex items-center gap-2">
+                                                <input
+                                                  type="text"
+                                                  value={v.imageUrl || ''}
+                                                  onChange={(e) => {
+                                                    const np = [...(homeSettings.exclusiveProducts || [])];
+                                                    np[i].priceVariations[vIdx].imageUrl = e.target.value;
+                                                    setHomeSettings({ ...homeSettings, exclusiveProducts: np });
+                                                  }}
+                                                  placeholder="URL da foto específica desta variação (https://...)"
+                                                  className="flex-1 bg-slate-900 border border-slate-700 rounded p-1.5 text-xs text-white"
+                                                />
+                                                <label className="bg-purple-600 hover:bg-purple-500 text-white text-xs px-3 py-1.5 rounded cursor-pointer transition flex items-center gap-1.5 font-bold shrink-0">
+                                                  {uploadingProductMedia === `var-${i}-${vIdx}` ? (
+                                                    <Loader2 size={13} className="animate-spin" />
+                                                  ) : (
+                                                    <Upload size={13} />
+                                                  )}
+                                                  <span>
+                                                    {uploadingProductMedia === `var-${i}-${vIdx}` ? 'Subindo...' : 'Subir Foto'}
+                                                  </span>
+                                                  <input
+                                                    type="file"
+                                                    accept="image/*"
+                                                    className="hidden"
+                                                    onChange={(e) => {
+                                                      if (e.target.files?.[0]) {
+                                                        handleUploadVariationMedia(i, vIdx, e.target.files[0]);
+                                                        e.target.value = '';
+                                                      }
+                                                    }}
+                                                  />
+                                                </label>
+                                              </div>
+                                            </div>
+                                          </div>
+
                                           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                                             <div>
                                               <label className="text-[11px] text-slate-400 block mb-1">Nome da Variação</label>
@@ -1699,16 +1844,19 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
                                               />
                                             </div>
                                             <div>
-                                              <label className="text-[11px] text-slate-400 block mb-1">Preço (R$)</label>
+                                              <label className="text-[11px] text-slate-400 block mb-1">
+                                                {prod.sameVariationPrice ? 'Preço (Igual p/ Todas)' : 'Preço Independente (R$)'}
+                                              </label>
                                               <input
                                                 type="text"
-                                                value={v.price || ''}
+                                                disabled={Boolean(prod.sameVariationPrice)}
+                                                value={prod.sameVariationPrice ? (prod.price || v.price || '') : (v.price || '')}
                                                 onChange={(e) => {
                                                   const np = [...(homeSettings.exclusiveProducts || [])];
                                                   np[i].priceVariations[vIdx].price = e.target.value;
                                                   setHomeSettings({...homeSettings, exclusiveProducts: np});
                                                 }}
-                                                className="w-full bg-slate-950 border border-emerald-500/50 rounded p-2 text-emerald-300 font-mono font-bold text-xs"
+                                                className="w-full bg-slate-950 border border-emerald-500/50 rounded p-2 text-emerald-300 font-mono font-bold text-xs disabled:opacity-60"
                                                 placeholder="Ex: R$ 89,90 ou R$ 149,90"
                                               />
                                             </div>

@@ -10,7 +10,8 @@ import {
   where,
   onSnapshot
 } from 'firebase/firestore';
-import { db, auth, readBrowserCache, writeBrowserCache } from './firebase';
+import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { db, auth, storage, readBrowserCache, writeBrowserCache } from './firebase';
 import {
   CartItem,
   ExclusiveProduct,
@@ -275,14 +276,17 @@ export function buildCartItemFromProduct(
     }
   }
 
-  const rawPrice = chosenVar ? chosenVar.price : product.price || 'R$ 89,90';
+  const rawPrice =
+    chosenVar && !product.sameVariationPrice && chosenVar.price && chosenVar.price.trim() !== ''
+      ? chosenVar.price
+      : product.price || chosenVar?.price || 'R$ 89,90';
   const unitPrice = parseBRLPrice(rawPrice) || 89.9;
   const productId = product.id || product.title.toLowerCase().replace(/[^a-z0-9]+/g, '-');
   const variationName = chosenVar?.name;
   const cartItemId = `${productId}__${variationName || 'padrao'}`;
 
-  let imageUrl = product.mediaUrl;
-  if (product.mediaList && product.mediaList.length > 0) {
+  let imageUrl = chosenVar?.imageUrl?.trim() || product.mediaUrl;
+  if (!chosenVar?.imageUrl?.trim() && product.mediaList && product.mediaList.length > 0) {
     const firstImage = product.mediaList.find((m) => m.type === 'image' && m.url);
     imageUrl = firstImage?.url || product.mediaList[0]?.url || imageUrl;
   }
@@ -1036,9 +1040,62 @@ export async function deleteMarketplaceSellerReview(reviewId: string): Promise<v
   }
 }
 
-// --- ADICIONAR / CONVERTER PRODUTO OFICIAL DIRETO NO CATÁLOGO OFICIAL (CONTA ADMIN) ---
+// --- UPLOAD DE FOTO DE PRODUTO / VARIAÇÃO (FIREBASE STORAGE COM FALLBACK COMPRIMIDO) ---
+async function compressImageToDataUrl(file: File, maxDimension = 1000, quality = 0.82): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let width = img.width;
+        let height = img.height;
+        if (width > height && width > maxDimension) {
+          height = Math.round((height * maxDimension) / width);
+          width = maxDimension;
+        } else if (height >= width && height > maxDimension) {
+          width = Math.round((width * maxDimension) / height);
+          height = maxDimension;
+        }
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          resolve(String(e.target?.result || ''));
+          return;
+        }
+        ctx.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      };
+      img.onerror = (err) => reject(err);
+      img.src = String(e.target?.result || '');
+    };
+    reader.onerror = (err) => reject(err);
+    reader.readAsDataURL(file);
+  });
+}
+
+export async function uploadMarketplaceImage(
+  file: File,
+  folder: string = 'product_media'
+): Promise<string> {
+  const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+  const path = `${folder}/${Date.now()}_${Math.random().toString(36).slice(2, 7)}_${safeName}`;
+  try {
+    const fileRef = storageRef(storage, path);
+    await uploadBytes(fileRef, file);
+    const downloadUrl = await getDownloadURL(fileRef);
+    return downloadUrl;
+  } catch (storageErr) {
+    console.warn('Fallback para imagem comprimida em base64 (Storage restrito ou indisponível):', storageErr);
+    return await compressImageToDataUrl(file, 900, 0.8);
+  }
+}
+
+// --- ADICIONAR / ATUALIZAR / CONVERTER PRODUTO OFICIAL DIRETO NO CATÁLOGO OFICIAL (CONTA ADMIN) ---
 export async function saveOfficialProductToStore(
-  product: ExclusiveProduct
+  product: ExclusiveProduct,
+  editingProductId?: string
 ): Promise<ExclusiveProduct[]> {
   const path = 'homeSettings/global';
   try {
@@ -1048,40 +1105,81 @@ export async function saveOfficialProductToStore(
       ? [...currentSettings.exclusiveProducts]
       : [];
 
+    const normalizedVariations = Array.isArray(product.priceVariations)
+      ? product.priceVariations
+          .filter((v) => v && v.name && v.name.trim() !== '')
+          .map((v, idx) => ({
+            id: v.id || `var_${Date.now()}_${idx}`,
+            name: v.name.trim(),
+            price: product.sameVariationPrice
+              ? product.price || v.price || 'R$ 49,90'
+              : v.price || product.price || 'R$ 49,90',
+            imageUrl: v.imageUrl || '',
+            description: v.description || '',
+            badge: v.badge || '',
+            buttonLink: v.buttonLink || '',
+            isDefault: idx === 0 ? true : Boolean(v.isDefault),
+            stock: v.stock !== undefined ? Number(v.stock) : undefined,
+            weightGrams: v.weightGrams || product.weightGrams || 250
+          }))
+      : [];
+
+    const prodId =
+      editingProductId ||
+      product.id ||
+      `prod_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+
     const cleanProd: ExclusiveProduct = JSON.parse(
       JSON.stringify({
-        isActive: true,
+        id: prodId,
+        isActive: product.isActive !== false,
         title: product.title,
         category: product.category || 'Produto Oficial',
         storeCategory: product.storeCategory || 'decks',
         description: product.description || '',
-        price: product.price || 'R$ 49,90',
+        price: product.price || normalizedVariations[0]?.price || 'R$ 49,90',
         originalPrice: product.originalPrice || '',
         mediaType: product.mediaType || 'image',
-        mediaUrl: product.mediaUrl || 'https://i.imgur.com/cDLxOtO.png',
+        mediaUrl: product.mediaUrl || normalizedVariations[0]?.imageUrl || 'https://i.imgur.com/cDLxOtO.png',
         mediaList:
           product.mediaList && product.mediaList.length > 0
             ? product.mediaList
             : [
                 {
-                  url: product.mediaUrl || 'https://i.imgur.com/cDLxOtO.png',
+                  url: product.mediaUrl || normalizedVariations[0]?.imageUrl || 'https://i.imgur.com/cDLxOtO.png',
                   type: product.mediaType || 'image'
                 }
               ],
         buttonText: product.buttonText || 'Comprar Agora',
-        buttonLink: '', // Vazio para usar Carrinho Interno + Mercado Pago Oficial
+        buttonLink: product.buttonLink || '',
         badge: product.badge || 'OFICIAL LIGHT DARK',
         cardCodes: product.cardCodes || '',
         isPreOrder: Boolean(product.isPreOrder),
         preOrderReleaseDate: product.preOrderReleaseDate || '',
         isPromotion: Boolean(product.isPromotion),
-        stockCount: product.stockCount ?? 50,
+        stock: product.stock ?? (product as any).stockCount ?? 50,
         weightGrams: product.weightGrams || 250,
-        variations: product.variations || []
+        freeShipping: Boolean(product.freeShipping),
+        sameVariationPrice: Boolean(product.sameVariationPrice),
+        priceVariations: normalizedVariations
       })
     );
 
-    const updatedList = [cleanProd, ...existingList];
+    let updatedList: ExclusiveProduct[];
+    if (editingProductId) {
+      const idx = existingList.findIndex(
+        (p) => p.id === editingProductId || p.title === editingProductId
+      );
+      if (idx >= 0) {
+        updatedList = [...existingList];
+        updatedList[idx] = cleanProd;
+      } else {
+        updatedList = [cleanProd, ...existingList];
+      }
+    } else {
+      updatedList = [cleanProd, ...existingList];
+    }
+
     const updatedSettings = {
       ...currentSettings,
       exclusiveProducts: updatedList
@@ -1126,6 +1224,11 @@ export async function convertMarketplaceListingToOfficialProduct(
     }
   }
 
+  const allPhotos = [
+    listing.imageUrl,
+    ...(Array.isArray(listing.additionalImages) ? listing.additionalImages : [])
+  ].filter((u) => u && u.trim() !== '');
+
   const officialProduct: ExclusiveProduct = {
     isActive: true,
     title: listing.title,
@@ -1139,19 +1242,24 @@ export async function convertMarketplaceListingToOfficialProduct(
     description: listing.description,
     price: formatBRL(listing.price),
     mediaType: 'image',
-    mediaUrl: listing.imageUrl || 'https://i.imgur.com/cDLxOtO.png',
-    mediaList: [
-      {
-        url: listing.imageUrl || 'https://i.imgur.com/cDLxOtO.png',
-        type: 'image'
-      }
-    ],
+    mediaUrl: allPhotos[0] || 'https://i.imgur.com/cDLxOtO.png',
+    mediaList:
+      allPhotos.length > 0
+        ? allPhotos.map((url) => ({ url, type: 'image' as const }))
+        : [
+            {
+              url: 'https://i.imgur.com/cDLxOtO.png',
+              type: 'image'
+            }
+          ],
     buttonText: 'Comprar Agora',
     buttonLink: '',
     badge: listing.isFoil ? 'FOIL OFICIAL' : 'OFICIAL LIGHT DARK',
     cardCodes,
-    stockCount: listing.stockQuantity || 10,
-    weightGrams: listing.listingType === 'single_card' ? 50 : 250
+    stock: listing.stockQuantity || 10,
+    weightGrams: listing.listingType === 'single_card' ? 50 : 250,
+    sameVariationPrice: Boolean(listing.sameVariationPrice),
+    priceVariations: listing.priceVariations || []
   };
 
   await saveOfficialProductToStore(officialProduct);
