@@ -668,12 +668,25 @@ export function normalizeHeroText(val: string | undefined | null): string {
 export function getHeroIdentity(heroName: string | undefined | null): string | null {
   const norm = normalizeHeroText(heroName);
   if (!norm) return null;
+
+  // Prioriza casos onde o personagem principal é Vellret (ex: "Spear Vellret", "Vellret Escolhido de Salazar", "Vellret - Condenado do Jim")
+  if (norm.includes('vellret') || norm.startsWith('spear')) return 'vellret';
+
+  // Prioriza o nome principal no início do título antes de buscar citações no sufixo
+  if (norm.startsWith('mahina')) return 'mahina';
+  if (norm.startsWith('jenos')) return 'jenos';
+  if (norm.startsWith('donnie')) return 'donnie';
+  if (norm.startsWith('salazar')) return 'salazar';
+  if (norm.startsWith('selena')) return 'selena';
+  if (norm.startsWith('jim')) return 'jim';
+  if (norm.startsWith('otto')) return 'otto';
+  if (norm.startsWith('asmonious')) return 'asmonious';
+
   if (norm.includes('mahina')) return 'mahina';
   if (norm.includes('jenos')) return 'jenos';
   if (norm.includes('donnie')) return 'donnie';
   if (norm.includes('salazar')) return 'salazar';
   if (norm.includes('selena')) return 'selena';
-  if (norm.includes('vellret') || norm.includes('spear')) return 'vellret';
   if (norm.includes('jim')) return 'jim';
   if (norm.includes('otto')) return 'otto';
   if (norm.includes('asmonious')) return 'asmonious';

@@ -257,14 +257,31 @@ export function isCamadaCard(card: CardData): boolean {
   return card.name.includes('Camada');
 }
 
+export function isTreatedAsHeroCard(p: PlayerDuelState, card: CardData): boolean {
+  if (card.type === 'Herói') return true;
+  if (Array.isArray(p.floquinhoTreatedAsHeroCodes) && p.floquinhoTreatedAsHeroCodes.includes(card.code)) {
+    return true;
+  }
+  return false;
+}
+
 export function isContinuousBackrowCard(card: CardData): boolean {
   const desc = (card.description || '').toLowerCase();
-  if (card.type === 'Equipamento' && desc.includes('equipa o jogador')) {
+  if (
+    card.type === 'Equipamento' &&
+    (desc.includes('equipa o jogador') ||
+      desc.includes('equipado no jogador') ||
+      desc.includes('equipe no jogador') ||
+      isCamadaCard(card) ||
+      card.name.includes('Conceito Fogo') ||
+      card.name.includes('Base ARC'))
+  ) {
     return true;
   }
   if (
     card.code === '2025/0001/00016' ||
     card.code === '2025/0001/00017' ||
+    card.code === '2025/0001/00110' ||
     card.code === '2026/0002/00315'
   ) {
     return true;
@@ -609,18 +626,34 @@ export function createInitialDuelState(
   };
 }
 
+function summarizeEssentialLog(raw: string): string {
+  return raw
+    .replace(/Autoridade CT/gi, 'CT')
+    .replace(/\s*disparou obrigatoriamente!/gi, ':')
+    .replace(/\s*em vez da Zona Morta/gi, '')
+    .replace(/\s*\(\d+\s*«Jim» na Zona Apagada\)/gi, '')
+    .replace(/\s*\(Total:\s*\d+\s*Runas?\)/gi, '')
+    .replace(/\s*\(Runas restantes:\s*\d+\)/gi, '')
+    .replace(/\s*→\s*Sua carta tem CT maior e resolve ANTES!/gi, ' (resolve primeiro)')
+    .replace(/\s*→\s*CT menor ou igual ao do jogador do turno:[^.]*\./gi, ' (resolve depois)')
+    .replace(/^===\s*(.*?)\s*===$/g, '$1')
+    .trim();
+}
+
 export function addLog(
   state: DuelGameState,
   actor: PlayerId | 'system',
   text: string,
   type: DuelLogType = 'info'
 ) {
+  const cleanText = summarizeEssentialLog(text);
+  if (!cleanText) return;
   state.logs.unshift({
     id: nextUid('log'),
     round: state.round,
     turn: state.turnInRound,
     actor,
-    text,
+    text: cleanText,
     type
   });
 }
@@ -1309,7 +1342,9 @@ export function getFighterEffectiveAtk(
       }
     }
     for (const s of ownerState.backrow) {
-      if (s && s.card.name.includes('Longinus')) longinusCount++;
+      for (const c of getAllSupportCardsInSlot(s)) {
+        if (c.name.includes('Longinus')) longinusCount++;
+      }
     }
     atk += longinusCount * 5;
   }
@@ -1416,7 +1451,15 @@ export function getFighterEffectiveAtk(
 /**
  * Quantidade máxima de ataques que um combatente pode realizar no turno atual.
  */
-export function getMaxAttacksPerTurn(state: DuelGameState, fighter: FieldFighter): number {
+export function getMaxAttacksPerTurn(
+  state: DuelGameState,
+  fighterOrOwner: FieldFighter | PlayerState,
+  maybeFighter?: FieldFighter
+): number {
+  const fighter: FieldFighter | undefined =
+    maybeFighter ||
+    (fighterOrOwner && 'card' in fighterOrOwner ? (fighterOrOwner as FieldFighter) : undefined);
+  if (!fighter || !fighter.card) return 1;
   const owner = getPlayerState(state, fighter.owner);
 
   // Crystal Caótica do Véu (2026/0001/00306):
@@ -2144,54 +2187,62 @@ export function equipSupportOrCamadaToBackrow(
 ): boolean {
   const owner = getPlayerState(state, ownerId);
 
-  // Regra das Camadas: "Como todas equipam o jogador, elas podem ser empilhadas no mesmo espaço!"
-  if (isCamadaCard(card)) {
-    if (
-      preferredSlot >= 0 &&
-      preferredSlot < 6 &&
-      owner.backrow[preferredSlot] !== null &&
-      isCamadaCard(owner.backrow[preferredSlot]!.card)
-    ) {
-      const targetSup = owner.backrow[preferredSlot]!;
+  // O Bot (ou qualquer efeito automático com preferredSlot === -1) SEMPRE empilha Camadas e equipamentos de jogador na mesma área!
+  if (ownerId === 'bot' || preferredSlot === -1) {
+    const existingStackSlot = owner.backrow.findIndex((s) => s !== null);
+    if (existingStackSlot !== -1) {
+      const targetSup = owner.backrow[existingStackSlot]!;
       targetSup.stackedCards = targetSup.stackedCards || [];
       targetSup.stackedCards.push(card);
       addLog(
         state,
         ownerId,
-        `✨ ${owner.name} empilhou «${card.name}» na Zona de Suporte ${preferredSlot + 1} (${countCamadasOnField(owner)} «Camada(s)» em seu lado do campo).`,
-        'effect'
-      );
-      return true;
-    }
-
-    const existingCamadaSlot = owner.backrow.findIndex(
-      (s) => s !== null && isCamadaCard(s.card)
-    );
-    if (
-      existingCamadaSlot !== -1 &&
-      (preferredSlot === -1 || !owner.backrow.some((s) => s === null))
-    ) {
-      const targetSup = owner.backrow[existingCamadaSlot]!;
-      targetSup.stackedCards = targetSup.stackedCards || [];
-      targetSup.stackedCards.push(card);
-      addLog(
-        state,
-        ownerId,
-        `✨ ${owner.name} empilhou «${card.name}» na Zona de Suporte ${existingCamadaSlot + 1} (${countCamadasOnField(owner)} «Camada(s)» em seu lado do campo).`,
+        `✨ ${owner.name} empilhou «${card.name}» na Área de Efeito/Equipamento ${existingStackSlot + 1} (${
+          getAllSupportCardsInSlot(targetSup).length
+        } cartas nesta área).`,
         'effect'
       );
       return true;
     }
   }
 
+  // Qualquer carta que equipa o jogador / permanece na área de efeito/equipamento pode ser empilhada na mesma área escolhida pelo jogador!
+  if (preferredSlot >= 0 && preferredSlot < 6 && owner.backrow[preferredSlot] !== null) {
+    const targetSup = owner.backrow[preferredSlot]!;
+    targetSup.stackedCards = targetSup.stackedCards || [];
+    targetSup.stackedCards.push(card);
+    addLog(
+      state,
+      ownerId,
+      `✨ ${owner.name} empilhou «${card.name}» na Área de Efeito/Equipamento ${preferredSlot + 1} (${
+        getAllSupportCardsInSlot(targetSup).length
+      } cartas nesta área).`,
+      'effect'
+    );
+    return true;
+  }
+
   const slot =
+    ownerId !== 'bot' &&
     preferredSlot >= 0 &&
     preferredSlot < 6 &&
     owner.backrow[preferredSlot] === null
       ? preferredSlot
       : owner.backrow.findIndex((s) => s === null);
 
-  if (slot === -1) return false;
+  if (slot === -1) {
+    // Caso todas as 6 áreas estejam ocupadas, empilha na primeira área
+    const fallbackSup = owner.backrow[0]!;
+    fallbackSup.stackedCards = fallbackSup.stackedCards || [];
+    fallbackSup.stackedCards.push(card);
+    addLog(
+      state,
+      ownerId,
+      `✨ ${owner.name} empilhou «${card.name}» na Área de Efeito/Equipamento 1.`,
+      'effect'
+    );
+    return true;
+  }
 
   owner.backrow[slot] = {
     instanceId: nextUid('sup'),
@@ -2205,7 +2256,7 @@ export function equipSupportOrCamadaToBackrow(
   addLog(
     state,
     ownerId,
-    `✨ ${owner.name} equipou/ativou «${card.name}» na Zona de Suporte ${slot + 1}${
+    `✨ ${owner.name} equipou/ativou «${card.name}» na Área de Efeito/Equipamento ${slot + 1}${
       isCamadaCard(card) ? ` (${countCamadasOnField(owner)} «Camada(s)» em seu lado do campo)` : ''
     }.`,
     'effect'
@@ -3509,11 +3560,14 @@ export function processStartOfRound(state: DuelGameState) {
               `🎯 «Como Planejado»: A carta «${plannedCard.name}» da Zona Apagada foi usada automaticamente sem custo para ${p.name}!`,
               'effect'
             );
+            const existingBackrowSlot = p.backrow.findIndex((s) => s !== null);
             const targetSlot =
               plannedCard.type === 'Combatente' || plannedCard.type === 'Herói'
                 ? p.frontline.findIndex((s) => s === null)
                 : isContinuousBackrowCard(plannedCard)
-                ? p.backrow.findIndex((s) => s === null)
+                ? existingBackrowSlot !== -1
+                  ? existingBackrowSlot
+                  : 0
                 : 0;
             resolveInsanisCardEffect(state, pid, plannedCard, Math.max(0, targetSlot));
           } else {
@@ -4127,7 +4181,12 @@ export function hasPlayerAnytimeActionsAvailable(state: DuelGameState): boolean 
     return true;
   }
   if (
-    p.backrow.some((s) => s !== null && s.card.code === '2025/0001/00017' && !s.usedOncePerRound) &&
+    p.backrow.some(
+      (s) =>
+        s !== null &&
+        !s.usedOncePerRound &&
+        getAllSupportCardsInSlot(s).some((c) => c.code === '2025/0001/00017')
+    ) &&
     p.deck.some((c) => c.ct === p.runes)
   ) {
     return true;
@@ -4179,14 +4238,16 @@ export function processStartOfTurn(state: DuelGameState) {
     const opp = getPlayerState(state, oppId);
 
     for (const s of p.backrow) {
-      if (s && s.card.code === '2025/0001/00017') {
-        p.runes += 1;
-        addLog(
-          state,
-          pid,
-          `«Busca Pela Eternidade»: ${p.name} recebeu +1 Runa (Total: ${p.runes} Runas).`,
-          'effect'
-        );
+      for (const c of getAllSupportCardsInSlot(s)) {
+        if (c.code === '2025/0001/00017') {
+          p.runes += 1;
+          addLog(
+            state,
+            pid,
+            `«Busca Pela Eternidade»: ${p.name} recebeu +1 Runa (Total: ${p.runes} Runas).`,
+            'effect'
+          );
+        }
       }
     }
 
@@ -4207,7 +4268,12 @@ export function processStartOfTurn(state: DuelGameState) {
       if (f.card.code === '2025/0001/00033' && pid === state.activePlayer) {
         const destinadosCount =
           p.frontline.filter((af) => af !== null && /destinad[oa]/i.test(af.card.name)).length +
-          p.backrow.filter((as) => as !== null && /destinad[oa]/i.test(as.card.name)).length;
+          p.backrow.reduce(
+            (acc, as) =>
+              acc +
+              getAllSupportCardsInSlot(as).filter((c) => /destinad[oa]/i.test(c.name)).length,
+            0
+          );
         let drawnExtra = 0;
         for (let i = 0; i < destinadosCount && p.deck.length > 0; i++) {
           p.hand.push(p.deck.shift()!);
@@ -4555,19 +4621,7 @@ export function canPlayCardInMainPhase(
   }
 
   if (isContinuousBackrowCard(card)) {
-    // Camadas podem ser empilhadas no mesmo espaço de qualquer outra Camada já em campo!
-    if (isCamadaCard(card)) {
-      const canStackOrPlace =
-        p.backrow.some((s) => s === null) ||
-        p.backrow.some((s) => s !== null && isCamadaCard(s.card));
-      if (!canStackOrPlace) {
-        return { allowed: false, reason: 'Suas 6 zonas de suporte atrás estão cheias.' };
-      }
-      return { allowed: true };
-    }
-    if (!p.backrow.some((s) => s === null)) {
-      return { allowed: false, reason: 'Suas 6 zonas de suporte atrás estão cheias.' };
-    }
+    // Cartas que equipam o jogador / permanecem em campo podem ser colocadas em qualquer espaço ou empilhadas no mesmo espaço!
     return { allowed: true };
   }
 
@@ -6802,8 +6856,9 @@ export function executeBotTurnStep(
       const [card] = bot.hand.splice(continuousIdx, 1);
       const cost = getEffectiveCt(bot, card);
       bot.mana -= cost;
-      const backSlot = bot.backrow.findIndex((s) => s === null);
-      return queueBotCardWithReactionCheck(state, card, backSlot !== -1 ? backSlot : 0, cost);
+      const existingBackSlot = bot.backrow.findIndex((s) => s !== null);
+      const backSlot = existingBackSlot !== -1 ? existingBackSlot : 0;
+      return queueBotCardWithReactionCheck(state, card, backSlot, cost);
     }
 
     // 1D. ERASED ZONE TURBO COMBO: «Destruição das Variantes» (00030) & «Jim - Necromante» (0011)
@@ -7167,7 +7222,8 @@ function chooseBestBotAttack(
   const readyAttackers = bot.frontline.filter(
     (f): f is FieldFighter =>
       f !== null &&
-      f.attacksUsedThisTurn < getMaxAttacksPerTurn(state, bot, f) &&
+      !f.hasAttackedThisTurn &&
+      (f.attacksThisTurnCount || 0) < getMaxAttacksPerTurn(state, f) &&
       getFighterEffectiveAtk(state, f, true) > 0
   );
   if (readyAttackers.length === 0) return null;
@@ -7655,9 +7711,10 @@ export function evaluateBotReactionToPlayerAction(
 
           // Envia a carta negada do jogador para a Zona Apagada do Bot e agenda para a próxima rodada!
           bot.erasedZone.push(playerCard);
+          if (!bot.pendingComoPlanejadoCards) bot.pendingComoPlanejadoCards = [];
           bot.pendingComoPlanejadoCards.push({
             card: playerCard,
-            readyOnRound: state.round + 1
+            triggerOnRound: state.round + 1
           });
 
           addLog(
@@ -7811,9 +7868,9 @@ export function evaluateBotReactionToPlayerAction(
           }
           const drawn = bot.deck.shift();
           if (drawn) bot.hand.push(drawn);
-          attacker.attacksUsedThisTurn += 1;
+          attacker.attacksThisTurnCount = (attacker.attacksThisTurnCount || 0) + 1;
           attacker.hasAttackedThisTurn =
-            attacker.attacksUsedThisTurn >= getMaxAttacksPerTurn(state, state.player, attacker);
+            attacker.attacksThisTurnCount >= getMaxAttacksPerTurn(state, attacker);
           state.player.hasAttackedInCurrentTurn = true;
           addLog(
             state,
@@ -7837,9 +7894,9 @@ export function evaluateBotReactionToPlayerAction(
           const [ferias] = bot.hand.splice(feriasIdx, 1);
           bot.mana -= cost;
           discardCardDirectlyToZone(state, 'bot', ferias, false);
-          attacker.attacksUsedThisTurn += 1;
+          attacker.attacksThisTurnCount = (attacker.attacksThisTurnCount || 0) + 1;
           attacker.hasAttackedThisTurn =
-            attacker.attacksUsedThisTurn >= getMaxAttacksPerTurn(state, state.player, attacker);
+            attacker.attacksThisTurnCount >= getMaxAttacksPerTurn(state, attacker);
           state.player.hasAttackedInCurrentTurn = true;
           addLog(
             state,
@@ -7953,10 +8010,9 @@ export function evaluateBotReactionToPlayerAction(
                 }
                 if (attackerSlot !== undefined && activeState.player.frontline[attackerSlot]) {
                   const attF = activeState.player.frontline[attackerSlot]!;
-                  attF.attacksUsedThisTurn += 1;
+                  attF.attacksThisTurnCount = (attF.attacksThisTurnCount || 0) + 1;
                   attF.hasAttackedThisTurn =
-                    attF.attacksUsedThisTurn >=
-                    getMaxAttacksPerTurn(activeState, activeState.player, attF);
+                    attF.attacksThisTurnCount >= getMaxAttacksPerTurn(activeState, attF);
                   activeState.player.hasAttackedInCurrentTurn = true;
                 }
               };

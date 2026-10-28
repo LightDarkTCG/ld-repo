@@ -11,8 +11,6 @@ import {
   Heart,
   HelpCircle,
   Lock,
-  PanelRightClose,
-  PanelRightOpen,
   Play,
   RotateCcw,
   ScrollText,
@@ -25,6 +23,7 @@ import {
   Zap
 } from 'lucide-react';
 import { useCards } from '../CardContext';
+import { allCards, archetypesList } from '../data';
 import { CardData } from '../types';
 import {
   BotAdaptiveMemory,
@@ -50,7 +49,6 @@ import {
   createInitialDuelState,
   discardCardDirectlyToZone,
   equipSupportOrCamadaToBackrow,
-  evaluateBoardHeuristic,
   evaluateBotReactionToPlayerAction,
   executeBotTurnStep,
   executeCombatResolution,
@@ -71,7 +69,6 @@ import {
   payDirectHeroSummonCost,
   performBotSmartMulligan,
   processStartOfTurn,
-  resetBotAdaptiveMemory,
   resolveInsanisCardEffect,
   resolveModernCardVersion,
   sendCardToDeadOrErasedZone,
@@ -89,7 +86,7 @@ interface DuelBotModalProps {
 const GEMA_1_ARCHETYPE_POOL = [...ALL_OFFICIAL_ARCHETYPES];
 
 export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) => {
-  const { cards: liveCards } = useCards();
+  const { cards: liveCards, archetypes: liveArchetypes } = useCards();
   const [deckMode, setDeckMode] = useState<'structural_29' | 'optimized_40'>('structural_29');
   const [playerDeckId, setPlayerDeckId] = useState<StructuralDeckId>('Insanis');
   const [botDeckSelection, setBotDeckSelection] = useState<BotDeckSelection>('Invasão do Caos');
@@ -101,9 +98,15 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
   const [selectedHandIndex, setSelectedHandIndex] = useState<number | null>(null);
   // Selected Player Fighter slot for attacking
   const [selectedAttackerSlot, setSelectedAttackerSlot] = useState<number | null>(null);
-  // Inspect card modal
+  // Inspect card modal (full-screen zoom)
   const [inspectedCard, setInspectedCard] = useState<CardData | null>(null);
   const [inspectedFighter, setInspectedFighter] = useState<FieldFighter | null>(null);
+  // Center Panel Card Preview (shows card when used by Bot/Player, in Reaction, or when clicked)
+  const [previewCard, setPreviewCard] = useState<CardData | null>(null);
+  const [previewFighter, setPreviewFighter] = useState<FieldFighter | null>(null);
+  const [previewBannerLabel, setPreviewBannerLabel] = useState<string>('Carta em Destaque');
+  const [previewSlotCards, setPreviewSlotCards] = useState<CardData[]>([]);
+  const lastAutoReactionKeyRef = useRef<string | null>(null);
   // Zone viewer modal
   const [zoneViewer, setZoneViewer] = useState<{
     title: string;
@@ -132,8 +135,8 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
   // Quick Rules helper modal
   const [showRulesModal, setShowRulesModal] = useState(false);
 
-  // Retractable Combat Log state
-  const [isLogOpen, setIsLogOpen] = useState<boolean>(true);
+  // Retractable Combat Log state (starts retracted on right edge per reference layout)
+  const [isLogOpen, setIsLogOpen] = useState<boolean>(false);
 
   // Pacing / Speed Control ('lento' | 'normal' | 'rapido')
   const [duelSpeed, setDuelSpeed] = useState<'lento' | 'normal' | 'rapido'>('normal');
@@ -494,7 +497,25 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
       }, 900);
     }
 
-    // Action Spotlight Banner for latest log entry
+    // Auto-populate Center Card Inspector / Reaction Panel when a NEW Reaction Window opens with a triggerCard
+    if (gameState.reactionWindow?.triggerCard) {
+      const rwKey = `${gameState.round}_${gameState.turnInRound}_${gameState.phase}_${gameState.reactionWindow.triggerCard.code}_${gameState.reactionWindow.triggerActionLabel}`;
+      if (lastAutoReactionKeyRef.current !== rwKey) {
+        lastAutoReactionKeyRef.current = rwKey;
+        setPreviewCard(gameState.reactionWindow.triggerCard);
+        setPreviewFighter(null);
+        setPreviewSlotCards([gameState.reactionWindow.triggerCard]);
+        setPreviewBannerLabel(
+          gameState.reactionWindow.sourceActor === 'bot'
+            ? 'Carta Usada pelo Bot'
+            : 'Carta em Reação'
+        );
+      }
+    } else {
+      lastAutoReactionKeyRef.current = null;
+    }
+
+    // Action Spotlight Banner & Auto Card Preview for latest log entry
     const latestLog = gameState.logs[0];
     if (
       latestLog &&
@@ -510,8 +531,25 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
         text: latestLog.text,
         type: latestLog.type
       });
+
+      // Extract card name «...» from log to show in Left Card Inspector Panel when Bot or Player uses a card
+      const matchCardName = latestLog.text.match(/«([^»]+)»/);
+      if (matchCardName && matchCardName[1]) {
+        const targetName = matchCardName[1].trim().toLowerCase();
+        const foundCard =
+          liveCards.find((c) => c.name.trim().toLowerCase() === targetName) ||
+          allCards.find((c) => c.name.trim().toLowerCase() === targetName);
+        if (foundCard) {
+          setPreviewCard(foundCard);
+          setPreviewFighter(null);
+          setPreviewSlotCards([foundCard]);
+          setPreviewBannerLabel(
+            latestLog.actor === 'bot' ? 'Carta Usada pelo Bot' : 'Carta em Uso'
+          );
+        }
+      }
     }
-  }, [gameState]);
+  }, [gameState, liveCards]);
 
   useEffect(() => {
     if (!actionSpotlight) return;
@@ -908,6 +946,72 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
     return resolved.imageUrl || card.imageUrl;
   };
 
+  // Helper to resolve Archetype Icon URL from Manual (liveArchetypes / archetypesList)
+  const getArchetypeIcon = (archName: string): string | undefined => {
+    const normalized = archName
+      .trim()
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '');
+    const pool = liveArchetypes && liveArchetypes.length > 0 ? liveArchetypes : archetypesList;
+    const found =
+      pool.find(
+        (a) =>
+          a.name
+            .trim()
+            .toLowerCase()
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '') === normalized
+      ) ||
+      archetypesList.find(
+        (a) =>
+          a.name
+            .trim()
+            .toLowerCase()
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '') === normalized
+      );
+    return found?.icon;
+  };
+
+  // Sanitize card description: convert <br> tags to line breaks and remove developer notes
+  const cleanCardDescription = (desc?: string): string => {
+    if (!desc) return '';
+    return desc
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/\s*\(Nota de Dev:[^)]*\)/gi, '')
+      .trim();
+  };
+
+  // Color rule for Fighter Attack & HP:
+  // Normal (equal to base) = White ('text-white')
+  // Loss (lower than base) = Red ('text-red-500')
+  // Gain (higher than base) = Green ('text-emerald-400')
+  const getStatColorClass = (currentVal: number, baseVal: number): string => {
+    if (currentVal > baseVal) return 'text-emerald-400';
+    if (currentVal < baseVal) return 'text-red-500';
+    return 'text-white';
+  };
+
+  // Show any clicked or used card in the Center Card Inspector / Reaction Panel
+  const showCardInPanel = (
+    card: CardData,
+    fighter: FieldFighter | null = null,
+    label = 'Carta Selecionada',
+    slotCards?: CardData[]
+  ) => {
+    setPreviewCard(card);
+    setPreviewFighter(fighter);
+    setPreviewBannerLabel(label);
+    if (slotCards && slotCards.length > 0) {
+      setPreviewSlotCards(slotCards);
+    } else if (fighter && fighter.equipments.length > 0) {
+      setPreviewSlotCards([card, ...fighter.equipments.map((e) => e.card)]);
+    } else {
+      setPreviewSlotCards([card]);
+    }
+  };
+
   const cloneState = (prev: DuelGameState): DuelGameState => ({
     ...prev,
     player: {
@@ -957,6 +1061,8 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
     setTrocaFirstSlot(null);
     setPendingGema1Play(null);
     setSelectedChoiceIds([]);
+    setPreviewCard(null);
+    setPreviewFighter(null);
     setHasAnalyzedCurrentMatch(false);
     setBotMemory(loadBotAdaptiveMemory());
     setGameState(createInitialDuelState(newMode, liveCards, newPlayerDeck, newBotDeck));
@@ -1220,7 +1326,7 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
           const cand = chosenCandidates[0];
           if (cand && removeCardFromZone(cand.sourceZone, cand.card)) {
             if (cand.sourceZone === 'deck') p.deck = shuffleCards(p.deck);
-            equipSupportOrCamadaToBackrow(next, 'player', cand.card, 0);
+            equipSupportOrCamadaToBackrow(next, 'player', cand.card, -1);
             addLog(
               next,
               'player',
@@ -1236,7 +1342,7 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
           if (cand && p.hp > 5 && removeCardFromZone(cand.sourceZone, cand.card)) {
             p.hp -= 5;
             if (cand.sourceZone === 'deck') p.deck = shuffleCards(p.deck);
-            equipSupportOrCamadaToBackrow(next, 'player', cand.card, 0);
+            equipSupportOrCamadaToBackrow(next, 'player', cand.card, -1);
             addLog(
               next,
               'player',
@@ -1794,10 +1900,9 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
             }
             if (rw.attackerSlot !== undefined && activeState.bot.frontline[rw.attackerSlot]) {
               const botAtt = activeState.bot.frontline[rw.attackerSlot]!;
-              botAtt.attacksUsedThisTurn += 1;
+              botAtt.attacksThisTurnCount = (botAtt.attacksThisTurnCount || 0) + 1;
               botAtt.hasAttackedThisTurn =
-                botAtt.attacksUsedThisTurn >=
-                getMaxAttacksPerTurn(activeState, activeState.bot, botAtt);
+                botAtt.attacksThisTurnCount >= getMaxAttacksPerTurn(activeState, botAtt);
               activeState.bot.hasAttackedInCurrentTurn = true;
             }
             addLog(
@@ -1817,10 +1922,9 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
           if (card.code === '2025/0001/00112' || card.code === '2025/0001/00285') {
             if (rw.attackerSlot !== undefined && activeState.bot.frontline[rw.attackerSlot]) {
               const botAtt = activeState.bot.frontline[rw.attackerSlot]!;
-              botAtt.attacksUsedThisTurn += 1;
+              botAtt.attacksThisTurnCount = (botAtt.attacksThisTurnCount || 0) + 1;
               botAtt.hasAttackedThisTurn =
-                botAtt.attacksUsedThisTurn >=
-                getMaxAttacksPerTurn(activeState, activeState.bot, botAtt);
+                botAtt.attacksThisTurnCount >= getMaxAttacksPerTurn(activeState, botAtt);
               activeState.bot.hasAttackedInCurrentTurn = true;
             }
             addLog(
@@ -1852,10 +1956,9 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
             }
             if (rw.attackerSlot !== undefined && activeState.bot.frontline[rw.attackerSlot]) {
               const botAtt = activeState.bot.frontline[rw.attackerSlot]!;
-              botAtt.attacksUsedThisTurn += 1;
+              botAtt.attacksThisTurnCount = (botAtt.attacksThisTurnCount || 0) + 1;
               botAtt.hasAttackedThisTurn =
-                botAtt.attacksUsedThisTurn >=
-                getMaxAttacksPerTurn(activeState, activeState.bot, botAtt);
+                botAtt.attacksThisTurnCount >= getMaxAttacksPerTurn(activeState, botAtt);
               activeState.bot.hasAttackedInCurrentTurn = true;
             }
             return;
@@ -1864,10 +1967,9 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
           if (card.code === '2025/0001/00028') {
             if (rw.attackerSlot !== undefined && activeState.bot.frontline[rw.attackerSlot]) {
               const botAtt = activeState.bot.frontline[rw.attackerSlot]!;
-              botAtt.attacksUsedThisTurn += 1;
+              botAtt.attacksThisTurnCount = (botAtt.attacksThisTurnCount || 0) + 1;
               botAtt.hasAttackedThisTurn =
-                botAtt.attacksUsedThisTurn >=
-                getMaxAttacksPerTurn(activeState, activeState.bot, botAtt);
+                botAtt.attacksThisTurnCount >= getMaxAttacksPerTurn(activeState, botAtt);
               activeState.bot.hasAttackedInCurrentTurn = true;
             }
 
@@ -2056,6 +2158,9 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
     const card = gameState.player.hand[idx];
     if (!card) return;
 
+    // Always show clicked card in Left Card Inspector Panel
+    showCardInPanel(card, null, 'Carta da Mão');
+
     if (gameState.phase === 'CARD_REACTION' || gameState.phase === 'COMBAT_REACTION') {
       const isPlayableReaction = availablePlayerReactions.handCards.some(
         (rc) => rc.code === card.code
@@ -2140,6 +2245,9 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
   // Click on Player Frontline Slot (0..5)
   const handlePlayerFrontSlotClick = (slotIndex: number) => {
     const slotFighter = gameState.player.frontline[slotIndex];
+    if (slotFighter && selectedHandIndex === null && pendingReactionHandIndex === null && !selectingSlotForHero) {
+      showCardInPanel(slotFighter.card, slotFighter, 'Combatente em Campo');
+    }
 
     if (gameState.pendingGuerreiroSplashDamage && slotFighter) {
       handleGuerreiroSplashTargetClick('player', slotIndex);
@@ -2317,17 +2425,12 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
 
   // Click on Player Backrow Support / Equipment Slot (0..5)
   const handlePlayerSupportSlotClick = (slotIndex: number) => {
-    const curBackSlot = gameState.player.backrow[slotIndex];
-
     if (gameState.phase === 'CARD_REACTION' && pendingReactionHandIndex !== null) {
       const reactCard = gameState.player.hand[pendingReactionHandIndex];
       if (!reactCard) return;
 
-      const canPlaceBackrow =
-        isContinuousBackrowCard(reactCard) &&
-        (curBackSlot === null || (isCamadaCard(reactCard) && isCamadaCard(curBackSlot.card)));
-
-      if (canPlaceBackrow) {
+      // Qualquer carta que equipa o jogador / permanece em campo pode ser colocada ou empilhada em qualquer espaço!
+      if (isContinuousBackrowCard(reactCard)) {
         executePlayerReactionCardOnSlot(pendingReactionHandIndex, slotIndex);
         return;
       }
@@ -2349,11 +2452,8 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
     const card = gameState.player.hand[selectedHandIndex];
     if (!card) return;
 
-    const canPlaceBackrow =
-      isContinuousBackrowCard(card) &&
-      (curBackSlot === null || (isCamadaCard(card) && isCamadaCard(curBackSlot.card)));
-
-    if (canPlaceBackrow) {
+    // Qualquer carta que equipa o jogador / permanece em campo pode ser colocada ou empilhada em qualquer espaço!
+    if (isContinuousBackrowCard(card)) {
       executePlayerCardPlay(selectedHandIndex, slotIndex);
       return;
     }
@@ -2543,7 +2643,7 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
           card: item.c,
           sourceZone: 'deck' as const,
           sourceIndex: item.idx,
-          subtitle: `Deck • CT ${item.c.ct}`
+          subtitle: `Deck • ${item.c.ct}`
         }));
 
       if (candidates.length === 0) {
@@ -2558,7 +2658,7 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
 
       sup.usedOncePerRound = true;
       next.pendingChoiceQueue.push({
-        title: `«Busca Pela Eternidade» (Suas Runas: ${exactRuneCt} → CT = ${exactRuneCt})`,
+        title: `«Busca Pela Eternidade» (Suas Runas: ${exactRuneCt})`,
         description: `Escolha 1 carta com CT igual a ${exactRuneCt} do seu Deck para colocar na sua mão (suas Runas não são gastas):`,
         candidates,
         minSelect: 1,
@@ -2572,6 +2672,9 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
   // Click on Bot Frontline Slot (0..5)
   const handleBotFrontSlotClick = (botSlotIndex: number) => {
     const enemyFighter = gameState.bot.frontline[botSlotIndex];
+    if (enemyFighter) {
+      showCardInPanel(enemyFighter.card, enemyFighter, 'Combatente do Bot');
+    }
 
     if (gameState.pendingGuerreiroSplashDamage && enemyFighter) {
       handleGuerreiroSplashTargetClick('bot', botSlotIndex);
@@ -2615,8 +2718,13 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
       }
     }
 
-    if (selectedAttackerSlot !== null && enemyFighter) {
-      handleDeclarePlayerAttack(selectedAttackerSlot, botSlotIndex);
+    if (selectedAttackerSlot !== null) {
+      if (enemyFighter) {
+        handleDeclarePlayerAttack(selectedAttackerSlot, botSlotIndex);
+      } else if (!gameState.bot.frontline.some((f) => f !== null)) {
+        // Campo do Bot vazio: clicar em qualquer espaço de combatente do Bot realiza Ataque Direto!
+        handleDeclarePlayerAttack(selectedAttackerSlot, -1);
+      }
     }
   };
 
@@ -2656,14 +2764,15 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
       return;
     }
 
-    const maxAttacks = getMaxAttacksPerTurn(gameState, gameState.player, currentAttacker);
-    if (currentAttacker.attacksUsedThisTurn >= maxAttacks) {
+    const maxAttacks = getMaxAttacksPerTurn(gameState, currentAttacker);
+    const usedAttacks = currentAttacker.attacksThisTurnCount || 0;
+    if (currentAttacker.hasAttackedThisTurn || usedAttacks >= maxAttacks) {
       setGameState((prev) => {
         const next = cloneState(prev);
         addLog(
           next,
           'system',
-          `«${currentAttacker.card.name}» já realizou todos os seus ataques neste turno (${currentAttacker.attacksUsedThisTurn}/${maxAttacks})!`,
+          `«${currentAttacker.card.name}» já realizou todos os seus ataques neste turno (${usedAttacks}/${maxAttacks})!`,
           'info'
         );
         return next;
@@ -2720,9 +2829,9 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
         }
 
         if (botReaction.botNegatedPlayerAction) {
-          attacker.attacksUsedThisTurn += 1;
+          attacker.attacksThisTurnCount = (attacker.attacksThisTurnCount || 0) + 1;
           attacker.hasAttackedThisTurn =
-            attacker.attacksUsedThisTurn >= getMaxAttacksPerTurn(next, next.player, attacker);
+            attacker.attacksThisTurnCount >= getMaxAttacksPerTurn(next, attacker);
           next.player.hasAttackedInCurrentTurn = true;
           return next;
         }
@@ -3112,51 +3221,62 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
   };
 
   return (
-    <div className="fixed inset-0 z-[120] bg-slate-950/95 backdrop-blur-xl flex flex-col overflow-hidden text-slate-100 select-none">
-      {/* TOP HEADER BAR */}
-      <div className="min-h-14 py-1.5 border-b border-purple-500/20 bg-slate-900/90 px-4 flex flex-wrap items-center justify-between gap-2 shrink-0">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-purple-600/20 border border-purple-500/40 flex items-center justify-center text-purple-400 shadow-inner">
-            <Bot size={20} />
+    <div className="fixed inset-0 z-[120] h-screen w-screen bg-slate-950 flex flex-col overflow-hidden text-slate-100 select-none">
+      {/* KEYFRAME ANIMATION FOR CARD PLACEMENT ON FIELD */}
+      <style>{`
+        @keyframes ldCardPlaceOnField {
+          0% {
+            opacity: 0;
+            transform: translateY(-28px) scale(1.22) rotate(-3deg);
+            filter: brightness(1.8) drop-shadow(0 0 18px rgba(168, 85, 247, 0.85));
+          }
+          65% {
+            opacity: 1;
+            transform: translateY(3px) scale(0.97) rotate(0deg);
+            filter: brightness(1.25) drop-shadow(0 0 10px rgba(56, 189, 248, 0.6));
+          }
+          100% {
+            opacity: 1;
+            transform: translateY(0) scale(1) rotate(0deg);
+            filter: brightness(1);
+          }
+        }
+        .animate-ld-card-place {
+          animation: ldCardPlaceOnField 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+        }
+      `}</style>
+
+      {/* COMPACT TOP HEADER BAR (No Developer Info) */}
+      <div className="h-11 border-b border-purple-500/20 bg-slate-900/95 px-3 flex items-center justify-between gap-2 shrink-0">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div className="w-7 h-7 rounded-lg bg-purple-600/20 border border-purple-500/40 flex items-center justify-center text-purple-400 shrink-0">
+            <Bot size={16} />
           </div>
-          <div>
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="font-display font-black text-sm tracking-wider uppercase text-white">
-                Simulador Oficial • Duelo vs Bot (Nível 3)
-              </span>
-              <span className="px-2 py-0.5 text-[10px] font-extrabold uppercase rounded-md bg-purple-500/20 text-purple-300 border border-purple-500/30">
-                {gameState.playerDeckId} vs {gameState.botDeckId}
-              </span>
-              <span
-                title="Memória Neural Adaptativa: o Bot analisa cada derrota nos 6 Pilares Universais de TCG e recalibra seus pesos matemáticos"
-                className="px-2 py-0.5 text-[10px] font-extrabold uppercase rounded-md bg-cyan-500/20 text-cyan-300 border border-cyan-500/30"
-              >
-                IA Gen #{botMemory.generation} (V:{botMemory.botWins} / D:{botMemory.botLosses})
-              </span>
-            </div>
-            <p className="text-[11px] text-slate-400">
+          <div className="flex items-center gap-2 flex-wrap min-w-0">
+            <span className="font-display font-black text-xs tracking-wider uppercase text-white truncate">
+              Duelo vs Bot
+            </span>
+            <span className="px-2 py-0.5 text-[10px] font-bold rounded bg-slate-800 text-slate-300 border border-slate-700">
               Rodada <strong className="text-white">{gameState.round}</strong> • Turno{' '}
-              <strong className="text-white">{gameState.turnInRound}/2</strong> • Iniciativa da
-              Rodada:{' '}
+              <strong className="text-white">{gameState.turnInRound}/2</strong> • Iniciativa:{' '}
               <strong className="text-amber-400">
                 {gameState.firstPlayerOfRound === 'player' ? 'Você' : 'Bot'}
               </strong>
-            </p>
+            </span>
           </div>
         </div>
 
-        {/* Deck Selectors + Quick Actions */}
-        <div className="flex flex-wrap items-center gap-2">
-          {/* Seu Deck Selector */}
-          <div className="flex items-center gap-1.5 bg-slate-950/90 border border-purple-500/30 rounded-lg px-2 py-1">
-            <span className="text-[10px] font-black uppercase text-purple-300">Seu Deck:</span>
+        {/* Deck Selectors + Speed + Quick Actions */}
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <div className="flex items-center gap-1 bg-slate-950/90 border border-purple-500/30 rounded-lg px-2 py-0.5">
+            <span className="text-[9px] font-black uppercase text-purple-300">Seu Deck:</span>
             <select
               value={playerDeckId}
               onChange={(e) => {
                 const nextDeck = e.target.value as StructuralDeckId;
                 handleRestartDuel(deckMode, nextDeck, botDeckSelection);
               }}
-              className="bg-transparent text-xs font-bold text-white focus:outline-none cursor-pointer"
+              className="bg-transparent text-[11px] font-bold text-white focus:outline-none cursor-pointer"
             >
               {STRUCTURAL_DECK_OPTIONS.map((opt) => (
                 <option key={`p_deck_${opt.id}`} value={opt.id} className="bg-slate-900 text-white">
@@ -3166,19 +3286,18 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
             </select>
           </div>
 
-          {/* Deck do Bot Selector */}
-          <div className="flex items-center gap-1.5 bg-slate-950/90 border border-rose-500/30 rounded-lg px-2 py-1">
-            <span className="text-[10px] font-black uppercase text-rose-300">Deck Bot:</span>
+          <div className="flex items-center gap-1 bg-slate-950/90 border border-rose-500/30 rounded-lg px-2 py-0.5">
+            <span className="text-[9px] font-black uppercase text-rose-300">Deck Bot:</span>
             <select
               value={botDeckSelection}
               onChange={(e) => {
                 const nextBotDeck = e.target.value as BotDeckSelection;
                 handleRestartDuel(deckMode, playerDeckId, nextBotDeck);
               }}
-              className="bg-transparent text-xs font-bold text-white focus:outline-none cursor-pointer"
+              className="bg-transparent text-[11px] font-bold text-white focus:outline-none cursor-pointer"
             >
               <option value="random" className="bg-slate-900 text-amber-300">
-                🎲 Aleatório (Qualquer Estrutural)
+                🎲 Aleatório
               </option>
               {STRUCTURAL_DECK_OPTIONS.map((opt) => (
                 <option key={`b_deck_${opt.id}`} value={opt.id} className="bg-slate-900 text-white">
@@ -3188,37 +3307,17 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
             </select>
           </div>
 
-          {(() => {
-            const h = evaluateBoardHeuristic(gameState);
-            const scoreColor =
-              h.score0to100 >= 60
-                ? 'bg-emerald-950/70 border-emerald-500/40 text-emerald-300'
-                : h.score0to100 <= 40
-                ? 'bg-rose-950/70 border-rose-500/40 text-rose-300'
-                : 'bg-amber-950/70 border-amber-500/40 text-amber-300';
-            return (
-              <div
-                className={`hidden xl:flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[11px] font-black ${scoreColor}`}
-                title={`Avaliação Matemática do Bot: ${h.score0to100}/100 (Δ ${h.rawDelta > 0 ? '+' : ''}${h.rawDelta} pts)\nBot: ${h.botBreakdown.totalRawPoints} pts (Campo ${h.botBreakdown.boardFightersScore}, Zona Apagada ${h.botBreakdown.erasedZoneSynergyScore}, Combos ${h.botBreakdown.comboSynergyBonus})\nVocê: ${h.playerBreakdown.totalRawPoints} pts\nPostura IA: ${h.posture}`}
-              >
-                <span>Heurística IA: {h.score0to100}/100</span>
-                <span className="opacity-75 text-[10px]">({h.posture})</span>
-              </div>
-            );
-          })()}
-
-          {/* Pacing / Speed Selector */}
           <div
-            className="flex items-center bg-slate-900 border border-slate-700/80 rounded-lg p-0.5 text-[11px] font-bold"
-            title="Controle a velocidade das ações, animações de ataque e turnos do Bot"
+            className="hidden sm:flex items-center bg-slate-950 border border-slate-800 rounded-lg p-0.5 text-[10px] font-bold"
+            title="Velocidade do Duelo"
           >
             {(['lento', 'normal', 'rapido'] as DuelSpeed[]).map((spd) => (
               <button
                 key={spd}
                 onClick={() => setDuelSpeed(spd)}
-                className={`px-2 py-1 rounded-md transition-all ${
+                className={`px-1.5 py-0.5 rounded transition-all ${
                   duelSpeed === spd
-                    ? 'bg-purple-600 text-white shadow font-black'
+                    ? 'bg-purple-600 text-white font-black'
                     : 'text-slate-400 hover:text-slate-200'
                 }`}
               >
@@ -3229,444 +3328,482 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
 
           <button
             onClick={() => setShowRulesModal(true)}
-            className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold flex items-center gap-1.5 border border-slate-700 transition-colors"
+            className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] font-bold flex items-center gap-1 border border-slate-700"
           >
-            <HelpCircle size={14} className="text-purple-400" />
-            <span className="hidden sm:inline">Regras</span>
+            <HelpCircle size={13} className="text-purple-400" />
+            <span className="hidden md:inline">Regras</span>
           </button>
 
           <button
             onClick={() => handleRestartDuel(deckMode, playerDeckId, botDeckSelection)}
-            className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold flex items-center gap-1.5 border border-slate-700 transition-colors"
+            className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] font-bold flex items-center gap-1 border border-slate-700"
           >
-            <RotateCcw size={14} />
-            <span className="hidden sm:inline">Reiniciar</span>
-          </button>
-
-          <button
-            onClick={() => setIsLogOpen((v) => !v)}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 border transition-colors ${
-              isLogOpen
-                ? 'bg-purple-600/20 border-purple-500/40 text-purple-200 hover:bg-purple-600/30'
-                : 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700'
-            }`}
-            title={isLogOpen ? 'Recolher Log do Duelo' : 'Abrir Log do Duelo'}
-          >
-            {isLogOpen ? <PanelRightClose size={15} /> : <PanelRightOpen size={15} />}
-            <span className="hidden sm:inline">{isLogOpen ? 'Ocultar Log' : 'Ver Log'}</span>
+            <RotateCcw size={13} />
+            <span className="hidden md:inline">Reiniciar</span>
           </button>
 
           <button
             onClick={onClose}
-            className="p-2 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 transition-colors"
+            className="p-1.5 rounded-lg bg-rose-500/15 hover:bg-rose-500/25 text-rose-400 border border-rose-500/30 transition-colors"
             title="Fechar Simulador"
           >
-            <X size={18} />
+            <X size={15} />
           </button>
         </div>
       </div>
 
-      {/* MAIN DUEL TABLE + RETRACTABLE LOG SIDEBAR */}
-      <div className="flex-1 flex overflow-hidden relative">
-        {/* LEFT / CENTER: THE BATTLEFIELD */}
+      {/* MAIN ZERO-SCROLL DUEL VIEWPORT + RIGHT RETRACTABLE LOG */}
+      <div className="flex-1 flex min-h-0 overflow-hidden relative">
         <div
           ref={battlefieldRef}
-          className="flex-1 flex flex-col justify-between p-2 sm:p-3 overflow-y-auto bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-purple-950/20 via-slate-950 to-slate-950 relative"
+          className="flex-1 min-h-0 flex flex-col justify-between px-2 py-1.5 overflow-hidden bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-purple-950/25 via-slate-950 to-slate-950 relative"
         >
-          {/* ============================================================
-              DYNAMIC SVG ATTACK ARROW & TELEMETRY OVERLAY
-             ============================================================ */}
-          {arrowCoords && (
-            <div className="pointer-events-none absolute inset-0 z-40 overflow-visible">
-              <svg className="w-full h-full overflow-visible">
-                <defs>
-                  <marker
-                    id="insanis-attack-arrowhead"
-                    markerWidth="10"
-                    markerHeight="10"
-                    refX="7"
-                    refY="5"
-                    orient="auto"
-                  >
-                    <path
-                      d="M 0 1 L 9 5 L 0 9 z"
-                      fill={
-                        arrowCoords.isAquaRedirect
-                          ? '#e879f9'
-                          : arrowCoords.isSolador
-                          ? '#f59e0b'
-                          : arrowCoords.isPreview
-                          ? '#38bdf8'
-                          : '#f43f5e'
-                      }
-                    />
-                  </marker>
-                  <filter id="insanis-arrow-glow" x="-25%" y="-25%" width="150%" height="150%">
-                    <feGaussianBlur stdDeviation="4" result="blur" />
-                    <feComposite in="SourceGraphic" in2="blur" operator="over" />
-                  </filter>
-                </defs>
-
-                {/* Origin Pulse Ring */}
-                <circle
-                  cx={arrowCoords.x1}
-                  cy={arrowCoords.y1}
-                  r="16"
-                  fill="none"
-                  stroke={
-                    arrowCoords.isSolador
-                      ? '#f59e0b'
-                      : arrowCoords.isPreview
-                      ? '#38bdf8'
-                      : '#f43f5e'
-                  }
-                  strokeWidth="3"
-                  className="animate-ping opacity-60"
-                />
-
-                {arrowCoords.isAquaRedirect &&
-                arrowCoords.midX !== undefined &&
-                arrowCoords.midY !== undefined ? (
-                  <>
-                    {/* Segment 1: Attacker -> Friendly Aqua Caótica */}
-                    <line
-                      x1={arrowCoords.x1}
-                      y1={arrowCoords.y1}
-                      x2={arrowCoords.midX}
-                      y2={arrowCoords.midY}
-                      stroke="#e879f9"
-                      strokeWidth="4"
-                      strokeDasharray="8 5"
-                      filter="url(#insanis-arrow-glow)"
-                    />
-                    {/* Segment 2: Friendly Aqua Caótica -> Enemy Frontline (2x Damage) */}
-                    <line
-                      x1={arrowCoords.midX}
-                      y1={arrowCoords.midY}
-                      x2={arrowCoords.x2}
-                      y2={arrowCoords.y2}
-                      stroke="#f43f5e"
-                      strokeWidth="5"
-                      markerEnd="url(#insanis-attack-arrowhead)"
-                      filter="url(#insanis-arrow-glow)"
-                    />
-                  </>
-                ) : (
-                  <>
-                    {/* Outer Glow Line */}
-                    <line
-                      x1={arrowCoords.x1}
-                      y1={arrowCoords.y1}
-                      x2={arrowCoords.x2}
-                      y2={arrowCoords.y2}
-                      stroke={
-                        arrowCoords.isSolador
-                          ? '#f59e0b'
-                          : arrowCoords.isPreview
-                          ? '#38bdf8'
-                          : '#f43f5e'
-                      }
-                      strokeWidth={arrowCoords.isPreview ? '4' : '7'}
-                      strokeOpacity="0.35"
-                      filter="url(#insanis-arrow-glow)"
-                    />
-                    {/* Core Vector Line */}
-                    <line
-                      x1={arrowCoords.x1}
-                      y1={arrowCoords.y1}
-                      x2={arrowCoords.x2}
-                      y2={arrowCoords.y2}
-                      stroke={
-                        arrowCoords.isSolador
-                          ? '#fbbf24'
-                          : arrowCoords.isPreview
-                          ? '#38bdf8'
-                          : '#fb7185'
-                      }
-                      strokeWidth={arrowCoords.isPreview ? '3' : '4.5'}
-                      strokeDasharray={arrowCoords.isPreview ? '8 6' : undefined}
-                      markerEnd="url(#insanis-attack-arrowhead)"
-                    />
-                  </>
-                )}
-
-                {/* Target Crosshair Reticle */}
-                <circle
-                  cx={arrowCoords.x2}
-                  cy={arrowCoords.y2}
-                  r="22"
-                  fill="none"
-                  stroke={
-                    arrowCoords.isAquaRedirect
-                      ? '#e879f9'
-                      : arrowCoords.isSolador
-                      ? '#fbbf24'
-                      : arrowCoords.isPreview
-                      ? '#38bdf8'
-                      : '#f43f5e'
-                  }
-                  strokeWidth="3"
-                  strokeDasharray="6 4"
-                  className="animate-spin"
-                />
-                <circle
-                  cx={arrowCoords.x2}
-                  cy={arrowCoords.y2}
-                  r="12"
-                  fill="none"
-                  stroke="#ffffff"
-                  strokeWidth="2"
-                  className="animate-ping opacity-75"
-                />
-              </svg>
-
-              {/* Floating Mid-Arrow Combat Callout Pill */}
-              <div
-                style={{
-                  left: `${
-                    arrowCoords.isAquaRedirect && arrowCoords.midX !== undefined
-                      ? (arrowCoords.midX + arrowCoords.x2) / 2
-                      : (arrowCoords.x1 + arrowCoords.x2) / 2
-                  }px`,
-                  top: `${
-                    arrowCoords.isAquaRedirect && arrowCoords.midY !== undefined
-                      ? (arrowCoords.midY + arrowCoords.y2) / 2
-                      : (arrowCoords.y1 + arrowCoords.y2) / 2
-                  }px`
-                }}
-                className=" -translate-x-1/2 -translate-y-1/2 absolute z-50 pointer-events-none"
-              >
-                <div
-                  className={`px-3 py-1 rounded-full border-2 shadow-2xl flex items-center gap-1.5 whitespace-nowrap text-xs font-black tracking-wide ${
-                    arrowCoords.isAquaRedirect
-                      ? 'bg-fuchsia-950/95 border-fuchsia-400 text-fuchsia-100 shadow-fuchsia-500/40'
-                      : arrowCoords.isSolador
-                      ? 'bg-amber-950/95 border-amber-400 text-amber-100 shadow-amber-500/40'
-                      : arrowCoords.isPreview
-                      ? 'bg-sky-950/95 border-sky-400 text-sky-100 shadow-sky-500/30'
-                      : 'bg-rose-950/95 border-rose-400 text-white shadow-rose-500/50 scale-105'
-                  }`}
+        {/* ============================================================
+            DYNAMIC SVG ATTACK ARROW OVERLAY
+           ============================================================ */}
+        {arrowCoords && (
+          <div className="pointer-events-none absolute inset-0 z-40 overflow-visible">
+            <svg className="w-full h-full overflow-visible">
+              <defs>
+                <marker
+                  id="insanis-attack-arrowhead"
+                  markerWidth="10"
+                  markerHeight="10"
+                  refX="7"
+                  refY="5"
+                  orient="auto"
                 >
-                  <span>⚔️ {arrowCoords.atkValue} Dano</span>
-                  {arrowCoords.isSolador && (
-                    <span className="px-1.5 py-0.5 rounded bg-amber-500 text-slate-950 text-[10px] font-black uppercase">
-                      ☀️ [Solador]
-                    </span>
-                  )}
-                  <span className="opacity-80 text-[10px] font-bold hidden sm:inline">
-                    ({arrowCoords.attackerName} ➔ {arrowCoords.targetName})
-                  </span>
-                </div>
-              </div>
-            </div>
-          )}
+                  <path
+                    d="M 0 1 L 9 5 L 0 9 z"
+                    fill={
+                      arrowCoords.isAquaRedirect
+                        ? '#e879f9'
+                        : arrowCoords.isSolador
+                        ? '#f59e0b'
+                        : arrowCoords.isPreview
+                        ? '#38bdf8'
+                        : '#f43f5e'
+                    }
+                  />
+                </marker>
+                <filter id="insanis-arrow-glow" x="-25%" y="-25%" width="150%" height="150%">
+                  <feGaussianBlur stdDeviation="4" result="blur" />
+                  <feComposite in="SourceGraphic" in2="blur" operator="over" />
+                </filter>
+              </defs>
 
-          {/* ============================================================
-              BOT STATUS BAR & ZONES (TOP)
-             ============================================================ */}
-          <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-2 flex flex-wrap items-center justify-between gap-2">
-            <div className="flex items-center gap-3">
-              <div className="relative">
-                <div className="w-9 h-9 rounded-xl bg-rose-950 border border-rose-500/40 flex items-center justify-center text-rose-400 font-black text-xs">
-                  IA
-                </div>
-                {gameState.activePlayer === 'bot' && (
-                  <span className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-amber-400 animate-ping" />
-                )}
-              </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="font-bold text-xs sm:text-sm text-white">
-                    {gameState.bot.name}
-                  </span>
-                  {gameState.activePlayer === 'bot' && (
-                    <span className="px-2 py-0.5 text-[10px] font-black uppercase rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                      Jogando...
-                    </span>
-                  )}
-                </div>
-                <div className="flex items-center gap-3 text-xs mt-0.5">
-                  <span
-                    ref={botHpRef}
-                    className={`relative flex items-center gap-1 text-rose-400 font-black px-1.5 py-0.5 rounded transition-all ${
-                      slotImpacts['bot_hp'] === 'hit'
-                        ? 'bg-rose-500/40 ring-2 ring-rose-400 scale-110'
-                        : slotImpacts['bot_hp'] === 'heal'
-                        ? 'bg-emerald-500/30 ring-2 ring-emerald-400 scale-110'
-                        : ''
-                    }`}
-                  >
-                    <Heart size={13} className="fill-rose-500 text-rose-500" />
-                    {gameState.bot.hp} PV
-                    {floatingPopups
-                      .filter((p) => p.targetKey === 'bot_hp')
-                      .map((p) => (
-                        <span
-                          key={p.id}
-                          className={`pointer-events-none absolute -bottom-6 left-1/2 -translate-x-1/2 z-50 px-2 py-0.5 rounded-full text-[11px] font-black whitespace-nowrap shadow-lg animate-bounce ${
-                            p.kind === 'damage'
-                              ? 'bg-rose-600 text-white border border-rose-300'
-                              : 'bg-emerald-600 text-white border border-emerald-300'
-                          }`}
-                        >
-                          {p.text}
-                        </span>
-                      ))}
-                  </span>
-                  <span className="flex items-center gap-1 text-cyan-400 font-black">
-                    <Zap size={13} className="fill-cyan-400 text-cyan-400" />
-                    {gameState.bot.mana} Mana
-                  </span>
-                  <span className="flex items-center gap-1 text-amber-300 font-bold">
-                    <Sparkles size={12} />
-                    {gameState.bot.runes} Runas
-                  </span>
-                </div>
-              </div>
-            </div>
+              <circle
+                cx={arrowCoords.x1}
+                cy={arrowCoords.y1}
+                r="14"
+                fill="none"
+                stroke={
+                  arrowCoords.isSolador
+                    ? '#f59e0b'
+                    : arrowCoords.isPreview
+                    ? '#38bdf8'
+                    : '#f43f5e'
+                }
+                strokeWidth="3"
+                className="animate-ping opacity-60"
+              />
 
-            {/* Bot Zones & Direct Attack Button */}
-            <div className="flex items-center gap-1.5 flex-wrap">
-              {canDirectAttackBot && (
-                <button
-                  onMouseEnter={() => setHoveredAttackTarget({ side: 'bot', slot: -1 })}
-                  onMouseLeave={() => setHoveredAttackTarget(null)}
-                  onClick={() => handleDeclarePlayerAttack(selectedAttackerSlot!, -1)}
-                  className="px-3 py-1.5 rounded-lg bg-gradient-to-r from-rose-600 to-amber-600 hover:from-rose-500 hover:to-amber-500 text-white font-black text-xs uppercase tracking-wider shadow-lg shadow-rose-600/30 animate-pulse flex items-center gap-1.5"
-                >
-                  <Swords size={14} />
-                  Ataque Direto ao Bot!
-                </button>
+              {arrowCoords.isAquaRedirect &&
+              arrowCoords.midX !== undefined &&
+              arrowCoords.midY !== undefined ? (
+                <>
+                  <line
+                    x1={arrowCoords.x1}
+                    y1={arrowCoords.y1}
+                    x2={arrowCoords.midX}
+                    y2={arrowCoords.midY}
+                    stroke="#e879f9"
+                    strokeWidth="4"
+                    strokeDasharray="8 5"
+                    filter="url(#insanis-arrow-glow)"
+                  />
+                  <line
+                    x1={arrowCoords.midX}
+                    y1={arrowCoords.midY}
+                    x2={arrowCoords.x2}
+                    y2={arrowCoords.y2}
+                    stroke="#f43f5e"
+                    strokeWidth="5"
+                    markerEnd="url(#insanis-attack-arrowhead)"
+                    filter="url(#insanis-arrow-glow)"
+                  />
+                </>
+              ) : (
+                <>
+                  <line
+                    x1={arrowCoords.x1}
+                    y1={arrowCoords.y1}
+                    x2={arrowCoords.x2}
+                    y2={arrowCoords.y2}
+                    stroke={
+                      arrowCoords.isSolador
+                        ? '#f59e0b'
+                        : arrowCoords.isPreview
+                        ? '#38bdf8'
+                        : '#f43f5e'
+                    }
+                    strokeWidth={arrowCoords.isPreview ? '4' : '7'}
+                    strokeOpacity="0.35"
+                    filter="url(#insanis-arrow-glow)"
+                  />
+                  <line
+                    x1={arrowCoords.x1}
+                    y1={arrowCoords.y1}
+                    x2={arrowCoords.x2}
+                    y2={arrowCoords.y2}
+                    stroke={
+                      arrowCoords.isSolador
+                        ? '#fbbf24'
+                        : arrowCoords.isPreview
+                        ? '#38bdf8'
+                        : '#fb7185'
+                    }
+                    strokeWidth={arrowCoords.isPreview ? '3' : '4.5'}
+                    strokeDasharray={arrowCoords.isPreview ? '8 6' : undefined}
+                    markerEnd="url(#insanis-attack-arrowhead)"
+                  />
+                </>
               )}
 
-              <div className="px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-800 text-[11px] text-slate-300">
-                Mão: <strong className="text-white">{gameState.bot.hand.length}</strong>
-              </div>
-              <div className="px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-800 text-[11px] text-slate-300">
-                Deck: <strong className="text-white">{gameState.bot.deck.length}</strong>
-              </div>
-              <button
-                onClick={() =>
-                  setZoneViewer({
-                    title: `Zona Morta do Bot (${gameState.bot.deadZone.length})`,
-                    cards: gameState.bot.deadZone
-                  })
+              <circle
+                cx={arrowCoords.x2}
+                cy={arrowCoords.y2}
+                r="18"
+                fill="none"
+                stroke={
+                  arrowCoords.isAquaRedirect
+                    ? '#e879f9'
+                    : arrowCoords.isSolador
+                    ? '#fbbf24'
+                    : arrowCoords.isPreview
+                    ? '#38bdf8'
+                    : '#f43f5e'
                 }
-                className="px-2.5 py-1 rounded-lg bg-slate-950 hover:bg-slate-800 border border-slate-800 text-[11px] text-slate-300 flex items-center gap-1 transition-colors"
+                strokeWidth="2.5"
+                strokeDasharray="6 4"
+                className="animate-spin"
+              />
+            </svg>
+
+            <div
+              style={{
+                left: `${
+                  arrowCoords.isAquaRedirect && arrowCoords.midX !== undefined
+                    ? (arrowCoords.midX + arrowCoords.x2) / 2
+                    : (arrowCoords.x1 + arrowCoords.x2) / 2
+                }px`,
+                top: `${
+                  arrowCoords.isAquaRedirect && arrowCoords.midY !== undefined
+                    ? (arrowCoords.midY + arrowCoords.y2) / 2
+                    : (arrowCoords.y1 + arrowCoords.y2) / 2
+                }px`
+              }}
+              className="-translate-x-1/2 -translate-y-1/2 absolute z-50 pointer-events-none"
+            >
+              <div
+                className={`px-2.5 py-0.5 rounded-full border-2 shadow-2xl flex items-center gap-1.5 whitespace-nowrap text-[11px] font-black ${
+                  arrowCoords.isAquaRedirect
+                    ? 'bg-fuchsia-950/95 border-fuchsia-400 text-fuchsia-100'
+                    : arrowCoords.isSolador
+                    ? 'bg-amber-950/95 border-amber-400 text-amber-100'
+                    : arrowCoords.isPreview
+                    ? 'bg-sky-950/95 border-sky-400 text-sky-100'
+                    : 'bg-rose-950/95 border-rose-400 text-white scale-105'
+                }`}
               >
-                <Skull size={12} className="text-slate-400" />
-                Morta: <strong className="text-white">{gameState.bot.deadZone.length}</strong>
-              </button>
-              <button
-                onClick={() =>
-                  setZoneViewer({
-                    title: `Zona Apagada do Bot (${gameState.bot.erasedZone.length} cartas | ${countJimsInErasedZone(
-                      gameState.bot
-                    )} «Jim»)`,
-                    cards: gameState.bot.erasedZone
-                  })
+                <span>⚔️ {arrowCoords.atkValue} Dano</span>
+                <span className="opacity-80 text-[10px] font-bold hidden sm:inline">
+                  ({arrowCoords.attackerName} ➔ {arrowCoords.targetName})
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ============================================================
+            BOT TOP COMPACT BAR (HP, Mana, Runas, Zones & Direct Attack)
+           ============================================================ */}
+        <div className="bg-slate-900/95 border border-slate-800 rounded-xl px-3 py-1 flex items-center justify-between gap-2 shrink-0">
+          <div className="flex items-center gap-2.5">
+            <div className="relative">
+              <div className="w-7 h-7 rounded-lg bg-rose-950 border border-rose-500/40 flex items-center justify-center text-rose-400 font-black text-[10px]">
+                BOT
+              </div>
+              {gameState.activePlayer === 'bot' && (
+                <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-amber-400 animate-ping" />
+              )}
+            </div>
+            <span className="font-bold text-xs text-white">{gameState.bot.name}</span>
+
+            <div className="flex items-center gap-2 text-[11px]">
+              <span
+                ref={botHpRef}
+                onMouseEnter={() => {
+                  if (canDirectAttackBot) setHoveredAttackTarget({ side: 'bot', slot: -1 });
+                }}
+                onMouseLeave={() => {
+                  if (hoveredAttackTarget?.side === 'bot' && hoveredAttackTarget.slot === -1) {
+                    setHoveredAttackTarget(null);
+                  }
+                }}
+                onClick={() => {
+                  if (canDirectAttackBot && selectedAttackerSlot !== null) {
+                    handleDeclarePlayerAttack(selectedAttackerSlot, -1);
+                  }
+                }}
+                title={
+                  canDirectAttackBot
+                    ? 'Clique para atacar diretamente a Vida do Bot!'
+                    : 'Vida do Bot'
                 }
-                className="px-2.5 py-1 rounded-lg bg-purple-950/60 hover:bg-purple-900/60 border border-purple-500/40 text-[11px] text-purple-200 flex items-center gap-1 transition-colors"
+                className={`relative flex items-center gap-1 px-2 py-0.5 rounded bg-rose-950/90 border text-rose-300 font-black transition-all ${
+                  canDirectAttackBot
+                    ? 'border-amber-400 ring-2 ring-rose-500 cursor-pointer hover:scale-105 animate-pulse'
+                    : 'border-rose-500/30'
+                } ${
+                  slotImpacts['bot_hp'] === 'hit'
+                    ? 'ring-2 ring-rose-400 scale-110'
+                    : slotImpacts['bot_hp'] === 'heal'
+                    ? 'ring-2 ring-emerald-400 scale-110'
+                    : ''
+                }`}
               >
-                <Flame size={12} className="text-purple-400" />
-                Apagada: <strong className="text-white">{gameState.bot.erasedZone.length}</strong> (
-                {countJimsInErasedZone(gameState.bot)} Jim)
-              </button>
+                <Heart size={11} className="fill-rose-500 text-rose-500" />
+                {gameState.bot.hp}
+                {floatingPopups
+                  .filter((p) => p.targetKey === 'bot_hp')
+                  .map((p) => (
+                    <span
+                      key={p.id}
+                      className={`pointer-events-none absolute -bottom-5 left-1/2 -translate-x-1/2 z-50 px-1.5 py-0.5 rounded-full text-[10px] font-black whitespace-nowrap shadow-lg animate-bounce ${
+                        p.variant === 'damage'
+                          ? 'bg-rose-600 text-white'
+                          : 'bg-emerald-600 text-white'
+                      }`}
+                    >
+                      {p.text}
+                    </span>
+                  ))}
+              </span>
+              <span className="flex items-center gap-1 px-2 py-0.5 rounded bg-cyan-950/70 border border-cyan-500/30 text-cyan-300 font-black">
+                <Zap size={11} className="fill-cyan-400 text-cyan-400" />
+                {gameState.bot.mana}
+              </span>
+              <span className="flex items-center gap-1 px-2 py-0.5 rounded bg-amber-950/70 border border-amber-500/30 text-amber-300 font-bold">
+                <Sparkles size={10} />
+                {gameState.bot.runes}
+              </span>
             </div>
           </div>
 
-          {/* ============================================================
-              BOT BACKROW (6 Support Zones) & FRONTLINE (6 Fighter Zones)
-             ============================================================ */}
-          <div className="space-y-1.5 my-1">
-            {/* Bot Backrow (Support & Equipped Items) */}
-            <div className="grid grid-cols-6 gap-1.5">
+          <div className="flex items-center gap-1.5">
+            {canDirectAttackBot && (
+              <button
+                onMouseEnter={() => setHoveredAttackTarget({ side: 'bot', slot: -1 })}
+                onMouseLeave={() => setHoveredAttackTarget(null)}
+                onClick={() => handleDeclarePlayerAttack(selectedAttackerSlot!, -1)}
+                className="px-2.5 py-1 rounded-lg bg-gradient-to-r from-rose-600 to-amber-600 hover:from-rose-500 hover:to-amber-500 text-white font-black text-[11px] uppercase tracking-wider shadow-lg animate-pulse flex items-center gap-1"
+              >
+                <Swords size={12} />
+                Ataque Direto ao Bot!
+              </button>
+            )}
+            <span className="px-2 py-0.5 rounded bg-slate-950 border border-slate-800 text-[10px] text-slate-300">
+              Mão: <strong className="text-white">{gameState.bot.hand.length}</strong>
+            </span>
+            <span className="px-2 py-0.5 rounded bg-slate-950 border border-slate-800 text-[10px] text-slate-300">
+              Deck: <strong className="text-white">{gameState.bot.deck.length}</strong>
+            </span>
+            <button
+              onClick={() =>
+                setZoneViewer({
+                  title: `Zona Morta do Bot (${gameState.bot.deadZone.length})`,
+                  cards: gameState.bot.deadZone
+                })
+              }
+              className="px-2 py-0.5 rounded bg-slate-950 hover:bg-slate-800 border border-slate-800 text-[10px] text-slate-300 flex items-center gap-1"
+            >
+              <Skull size={10} className="text-slate-400" />
+              Morta: <strong className="text-white">{gameState.bot.deadZone.length}</strong>
+            </button>
+            <button
+              onClick={() =>
+                setZoneViewer({
+                  title: `Zona Apagada do Bot (${gameState.bot.erasedZone.length})`,
+                  cards: gameState.bot.erasedZone
+                })
+              }
+              className="px-2 py-0.5 rounded bg-purple-950/60 hover:bg-purple-900/60 border border-purple-500/40 text-[10px] text-purple-200 flex items-center gap-1"
+            >
+              <Flame size={10} className="text-purple-400" />
+              Apagada: <strong className="text-white">{gameState.bot.erasedZone.length}</strong>
+            </button>
+          </div>
+        </div>
+
+        {/* ============================================================
+            MAIN BOARD AREA (3 COLUMNS MATCHING REFERENCE DIAGRAM 1 & 2):
+            [LEFT: ZONA MORTA + DECK RELEVO] | [CENTER: 6-COL COMBATENTES & EFEITOS] | [RIGHT: ZONA APAGADA + DECK DE HERÓI]
+           ============================================================ */}
+        <div className="flex-1 min-h-0 flex items-stretch gap-2 my-1">
+          {/* LEFT SIDE COLUMN: ZONA MORTA (TOP) + DECK COM RELEVO E CONTAGEM (BOTTOM) */}
+          <div className="w-24 sm:w-28 shrink-0 flex flex-col gap-2">
+            {/* ZONA MORTA */}
+            <button
+              onClick={() =>
+                setZoneViewer({
+                  title: `Sua Zona Morta (${gameState.player.deadZone.length})`,
+                  cards: gameState.player.deadZone
+                })
+              }
+              className="flex-1 rounded-xl border-2 border-slate-700/80 bg-slate-900/80 hover:border-slate-500 p-1.5 flex flex-col items-center justify-between text-center transition-all relative overflow-hidden group"
+              title="Clique para abrir sua Zona Morta"
+            >
+              <span className="text-[9px] font-black uppercase tracking-wider text-slate-300 z-10">
+                Zona Morta
+              </span>
+              {gameState.player.deadZone.length > 0 ? (
+                <div className="relative w-12 sm:w-14 aspect-[704/987] rounded border border-slate-600 overflow-hidden shadow-md my-auto">
+                  {getModernImage(
+                    gameState.player.deadZone[gameState.player.deadZone.length - 1]
+                  ) && (
+                    <img
+                      src={getModernImage(
+                        gameState.player.deadZone[gameState.player.deadZone.length - 1]
+                      )}
+                      alt="Zona Morta"
+                      className="w-full h-full object-cover grayscale contrast-125 group-hover:grayscale-0 transition-all"
+                    />
+                  )}
+                </div>
+              ) : (
+                <Skull size={22} className="text-slate-600 my-auto" />
+              )}
+              <span className="px-2 py-0.5 rounded-full bg-slate-950/90 border border-slate-700 text-[10px] font-black text-white z-10">
+                {gameState.player.deadZone.length} cartas
+              </span>
+            </button>
+
+            {/* DECK COM RELEVO 3D E NÚMERO DE CARTAS RESTANTES */}
+            <div
+              className="flex-1 rounded-xl border-2 border-slate-700/80 bg-slate-900/80 p-1.5 flex flex-col items-center justify-between text-center relative overflow-hidden"
+              title={`Seu Deck Principal: ${gameState.player.deck.length} cartas restantes`}
+            >
+              <span className="text-[9px] font-black uppercase tracking-wider text-slate-300 z-10">
+                Deck
+              </span>
+
+              {/* 3D Stacked Card Relief (Relevo de Cartas com Verso Oficial) */}
+              <div className="relative w-14 sm:w-16 aspect-[704/987] my-auto flex items-center justify-center">
+                {gameState.player.deck.length > 6 && (
+                  <div className="absolute inset-0 translate-x-2 translate-y-2 rounded-lg overflow-hidden border border-amber-500/40 shadow-md brightness-50">
+                    <img
+                      src="https://firebasestorage.googleapis.com/v0/b/gen-lang-client-0120804533.firebasestorage.app/o/cards%2FVERSO%20ARQUIVO%20FINAL%202.jpg?alt=media&token=e765f1d3-ea86-49d3-bad0-166285337cee"
+                      alt="Verso do Deck"
+                      className="w-full h-full object-cover"
+                    />
+                  </div>
+                )}
+                {gameState.player.deck.length > 3 && (
+                  <div className="absolute inset-0 translate-x-1 translate-y-1 rounded-lg overflow-hidden border border-amber-400/60 shadow-md brightness-75">
+                    <img
+                      src="https://firebasestorage.googleapis.com/v0/b/gen-lang-client-0120804533.firebasestorage.app/o/cards%2FVERSO%20ARQUIVO%20FINAL%202.jpg?alt=media&token=e765f1d3-ea86-49d3-bad0-166285337cee"
+                      alt="Verso do Deck"
+                      className="w-full h-full object-cover"
+                    />
+                  </div>
+                )}
+                {gameState.player.deck.length > 0 ? (
+                  <div className="relative inset-0 w-full h-full rounded-lg overflow-hidden border-2 border-amber-400/80 shadow-xl flex items-center justify-center">
+                    <img
+                      src="https://firebasestorage.googleapis.com/v0/b/gen-lang-client-0120804533.firebasestorage.app/o/cards%2FVERSO%20ARQUIVO%20FINAL%202.jpg?alt=media&token=e765f1d3-ea86-49d3-bad0-166285337cee"
+                      alt="Verso da Carta"
+                      className="absolute inset-0 w-full h-full object-cover"
+                    />
+                  </div>
+                ) : (
+                  <div className="w-full h-full rounded-lg border border-dashed border-slate-700 flex items-center justify-center text-[10px] text-slate-600 font-bold">
+                    0
+                  </div>
+                )}
+              </div>
+
+              <span className="px-2 py-0.5 rounded-full bg-purple-950/90 border border-purple-500/40 text-[10px] font-black text-purple-200 z-10">
+                {gameState.player.deck.length} restantes
+              </span>
+            </div>
+          </div>
+
+          {/* CENTER 6-COLUMN BATTLEFIELD */}
+          <div className="flex-1 min-w-0 flex flex-col justify-between gap-1">
+            {/* BOT BACKROW (6 Green Effect/Equipment Slots) */}
+            <div className="grid grid-cols-6 gap-1.5 h-11 sm:h-12 shrink-0">
               {gameState.bot.backrow.map((sup, idx) => {
                 const botFrontFighter = gameState.bot.frontline[idx];
                 const botEquips = botFrontFighter?.equipments ?? [];
-                const hasContent = sup !== null || botEquips.length > 0;
+                const botSupportCards = getAllSupportCardsInSlot(sup);
+                const allBotSlotCards = [...botSupportCards, ...botEquips.map((e) => e.card)];
+                const hasContent = allBotSlotCards.length > 0;
 
                 return (
                   <div
                     key={`bot_back_${idx}`}
                     onClick={() => {
-                      if (sup) setInspectedCard(sup.card);
-                      else if (botEquips.length > 0) setInspectedCard(botEquips[0].card);
+                      if (allBotSlotCards.length > 0) {
+                        showCardInPanel(
+                          allBotSlotCards[0],
+                          null,
+                          `Efeitos / Equipamentos do Bot (Coluna ${idx + 1})`,
+                          allBotSlotCards
+                        );
+                        if (allBotSlotCards.length > 1) {
+                          setZoneViewer({
+                            title: `Efeitos / Equipamentos do Bot — Coluna ${idx + 1} (${allBotSlotCards.length})`,
+                            cards: allBotSlotCards
+                          });
+                        }
+                      }
                     }}
-                    className={`h-14 rounded-lg border flex items-center justify-center p-1 text-center transition-all overflow-hidden relative ${
+                    className={`h-11 sm:h-12 rounded-lg border flex items-center justify-center p-1 text-center transition-all overflow-hidden relative ${
                       hasContent
-                        ? 'bg-indigo-950/60 border-indigo-500/50 cursor-pointer hover:border-indigo-400'
-                        : 'bg-slate-900/30 border-slate-800/60 text-slate-600'
+                        ? 'bg-emerald-950/60 border-emerald-500/60 cursor-pointer hover:border-emerald-400'
+                        : 'bg-emerald-950/20 border-emerald-500/25 text-emerald-300/40'
                     }`}
                   >
                     {hasContent ? (
-                      <div className="flex items-center gap-1 w-full px-0.5 overflow-x-auto">
-                        {sup && (
-                          <div
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setInspectedCard(sup.card);
-                            }}
-                            className="flex items-center gap-1 min-w-0 flex-1"
-                            title={
-                              sup.stackedCards && sup.stackedCards.length > 0
-                                ? `Suporte: ${sup.card.name} (+${sup.stackedCards.length} empilhada(s): ${sup.stackedCards.map((c) => c.name).join(', ')})`
-                                : `Suporte: ${sup.card.name}`
-                            }
-                          >
-                            {getModernImage(sup.card) && (
+                      <div className="flex items-center gap-1 w-full px-0.5 overflow-hidden">
+                        <div className="flex -space-x-1.5 shrink-0">
+                          {allBotSlotCards.slice(0, 3).map((c, cIdx) => {
+                            const cImg = getModernImage(c);
+                            return cImg ? (
                               <img
-                                src={getModernImage(sup.card)}
-                                alt={sup.card.name}
-                                className="w-7 h-10 object-cover rounded border border-indigo-400/50 shrink-0"
+                                key={`bot_back_img_${idx}_${cIdx}`}
+                                src={cImg}
+                                alt={c.name}
+                                className="w-5 h-7 object-cover rounded border border-emerald-300/80 shadow"
                               />
-                            )}
-                            <div className="min-w-0 flex-1 text-left">
-                              <span className="text-[8px] font-black uppercase text-indigo-200 truncate block">
-                                {sup.card.name}
-                              </span>
-                              <span className="text-[7px] text-slate-400 block">
-                                {sup.stackedCards && sup.stackedCards.length > 0
-                                  ? `📚 ${sup.stackedCards.length + 1} Camadas`
-                                  : 'Efeito'}
-                              </span>
-                            </div>
-                          </div>
-                        )}
-                        {botEquips.map((eq) => {
-                          const eqImg = getModernImage(eq.card);
-                          return (
-                            <div
-                              key={eq.instanceId}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setInspectedCard(eq.card);
-                              }}
-                              className="flex items-center gap-1 min-w-0 flex-1 bg-amber-950/40 border border-amber-500/40 rounded p-0.5"
-                              title={`Equipado em ${botFrontFighter?.card.name}: ${eq.card.name}`}
-                            >
-                              {eqImg && (
-                                <img
-                                  src={eqImg}
-                                  alt={eq.card.name}
-                                  className="w-7 h-10 object-cover rounded border border-amber-400/60 shrink-0"
-                                />
-                              )}
-                              <div className="min-w-0 flex-1 text-left">
-                                <span className="text-[8px] font-black uppercase text-amber-200 truncate block">
-                                  {eq.card.name}
-                                </span>
-                                <span className="text-[7px] text-amber-300/80 block">
-                                  🛡️ Equip.
-                                </span>
-                              </div>
-                            </div>
-                          );
-                        })}
+                            ) : null;
+                          })}
+                        </div>
+                        <div className="min-w-0 flex-1 text-left">
+                          <span className="text-[8px] font-black uppercase text-emerald-100 truncate block">
+                            {allBotSlotCards[allBotSlotCards.length - 1].name}
+                          </span>
+                          <span className="text-[7px] text-amber-300 font-bold block truncate">
+                            {allBotSlotCards.length > 1
+                              ? `📚 ${allBotSlotCards.length} cartas (Ver todas)`
+                              : 'Ativo'}
+                          </span>
+                        </div>
                       </div>
                     ) : (
-                      <span className="text-[9px] uppercase font-bold tracking-wider">
-                        Sup {idx + 1}
+                      <span className="text-[7px] uppercase font-bold tracking-tight leading-none">
+                        Área de Efeito / Equip.
                       </span>
                     )}
                   </div>
@@ -3674,8 +3811,8 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
               })}
             </div>
 
-            {/* Bot Frontline (6 Fighters) */}
-            <div className="grid grid-cols-6 gap-1.5">
+            {/* BOT FRONTLINE (6 Blue Fighter Slots) */}
+            <div className="grid grid-cols-6 gap-1.5 flex-1 min-h-0">
               {gameState.bot.frontline.map((fighter, idx) => {
                 const isAttackTargetable =
                   gameState.phase === 'MAIN_PHASE' &&
@@ -3695,8 +3832,25 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
                   gameState.pendingGuerreiroSplashDamage && fighter !== null;
 
                 const effAtk = fighter ? getFighterEffectiveAtk(gameState, fighter) : 0;
+                const printedBaseAtk = fighter
+                  ? Number(fighter.card.attack ?? fighter.baseAtk ?? 0)
+                  : 0;
+                const printedBaseHp = fighter
+                  ? Number(fighter.card.defense ?? fighter.baseHp ?? 1)
+                  : 1;
+                const atkColor = fighter ? getStatColorClass(effAtk, printedBaseAtk) : 'text-white';
+                const hpColor = fighter
+                  ? getStatColorClass(fighter.currentHp, printedBaseHp)
+                  : 'text-white';
+
                 const effArchs = fighter ? getEffectiveArchetypes(gameState, fighter) : [];
                 const imgUrl = fighter ? getModernImage(fighter.card) : undefined;
+                const botFighterCt = fighter
+                  ? Math.max(
+                      0,
+                      Number(fighter.card.ct || 0) - Number(gameState.bot.permCtReduction || 0)
+                    )
+                  : 0;
 
                 const isBotSlotAttackerAnim =
                   (activeAttackAnim?.attackerSide === 'bot' &&
@@ -3722,42 +3876,44 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
                     onMouseEnter={() => {
                       if (isAttackTargetable) {
                         setHoveredAttackTarget({ side: 'bot', slot: idx });
+                      } else if (canDirectAttackBot) {
+                        setHoveredAttackTarget({ side: 'bot', slot: -1 });
                       }
                     }}
                     onMouseLeave={() => {
-                      if (hoveredAttackTarget?.side === 'bot' && hoveredAttackTarget.slot === idx) {
+                      if (
+                        hoveredAttackTarget?.side === 'bot' &&
+                        (hoveredAttackTarget.slot === idx || hoveredAttackTarget.slot === -1)
+                      ) {
                         setHoveredAttackTarget(null);
                       }
                     }}
                     onClick={() => handleBotFrontSlotClick(idx)}
-                    className={`h-32 sm:h-36 rounded-xl border p-1.5 flex flex-col justify-between relative overflow-hidden transition-all duration-300 ${
+                    className={`rounded-xl border-2 p-1 flex flex-col justify-between relative overflow-hidden transition-all duration-300 ${
                       isBotSlotAttackerAnim
-                        ? 'translate-y-3 scale-105 ring-4 ring-rose-500 border-rose-300 z-30 shadow-2xl shadow-rose-500/50 bg-rose-950/90'
+                        ? 'translate-y-2 scale-105 ring-4 ring-rose-500 border-rose-300 z-30 shadow-2xl bg-rose-950/90'
                         : isBotSlotTargetAnim || botSlotImpact === 'hit'
                         ? 'ring-4 ring-rose-500 border-rose-300 bg-rose-900/80 scale-95 z-20'
-                        : botSlotImpact === 'summon'
-                        ? 'ring-2 ring-amber-400 border-amber-300 bg-slate-900/95 scale-[1.03]'
-                        : botSlotImpact === 'heal'
-                        ? 'ring-2 ring-emerald-400 border-emerald-300 bg-slate-900/95'
                         : fighter
                         ? isAttackTargetable || isVingancaTargetable || isGuerreiroSplashTarget
-                          ? 'bg-rose-950/80 border-rose-400 ring-2 ring-rose-500/70 cursor-pointer scale-[1.02]'
-                          : 'bg-slate-900/95 border-rose-500/40 hover:border-rose-400 cursor-pointer'
-                        : 'bg-slate-900/30 border-slate-800/70 text-slate-600 items-center justify-center'
+                          ? 'bg-sky-950/80 border-rose-400 ring-2 ring-rose-500/70 cursor-pointer scale-[1.02]'
+                          : 'bg-sky-950/55 border-sky-400/60 hover:border-sky-300 cursor-pointer'
+                        : canDirectAttackBot
+                        ? 'bg-rose-950/40 border-rose-400 border-dashed ring-2 ring-rose-500/60 text-rose-200 items-center justify-center cursor-pointer hover:bg-rose-900/50'
+                        : 'bg-sky-950/25 border-sky-500/30 text-sky-300/40 items-center justify-center'
                     }`}
                   >
-                    {/* Floating Damage / Heal / KO / Summon Popups */}
                     {botSlotPopups.length > 0 && (
-                      <div className="pointer-events-none absolute inset-x-0 top-1/2 -translate-y-1/2 z-40 flex flex-col items-center gap-1">
+                      <div className="pointer-events-none absolute inset-x-0 top-1/2 -translate-y-1/2 z-40 flex flex-col items-center gap-0.5">
                         {botSlotPopups.map((p) => (
                           <span
                             key={p.id}
-                            className={`px-2 py-0.5 rounded-full text-[11px] font-black uppercase tracking-wider shadow-xl border animate-bounce ${
-                              p.kind === 'damage' || p.kind === 'ko'
-                                ? 'bg-rose-600/95 text-white border-rose-200'
-                                : p.kind === 'heal'
-                                ? 'bg-emerald-600/95 text-white border-emerald-200'
-                                : 'bg-amber-500/95 text-slate-950 border-amber-200'
+                            className={`px-1.5 py-0.5 rounded-full text-[10px] font-black uppercase shadow-xl border animate-bounce ${
+                              p.variant === 'damage' || p.variant === 'ko'
+                                ? 'bg-rose-600 text-white border-rose-200'
+                                : p.variant === 'heal'
+                                ? 'bg-emerald-600 text-white border-emerald-200'
+                                : 'bg-amber-500 text-slate-950 border-amber-200'
                             }`}
                           >
                             {p.text}
@@ -3767,280 +3923,355 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
                     )}
 
                     {fighter ? (
-                      <>
+                      <div
+                        key={fighter.instanceId}
+                        className="w-full h-full flex flex-col justify-between relative animate-ld-card-place"
+                      >
                         {imgUrl && (
-                          <div className="absolute inset-0 opacity-30 pointer-events-none">
+                          <div className="absolute inset-0 opacity-45 pointer-events-none rounded-lg overflow-hidden">
                             <img
                               src={imgUrl}
                               alt={fighter.card.name}
                               className="w-full h-full object-cover object-top"
                             />
-                            <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/60 to-slate-950/30" />
+                            <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/45 to-transparent" />
                           </div>
                         )}
 
-                        <div className="relative z-10 flex items-start justify-between gap-1">
-                          <span
-                            className={`text-[9px] font-black px-1.5 py-0.5 rounded uppercase truncate ${
-                              fighter.isHero
-                                ? 'bg-amber-500/30 text-amber-200 border border-amber-400/50'
-                                : 'bg-rose-500/30 text-rose-200'
-                            }`}
-                          >
-                            {fighter.isHero
-                              ? '👑 Herói'
-                              : `CT ${Math.max(0, (fighter.card.ct || 0) + (fighter.summonHpSpentBonusCt || 0) - gameState.bot.permanentCtReduction)}`}
-                          </span>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setInspectedFighter(fighter);
-                              setInspectedCard(fighter.card);
-                            }}
-                            className="p-0.5 rounded bg-slate-950/90 text-slate-300 hover:text-white border border-slate-700"
-                            title="Inspecionar Carta"
-                          >
-                            <Eye size={11} />
-                          </button>
-                        </div>
-
-                        <div className="relative z-10 my-auto flex items-center gap-1.5">
-                          {imgUrl && (
-                            <img
-                              src={imgUrl}
-                              alt={fighter.card.name}
-                              className="w-10 h-14 object-cover rounded border border-white/20 shadow-md shrink-0 hidden sm:block"
-                            />
+                        {/* Top Bar: Numeric CT Circle + Archetype Icons */}
+                        <div className="relative z-10 flex items-center justify-between gap-1">
+                          {fighter.isHero ? (
+                            <span className="w-5 h-5 rounded-full bg-amber-500 text-slate-950 font-black text-[10px] flex items-center justify-center shadow border border-white/60">
+                              👑
+                            </span>
+                          ) : (
+                            <span
+                              className="w-5 h-5 rounded-full bg-purple-700 text-white font-black text-[10px] flex items-center justify-center shadow border border-amber-300/80"
+                              title="Custo de Tempo (CT)"
+                            >
+                              {botFighterCt}
+                            </span>
                           )}
-                          <div className="min-w-0 flex-1 text-left">
-                            <p className="font-bold text-[10px] sm:text-[11px] text-white leading-tight line-clamp-2 drop-shadow">
-                              {fighter.card.name}
-                            </p>
-                            {effArchs.length > 0 && (
-                              <p className="text-[8px] text-purple-300 truncate mt-0.5">
-                                [{effArchs.join('•')}]
-                              </p>
-                            )}
-                            {fighter.equipments.length > 0 && (
-                              <p className="text-[8px] text-amber-300 font-bold mt-0.5">
-                                🛡️ {fighter.equipments.length} Equip.
-                              </p>
-                            )}
+
+                          <div className="flex items-center gap-0.5 flex-wrap justify-end">
+                            {effArchs.map((arch) => {
+                              const iconUrl = getArchetypeIcon(arch);
+                              return iconUrl ? (
+                                <img
+                                  key={arch}
+                                  src={iconUrl}
+                                  alt={arch}
+                                  title={arch}
+                                  className="w-4 h-4 object-contain rounded-full bg-slate-950/90 p-0.5 border border-purple-400/50 shadow"
+                                />
+                              ) : (
+                                <span
+                                  key={arch}
+                                  className="text-[7px] px-1 rounded bg-slate-950/90 text-purple-200 font-bold"
+                                >
+                                  {arch}
+                                </span>
+                              );
+                            })}
                           </div>
                         </div>
 
-                        <div className="relative z-10 flex items-center justify-between text-[11px] font-black bg-slate-950/95 px-2 py-0.5 rounded-lg border border-slate-800">
-                          <span className="text-amber-400 flex items-center gap-0.5">
-                            ⚔️ {effAtk}
-                          </span>
-                          <span className="text-emerald-400 flex items-center gap-0.5">
-                            ❤️ {fighter.currentHp}
-                          </span>
+                        {/* Fighter Name & Bottom White/Green/Red ATK & HP */}
+                        <div className="relative z-10 mt-auto">
+                          <p className="font-bold text-[9px] sm:text-[10px] text-white truncate drop-shadow text-center mb-0.5">
+                            {fighter.card.name}
+                          </p>
+                          <div className="flex items-center justify-between text-[11px] font-black bg-slate-950/90 px-1.5 py-0.5 rounded border border-slate-800">
+                            <span className={`flex items-center gap-0.5 ${atkColor}`}>
+                              ⚔️ {effAtk}
+                            </span>
+                            <span className={`flex items-center gap-0.5 ${hpColor}`}>
+                              ❤️ {fighter.currentHp}
+                            </span>
+                          </div>
                         </div>
-                      </>
+                      </div>
                     ) : (
-                      <span className="text-[10px] font-bold uppercase tracking-wider">
-                        Col {idx + 1}
+                      <span className="text-[8px] font-black uppercase tracking-wider text-center leading-tight px-1">
+                        {canDirectAttackBot ? '⚔️ Ataque Direto!' : 'Área de Combatente'}
                       </span>
                     )}
                   </div>
                 );
               })}
             </div>
-          </div>
 
-          {/* ============================================================
-              CENTER BATTLEFIELD DIVIDER / IN-PLACE REACTION BANNER
-             ============================================================ */}
-          <div className="my-1 flex items-center justify-center">
-            {gameState.pendingGuerreiroSplashDamage ? (
-              <div className="w-full max-w-2xl px-4 py-2 rounded-xl bg-amber-950/90 border-2 border-amber-400 text-amber-100 flex items-center justify-between gap-3 shadow-lg animate-pulse">
-                <div className="flex items-center gap-2 text-xs font-bold">
-                  <Swords size={16} className="text-amber-300 shrink-0" />
+            {/* ============================================================
+                UNIFIED CENTER WINDOW BETWEEN FIELDS:
+                CARD INFO (IMAGE + DESCRIPTION) & REACTION WINDOW WITH PASS OPTION
+               ============================================================ */}
+            <div className="my-0.5 flex items-center justify-center shrink-0">
+              {gameState.pendingGuerreiroSplashDamage ? (
+                <div className="w-full px-3 py-1.5 rounded-xl bg-amber-950 border-2 border-amber-400 text-amber-100 flex items-center justify-center gap-2 shadow-lg animate-pulse text-xs font-bold">
+                  <Swords size={14} className="text-amber-300 shrink-0" />
                   <span>
                     <strong>Efeito de «Jim - Guerreiro»:</strong> Clique em qualquer combatente no
                     campo para causar <strong>5 de dano</strong>!
                   </span>
                 </div>
-              </div>
-            ) : isReactionPhase && gameState.reactionWindow ? (
-              <div className="w-full max-w-4xl px-3.5 py-2 rounded-xl bg-cyan-950/95 border-2 border-cyan-400 text-cyan-100 flex flex-wrap items-center justify-between gap-3 shadow-xl">
-                <div className="flex items-center gap-2.5">
-                  <Shield size={18} className="text-cyan-300 shrink-0 animate-bounce" />
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded bg-cyan-500/30 text-cyan-200 border border-cyan-400/40">
-                        {gameState.reactionWindow.isCounterChain
-                          ? '⛓️ Corrente de Reação (Contra-Negação)'
-                          : gameState.phase === 'COMBAT_REACTION'
-                          ? 'Janela de Reação ao Ataque'
-                          : 'Janela de Reação à Carta'}
-                      </span>
-                      <span className="text-xs font-black text-white">
-                        {gameState.reactionWindow.triggerActionLabel}
-                      </span>
-                    </div>
-                    <p className="text-[11px] text-cyan-200 mt-0.5">
-                      {pendingReactionHandIndex !== null && selectedReactionCard ? (
-                        trocaFirstSlot !== null ? (
-                          <span>
-                            Carta selecionada: <strong>«{selectedReactionCard.name}»</strong> —
-                            Agora clique no <strong>2º combatente</strong> no seu campo para trocar!
-                          </span>
-                        ) : (
-                          <span>
-                            Carta selecionada: <strong>«{selectedReactionCard.name}»</strong> —
-                            Agora <strong>clique diretamente na Coluna do campo</strong> onde deseja
-                            invocar/aplicar!
-                          </span>
-                        )
-                      ) : selectingSlotForHero ? (
-                        <span>
-                          <strong>Invocar Herói em Reação:</strong> Clique em qualquer{' '}
-                          <strong>Coluna vazia (Col 1–6)</strong> no seu campo!
-                        </span>
-                      ) : gameState.reactionWindow.isCounterChain ? (
-                        <span>
-                          O Bot reagiu à sua jogada! Você pode{' '}
-                          <strong className="text-amber-300 underline">
-                            criar uma Corrente (Contra-Negar)
-                          </strong>{' '}
-                          usando uma carta destacada na mão, habilidade de campo ou aceitar a
-                          reação do Bot:
-                        </span>
-                      ) : (
-                        <span>
-                          As cartas da sua mão que podem reagir estão{' '}
-                          <strong className="text-cyan-300 underline">destacadas abaixo</strong>.
-                          Clique em uma miniatura destacada na mão ou passe a reação:
-                        </span>
-                      )}
-                    </p>
-                  </div>
-                </div>
+              ) : (isReactionPhase && gameState.reactionWindow) || previewCard ? (
+                (() => {
+                  const activeCenterCard =
+                    (isReactionPhase && gameState.reactionWindow?.triggerCard
+                      ? previewCard || gameState.reactionWindow.triggerCard
+                      : previewCard) || null;
+                  const cardImg = activeCenterCard ? getModernImage(activeCenterCard) : undefined;
+                  const archList = previewFighter
+                    ? getEffectiveArchetypes(gameState, previewFighter)
+                    : activeCenterCard?.archetype
+                    ? activeCenterCard.archetype
+                        .split(/[•,/]+/)
+                        .map((s) => s.trim())
+                        .filter(Boolean)
+                    : [];
 
-                <div className="flex items-center gap-2 flex-wrap">
-                  {gameState.reactionWindow.isSelamentoTrigger &&
-                    (gameState.reactionWindow.selamentoDoubleLifeCost ?? 0) > 0 &&
-                    gameState.player.hp >
-                      (gameState.reactionWindow.selamentoDoubleLifeCost ?? 0) && (
-                      <button
-                        onClick={handlePayDoubleToCounterSelamento}
-                        className="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-black text-xs flex items-center gap-1.5 shadow border border-rose-400/50"
-                      >
-                        ⛓️ Anular Selamento (Pagar Dobro:{' '}
-                        {gameState.reactionWindow.selamentoDoubleLifeCost} PV)
-                      </button>
-                    )}
-                  {availablePlayerReactions.canUseJimMagoFieldNegate && (
-                    <button
-                      onClick={handleReactWithJimMago}
-                      className="px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-white font-black text-xs flex items-center gap-1.5 shadow"
-                    >
-                      <Wand2 size={14} />
-                      {gameState.reactionWindow.isCounterChain
-                        ? 'Contra-Negar com «Jim - Mago»'
-                        : 'Negar com «Jim - Mago»'}
-                    </button>
-                  )}
-                  {availablePlayerReactions.canUseMahinaVeuFieldNegate && (
-                    <button
-                      onClick={handleReactWithMahinaVeu}
-                      className="px-3 py-1.5 rounded-lg bg-fuchsia-600 hover:bg-fuchsia-500 text-white font-black text-xs flex items-center gap-1.5 shadow border border-fuchsia-400/50"
-                    >
-                      <Crown size={14} />
-                      {gameState.reactionWindow.isCounterChain
-                        ? 'Contra-Negar com «Mahina Véu» (Apagar 1 Véu)'
-                        : 'Negar com «Mahina Véu» (Apagar 1 Véu)'}
-                    </button>
-                  )}
-                  {availablePlayerReactions.canUseQuintaCamadaNegate && (
-                    <button
-                      onClick={handleReactWithQuintaCamada}
-                      className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-black text-xs flex items-center gap-1.5 shadow border border-indigo-400/50"
-                    >
-                      <Shield size={14} />
-                      Negar com «Quinta Camada»
-                    </button>
-                  )}
-                  {(() => {
-                    const jimHeroiSlot = gameState.player.frontline.findIndex(
-                      (f) => f !== null && f.card.code === '2025/0001/00007' && !f.usedOncePerRoundAbility
-                    );
-                    if (jimHeroiSlot === -1) return null;
-                    return (
-                      <button
-                        onClick={() => handleActivateFieldFighterAbility(jimHeroiSlot)}
-                        className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs flex items-center gap-1.5 shadow border border-emerald-400/50"
-                      >
-                        💚 «Jim - Herói»: +1 Vida (1x/Rodada)
-                      </button>
-                    );
-                  })()}
-                  <button
-                    onClick={handlePassReaction}
-                    className="px-4 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white font-black text-xs border border-cyan-400/50 transition-colors"
-                  >
-                    {gameState.reactionWindow.isCounterChain
-                      ? 'Não Contra-Negar (Aceitar Reação)'
-                      : 'Passar Reação (Não Reagir)'}
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div className="flex flex-col items-center gap-1 w-full">
-                {actionSpotlight &&
-                  !selectingSlotForHero &&
-                  !selectedHandCard &&
-                  selectedAttackerSlot === null && (
+                  return (
                     <div
-                      key={actionSpotlight.id}
-                      className={`px-4 py-1 rounded-full border text-xs font-black tracking-wide shadow-lg flex items-center gap-2 transition-all ${
-                        actionSpotlight.tone === 'combat'
-                          ? 'bg-rose-950/95 border-rose-400 text-rose-100 shadow-rose-500/30'
-                          : actionSpotlight.tone === 'reaction'
-                          ? 'bg-cyan-950/95 border-cyan-400 text-cyan-100 shadow-cyan-500/30'
-                          : actionSpotlight.tone === 'summon'
-                          ? 'bg-amber-950/95 border-amber-400 text-amber-100 shadow-amber-500/30'
-                          : 'bg-purple-950/95 border-purple-400 text-purple-100 shadow-purple-500/30'
+                      className={`w-full px-2.5 py-1.5 rounded-xl bg-slate-950 border-2 flex items-center justify-between gap-2.5 shadow-2xl ${
+                        isReactionPhase && gameState.reactionWindow
+                          ? 'border-cyan-400'
+                          : 'border-amber-400/90'
                       }`}
                     >
-                      <span>{actionSpotlight.text}</span>
+                      {/* Left: Card Image + Fullscreen Zoom */}
+                      {activeCenterCard && (
+                        <div
+                          onClick={() => {
+                            setInspectedFighter(previewFighter);
+                            setInspectedCard(activeCenterCard);
+                          }}
+                          className="relative w-12 sm:w-14 aspect-[704/987] rounded-lg overflow-hidden border border-amber-400/70 shadow-md cursor-pointer shrink-0 group bg-slate-900"
+                          title="Clique na imagem para ampliar"
+                        >
+                          {cardImg ? (
+                            <img
+                              src={cardImg}
+                              alt={activeCenterCard.name}
+                              className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                            />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center text-[8px] text-slate-400 p-1 text-center">
+                              {activeCenterCard.name}
+                            </div>
+                          )}
+                          {activeCenterCard.type !== 'Herói' && (
+                            <span className="absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-purple-700 border border-amber-300 text-white font-black text-[9px] flex items-center justify-center shadow">
+                              {activeCenterCard.ct}
+                            </span>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Center: Card Name, Multi-Equipment Switcher (if multiple in slot) & Full Description */}
+                      <div className="min-w-0 flex-1 flex flex-col justify-center">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span
+                            className={`text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded border ${
+                              isReactionPhase && gameState.reactionWindow
+                                ? 'bg-cyan-500/25 text-cyan-200 border-cyan-400/50'
+                                : 'bg-amber-500/20 text-amber-300 border-amber-400/50'
+                            }`}
+                          >
+                            {isReactionPhase && gameState.reactionWindow
+                              ? gameState.reactionWindow.isCounterChain
+                                ? '⛓️ Contra-Negação'
+                                : gameState.phase === 'COMBAT_REACTION'
+                                ? '⚡ Reação ao Ataque'
+                                : '⚡ Reação à Carta'
+                              : previewBannerLabel}
+                          </span>
+
+                          {activeCenterCard && (
+                            <span className="text-xs font-black text-white truncate">
+                              {activeCenterCard.name}
+                            </span>
+                          )}
+
+                          {archList.map((arch) => {
+                            const icon = getArchetypeIcon(arch);
+                            return icon ? (
+                              <img
+                                key={arch}
+                                src={icon}
+                                alt={arch}
+                                title={arch}
+                                className="w-4 h-4 object-contain rounded-full bg-slate-900 p-0.5 border border-purple-400/50"
+                              />
+                            ) : null;
+                          })}
+
+                          {/* Multi-Equipment / Stacked Cards Switcher Pills */}
+                          {previewSlotCards.length > 1 && (
+                            <div className="flex items-center gap-1 flex-wrap ml-1">
+                              {previewSlotCards.map((sc, sIdx) => {
+                                const isCurrent = activeCenterCard?.code === sc.code;
+                                return (
+                                  <button
+                                    key={`slot_switch_${sIdx}_${sc.code}`}
+                                    type="button"
+                                    onClick={() => setPreviewCard(sc)}
+                                    className={`px-1.5 py-0.5 rounded text-[9px] font-black border transition-all ${
+                                      isCurrent
+                                        ? 'bg-amber-500 text-slate-950 border-amber-200'
+                                        : 'bg-slate-900 text-slate-300 border-slate-700 hover:border-amber-400'
+                                    }`}
+                                  >
+                                    {sIdx + 1}. {sc.name}
+                                  </button>
+                                );
+                              })}
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setZoneViewer({
+                                    title: `${previewBannerLabel} (${previewSlotCards.length})`,
+                                    cards: previewSlotCards
+                                  })
+                                }
+                                className="px-1.5 py-0.5 rounded bg-purple-700 hover:bg-purple-600 text-white text-[9px] font-black border border-purple-400"
+                              >
+                                Ver Todos ({previewSlotCards.length})
+                              </button>
+                            </div>
+                          )}
+                        </div>
+
+                        {isReactionPhase && gameState.reactionWindow && (
+                          <p className="text-[10px] font-bold text-cyan-300 truncate mt-0.5">
+                            {gameState.reactionWindow.triggerActionLabel}
+                          </p>
+                        )}
+
+                        {activeCenterCard && (
+                          <div className="mt-0.5 max-h-12 overflow-y-auto pr-1 text-[11px] text-slate-200 leading-snug whitespace-pre-line">
+                            {cleanCardDescription(activeCenterCard.description) ||
+                              'Sem efeito adicional.'}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Right: Reaction Options & Pass / Close Button */}
+                      <div className="flex items-center gap-1.5 flex-wrap shrink-0">
+                        {isReactionPhase && gameState.reactionWindow ? (
+                          <>
+                            {gameState.reactionWindow.isSelamentoTrigger &&
+                              (gameState.reactionWindow.selamentoDoubleLifeCost ?? 0) > 0 &&
+                              gameState.player.hp >
+                                (gameState.reactionWindow.selamentoDoubleLifeCost ?? 0) && (
+                                <button
+                                  onClick={handlePayDoubleToCounterSelamento}
+                                  className="px-2.5 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-black text-[10px] flex items-center gap-1 shadow"
+                                >
+                                  ⛓️ Anular Selamento (
+                                  {gameState.reactionWindow.selamentoDoubleLifeCost} PV)
+                                </button>
+                              )}
+                            {availablePlayerReactions.canUseJimMagoFieldNegate && (
+                              <button
+                                onClick={handleReactWithJimMago}
+                                className="px-2.5 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-white font-black text-[10px] flex items-center gap-1 shadow"
+                              >
+                                <Wand2 size={12} />
+                                Negar («Jim - Mago»)
+                              </button>
+                            )}
+                            {availablePlayerReactions.canUseMahinaVeuFieldNegate && (
+                              <button
+                                onClick={handleReactWithMahinaVeu}
+                                className="px-2.5 py-1.5 rounded-lg bg-fuchsia-600 hover:bg-fuchsia-500 text-white font-black text-[10px] flex items-center gap-1 shadow"
+                              >
+                                <Crown size={12} />
+                                Negar («Mahina Véu»)
+                              </button>
+                            )}
+                            {availablePlayerReactions.canUseQuintaCamadaNegate && (
+                              <button
+                                onClick={handleReactWithQuintaCamada}
+                                className="px-2.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-black text-[10px] flex items-center gap-1 shadow"
+                              >
+                                <Shield size={12} />
+                                Negar («Quinta Camada»)
+                              </button>
+                            )}
+                            {(() => {
+                              const jimHeroiSlot = gameState.player.frontline.findIndex(
+                                (f) =>
+                                  f !== null &&
+                                  f.card.code === '2025/0001/00007' &&
+                                  !f.usedOncePerRoundAbility
+                              );
+                              if (jimHeroiSlot === -1) return null;
+                              return (
+                                <button
+                                  onClick={() => handleActivateFieldFighterAbility(jimHeroiSlot)}
+                                  className="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-black text-[10px] flex items-center gap-1 shadow"
+                                >
+                                  💚 +1 Vida
+                                </button>
+                              );
+                            })()}
+                            <button
+                              onClick={handlePassReaction}
+                              className="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-[11px] uppercase tracking-wider shadow-lg"
+                            >
+                              {gameState.reactionWindow.isCounterChain
+                                ? 'Passar (Aceitar)'
+                                : 'Passar'}
+                            </button>
+                          </>
+                        ) : (
+                          <button
+                            onClick={() => {
+                              setPreviewCard(null);
+                              setPreviewFighter(null);
+                              setPreviewSlotCards([]);
+                            }}
+                            className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-300 hover:text-white font-black text-[10px] uppercase border border-slate-600 flex items-center gap-1"
+                          >
+                            Passar / Fechar
+                            <X size={12} />
+                          </button>
+                        )}
+                      </div>
                     </div>
-                  )}
-                <div className="px-4 py-1 rounded-full bg-slate-900/90 border border-purple-500/30 text-[11px] font-bold text-slate-300 flex items-center gap-2 shadow">
+                  );
+                })()
+              ) : (
+                <div className="flex items-center justify-center gap-2 w-full">
                   {selectingSlotForHero ? (
-                    <span className="text-amber-300 font-black">
-                      👑 Invocação de Herói: Clique em qual Coluna (1 a 6) deseja posicionar o seu
-                      Herói!
+                    <span className="px-3 py-0.5 rounded-full bg-amber-950/90 border border-amber-400 text-[10px] text-amber-200 font-black">
+                      👑 Invocação de Herói: Clique na Área de Combatente (Coluna 1 a 6) onde deseja
+                      invocar!
                     </span>
                   ) : selectedHandCard ? (
-                    <span className="text-purple-300">
-                      Carta selecionada: <strong>«{selectedHandCard.name}»</strong> — Clique na Coluna
-                      correspondente do campo para jogar!
+                    <span className="px-3 py-0.5 rounded-full bg-purple-950/90 border border-purple-400 text-[10px] text-purple-200 font-bold">
+                      Carta selecionada: <strong>«{selectedHandCard.name}»</strong> — Clique no
+                      espaço correspondente do campo para colocá-la!
                     </span>
                   ) : selectedAttackerSlot !== null ? (
-                    <span className="text-amber-300">
-                      Atacante selecionado na Coluna {selectedAttackerSlot + 1} — Passe o mouse ou clique em um
-                      combatente inimigo, em «Aqua Caótica» aliada (2x dano) {canDirectAttackBot ? 'ou em "Ataque Direto"' : ''}!
+                    <span className="px-3 py-0.5 rounded-full bg-amber-950/90 border border-amber-400 text-[10px] text-amber-200 font-bold">
+                      Atacante na Coluna {selectedAttackerSlot + 1} — Clique em um combatente
+                      inimigo, em «Aqua Caótica» aliada (2x dano){' '}
+                      {canDirectAttackBot ? 'ou em "Ataque Direto"' : ''}!
                     </span>
-                  ) : !actionSpotlight ? (
-                    <span>
-                      ⬆️ Colunas Alinhadas (1 a 6) — Arquétipo <strong>[Véu]</strong> anula arquétipos
-                      do combatente na mesma coluna ⬆️
+                  ) : actionSpotlight ? (
+                    <span className="px-3 py-0.5 rounded-full bg-slate-900/95 border border-purple-500/40 text-[10px] font-bold text-purple-200">
+                      {actionSpotlight.text}
                     </span>
                   ) : null}
                 </div>
-              </div>
-            )}
-          </div>
+              )}
+            </div>
 
-          {/* ============================================================
-              PLAYER FRONTLINE (6 Fighter Zones) & BACKROW (6 Support Zones)
-             ============================================================ */}
-          <div className="space-y-1.5 my-1">
-            {/* Player Frontline */}
-            <div className="grid grid-cols-6 gap-1.5">
+            {/* ============================================================
+                PLAYER FRONTLINE (6 Blue AREA DE COMBATENTE — Equal 1:1 Height with Bot Frontline)
+               ============================================================ */}
+            <div className="grid grid-cols-6 gap-1.5 flex-1 min-h-0">
               {gameState.player.frontline.map((fighter, idx) => {
                 const isSelectedAttacker = selectedAttackerSlot === idx;
 
@@ -4095,8 +4326,17 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
                         (selectedReactionCard.code === '2025/0001/00024' && !fighter.isHero))));
 
                 const effAtk = fighter ? getFighterEffectiveAtk(gameState, fighter) : 0;
+                const baseAtk = fighter ? fighter.card.attack ?? 0 : 0;
+                const baseHp = fighter ? fighter.card.defense ?? fighter.maxHp : 0;
                 const effArchs = fighter ? getEffectiveArchetypes(gameState, fighter) : [];
                 const imgUrl = fighter ? getModernImage(fighter.card) : undefined;
+                const displayCt = fighter
+                  ? Math.max(
+                      0,
+                      Number(fighter.card.ct || 0) -
+                        Number(gameState.player.permCtReduction || 0)
+                    )
+                  : 0;
 
                 const canUseSalazarSwap =
                   fighter &&
@@ -4113,9 +4353,11 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
                   fighter.card.code === '2025/0001/00183' &&
                   !fighter.usedOncePerRoundAbility &&
                   gameState.player.frontline.some((s) => s === null) &&
-                  [...gameState.player.heroDeck, ...gameState.player.deadZone, ...gameState.player.erasedZone].some(
-                    (c) => c.code === '2025/0001/00181' || c.code === '2025/0001/00182'
-                  );
+                  [
+                    ...gameState.player.heroDeck,
+                    ...gameState.player.deadZone,
+                    ...gameState.player.erasedZone
+                  ].some((c) => c.code === '2025/0001/00181' || c.code === '2025/0001/00182');
 
                 const canUseAnytimeAbility =
                   fighter &&
@@ -4162,38 +4404,37 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
                       }
                     }}
                     onClick={() => handlePlayerFrontSlotClick(idx)}
-                    className={`h-32 sm:h-36 rounded-xl border p-1.5 flex flex-col justify-between relative overflow-hidden transition-all duration-300 cursor-pointer ${
+                    className={`rounded-xl border-2 p-1 flex flex-col justify-between relative overflow-hidden transition-all duration-300 cursor-pointer ${
                       isPlayerSlotAttackerAnim
                         ? '-translate-y-3 scale-105 ring-4 ring-amber-400 border-amber-300 z-30 shadow-2xl shadow-amber-500/50 bg-amber-950/90'
                         : isPlayerSlotTargetAnim || playerSlotImpact === 'hit'
                         ? 'ring-4 ring-rose-500 border-rose-300 bg-rose-950/85 scale-95 z-20'
                         : playerSlotImpact === 'summon'
-                        ? 'ring-2 ring-amber-400 border-amber-300 bg-slate-900/95 scale-[1.03]'
+                        ? 'ring-2 ring-amber-400 border-amber-300 bg-sky-900/95 scale-[1.03]'
                         : playerSlotImpact === 'heal'
-                        ? 'ring-2 ring-emerald-400 border-emerald-300 bg-slate-900/95'
+                        ? 'ring-2 ring-emerald-400 border-emerald-300 bg-sky-900/95'
                         : fighter
                         ? isSelectedAttacker
-                          ? 'bg-amber-950/70 border-amber-400 ring-2 ring-amber-400/70 scale-[1.02]'
+                          ? 'bg-amber-950/80 border-amber-400 ring-2 ring-amber-400/80 scale-[1.02]'
                           : isFriendlyAquaTarget
                           ? 'bg-fuchsia-950/80 border-fuchsia-400 ring-2 ring-fuchsia-400/80 scale-[1.02] animate-pulse'
                           : isEquipOrAllyTargetMain || isHeroSlotTarget || isReactionSlotTarget
-                          ? 'bg-cyan-950/70 border-cyan-400 ring-2 ring-cyan-400/80 scale-[1.02]'
-                          : 'bg-slate-900/95 border-purple-500/40 hover:border-purple-400'
+                          ? 'bg-cyan-950/80 border-cyan-400 ring-2 ring-cyan-400/80 scale-[1.02]'
+                          : 'bg-sky-950/85 border-sky-400/70 hover:border-sky-300 shadow-inner'
                         : isSummonTargetMain || isHeroSlotTarget || isReactionSlotTarget
-                        ? 'bg-emerald-950/50 border-emerald-400 border-dashed ring-2 ring-emerald-400/60 items-center justify-center animate-pulse'
-                        : 'bg-slate-900/30 border-slate-800/70 text-slate-600 items-center justify-center'
+                        ? 'bg-emerald-950/60 border-emerald-400 border-dashed ring-2 ring-emerald-400/70 items-center justify-center animate-pulse'
+                        : 'bg-sky-600/20 border-sky-500/40 text-sky-300/60 items-center justify-center'
                     }`}
                   >
-                    {/* Floating Damage / Heal / KO / Summon Popups */}
                     {playerSlotPopups.length > 0 && (
-                      <div className="pointer-events-none absolute inset-x-0 top-1/2 -translate-y-1/2 z-40 flex flex-col items-center gap-1">
+                      <div className="pointer-events-none absolute inset-x-0 top-1/2 -translate-y-1/2 z-40 flex flex-col items-center gap-0.5">
                         {playerSlotPopups.map((p) => (
                           <span
                             key={p.id}
-                            className={`px-2 py-0.5 rounded-full text-[11px] font-black uppercase tracking-wider shadow-xl border animate-bounce ${
-                              p.kind === 'damage' || p.kind === 'ko'
+                            className={`px-1.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider shadow-xl border animate-bounce ${
+                              p.variant === 'damage' || p.variant === 'ko'
                                 ? 'bg-rose-600/95 text-white border-rose-200'
-                                : p.kind === 'heal'
+                                : p.variant === 'heal'
                                 ? 'bg-emerald-600/95 text-white border-emerald-200'
                                 : 'bg-amber-500/95 text-slate-950 border-amber-200'
                             }`}
@@ -4205,84 +4446,93 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
                     )}
 
                     {fighter ? (
-                      <>
+                      <div
+                        key={fighter.instanceId}
+                        className="animate-ld-card-place w-full h-full flex flex-col justify-between relative"
+                      >
                         {imgUrl && (
-                          <div className="absolute inset-0 opacity-30 pointer-events-none">
+                          <div className="absolute inset-0 opacity-45 pointer-events-none">
                             <img
                               src={imgUrl}
                               alt={fighter.card.name}
                               className="w-full h-full object-cover object-top"
                             />
-                            <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/60 to-slate-950/30" />
+                            <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/45 to-slate-950/20" />
                           </div>
                         )}
 
+                        {/* Top Row: Plain Numeric CT Circle + Archetype Icons */}
                         <div className="relative z-10 flex items-start justify-between gap-1">
                           <span
-                            className={`text-[9px] font-black px-1.5 py-0.5 rounded uppercase truncate ${
+                            className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black border shadow-md shrink-0 ${
                               fighter.isHero
-                                ? 'bg-amber-500/30 text-amber-200 border border-amber-400/50'
-                                : 'bg-purple-500/30 text-purple-200'
+                                ? 'bg-amber-500 text-slate-950 border-amber-200'
+                                : 'bg-purple-700 text-white border-purple-300'
                             }`}
+                            title={fighter.isHero ? 'Herói' : `Custo de Turno: ${displayCt}`}
                           >
-                            {fighter.isHero
-                              ? '👑 Herói'
-                              : `CT ${Math.max(0, (fighter.card.ct || 0) + (fighter.summonHpSpentBonusCt || 0) - gameState.player.permanentCtReduction)}`}
+                            {displayCt}
                           </span>
-                          <div className="flex items-center gap-1">
+
+                          <div className="flex items-center gap-0.5 flex-wrap justify-end">
                             {isFriendlyAquaTarget && (
-                              <span
-                                className="text-[8px] px-1 rounded bg-fuchsia-500 text-white font-black uppercase"
-                                title="Clique para atacar Aqua Caótica e refletir 2x dano ao inimigo à frente!"
-                              >
-                                2x Dano!
+                              <span className="text-[7px] px-1 rounded bg-fuchsia-500 text-white font-black uppercase">
+                                2x
                               </span>
                             )}
                             {fighter.hasAttackedThisTurn && (
                               <span
-                                className="text-[8px] px-1 rounded bg-slate-800 text-slate-400"
+                                className="text-[7px] px-1 rounded bg-slate-900/90 text-slate-400 border border-slate-700"
                                 title="Já atacou neste turno"
                               >
-                                Atacou
+                                ✓
                               </span>
                             )}
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setInspectedFighter(fighter);
-                                setInspectedCard(fighter.card);
-                              }}
-                              className="p-0.5 rounded bg-slate-950/90 text-slate-300 hover:text-white border border-slate-700"
-                              title="Inspecionar Carta"
-                            >
-                              <Eye size={11} />
-                            </button>
+                            {effArchs.map((arch) => {
+                              const iconUrl = getArchetypeIcon(arch);
+                              return iconUrl ? (
+                                <img
+                                  key={arch}
+                                  src={iconUrl}
+                                  alt={arch}
+                                  title={arch}
+                                  className="w-4 h-4 rounded-full object-cover border border-white/40 bg-slate-950 shadow"
+                                />
+                              ) : null;
+                            })}
                           </div>
                         </div>
 
-                        <div className="relative z-10 my-auto flex items-center gap-1.5">
-                          {imgUrl && (
-                            <img
-                              src={imgUrl}
-                              alt={fighter.card.name}
-                              className="w-10 h-14 object-cover rounded border border-white/20 shadow-md shrink-0 hidden sm:block"
-                            />
+                        {/* Center Name + Optional Active Ability Button */}
+                        <div className="relative z-10 my-auto px-0.5 text-center">
+                          <p className="font-bold text-[9px] sm:text-[10px] text-white leading-tight line-clamp-2 drop-shadow">
+                            {fighter.card.name}
+                          </p>
+                          {fighter.equipments.length > 0 && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                const eqCards = fighter.equipments.map((eq) => eq.card);
+                                showCardInPanel(
+                                  eqCards[0],
+                                  fighter,
+                                  `Equipamentos de ${fighter.card.name}`,
+                                  eqCards
+                                );
+                                if (eqCards.length > 1) {
+                                  setZoneViewer({
+                                    title: `Equipamentos de «${fighter.card.name}» (${eqCards.length})`,
+                                    cards: eqCards
+                                  });
+                                }
+                              }}
+                              className="text-[7px] px-1 py-0.2 rounded bg-amber-950/90 border border-amber-400/60 text-amber-300 hover:text-white font-bold truncate"
+                              title="Clique para ver todos os equipamentos acoplados"
+                            >
+                              🛡️ {fighter.equipments.length} Equip.
+                            </button>
                           )}
-                          <div className="min-w-0 flex-1 text-left">
-                            <p className="font-bold text-[10px] sm:text-[11px] text-white leading-tight line-clamp-2 drop-shadow">
-                              {fighter.card.name}
-                            </p>
-                            {effArchs.length > 0 && (
-                              <p className="text-[8px] text-purple-300 truncate mt-0.5">
-                                [{effArchs.join('•')}]
-                              </p>
-                            )}
-                            {fighter.equipments.length > 0 && (
-                              <p className="text-[8px] text-amber-300 font-bold truncate mt-0.5">
-                                🛡️ {fighter.equipments.map((e) => e.card.name).join(', ')}
-                              </p>
-                            )}
-                          </div>
                         </div>
 
                         {canUseAnytimeAbility && (
@@ -4291,39 +4541,48 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
                               e.stopPropagation();
                               handleActivateFieldFighterAbility(idx);
                             }}
-                            className={`relative z-10 w-full py-0.5 mb-0.5 rounded font-black text-[9px] uppercase tracking-wider transition-colors ${
-                              fighter.card.code === '2025/0001/00007'
-                                ? 'bg-emerald-500 hover:bg-emerald-400 text-slate-950'
-                                : 'bg-amber-500 hover:bg-amber-400 text-slate-950'
-                            }`}
+                            className="relative z-10 w-full py-0.5 mb-0.5 rounded bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-[8px] uppercase truncate shadow"
                           >
                             {fighter.card.code === '2025/0001/00007'
-                              ? '💚 +1 Vida (1x/Rodada)'
+                              ? '💚 +1 Vida'
                               : canUseSalazarSwap
-                              ? '👑 Trocar Salazar (+1 Runa)'
+                              ? '👑 Trocar Salazar'
                               : canUseMestreDualidadeSummon
-                              ? '👑 Invocar Guia/Líder (1x/Rodada)'
-                              : '⚡ Buscar Gema [9+ Jim]'}
+                              ? '👑 Invocar Guia/Líder'
+                              : '⚡ Buscar Gema'}
                           </button>
                         )}
 
-                        <div className="relative z-10 flex items-center justify-between text-[11px] font-black bg-slate-950/95 px-2 py-0.5 rounded-lg border border-slate-800">
-                          <span className="text-amber-400 flex items-center gap-0.5">
+                        {/* Bottom Bar: ATK & HP colored white (equal), green (gain), red (loss) */}
+                        <div className="relative z-10 flex items-center justify-between text-[11px] font-black bg-slate-950/95 px-1.5 py-0.5 rounded border border-slate-800">
+                          <span
+                            className={`flex items-center gap-0.5 ${getStatColorClass(
+                              effAtk,
+                              baseAtk
+                            )}`}
+                            title={`Ataque Base: ${baseAtk} | Atual: ${effAtk}`}
+                          >
                             ⚔️ {effAtk}
                           </span>
-                          <span className="text-emerald-400 flex items-center gap-0.5">
+                          <span
+                            className={`flex items-center gap-0.5 ${getStatColorClass(
+                              fighter.currentHp,
+                              baseHp
+                            )}`}
+                            title={`Vida Base: ${baseHp} | Atual: ${fighter.currentHp}`}
+                          >
                             ❤️ {fighter.currentHp}
                           </span>
                         </div>
-                      </>
+                      </div>
                     ) : (
-                      <div className="text-center">
-                        <span className="text-[10px] font-bold uppercase tracking-wider block">
-                          Col {idx + 1}
+                      <div className="text-center px-1">
+                        <span className="text-[8px] font-black uppercase tracking-wider leading-tight block">
+                          AREA DE COMBATENTE
                         </span>
                         {(isSummonTargetMain || isHeroSlotTarget || isReactionSlotTarget) && (
-                          <span className="text-[9px] text-emerald-300 font-black uppercase">
-                            Clique p/ Invocar
+                          <span className="text-[8px] text-emerald-300 font-black uppercase block mt-0.5">
+                            Invocar
                           </span>
                         )}
                       </div>
@@ -4333,12 +4592,17 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
               })}
             </div>
 
-            {/* Player Backrow (6 Support & Equipment Zones) */}
-            <div className="grid grid-cols-6 gap-1.5">
+            {/* Player Backrow (6 Green AREA DE EFEITO / EQUIPAMENTO slots) */}
+            <div className="grid grid-cols-6 gap-1.5 h-11 sm:h-12 shrink-0">
               {gameState.player.backrow.map((sup, idx) => {
                 const frontFighter = gameState.player.frontline[idx];
                 const equippedList = frontFighter?.equipments ?? [];
-                const hasContent = sup !== null || equippedList.length > 0;
+                const supportCardsInSlot = getAllSupportCardsInSlot(sup);
+                const allPlayerSlotCards = [
+                  ...supportCardsInSlot,
+                  ...equippedList.map((e) => e.card)
+                ];
+                const hasContent = allPlayerSlotCards.length > 0;
 
                 const activeSupportCard =
                   gameState.phase === 'MAIN_PHASE'
@@ -4347,10 +4611,9 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
                     ? selectedReactionCard
                     : null;
 
+                // Qualquer carta que equipa o jogador / permanece em campo pode ser colocada em espaço vazio OU empilhada em espaço já ocupado!
                 const isSupportTarget =
-                  activeSupportCard !== null &&
-                  isContinuousBackrowCard(activeSupportCard) &&
-                  (sup === null || (isCamadaCard(activeSupportCard) && isCamadaCard(sup.card)));
+                  activeSupportCard !== null && isContinuousBackrowCard(activeSupportCard);
 
                 const isEquipSupportTarget =
                   frontFighter !== null &&
@@ -4363,7 +4626,7 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
 
                 const canUseBusca =
                   sup &&
-                  sup.card.code === '2025/0001/00017' &&
+                  supportCardsInSlot.some((c) => c.code === '2025/0001/00017') &&
                   !sup.usedOncePerRound &&
                   gameState.player.deck.some((c) => c.ct === gameState.player.runes);
 
@@ -4373,120 +4636,77 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
                     onClick={() => {
                       if (isSupportTarget || isEquipSupportTarget) {
                         handlePlayerSupportSlotClick(idx);
-                      } else if (sup) {
-                        setInspectedCard(sup.card);
-                      } else if (equippedList.length > 0) {
-                        setInspectedCard(equippedList[0].card);
+                      } else if (allPlayerSlotCards.length > 0) {
+                        showCardInPanel(
+                          allPlayerSlotCards[allPlayerSlotCards.length - 1],
+                          null,
+                          `Seus Efeitos / Equipamentos (Coluna ${idx + 1})`,
+                          allPlayerSlotCards
+                        );
+                        if (allPlayerSlotCards.length > 1) {
+                          setZoneViewer({
+                            title: `Seus Efeitos / Equipamentos — Coluna ${idx + 1} (${allPlayerSlotCards.length})`,
+                            cards: allPlayerSlotCards
+                          });
+                        }
                       } else {
                         handlePlayerSupportSlotClick(idx);
                       }
                     }}
-                    className={`h-16 rounded-lg border flex items-center justify-center p-1 text-center transition-all overflow-hidden ${
+                    className={`rounded-lg border-2 flex items-center justify-center p-1 text-center transition-all overflow-hidden ${
                       isSupportTarget || isEquipSupportTarget
-                        ? 'bg-emerald-950/60 border-emerald-400 border-dashed ring-2 ring-emerald-400/70 cursor-pointer animate-pulse'
+                        ? 'bg-emerald-900/70 border-emerald-300 border-dashed ring-2 ring-emerald-400/70 cursor-pointer animate-pulse'
                         : hasContent
-                        ? 'bg-indigo-950/60 border-indigo-500/50 cursor-pointer hover:border-indigo-400'
-                        : 'bg-slate-900/30 border-slate-800/60 text-slate-600'
+                        ? 'bg-emerald-950/85 border-emerald-400/80 cursor-pointer hover:border-emerald-300'
+                        : 'bg-emerald-600/20 border-emerald-500/40 text-emerald-300/60'
                     }`}
                   >
                     {hasContent ? (
-                      <div className="flex items-center gap-1 w-full px-0.5 overflow-x-auto">
-                        {sup && (
-                          <div
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              if (isSupportTarget || isEquipSupportTarget) {
-                                handlePlayerSupportSlotClick(idx);
-                              } else {
-                                setInspectedCard(sup.card);
-                              }
-                            }}
-                            className="flex items-center gap-1.5 min-w-0 flex-1"
-                            title={
-                              sup.stackedCards && sup.stackedCards.length > 0
-                                ? `Efeito Contínuo: ${sup.card.name} (+${sup.stackedCards.length} empilhada(s): ${sup.stackedCards.map((c) => c.name).join(', ')})`
-                                : `Efeito Contínuo: ${sup.card.name}`
-                            }
-                          >
-                            {getModernImage(sup.card) && (
+                      <div className="animate-ld-card-place flex items-center gap-1 w-full px-0.5 overflow-hidden">
+                        <div className="flex -space-x-1.5 shrink-0">
+                          {allPlayerSlotCards.slice(0, 3).map((c, cIdx) => {
+                            const cImg = getModernImage(c);
+                            return cImg ? (
                               <img
-                                src={getModernImage(sup.card)}
-                                alt={sup.card.name}
-                                className="w-8 h-11 object-cover rounded border border-indigo-400/50 shrink-0"
+                                key={`player_back_img_${idx}_${cIdx}`}
+                                src={cImg}
+                                alt={c.name}
+                                className="w-5 h-7 object-cover rounded border border-emerald-300/80 shadow"
                               />
-                            )}
-                            <div className="min-w-0 flex-1 text-left">
-                              <span className="text-[9px] font-black uppercase text-indigo-200 truncate block">
-                                {sup.card.name}
-                              </span>
-                              {canUseBusca ? (
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleActivateBuscaEternidade(idx);
-                                  }}
-                                  className="mt-0.5 px-1.5 py-0.5 rounded bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-[8px] uppercase"
-                                >
-                                  Buscar (CT {gameState.player.runes})
-                                </button>
-                              ) : (
-                                <span className="text-[8px] text-slate-400 block">
-                                  {sup.card.code === '2025/0001/00017'
-                                    ? sup.usedOncePerRound
-                                      ? 'Usado na rodada'
-                                      : `Runas: ${gameState.player.runes}`
-                                    : sup.stackedCards && sup.stackedCards.length > 0
-                                    ? `📚 ${sup.stackedCards.length + 1} Camadas`
-                                    : 'Efeito Ativo'}
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        )}
-
-                        {equippedList.map((eq) => {
-                          const eqImg = getModernImage(eq.card);
-                          return (
-                            <div
-                              key={eq.instanceId}
+                            ) : null;
+                          })}
+                        </div>
+                        <div className="min-w-0 flex-1 text-left">
+                          <span className="text-[8px] font-black uppercase text-emerald-100 truncate block">
+                            {allPlayerSlotCards[allPlayerSlotCards.length - 1].name}
+                          </span>
+                          {canUseBusca ? (
+                            <button
                               onClick={(e) => {
                                 e.stopPropagation();
-                                if (isEquipSupportTarget) {
-                                  handlePlayerSupportSlotClick(idx);
-                                } else {
-                                  setInspectedCard(eq.card);
-                                }
+                                handleActivateBuscaEternidade(idx);
                               }}
-                              className="flex items-center gap-1 min-w-0 flex-1 bg-amber-950/50 border border-amber-500/50 rounded p-0.5"
-                              title={`Equipado em «${frontFighter?.card.name}»: ${eq.card.name}`}
+                              className="px-1 py-0.2 rounded bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-[7px] uppercase"
                             >
-                              {eqImg && (
-                                <img
-                                  src={eqImg}
-                                  alt={eq.card.name}
-                                  className="w-8 h-11 object-cover rounded border border-amber-400/70 shrink-0"
-                                />
-                              )}
-                              <div className="min-w-0 flex-1 text-left">
-                                <span className="text-[8px] font-black uppercase text-amber-200 truncate block">
-                                  {eq.card.name}
-                                </span>
-                                <span className="text-[7px] text-amber-300 font-bold truncate block">
-                                  🛡️ Equipado
-                                </span>
-                              </div>
-                            </div>
-                          );
-                        })}
+                              Buscar (CT {gameState.player.runes})
+                            </button>
+                          ) : (
+                            <span className="text-[7px] text-amber-300 font-bold block truncate">
+                              {allPlayerSlotCards.length > 1
+                                ? `📚 ${allPlayerSlotCards.length} cartas (Ver todas)`
+                                : 'Ativo'}
+                            </span>
+                          )}
+                        </div>
                       </div>
                     ) : (
                       <div className="text-center">
-                        <span className="text-[9px] uppercase font-bold tracking-wider block">
-                          Sup {idx + 1}
+                        <span className="text-[7px] uppercase font-black tracking-tight leading-tight block">
+                          AREA DE EFEITO / EQUIPAMENTO
                         </span>
                         {(isSupportTarget || isEquipSupportTarget) && (
-                          <span className="text-[8px] text-emerald-300 font-black uppercase block">
-                            {isEquipSupportTarget ? 'Equipar' : 'Ativar'}
+                          <span className="text-[7px] text-emerald-200 font-black uppercase block">
+                            {isEquipSupportTarget ? 'Equipar' : 'Ativar / Empilhar'}
                           </span>
                         )}
                       </div>
@@ -4497,384 +4717,420 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
             </div>
           </div>
 
-          {/* ============================================================
-              PLAYER STATUS BAR, HERO MINIATURE & HAND MINIATURES (BOTTOM)
-             ============================================================ */}
-          <div className="bg-slate-900/95 border border-slate-800 rounded-xl p-2.5 space-y-2">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              {/* Player Stats */}
-              <div className="flex items-center gap-2.5">
-                <div
-                  ref={playerHpRef}
-                  className={`relative flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-rose-950/60 border border-rose-500/30 text-rose-300 font-black text-xs transition-all ${
-                    slotImpacts['player_hp'] === 'hit'
-                      ? 'ring-2 ring-rose-400 bg-rose-600/40 scale-110'
-                      : slotImpacts['player_hp'] === 'heal'
-                      ? 'ring-2 ring-emerald-400 bg-emerald-600/30 scale-110'
-                      : ''
-                  }`}
-                >
-                  <Heart size={14} className="fill-rose-500 text-rose-500" />
-                  {gameState.player.hp} PV
-                  {floatingPopups
-                    .filter((p) => p.targetKey === 'player_hp')
-                    .map((p) => (
-                      <span
-                        key={p.id}
-                        className={`pointer-events-none absolute -top-7 left-1/2 -translate-x-1/2 z-50 px-2 py-0.5 rounded-full text-[11px] font-black whitespace-nowrap shadow-lg animate-bounce ${
-                          p.kind === 'damage'
-                            ? 'bg-rose-600 text-white border border-rose-300'
-                            : 'bg-emerald-600 text-white border border-emerald-300'
-                        }`}
-                      >
-                        {p.text}
-                      </span>
-                    ))}
-                </div>
-                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-cyan-950/60 border border-cyan-500/30 text-cyan-300 font-black text-xs">
-                  <Zap size={14} className="fill-cyan-400 text-cyan-400" />
-                  {gameState.player.mana} Mana
-                </div>
-                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-950/60 border border-amber-500/30 text-amber-300 font-bold text-xs">
-                  <Sparkles size={13} />
-                  {gameState.player.runes} Runas
-                </div>
-                {gameState.player.ctReductionThisRound > 0 && (
-                  <span className="px-2 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/40 text-[10px] font-black">
-                    -{gameState.player.ctReductionThisRound} CT nesta rodada
-                  </span>
-                )}
-                {gameState.player.permanentCtReduction > 0 && (
-                  <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[10px] font-black">
-                    -{gameState.player.permanentCtReduction} CT Permanente
-                  </span>
-                )}
-                {gameState.player.nextRoundExtraCtCost > 0 && (
-                  <span className="px-2 py-0.5 rounded bg-rose-500/20 text-rose-300 border border-rose-500/40 text-[10px] font-black">
-                    +{gameState.player.nextRoundExtraCtCost} CT Penalidade
-                  </span>
-                )}
-              </div>
-
-              {/* Player Zones & Hero Summon (Enforcing Official Requirements per Hero) & End Turn */}
-              <div className="flex items-center gap-1.5 flex-wrap">
-                {gameState.player.heroDeck.length > 0 &&
-                  (() => {
-                    const isAnytimeWindow =
-                      isReactionPhase || gameState.phase === 'PRE_DRAW_WINDOW';
-                    const summonableHero = gameState.player.heroDeck.find(
-                      (h) => canSummonHeroDirectly(gameState, 'player', h, isAnytimeWindow).allowed
-                    );
-                    const displayHero = summonableHero || gameState.player.heroDeck[0];
-                    const heroCheck = canSummonHeroDirectly(
-                      gameState,
-                      'player',
-                      displayHero,
-                      isAnytimeWindow
-                    );
-                    const canClickSummon =
-                      heroCheck.allowed &&
-                      (isAnytimeWindow ||
-                        (gameState.phase === 'MAIN_PHASE' &&
-                          gameState.activePlayer === 'player'));
-
-                    return (
-                      <div className="flex items-center gap-1">
-                        <button
-                          onClick={() => {
-                            if (!canClickSummon) {
-                              if (gameState.player.heroDeck.length > 1) {
-                                setZoneViewer({
-                                  title: `Sua Zona do Herói (${gameState.player.heroDeck.length} Heróis)`,
-                                  cards: gameState.player.heroDeck
-                                });
-                              } else {
-                                setInspectedFighter(null);
-                                setInspectedCard(displayHero);
-                              }
-                              return;
-                            }
-                            setSelectedHandIndex(null);
-                            setSelectedAttackerSlot(null);
-                            setPendingReactionHandIndex(null);
-                            setSelectedHeroCodeToSummon(displayHero.code);
-                            setSelectingSlotForHero((prev) => !prev);
-                          }}
-                          className={`px-3 py-1 rounded-lg font-black text-xs flex items-center gap-2 shadow-lg transition-all ${
-                            selectingSlotForHero
-                              ? 'bg-emerald-500 text-slate-950 ring-2 ring-white'
-                              : canClickSummon && isReactionPhase
-                              ? 'bg-gradient-to-r from-cyan-400 to-amber-400 text-slate-950 ring-2 ring-cyan-300 animate-pulse'
-                              : canClickSummon
-                              ? 'bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-slate-950 shadow-amber-500/20'
-                              : 'bg-slate-800/90 hover:bg-slate-700 text-slate-300 border border-slate-700'
-                          }`}
-                          title={
-                            canClickSummon
-                              ? `Invocar «${displayHero.name}» (${heroCheck.badgeText})`
-                              : `${displayHero.name} — ${
-                                  heroCheck.reason || 'Aguardando seu turno ou requisito'
-                                } (Clique para inspecionar)`
-                          }
-                        >
-                          {getModernImage(displayHero) && (
-                            <img
-                              src={getModernImage(displayHero)}
-                              alt="Herói"
-                              className="w-5 h-7 object-cover rounded border border-slate-900"
-                            />
-                          )}
-                          {canClickSummon ? <Crown size={14} /> : <Lock size={13} />}
-                          {selectingSlotForHero
-                            ? 'Cancelar Seleção de Coluna'
-                            : canClickSummon
-                            ? `Invocar «${displayHero.name}» (${heroCheck.badgeText})`
-                            : `Herói (${gameState.player.heroDeck.length}): ${heroCheck.badgeText}`}
-                        </button>
-                        {gameState.player.heroDeck.length > 1 && (
-                          <button
-                            onClick={() =>
-                              setZoneViewer({
-                                title: `Sua Zona do Herói (${gameState.player.heroDeck.length} Heróis)`,
-                                cards: gameState.player.heroDeck
-                              })
-                            }
-                            className="p-1.5 rounded-lg bg-slate-950 hover:bg-slate-800 border border-amber-500/40 text-amber-300"
-                            title="Ver todos os Heróis na sua Zona do Herói e seus requisitos"
-                          >
-                            <Eye size={13} />
-                          </button>
+            {/* ============================================================
+                RIGHT COLUMN: ZONA APAGADA (Top) & DECK DE HERÓI (Bottom)
+               ============================================================ */}
+            <div className="w-20 sm:w-24 shrink-0 flex flex-col gap-1.5">
+              {/* ZONA APAGADA */}
+              <button
+                onClick={() =>
+                  setZoneViewer({
+                    title: `Sua Zona Apagada (${gameState.player.erasedZone.length})`,
+                    cards: gameState.player.erasedZone
+                  })
+                }
+                className="flex-1 rounded-xl border-2 border-purple-500/50 bg-slate-900/90 hover:border-purple-400 p-1.5 flex flex-col items-center justify-between text-center transition-all group relative overflow-hidden"
+                title="Clique para abrir a Zona Apagada"
+              >
+                <span className="text-[9px] font-black uppercase tracking-wider text-purple-200 z-10">
+                  ZONA APAGADA
+                </span>
+                {gameState.player.erasedZone.length > 0 ? (
+                  <div className="relative w-12 h-16 rounded border border-purple-400/60 overflow-hidden shadow-md my-auto">
+                    {getModernImage(
+                      gameState.player.erasedZone[gameState.player.erasedZone.length - 1]
+                    ) && (
+                      <img
+                        src={getModernImage(
+                          gameState.player.erasedZone[gameState.player.erasedZone.length - 1]
                         )}
-                      </div>
-                    );
-                  })()}
-
-                <div className="px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-800 text-[11px] text-slate-300">
-                  Deck: <strong className="text-white">{gameState.player.deck.length}</strong>
-                </div>
-
-                <button
-                  onClick={() =>
-                    setZoneViewer({
-                      title: `Sua Zona Morta (${gameState.player.deadZone.length})`,
-                      cards: gameState.player.deadZone
-                    })
-                  }
-                  className="px-2.5 py-1 rounded-lg bg-slate-950 hover:bg-slate-800 border border-slate-800 text-[11px] text-slate-300 flex items-center gap-1 transition-colors"
-                >
-                  <Skull size={12} className="text-slate-400" />
-                  Morta: <strong className="text-white">{gameState.player.deadZone.length}</strong>
-                </button>
-
-                <button
-                  onClick={() =>
-                    setZoneViewer({
-                      title: `Sua Zona Apagada (${
-                        gameState.player.erasedZone.length
-                      } cartas | ${countJimsInErasedZone(gameState.player)} «Jim»)`,
-                      cards: gameState.player.erasedZone
-                    })
-                  }
-                  className="px-2.5 py-1 rounded-lg bg-purple-950/60 hover:bg-purple-900/60 border border-purple-500/40 text-[11px] text-purple-200 flex items-center gap-1 transition-colors"
-                >
-                  <Flame size={12} className="text-purple-400" />
-                  Apagada:{' '}
-                  <strong className="text-white">{gameState.player.erasedZone.length}</strong> (
-                  {countJimsInErasedZone(gameState.player)} Jim)
-                </button>
-
-                {gameState.phase === 'MAIN_PHASE' && gameState.activePlayer === 'player' && (
-                  <button
-                    onClick={handleEndPlayerTurn}
-                    className="px-4 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-white font-black text-xs uppercase tracking-wider shadow-lg shadow-purple-600/30 transition-all"
-                  >
-                    Passar Turno
-                  </button>
+                        alt="Zona Apagada"
+                        className="w-full h-full object-cover opacity-85 group-hover:scale-105 transition-transform"
+                      />
+                    )}
+                    <span className="absolute inset-x-0 bottom-0 bg-purple-950/90 text-[10px] font-black text-white">
+                      {gameState.player.erasedZone.length}
+                    </span>
+                  </div>
+                ) : (
+                  <Flame size={20} className="text-purple-700/60 my-auto" />
                 )}
-              </div>
+                <span className="text-[8px] font-bold text-purple-300 z-10">
+                  Bot: {gameState.bot.erasedZone.length}
+                </span>
+              </button>
+
+              {/* DECK DE HERÓI */}
+              {(() => {
+                const isAnytimeWindow =
+                  isReactionPhase || gameState.phase === 'PRE_DRAW_WINDOW';
+                const summonableHero = gameState.player.heroDeck.find(
+                  (h) => canSummonHeroDirectly(gameState, 'player', h, isAnytimeWindow).allowed
+                );
+                const displayHero = summonableHero || gameState.player.heroDeck[0];
+                const heroCheck = displayHero
+                  ? canSummonHeroDirectly(gameState, 'player', displayHero, isAnytimeWindow)
+                  : null;
+                const canClickSummon =
+                  Boolean(heroCheck?.allowed) &&
+                  (isAnytimeWindow ||
+                    (gameState.phase === 'MAIN_PHASE' && gameState.activePlayer === 'player'));
+
+                return (
+                  <div
+                    onClick={() => {
+                      if (!displayHero) return;
+                      showCardInPanel(displayHero, null, 'DECK DE HERÓI');
+                      if (canClickSummon) {
+                        setSelectedHandIndex(null);
+                        setSelectedAttackerSlot(null);
+                        setPendingReactionHandIndex(null);
+                        setSelectedHeroCodeToSummon(displayHero.code);
+                        setSelectingSlotForHero((prev) => !prev);
+                      } else if (gameState.player.heroDeck.length > 0) {
+                        setZoneViewer({
+                          title: `Deck de Herói (${gameState.player.heroDeck.length})`,
+                          cards: gameState.player.heroDeck
+                        });
+                      }
+                    }}
+                    className={`flex-1 rounded-xl border-2 p-1.5 flex flex-col items-center justify-between text-center transition-all cursor-pointer relative overflow-hidden ${
+                      selectingSlotForHero
+                        ? 'border-emerald-400 bg-emerald-950/70 ring-2 ring-emerald-300'
+                        : canClickSummon
+                        ? 'border-amber-400 bg-amber-950/70 ring-2 ring-amber-400/70 animate-pulse'
+                        : 'border-amber-500/40 bg-slate-900/90 hover:border-amber-400'
+                    }`}
+                    title={
+                      displayHero
+                        ? canClickSummon
+                          ? `Clique para invocar «${displayHero.name}»`
+                          : `Clique para ver os Heróis (${gameState.player.heroDeck.length})`
+                        : 'Deck de Herói vazio'
+                    }
+                  >
+                    <span className="text-[9px] font-black uppercase tracking-wider text-amber-200 leading-tight z-10">
+                      DECK DE HERÓI
+                    </span>
+
+                    {displayHero ? (
+                      <div className="relative w-12 h-16 rounded border border-amber-400/70 overflow-hidden shadow-md my-auto">
+                        {getModernImage(displayHero) && (
+                          <img
+                            src={getModernImage(displayHero)}
+                            alt={displayHero.name}
+                            className="w-full h-full object-cover"
+                          />
+                        )}
+                        <span className="absolute inset-x-0 bottom-0 bg-slate-950/90 text-[8px] font-black text-amber-300 truncate px-0.5">
+                          {selectingSlotForHero
+                            ? 'Cancelar'
+                            : canClickSummon
+                            ? 'INVOCAR!'
+                            : `${gameState.player.heroDeck.length} Herói(s)`}
+                        </span>
+                      </div>
+                    ) : (
+                      <Crown size={20} className="text-slate-700 my-auto" />
+                    )}
+
+                    <span className="text-[8px] font-bold text-amber-300/90 truncate w-full z-10">
+                      {heroCheck ? heroCheck.badgeText : 'Em campo'}
+                    </span>
+                  </div>
+                );
+              })()}
             </div>
+          </div>
 
-            {/* PLAYER HAND MINIATURES (MODERNO FRAME THUMBNAILS VISIBLE!) */}
-            <div className="flex items-center gap-2.5 overflow-x-auto pb-1.5 pt-2 px-1">
-              {gameState.player.hand.length === 0 ? (
-                <div className="w-full py-4 text-center text-xs text-slate-500 italic">
-                  Sua mão está vazia.
-                </div>
-              ) : (
-                gameState.player.hand.map((card, idx) => {
-                  const effCt = getEffectiveCt(gameState.player, card);
-                  const playCheck = canPlayCardInMainPhase(gameState, 'player', card);
-                  const modernImg = getModernImage(card);
-
-                  const isPlayableInMain =
-                    gameState.phase === 'MAIN_PHASE' &&
-                    gameState.activePlayer === 'player' &&
-                    playCheck.allowed;
-
-                  const isPlayableInReaction =
-                    isReactionPhase &&
-                    availablePlayerReactions.handCards.some((rc) => rc.code === card.code);
-
-                  const isSelected =
-                    selectedHandIndex === idx || pendingReactionHandIndex === idx;
-
-                  return (
-                    <div
-                      key={`hand_${idx}_${card.code}`}
-                      onClick={() => handleHandCardClick(idx)}
-                      className={`group w-28 sm:w-32 shrink-0 rounded-xl border overflow-hidden transition-all relative flex flex-col bg-slate-950 ${
-                        isSelected
-                          ? 'border-amber-400 ring-2 ring-amber-400 -translate-y-2.5 shadow-2xl shadow-amber-500/30 cursor-pointer'
-                          : isPlayableInReaction
-                          ? 'border-cyan-400 ring-2 ring-cyan-400 -translate-y-2 shadow-xl shadow-cyan-500/30 cursor-pointer animate-pulse'
-                          : isPlayableInMain
-                          ? 'border-purple-500/50 hover:border-purple-400 hover:-translate-y-1.5 shadow-lg cursor-pointer'
-                          : 'border-slate-800 opacity-55 cursor-not-allowed'
+          {/* ============================================================
+              BOTTOM SECTION: STATUS BOXES + FANNED HAND (NO SCROLLBARS)
+             ============================================================ */}
+          <div className="shrink-0 flex flex-col items-center gap-1 pt-0.5">
+            {/* Status Row matching diagram: VIDA | MANA | SANIDADE | CUSTO | DANO PRIMORDIAL | RUNAS + Passar Turno */}
+            <div className="w-full flex flex-wrap items-center justify-center gap-1.5 px-2">
+              {/* VIDA */}
+              <div
+                ref={playerHpRef}
+                className={`relative px-2.5 py-1 rounded-lg border-2 bg-slate-900/95 flex items-center gap-1.5 transition-all ${
+                  slotImpacts['player_hp'] === 'hit'
+                    ? 'border-rose-400 bg-rose-950 scale-105'
+                    : slotImpacts['player_hp'] === 'heal'
+                    ? 'border-emerald-400 bg-emerald-950 scale-105'
+                    : 'border-slate-700'
+                }`}
+              >
+                <span className="text-[9px] font-black uppercase text-slate-400">VIDA</span>
+                <span
+                  className={`text-xs font-black ${getStatColorClass(
+                    gameState.player.hp,
+                    20
+                  )}`}
+                >
+                  {gameState.player.hp}
+                </span>
+                {floatingPopups
+                  .filter((p) => p.targetKey === 'player_hp')
+                  .map((p) => (
+                    <span
+                      key={p.id}
+                      className={`pointer-events-none absolute -top-6 left-1/2 -translate-x-1/2 z-50 px-1.5 py-0.5 rounded-full text-[10px] font-black whitespace-nowrap shadow-lg animate-bounce ${
+                        p.variant === 'damage'
+                          ? 'bg-rose-600 text-white border border-rose-300'
+                          : 'bg-emerald-600 text-white border border-emerald-300'
                       }`}
                     >
-                      {/* Reaction Badge */}
-                      {isPlayableInReaction && (
-                        <div className="absolute top-1 left-1/2 -translate-x-1/2 z-20 px-2 py-0.5 rounded-full bg-cyan-400 text-slate-950 font-black text-[8px] uppercase tracking-wider shadow-md whitespace-nowrap">
-                          ⚡ Reagir
-                        </div>
-                      )}
+                      {p.text}
+                    </span>
+                  ))}
+              </div>
 
-                      {/* Moderno Card Miniature Image */}
-                      <div className="relative w-full aspect-[704/987] bg-slate-900 overflow-hidden">
+              {/* MANA */}
+              <div className="px-2.5 py-1 rounded-lg border-2 border-slate-700 bg-slate-900/95 flex items-center gap-1.5">
+                <span className="text-[9px] font-black uppercase text-slate-400">MANA</span>
+                <span
+                  className={`text-xs font-black ${getStatColorClass(
+                    gameState.player.mana,
+                    12
+                  )}`}
+                >
+                  {gameState.player.mana}
+                </span>
+              </div>
+
+              {/* SANIDADE */}
+              <div className="px-2.5 py-1 rounded-lg border-2 border-slate-700 bg-slate-900/95 flex items-center gap-1.5">
+                <span className="text-[9px] font-black uppercase text-slate-400">SANIDADE</span>
+                <span className="text-xs font-black text-white">12</span>
+              </div>
+
+              {/* CUSTO (Modificador de CT) */}
+              {(() => {
+                const totalCtRed =
+                  Number(gameState.player.ctReductionThisRound || 0) +
+                  Number(gameState.player.permCtReduction || 0);
+                const totalCtPen = Number(gameState.player.permCtPenalty || 0);
+                const netCtDiff = totalCtPen - totalCtRed;
+                return (
+                  <div className="px-2.5 py-1 rounded-lg border-2 border-slate-700 bg-slate-900/95 flex items-center gap-1.5">
+                    <span className="text-[9px] font-black uppercase text-slate-400">CUSTO</span>
+                    <span
+                      className={`text-xs font-black ${
+                        netCtDiff < 0
+                          ? 'text-emerald-400'
+                          : netCtDiff > 0
+                          ? 'text-red-500'
+                          : 'text-white'
+                      }`}
+                    >
+                      {netCtDiff > 0 ? `+${netCtDiff}` : `${netCtDiff}`}
+                    </span>
+                  </div>
+                );
+              })()}
+
+              {/* DANO PRIMORDIAL */}
+              <div className="px-2.5 py-1 rounded-lg border-2 border-slate-700 bg-slate-900/95 flex items-center gap-1.5">
+                <span className="text-[9px] font-black uppercase text-slate-400">
+                  DANO PRIMORDIAL
+                </span>
+                <span className="text-xs font-black text-white">0</span>
+              </div>
+
+              {/* RUNAS */}
+              <div className="px-2.5 py-1 rounded-lg border-2 border-slate-700 bg-slate-900/95 flex items-center gap-1.5">
+                <span className="text-[9px] font-black uppercase text-slate-400">RUNAS</span>
+                <span
+                  className={`text-xs font-black ${
+                    gameState.player.runes > 0 ? 'text-emerald-400' : 'text-white'
+                  }`}
+                >
+                  {gameState.player.runes}
+                </span>
+              </div>
+
+              {/* Passar Turno Button */}
+              {gameState.phase === 'MAIN_PHASE' && gameState.activePlayer === 'player' && (
+                <button
+                  onClick={handleEndPlayerTurn}
+                  className="px-3.5 py-1 rounded-lg bg-purple-600 hover:bg-purple-500 text-white font-black text-[11px] uppercase tracking-wider shadow-lg shadow-purple-600/30 transition-all border border-purple-400/50"
+                >
+                  Passar Turno
+                </button>
+              )}
+            </div>
+
+            {/* FANNED HAND (CARTAS DA MÃO) - Zero Horizontal Scroll */}
+            <div className="relative w-full h-28 sm:h-32 flex items-end justify-center overflow-visible select-none pb-1">
+              {gameState.player.hand.length === 0 ? (
+                <div className="my-auto text-xs text-slate-500 italic">Sua mão está vazia.</div>
+              ) : (
+                <div className="flex items-end justify-center">
+                  {gameState.player.hand.map((card, idx) => {
+                    const total = gameState.player.hand.length;
+                    const mid = (total - 1) / 2;
+                    const offset = idx - mid;
+                    const angle = Math.max(-18, Math.min(18, offset * (total > 7 ? 3.2 : 4.8)));
+                    const archY = Math.min(18, Math.abs(offset) * 3.2);
+
+                    const effCt = getEffectiveCt(gameState.player, card);
+                    const playCheck = canPlayCardInMainPhase(gameState, 'player', card);
+                    const modernImg = getModernImage(card);
+
+                    const isPlayableInMain =
+                      gameState.phase === 'MAIN_PHASE' &&
+                      gameState.activePlayer === 'player' &&
+                      playCheck.allowed;
+
+                    const isPlayableInReaction =
+                      isReactionPhase &&
+                      availablePlayerReactions.handCards.some((rc) => rc.code === card.code);
+
+                    const isSelected =
+                      selectedHandIndex === idx || pendingReactionHandIndex === idx;
+
+                    return (
+                      <div
+                        key={`hand_${idx}_${card.code}`}
+                        onClick={() => handleHandCardClick(idx)}
+                        style={{
+                          transform: `translateY(${isSelected ? -18 : archY}px) rotate(${
+                            isSelected ? 0 : angle
+                          }deg)`,
+                          marginLeft: idx === 0 ? '0px' : total > 7 ? '-24px' : '-14px',
+                          zIndex: isSelected ? 50 : 10 + idx
+                        }}
+                        className={`group w-20 sm:w-24 aspect-[704/987] shrink-0 rounded-lg border-2 overflow-hidden transition-all duration-200 relative flex flex-col bg-slate-950 hover:!z-50 hover:!-translate-y-5 hover:!rotate-0 hover:scale-110 ${
+                          isSelected
+                            ? 'border-amber-400 ring-2 ring-amber-400 shadow-2xl shadow-amber-500/40 cursor-pointer'
+                            : isPlayableInReaction
+                            ? 'border-cyan-400 ring-2 ring-cyan-400 shadow-xl shadow-cyan-500/40 cursor-pointer animate-pulse'
+                            : isPlayableInMain
+                            ? 'border-purple-400/80 hover:border-amber-300 shadow-xl cursor-pointer'
+                            : 'border-slate-700 opacity-75 cursor-pointer'
+                        }`}
+                      >
+                        {isPlayableInReaction && (
+                          <div className="absolute top-0.5 left-1/2 -translate-x-1/2 z-20 px-1.5 py-0.2 rounded-full bg-cyan-400 text-slate-950 font-black text-[7px] uppercase tracking-wider shadow whitespace-nowrap">
+                            ⚡ Reagir
+                          </div>
+                        )}
+
                         {modernImg ? (
                           <img
                             src={modernImg}
                             alt={card.name}
-                            className="w-full h-full object-cover select-none pointer-events-none group-hover:scale-105 transition-transform duration-300"
+                            className="w-full h-full object-cover select-none pointer-events-none"
                           />
                         ) : (
-                          <div className="w-full h-full flex items-center justify-center text-[10px] text-slate-500 p-2 text-center">
+                          <div className="w-full h-full flex items-center justify-center text-[9px] text-slate-400 p-1 text-center">
                             {card.name}
                           </div>
                         )}
 
-                        {/* Top-left CT pill & Top-right Inspect Eye */}
-                        <div className="absolute top-1.5 inset-x-1.5 flex items-center justify-between z-10">
-                          <span className="px-1.5 py-0.5 rounded-md bg-slate-950/90 backdrop-blur-sm text-cyan-300 border border-cyan-500/40 font-black text-[10px] shadow">
-                            CT {effCt}
-                          </span>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setInspectedFighter(null);
-                              setInspectedCard(card);
-                            }}
-                            className="p-1 rounded-md bg-slate-950/90 backdrop-blur-sm text-slate-200 hover:text-white border border-white/15 shadow"
-                            title="Ampliar Carta (Frame Moderno)"
-                          >
-                            <Eye size={12} />
-                          </button>
-                        </div>
+                        {/* Top-left Plain Numeric CT Circle */}
+                        <span
+                          className={`absolute top-1 left-1 z-10 w-5 h-5 rounded-full flex items-center justify-center font-black text-[10px] border shadow ${
+                            effCt < (card.ct || 0)
+                              ? 'bg-emerald-600 text-white border-emerald-200'
+                              : effCt > (card.ct || 0)
+                              ? 'bg-red-600 text-white border-red-200'
+                              : 'bg-purple-700 text-white border-purple-300'
+                          }`}
+                        >
+                          {effCt}
+                        </span>
 
-                        {/* Bottom overlay with Card Name & ATK/HP */}
-                        <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-slate-950 via-slate-950/90 to-transparent pt-4 pb-1.5 px-1.5">
-                          <p className="font-bold text-[10px] text-white truncate text-center drop-shadow">
+                        {/* Bottom Bar */}
+                        <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-slate-950 via-slate-950/90 to-transparent pt-3 pb-0.5 px-1">
+                          <p className="font-bold text-[8px] text-white truncate text-center">
                             {card.name}
                           </p>
-                          {card.type === 'Combatente' || card.type === 'Herói' ? (
-                            <div className="flex items-center justify-between text-[10px] font-black mt-0.5 px-1">
-                              <span className="text-amber-400">⚔️ {card.attack}</span>
-                              <span className="text-emerald-400">❤️ {card.defense}</span>
+                          {(card.type === 'Combatente' || card.type === 'Herói') && (
+                            <div className="flex items-center justify-between text-[8px] font-black text-white px-0.5">
+                              <span>⚔️ {card.attack}</span>
+                              <span>❤️ {card.defense}</span>
                             </div>
-                          ) : (
-                            <p className="text-[8px] font-bold uppercase text-purple-300 text-center">
-                              {card.type}
-                            </p>
                           )}
                         </div>
                       </div>
-                    </div>
-                  );
-                })
+                    );
+                  })}
+                </div>
               )}
             </div>
           </div>
         </div>
 
         {/* ============================================================
-            RIGHT SIDEBAR: RETRACTABLE COLOR-CODED COMBAT LOG
+            RIGHT SIDEBAR: RETRACTABLE ESSENTIAL COMBAT LOG ("LOG RETRÁTIL")
+            (100% Opaque, High Z-Index, Minimizable & Closable)
            ============================================================ */}
-        <div
-          className={`border-l border-slate-800 bg-slate-900/95 flex flex-col shrink-0 transition-all duration-300 overflow-hidden ${
-            isLogOpen ? 'w-72 sm:w-80' : 'w-0 border-l-0'
-          }`}
-        >
-          <div className="p-3 border-b border-slate-800 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <ScrollText size={16} className="text-purple-400" />
-              <span className="font-display font-bold text-xs uppercase tracking-wider text-white">
-                Log do Duelo
-              </span>
-            </div>
-            <button
-              onClick={() => setIsLogOpen(false)}
-              className="p-1 rounded hover:bg-slate-800 text-slate-400 hover:text-white"
-              title="Recolher Log"
-            >
-              <ChevronRight size={16} />
-            </button>
-          </div>
-
-          <div className="px-2.5 py-1.5 border-b border-slate-800/80 bg-slate-950/60 flex flex-wrap gap-1">
-            <span className="px-1.5 py-0.5 rounded text-[8px] font-black uppercase bg-rose-500/20 text-rose-300 border border-rose-500/30">
-              💔 Vida -
-            </span>
-            <span className="px-1.5 py-0.5 rounded text-[8px] font-black uppercase bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-              💚 Vida +
-            </span>
-            <span className="px-1.5 py-0.5 rounded text-[8px] font-black uppercase bg-amber-500/20 text-amber-300 border border-amber-500/30">
-              ⚔️ Ataque
-            </span>
-            <span className="px-1.5 py-0.5 rounded text-[8px] font-black uppercase bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
-              🛡️ Reação
-            </span>
-            <span className="px-1.5 py-0.5 rounded text-[8px] font-black uppercase bg-purple-500/20 text-purple-300 border border-purple-500/30">
-              ✨ Invocação
-            </span>
-          </div>
-
-          <div className="flex-1 overflow-y-auto p-2.5 space-y-2 text-xs">
-            {gameState.logs.map((entry) => {
-              const style = getLogStyle(entry.type);
-              return (
-                <div
-                  key={entry.id}
-                  className={`p-2 rounded-lg border leading-relaxed ${style.container}`}
+        {isLogOpen && (
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-64 sm:w-72 z-[80] border-l-2 border-rose-500/70 bg-slate-950 shadow-[0_0_50px_rgba(0,0,0,0.98)] flex flex-col shrink-0 overflow-hidden"
+          >
+            <div className="p-2.5 border-b border-slate-800 flex items-center justify-between bg-slate-900">
+              <div className="flex items-center gap-1.5">
+                <ScrollText size={14} className="text-rose-400" />
+                <span className="font-display font-black text-[11px] uppercase tracking-wider text-white">
+                  Resumo do Duelo
+                </span>
+              </div>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => setIsLogOpen(false)}
+                  className="px-1.5 py-0.5 rounded bg-slate-800 hover:bg-slate-700 border border-slate-600 text-amber-300 hover:text-white text-[11px] font-black leading-none"
+                  title="Minimizar Log"
                 >
-                  <div className="flex items-center justify-between text-[9px] font-bold uppercase mb-1">
-                    <span className={`px-1.5 py-0.5 rounded border ${style.badge}`}>
-                      {style.label}
-                    </span>
-                    <span className="opacity-75">
-                      R{entry.round}•T{entry.turn} (
-                      {entry.actor === 'player'
-                        ? 'Você'
-                        : entry.actor === 'bot'
-                        ? 'Bot'
-                        : 'Sistema'}
-                      )
-                    </span>
-                  </div>
-                  <p className="text-[11px] font-medium">{entry.text}</p>
-                </div>
-              );
-            })}
-          </div>
-        </div>
+                  —
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsLogOpen(false)}
+                  className="px-1.5 py-0.5 rounded bg-rose-900 hover:bg-rose-700 border border-rose-500 text-white text-[10px] font-black flex items-center"
+                  title="Fechar Log"
+                >
+                  <X size={12} />
+                </button>
+              </div>
+            </div>
 
+            <div className="flex-1 overflow-y-auto p-2 space-y-1.5 text-xs bg-slate-950">
+              {gameState.logs.map((entry) => {
+                const style = getLogStyle(entry.type);
+                return (
+                  <div
+                    key={entry.id}
+                    className={`px-2 py-1.5 rounded-lg border leading-snug bg-slate-900 ${style.container}`}
+                  >
+                    <div className="flex items-center justify-between text-[8px] font-bold uppercase mb-0.5 opacity-80">
+                      <span>{style.label}</span>
+                      <span>
+                        R{entry.round}•T{entry.turn}
+                      </span>
+                    </div>
+                    <p className="text-[11px] font-semibold">{entry.text}</p>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Red Vertical Tab "LOG (RETRÁTIL)" matching the second reference image */}
         {!isLogOpen && (
           <button
             onClick={() => setIsLogOpen(true)}
-            className="absolute right-0 top-1/2 -translate-y-1/2 z-30 bg-slate-900/95 hover:bg-purple-950 border border-r-0 border-purple-500/40 rounded-l-xl px-2 py-3 text-purple-300 shadow-xl flex flex-col items-center gap-1"
-            title="Abrir Log do Duelo"
+            className="w-7 shrink-0 bg-rose-600 hover:bg-rose-500 border-l-2 border-rose-300/60 text-white font-black text-[10px] uppercase tracking-widest flex items-center justify-center shadow-xl transition-colors"
+            title="Abrir Log Retrátil"
           >
-            <ChevronLeft size={16} />
-            <ScrollText size={14} />
+            <span className="-rotate-90 whitespace-nowrap flex items-center gap-1.5">
+              <ScrollText size={12} />
+              LOG (RETRÁTIL)
+            </span>
           </button>
         )}
       </div>
@@ -4931,20 +5187,19 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
       )}
 
       {/* ============================================================
-          OVERLAY 2: ALL-OR-NOTHING MULLIGAN WITH MODERNO THUMBNAILS
+          OVERLAY 2: ALL-OR-NOTHING MULLIGAN
          ============================================================ */}
       {gameState.phase === 'MULLIGAN' && (
         <div className="fixed inset-0 z-[130] bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-purple-500/40 rounded-2xl max-w-4xl w-full p-6 space-y-5 shadow-2xl">
             <div className="text-center">
               <h2 className="font-display font-black text-xl uppercase text-white">
-                Fase de Mulligan (5 Cartas Iniciais • Frame Moderno)
+                Fase de Mulligan (5 Cartas Iniciais)
               </h2>
               <p className="text-xs text-slate-400 mt-1">
-                Regra Oficial de Mulligan: Você deve escolher entre{' '}
-                <strong className="text-emerald-400">MANTER TODAS as 5 cartas</strong> ou{' '}
-                <strong className="text-amber-400">TROCAR TODAS as 5 cartas</strong> por 5 novas do
-                seu Deck.
+                Escolha entre <strong className="text-emerald-400">MANTER TODAS as 5 cartas</strong>{' '}
+                ou <strong className="text-amber-400">TROCAR TODAS as 5 cartas</strong> por 5 novas
+                do seu Deck.
               </p>
             </div>
 
@@ -4954,7 +5209,10 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
                 return (
                   <div
                     key={`mulligan_${idx}`}
-                    onClick={() => setInspectedCard(card)}
+                    onClick={() => {
+                      showCardInPanel(card, null, 'MÃO INICIAL');
+                      setInspectedCard(card);
+                    }}
                     className="rounded-xl border bg-slate-950 border-slate-800 hover:border-purple-500/60 cursor-pointer transition-all overflow-hidden flex flex-col group"
                   >
                     <div className="relative w-full aspect-[704/987] bg-slate-900 overflow-hidden">
@@ -4969,12 +5227,13 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
                           {card.name}
                         </div>
                       )}
+                      <span className="absolute top-1.5 left-1.5 w-6 h-6 rounded-full bg-purple-700 text-white border border-purple-300 flex items-center justify-center font-black text-xs shadow">
+                        {card.ct}
+                      </span>
                     </div>
                     <div className="p-2 text-center bg-slate-950">
                       <p className="font-bold text-xs text-white truncate">{card.name}</p>
-                      <span className="text-[10px] text-cyan-400 font-bold">
-                        CT {card.ct} • {card.type}
-                      </span>
+                      <span className="text-[10px] text-cyan-400 font-bold">{card.type}</span>
                     </div>
                   </div>
                 );
@@ -5000,7 +5259,7 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
       )}
 
       {/* ============================================================
-          OVERLAY 3: INTERACTIVE CARD SELECTION MODAL WITH MODERNO THUMBNAILS
+          OVERLAY 3: INTERACTIVE CARD SELECTION MODAL
          ============================================================ */}
       {activePendingChoice && (
         <div className="fixed inset-0 z-[140] bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4">
@@ -5068,6 +5327,7 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
                   <div
                     key={cand.id}
                     onClick={() => {
+                      showCardInPanel(cand.card, null, 'CARTA SELECIONADA');
                       if (isChecked) {
                         setSelectedChoiceIds((prev) => prev.filter((id) => id !== cand.id));
                       } else {
@@ -5170,7 +5430,7 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
             </div>
             <div>
               <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                Palavra-Chave Mais Forte: «A Qualquer Momento»
+                «A Qualquer Momento»
               </span>
               <h3 className="font-display font-black text-lg text-white mt-2">
                 Passagem de Turno (Antes da Compra de Cartas)
@@ -5259,6 +5519,7 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
             <div className="grid grid-cols-3 gap-2">
               {GEMA_1_ARCHETYPE_POOL.map((arch) => {
                 const isSelected = pendingGema1Play.selectedArchs.includes(arch);
+                const iconUrl = getArchetypeIcon(arch);
                 return (
                   <button
                     key={arch}
@@ -5278,13 +5539,20 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
                         };
                       });
                     }}
-                    className={`py-2 px-2 rounded-lg text-xs font-bold border transition-all ${
+                    className={`py-2 px-2 rounded-lg text-xs font-bold border transition-all flex items-center justify-center gap-1.5 ${
                       isSelected
                         ? 'bg-amber-500 text-slate-950 border-amber-300 font-black'
                         : 'bg-slate-950 text-slate-300 border-slate-800 hover:border-slate-700'
                     }`}
                   >
-                    {arch}
+                    {iconUrl && (
+                      <img
+                        src={iconUrl}
+                        alt={arch}
+                        className="w-4 h-4 rounded-full object-cover"
+                      />
+                    )}
+                    <span className="truncate">{arch}</span>
                   </button>
                 );
               })}
@@ -5329,11 +5597,11 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
       )}
 
       {/* ============================================================
-          OVERLAY 5: GAME OVER MODAL
+          OVERLAY 5: GAME OVER MODAL (Clean Player-Facing Summary)
          ============================================================ */}
       {gameState.phase === 'GAME_OVER' && (
         <div className="fixed inset-0 z-[150] bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-purple-500/40 rounded-2xl max-w-lg w-full p-6 text-center space-y-5 shadow-2xl max-h-[90vh] overflow-y-auto">
+          <div className="bg-slate-900 border border-purple-500/40 rounded-2xl max-w-md w-full p-6 text-center space-y-5 shadow-2xl">
             <div
               className={`w-16 h-16 rounded-2xl mx-auto flex items-center justify-center ${
                 gameState.winner === 'player'
@@ -5346,116 +5614,21 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
             <div>
               <h2 className="font-display font-black text-2xl uppercase text-white">
                 {gameState.winner === 'player'
-                  ? 'Vitória Macroversal!'
+                  ? 'Vitória!'
                   : gameState.winner === 'bot'
-                  ? 'Vitória do Bot Insanis'
+                  ? 'Derrota!'
                   : 'Empate!'}
               </h2>
               <p className="text-xs text-slate-300 mt-2">{gameState.winReason}</p>
             </div>
 
-            {/* AUTÓPSIA UNIVERSAL PÓS-PARTIDA E REFORÇO HEURÍSTICO DA IA (6 PILARES TCG) */}
-            <div className="text-left bg-slate-950/90 border border-cyan-500/30 rounded-xl p-4 space-y-3">
-              <div className="flex items-center justify-between border-b border-slate-800 pb-2">
-                <div className="flex items-center gap-2">
-                  <Bot size={16} className="text-cyan-400" />
-                  <span className="text-[11px] font-black uppercase tracking-wider text-cyan-300">
-                    Autópsia Universal de TCG & Aprendizado (Gen #{botMemory.generation})
-                  </span>
-                </div>
-                <span className="text-[10px] font-bold text-slate-400">
-                  Histórico IA: {botMemory.botWins}V / {botMemory.botLosses}D
-                </span>
-              </div>
-
-              {botMemory.lastMatchAutopsy.length > 0 ? (
-                <div className="space-y-2">
-                  {botMemory.lastMatchAutopsy.map((entry, idx) => (
-                    <div
-                      key={idx}
-                      className="text-[11px] bg-slate-900/90 border border-slate-800 rounded-lg p-2.5 space-y-1 leading-relaxed"
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">
-                          {entry.pillarLabel}
-                        </span>
-                      </div>
-                      <p className="font-bold text-amber-300">{entry.title}</p>
-                      <p className="text-slate-300">{entry.analysis}</p>
-                      <p className="text-[10px] text-emerald-300 font-semibold">
-                        ↳ Ajuste: {entry.adjustmentSummary}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-[11px] text-emerald-300">
-                  • O Bot consolidou seus pesos táticos universais para o próximo duelo.
-                </p>
-              )}
-
-              <div className="pt-1 border-t border-slate-800/80">
-                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">
-                  Matriz Universal de 6 Pilares do Bot (Salva para Qualquer Deck/Matchup):
-                </p>
-                <div className="grid grid-cols-2 gap-1.5 text-[10px]">
-                  <div className="bg-slate-900/80 border border-slate-800 rounded px-2 py-1 flex justify-between">
-                    <span className="text-slate-400">1. Vida como Recurso:</span>
-                    <strong className="text-cyan-300">
-                      {botMemory.weights.lifeAsResourceCautionMultiplier.toFixed(2)}x (≥{botMemory.weights.minSafeHpForLifeCost} PV)
-                    </strong>
-                  </div>
-                  <div className="bg-slate-900/80 border border-slate-800 rounded px-2 py-1 flex justify-between">
-                    <span className="text-slate-400">2. Timing Wincon/Herói:</span>
-                    <strong className="text-amber-300">
-                      {Math.round(botMemory.weights.winconTimingThresholdScale * 100)}% Exigência
-                    </strong>
-                  </div>
-                  <div className="bg-slate-900/80 border border-slate-800 rounded px-2 py-1 flex justify-between">
-                    <span className="text-slate-400">3. Motor de Sinergia:</span>
-                    <strong className="text-purple-300">
-                      {botMemory.weights.synergyEnginePriorityMultiplier.toFixed(2)}x
-                    </strong>
-                  </div>
-                  <div className="bg-slate-900/80 border border-slate-800 rounded px-2 py-1 flex justify-between">
-                    <span className="text-slate-400">4. Interação/Remoção:</span>
-                    <strong className="text-emerald-300">
-                      {botMemory.weights.interactionAndRemovalDiscipline.toFixed(2)}x
-                    </strong>
-                  </div>
-                  <div className="bg-slate-900/80 border border-slate-800 rounded px-2 py-1 flex justify-between">
-                    <span className="text-slate-400">5. Tempo/Defesa Mesa:</span>
-                    <strong className="text-rose-300">
-                      {botMemory.weights.boardTempoAndDefenseMultiplier.toFixed(2)}x
-                    </strong>
-                  </div>
-                  <div className="bg-slate-900/80 border border-slate-800 rounded px-2 py-1 flex justify-between">
-                    <span className="text-slate-400">6. Vantagem de Cartas:</span>
-                    <strong className="text-indigo-300">
-                      {botMemory.weights.cardAdvantageAndDrawMultiplier.toFixed(2)}x
-                    </strong>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-center gap-3">
+            <div className="flex items-center justify-center gap-3 pt-2">
               <button
                 onClick={() => handleRestartDuel(deckMode)}
                 className="px-6 py-3 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-black text-xs uppercase tracking-wider shadow-lg shadow-purple-600/30 flex items-center gap-2"
               >
                 <RotateCcw size={15} />
-                Jogar Novamente (IA Evoluída)
-              </button>
-              <button
-                onClick={() => {
-                  const fresh = resetBotAdaptiveMemory();
-                  setBotMemory(fresh);
-                }}
-                title="Zerar aprendizado e restaurar pesos originais de fábrica"
-                className="px-3 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white font-bold text-[11px] uppercase border border-slate-700"
-              >
-                Resetar IA
+                Jogar Novamente
               </button>
               <button
                 onClick={onClose}
@@ -5469,7 +5642,7 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
       )}
 
       {/* ============================================================
-          OVERLAY 6: CARD / FIGHTER INSPECTOR MODAL (MODERNO FRAME)
+          OVERLAY 6: CARD / FIGHTER INSPECTOR MODAL
          ============================================================ */}
       {inspectedCard && (
         <div
@@ -5493,14 +5666,42 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
             <div className="flex-1 space-y-3">
               <div className="flex items-start justify-between gap-2">
                 <div>
-                  <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded bg-purple-500/20 text-purple-300">
-                    {inspectedCard.type} • CT {inspectedCard.ct} • Frame Moderno
-                  </span>
-                  <h3 className="font-display font-black text-lg text-white mt-1">
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-6 h-6 rounded-full bg-purple-700 text-white border border-purple-300 flex items-center justify-center text-xs font-black">
+                      {inspectedCard.ct}
+                    </span>
+                    <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded bg-purple-500/20 text-purple-300">
+                      {inspectedCard.type}
+                    </span>
+                  </div>
+                  <h3 className="font-display font-black text-lg text-white mt-1.5">
                     {inspectedCard.name}
                   </h3>
                   {inspectedCard.archetype && (
-                    <p className="text-xs text-purple-400 font-bold">[{inspectedCard.archetype}]</p>
+                    <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                      {inspectedCard.archetype
+                        .split('/')
+                        .map((a) => a.trim())
+                        .filter(Boolean)
+                        .map((arch) => {
+                          const iconUrl = getArchetypeIcon(arch);
+                          return (
+                            <span
+                              key={arch}
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-950 border border-slate-800 text-[10px] font-bold text-purple-300"
+                            >
+                              {iconUrl && (
+                                <img
+                                  src={iconUrl}
+                                  alt={arch}
+                                  className="w-3.5 h-3.5 rounded-full object-cover"
+                                />
+                              )}
+                              {arch}
+                            </span>
+                          );
+                        })}
+                    </div>
                   )}
                 </div>
                 <button
@@ -5515,22 +5716,50 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
               </div>
 
               <p className="text-xs text-slate-200 leading-relaxed whitespace-pre-line bg-slate-950 p-3 rounded-xl border border-slate-800">
-                {inspectedCard.description}
+                {cleanCardDescription(inspectedCard.description)}
               </p>
 
               {inspectedFighter && (
-                <div className="p-3 rounded-xl bg-purple-950/30 border border-purple-500/30 space-y-1 text-xs">
+                <div className="p-3 rounded-xl bg-purple-950/30 border border-purple-500/30 space-y-1.5 text-xs">
                   <p className="font-bold text-purple-200">Status em Campo:</p>
-                  <p>
-                    ATK Efetivo: <strong>{getFighterEffectiveAtk(gameState, inspectedFighter)}</strong>{' '}
-                    | Vida Atual: <strong>{inspectedFighter.currentHp}</strong>
-                  </p>
-                  <p>
-                    Arquétipos Ativos:{' '}
-                    <strong>
-                      {getEffectiveArchetypes(gameState, inspectedFighter).join(', ') || 'Nenhum'}
-                    </strong>
-                  </p>
+                  <div className="flex items-center gap-4 font-black">
+                    <span
+                      className={getStatColorClass(
+                        getFighterEffectiveAtk(gameState, inspectedFighter),
+                        inspectedFighter.card.attack ?? 0
+                      )}
+                    >
+                      ⚔️ ATK: {getFighterEffectiveAtk(gameState, inspectedFighter)}
+                    </span>
+                    <span
+                      className={getStatColorClass(
+                        inspectedFighter.currentHp,
+                        inspectedFighter.card.defense ?? inspectedFighter.maxHp
+                      )}
+                    >
+                      ❤️ Vida: {inspectedFighter.currentHp}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5 flex-wrap pt-1">
+                    {getEffectiveArchetypes(gameState, inspectedFighter).map((arch) => {
+                      const iconUrl = getArchetypeIcon(arch);
+                      return (
+                        <span
+                          key={arch}
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-950 border border-slate-800 text-[10px] font-bold text-white"
+                        >
+                          {iconUrl && (
+                            <img
+                              src={iconUrl}
+                              alt={arch}
+                              className="w-4 h-4 rounded-full object-cover"
+                            />
+                          )}
+                          {arch}
+                        </span>
+                      );
+                    })}
+                  </div>
                 </div>
               )}
             </div>
@@ -5539,7 +5768,7 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
       )}
 
       {/* ============================================================
-          OVERLAY 7: ZONE VIEWER MODAL WITH MODERNO THUMBNAILS
+          OVERLAY 7: ZONE VIEWER MODAL
          ============================================================ */}
       {zoneViewer && (
         <div
@@ -5570,7 +5799,9 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 overflow-y-auto pr-1">
                 {zoneViewer.cards.map((c, i) => {
                   const modernImg = getModernImage(c);
-                  const isPlayerHeroZone = zoneViewer.title.startsWith('Sua Zona do Herói');
+                  const isPlayerHeroZone =
+                    zoneViewer.title.startsWith('Sua Zona do Herói') ||
+                    zoneViewer.title.startsWith('Deck de Herói');
                   const isAnytimeWindow =
                     isReactionPhase || gameState.phase === 'PRE_DRAW_WINDOW';
                   const heroStatus =
@@ -5586,7 +5817,10 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
                   return (
                     <div
                       key={`${c.code}_${i}`}
-                      onClick={() => setInspectedCard(c)}
+                      onClick={() => {
+                        showCardInPanel(c, null, zoneViewer.title);
+                        setInspectedCard(c);
+                      }}
                       className="rounded-xl bg-slate-950 border border-slate-800 hover:border-purple-500/50 cursor-pointer overflow-hidden flex flex-col justify-between"
                     >
                       <div className="relative w-full aspect-[704/987] bg-slate-900">
@@ -5597,9 +5831,12 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
                             className="w-full h-full object-cover"
                           />
                         )}
+                        <span className="absolute top-1.5 left-1.5 w-6 h-6 rounded-full bg-purple-700 text-white border border-purple-300 flex items-center justify-center font-black text-xs shadow">
+                          {c.ct}
+                        </span>
                         {heroStatus && (
                           <div
-                            className={`absolute top-1.5 inset-x-1.5 px-1.5 py-0.5 rounded text-[9px] font-black text-center shadow ${
+                            className={`absolute bottom-1.5 inset-x-1.5 px-1.5 py-0.5 rounded text-[9px] font-black text-center shadow ${
                               heroStatus.allowed
                                 ? 'bg-emerald-500 text-slate-950'
                                 : 'bg-slate-950/90 text-amber-300 border border-amber-500/40'
@@ -5613,7 +5850,7 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
                         <div>
                           <p className="font-bold text-xs text-white truncate">{c.name}</p>
                           <span className="text-[10px] text-cyan-400 font-bold block">
-                            CT {c.ct} • {c.type}
+                            {c.type}
                           </span>
                         </div>
                         {heroStatus && (
@@ -5648,7 +5885,7 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
       )}
 
       {/* ============================================================
-          OVERLAY 8: INSANIS RULES SUMMARY MODAL
+          OVERLAY 8: RULES SUMMARY MODAL
          ============================================================ */}
       {showRulesModal && (
         <div
@@ -5661,7 +5898,7 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
           >
             <div className="flex items-center justify-between">
               <h3 className="font-display font-black text-lg uppercase text-white">
-                Regras Oficiais Programadas • Deck Insanis
+                Guia Rápido do Campo de Duelo
               </h3>
               <button
                 onClick={() => setShowRulesModal(false)}
@@ -5672,19 +5909,20 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
             </div>
             <ul className="space-y-2 text-xs text-slate-300 list-disc pl-4 leading-relaxed">
               <li>
-                <strong>Vida e Mana:</strong> 20 Pontos de Vida iniciais. 12 de Mana no início de
-                cada Rodada (não acumula entre rodadas). A partir do 2º turno global, ambos os
-                jogadores compram 1 carta no começo de cada turno.
+                <strong>Vida e Mana:</strong> 20 Pontos de Vida iniciais e 12 de Mana no início de
+                cada Rodada. A partir do 2º turno global, ambos os jogadores compram 1 carta no
+                começo de cada turno.
               </li>
               <li>
-                <strong>Escolha Manual de Cartas e Colunas:</strong> Todas as cartas que enviam,
-                descartam, buscam ou invocam cartas do Deck, Mão ou Zonas abrem seleção com as
-                miniaturas das cartas no Frame Moderno para você escolher exatamente quais usar.
+                <strong>Painel da Carta (Esquerda):</strong> Sempre que o Bot usa uma carta ou você
+                clica em qualquer carta, ela aparece em destaque na lateral esquerda com o texto
+                completo do seu efeito logo abaixo.
               </li>
               <li>
-                <strong>Reação Direta nas Miniaturas da Mão:</strong> Quando o Bot joga uma carta ou
-                declara ataque, as miniaturas das cartas da sua mão que podem reagir ficam
-                destacadas com brilho ciano diretamente na mão!
+                <strong>Cores dos Status:</strong> Ataque e Vida normais aparecem em{' '}
+                <strong className="text-white">branco</strong>, ganhos de status em{' '}
+                <strong className="text-emerald-400">verde</strong> e perdas de status em{' '}
+                <strong className="text-red-500">vermelho</strong>.
               </li>
             </ul>
           </div>
