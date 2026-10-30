@@ -54,7 +54,8 @@ import {
   getCarrierTrackingUrl,
   getStoreOrderById,
   ORDER_STATUS_LABELS,
-  syncOrderPaymentStatus
+  syncOrderPaymentStatus,
+  updateStoreOrderFields
 } from '../storeService';
 import { 
   subscribePendingVerificationRequests, 
@@ -146,7 +147,24 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
     setIsCheckingPayment(true);
     try {
       const synced = await syncOrderPaymentStatus(ord);
-      setMyOrders((prev) => prev.map((o) => (o.id === synced.id ? synced : o)));
+      if (synced.orderStatus === 'cancelled' || synced.paymentStatus === 'cancelled') {
+        setMyOrders((prev) => prev.filter((o) => o.id !== synced.id));
+      } else {
+        setMyOrders((prev) => prev.map((o) => (o.id === synced.id ? synced : o)));
+      }
+    } finally {
+      setIsCheckingPayment(false);
+    }
+  };
+
+  const handleCancelMyOrder = async (ord: StoreOrder) => {
+    setIsCheckingPayment(true);
+    try {
+      await updateStoreOrderFields(ord.id, {
+        orderStatus: 'cancelled',
+        paymentStatus: 'cancelled'
+      });
+      setMyOrders((prev) => prev.filter((o) => o.id !== ord.id));
     } finally {
       setIsCheckingPayment(false);
     }
@@ -161,10 +179,14 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
       const found = await getStoreOrderById(cleanId);
       if (found) {
         const synced = await syncOrderPaymentStatus(found);
-        setMyOrders((prev) => {
-          const filtered = prev.filter((o) => o.id !== synced.id);
-          return [synced, ...filtered];
-        });
+        if (synced.orderStatus === 'cancelled' || synced.paymentStatus === 'cancelled') {
+          setMyOrders((prev) => prev.filter((o) => o.id !== synced.id));
+        } else {
+          setMyOrders((prev) => {
+            const filtered = prev.filter((o) => o.id !== synced.id);
+            return [synced, ...filtered];
+          });
+        }
       }
     } catch (err) {
       console.error(err);
@@ -265,10 +287,11 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
   const [targetWishlist, setTargetWishlist] = useState<WantedCardItem[]>([]);
   const [loadingTargetWishlist, setLoadingTargetWishlist] = useState(false);
 
-  // Status de Embaixador do Jogador
+  // Status de Embaixador e Pontuação do Quiz do Jogador
   const [isAmbassador, setIsAmbassador] = useState<boolean>(Boolean(targetProfile?.isAmbassador));
   const [ambassadorRole, setAmbassadorRole] = useState<string>(targetProfile?.ambassadorRole || 'Embaixador Oficial');
   const [isUpdatingAmbassador, setIsUpdatingAmbassador] = useState(false);
+  const [profileQuizPoints, setProfileQuizPoints] = useState<number>(0);
 
   useEffect(() => {
     if (!isOpen || !activeUserId) return;
@@ -284,6 +307,9 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
         if (data.ambassadorRole) {
           setAmbassadorRole(data.ambassadorRole);
         }
+        setProfileQuizPoints(Number(data.quizPoints) || 0);
+      } else {
+        setProfileQuizPoints(0);
       }
     }).catch(err => {
       console.warn('Erro ao carregar status de embaixador:', err);
@@ -537,6 +563,12 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                   <Heart size={13} className="text-pink-400 fill-pink-400/40" />
                   <span className="font-bold">{displayedWishlist.length}</span>
                   <span className="text-[11px] text-purple-300/80">cartas procuradas</span>
+                </div>
+
+                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-amber-950/60 border border-amber-600/50 text-xs text-amber-200">
+                  <Trophy size={13} className="text-amber-400" />
+                  <span className="font-bold">{profileQuizPoints}</span>
+                  <span className="text-[11px] text-amber-300/80">pts no Quiz</span>
                 </div>
 
                 {isMe && onOpenAlbum && (
@@ -1366,6 +1398,16 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                                     Abrir Pagamento
                                   </button>
                                 )}
+                                <button
+                                  type="button"
+                                  disabled={isCheckingPayment}
+                                  onClick={() => handleCancelMyOrder(ord)}
+                                  className="px-2.5 py-1.5 rounded-lg bg-red-950/80 hover:bg-red-900 text-red-200 border border-red-700/60 text-xs font-bold transition cursor-pointer flex items-center gap-1"
+                                  title="Cancelar pedido e removê-lo da lista"
+                                >
+                                  <Trash2 size={12} />
+                                  <span>Cancelar</span>
+                                </button>
                               </>
                             )}
 

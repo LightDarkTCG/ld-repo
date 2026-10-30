@@ -19,6 +19,7 @@ import {
 import { OrderStatus, StoreCoupon, StoreOrder, StoreSettings } from '../types';
 import {
   DEFAULT_STORE_SETTINGS,
+  deleteStoreOrder,
   fetchStoreSettings,
   formatBRL,
   formatCep,
@@ -46,6 +47,22 @@ export const AdminStoreManager: React.FC = () => {
   const [settings, setSettings] = useState<StoreSettings>(DEFAULT_STORE_SETTINGS);
   const [savingSettings, setSavingSettings] = useState(false);
   const [settingsSavedMsg, setSettingsSavedMsg] = useState(false);
+  const [testingWhatsapp, setTestingWhatsapp] = useState(false);
+  const [whatsappTestFeedback, setWhatsappTestFeedback] = useState<string | null>(null);
+  const [waBotStatus, setWaBotStatus] = useState<{
+    status: 'disconnected' | 'connecting' | 'qr_ready' | 'connected';
+    qrDataUrl: string | null;
+    pairingCode: string | null;
+    connectedPhone: string | null;
+    lastError: string | null;
+  }>({
+    status: 'disconnected',
+    qrDataUrl: null,
+    pairingCode: null,
+    connectedPhone: null,
+    lastError: null
+  });
+  const [loadingWaConnect, setLoadingWaConnect] = useState(false);
 
   // New Coupon Form
   const [newCouponCode, setNewCouponCode] = useState('');
@@ -54,6 +71,12 @@ export const AdminStoreManager: React.FC = () => {
 
   useEffect(() => {
     fetchStoreSettings().then(setSettings);
+    fetch('/api/whatsapp/status')
+      .then((r) => r.json())
+      .then((st) => {
+        if (st && st.status) setWaBotStatus(st);
+      })
+      .catch(() => {});
     const unsub = subscribeAllStoreOrders(
       (list) => {
         setOrders(list);
@@ -65,6 +88,19 @@ export const AdminStoreManager: React.FC = () => {
     );
     return () => unsub();
   }, []);
+
+  useEffect(() => {
+    if (subTab !== 'shipping') return;
+    const interval = setInterval(() => {
+      fetch('/api/whatsapp/status')
+        .then((r) => r.json())
+        .then((st) => {
+          if (st && st.status) setWaBotStatus(st);
+        })
+        .catch(() => {});
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [subTab]);
 
   const stats = useMemo(() => {
     const approved = orders.filter(
@@ -163,6 +199,11 @@ export const AdminStoreManager: React.FC = () => {
   const handleChangeOrderStatus = async (ord: StoreOrder, nextStatus: OrderStatus) => {
     setSavingOrderId(ord.id);
     try {
+      if (nextStatus === 'cancelled') {
+        await deleteStoreOrder(ord.id);
+        setOrders((prev) => prev.filter((o) => o.id !== ord.id));
+        return;
+      }
       const updates: Partial<StoreOrder> = {
         orderStatus: nextStatus,
         ...(nextStatus === 'paid' || nextStatus === 'pre_order_reserved'
@@ -409,8 +450,19 @@ export const AdminStoreManager: React.FC = () => {
                           <option value="preparing_shipment">Em Separação</option>
                           <option value="shipped">Pedido Enviado</option>
                           <option value="delivered">Entregue</option>
-                          <option value="cancelled">Cancelado</option>
+                          <option value="cancelled">Cancelado (Remover da Lista)</option>
                         </select>
+
+                        <button
+                          type="button"
+                          disabled={savingOrderId === ord.id}
+                          onClick={() => handleChangeOrderStatus(ord, 'cancelled')}
+                          className="px-2.5 py-1.5 rounded-lg bg-red-950/80 hover:bg-red-900 text-red-200 border border-red-700/60 text-xs font-bold flex items-center gap-1 transition"
+                          title="Cancelar pedido e removê-lo da lista"
+                        >
+                          <Trash2 size={13} />
+                          <span>Cancelar</span>
+                        </button>
                       </div>
                     </div>
 
@@ -623,9 +675,9 @@ export const AdminStoreManager: React.FC = () => {
               </label>
               <input
                 type="text"
-                value={settings.whatsappSupport}
+                value={settings.whatsappSupport || '5534992166735'}
                 onChange={(e) => setSettings({ ...settings, whatsappSupport: e.target.value })}
-                placeholder="5511999999999"
+                placeholder="5534992166735"
                 className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm text-white font-mono"
               />
             </div>
@@ -641,6 +693,263 @@ export const AdminStoreManager: React.FC = () => {
               onChange={(e) => setSettings({ ...settings, storeNotice: e.target.value })}
               className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm text-white"
             />
+          </div>
+
+          {/* Automatic WhatsApp Notification on New Order */}
+          <div className="p-4 sm:p-5 rounded-xl bg-emerald-950/25 border border-emerald-500/40 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-emerald-800/40 pb-3">
+              <div>
+                <h4 className="text-sm font-black text-emerald-300 flex items-center gap-2">
+                  <MessageCircle size={16} className="text-emerald-400" />
+                  <span>Alerta Automático no Seu WhatsApp a Cada Nova Compra</span>
+                </h4>
+                <p className="text-[11px] text-slate-300 mt-0.5">
+                  Receba automaticamente uma mensagem no seu WhatsApp com os itens, valor, cliente e endereço sempre que um pedido for gerado ou pago!
+                </p>
+              </div>
+              <button
+                type="button"
+                disabled={testingWhatsapp}
+                onClick={async () => {
+                  try {
+                    setTestingWhatsapp(true);
+                    setWhatsappTestFeedback(null);
+                    await saveStoreSettings(settings);
+                    const res = await fetch('/api/whatsapp/notify-order', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        eventType: 'payment_approved',
+                        phone: settings.whatsappNotifyPhone || settings.whatsappSupport || '5534992166735',
+                        callmebotApiKey: settings.whatsappCallmebotApiKey,
+                        webhookUrl: settings.whatsappWebhookUrl,
+                        order: {
+                          id: 'TESTE-001',
+                          customerName: 'Duelista de Teste',
+                          customerPhone: '(34) 99216-6735',
+                          totalAmount: 89.9,
+                          paymentMethod: 'pix',
+                          shippingMethodName: 'Correios SEDEX',
+                          shippingAddress: {
+                            street: 'Av. Brasil',
+                            number: '1000',
+                            city: 'Uberlândia',
+                            state: 'MG',
+                            cep: '38400-000'
+                          },
+                          items: [{ quantity: 1, title: 'Deck Estrutural Light Dark', variationName: 'Full Foil' }]
+                        }
+                      })
+                    });
+                    const data = await res.json().catch(() => ({}));
+                    if (res.ok && data.sent) {
+                      setWhatsappTestFeedback('✅ Alerta enviado com sucesso para +55 34 99216-6735! Verifique seu WhatsApp.');
+                    } else if (data.needsSetup) {
+                      setWhatsappTestFeedback(
+                        '⚠️ Conecte seu WhatsApp clicando em "Gerar QR Code" logo abaixo para que o próprio site envie os alertas!'
+                      );
+                    } else {
+                      setWhatsappTestFeedback(
+                        `⚠️ Não foi possível entregar: ${data.results?.directBot?.error || data.results?.callmebot?.detail || 'Conecte o QR Code abaixo.'}`
+                      );
+                    }
+                  } catch {
+                    setWhatsappTestFeedback('Falha ao conectar para envio de teste.');
+                  } finally {
+                    setTestingWhatsapp(false);
+                    setTimeout(() => setWhatsappTestFeedback(null), 9000);
+                  }
+                }}
+                className="px-3.5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition flex items-center gap-1.5 shrink-0 shadow"
+              >
+                <MessageCircle size={14} />
+                <span>{testingWhatsapp ? 'Enviando Teste...' : 'Testar Alerta no WhatsApp'}</span>
+              </button>
+            </div>
+
+            {whatsappTestFeedback && (
+              <div className="p-2.5 rounded-lg bg-emerald-900/40 border border-emerald-500/50 text-emerald-200 text-xs font-bold">
+                {whatsappTestFeedback}
+              </div>
+            )}
+
+            {/* Built-in Direct WhatsApp Connection (No third-party limits) */}
+            <div className="bg-slate-950/95 border border-emerald-500/40 rounded-xl p-4 space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <div className="text-xs font-black text-emerald-300 flex items-center gap-2">
+                    <span
+                      className={`w-2.5 h-2.5 rounded-full ${
+                        waBotStatus.status === 'connected'
+                          ? 'bg-emerald-400 shadow-[0_0_8px_#34d399]'
+                          : waBotStatus.status === 'qr_ready' || waBotStatus.status === 'connecting'
+                          ? 'bg-amber-400 animate-pulse'
+                          : 'bg-slate-500'
+                      }`}
+                    />
+                    <span>
+                      {waBotStatus.status === 'connected'
+                        ? `Robô Próprio do Site CONECTADO (+${waBotStatus.connectedPhone || '5534992166735'})`
+                        : 'Robô Próprio do Site (Sem depender do CallMeBot)'}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-300 mt-1">
+                    {waBotStatus.status === 'connected'
+                      ? 'Tudo pronto! Sempre que houver uma nova compra ou pagamento aprovado, você receberá a mensagem imediatamente no seu WhatsApp (+55 34 99216-6735).'
+                      : 'Como o CallMeBot está lotado ("Bot is full"), criamos um robô próprio dentro do seu site! Basta escanear o QR Code abaixo no seu WhatsApp (Aparelhos Conectados -> Conectar um aparelho).'}
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2 shrink-0">
+                  {waBotStatus.status === 'connected' ? (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        setLoadingWaConnect(true);
+                        try {
+                          const r = await fetch('/api/whatsapp/disconnect', { method: 'POST' });
+                          const d = await r.json();
+                          setWaBotStatus(d);
+                        } finally {
+                          setLoadingWaConnect(false);
+                        }
+                      }}
+                      disabled={loadingWaConnect}
+                      className="px-3 py-1.5 rounded-lg bg-rose-900/50 hover:bg-rose-800/70 border border-rose-600/50 text-rose-200 text-xs font-bold transition"
+                    >
+                      Desconectar WhatsApp
+                    </button>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        disabled={loadingWaConnect}
+                        onClick={async () => {
+                          setLoadingWaConnect(true);
+                          try {
+                            const r = await fetch('/api/whatsapp/connect', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({
+                                usePairingCode: false,
+                                phoneNumber: settings.whatsappNotifyPhone || '5534992166735',
+                                forceReset: true
+                              })
+                            });
+                            const d = await r.json();
+                            if (d && d.status) setWaBotStatus(d);
+                          } finally {
+                            setLoadingWaConnect(false);
+                          }
+                        }}
+                        className="px-3.5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition shadow"
+                      >
+                        {loadingWaConnect ? 'Gerando...' : 'Gerar QR Code do WhatsApp'}
+                      </button>
+
+                      <button
+                        type="button"
+                        disabled={loadingWaConnect}
+                        onClick={async () => {
+                          setLoadingWaConnect(true);
+                          try {
+                            const r = await fetch('/api/whatsapp/connect', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({
+                                usePairingCode: true,
+                                phoneNumber: settings.whatsappNotifyPhone || '5534992166735',
+                                forceReset: true
+                              })
+                            });
+                            const d = await r.json();
+                            if (d && d.status) setWaBotStatus(d);
+                          } finally {
+                            setLoadingWaConnect(false);
+                          }
+                        }}
+                        className="px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-200 text-xs font-bold transition"
+                      >
+                        Conectar por Código de 8 Dígitos
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {waBotStatus.qrDataUrl && waBotStatus.status !== 'connected' && (
+                <div className="flex flex-col sm:flex-row items-center gap-4 pt-2 border-t border-slate-800">
+                  <div className="bg-white p-2.5 rounded-xl shrink-0 shadow-lg">
+                    <img
+                      src={waBotStatus.qrDataUrl}
+                      alt="QR Code WhatsApp"
+                      className="w-44 h-44 object-contain"
+                    />
+                  </div>
+                  <div className="text-xs text-slate-300 space-y-1.5">
+                    <div className="font-bold text-emerald-300 text-sm">Escaneie no seu celular (+55 34 99216-6735):</div>
+                    <div>1. Abra o <strong>WhatsApp</strong> no seu celular.</div>
+                    <div>2. Toque em <strong>Configurações (ou ⋮) ➔ Aparelhos conectados ➔ Conectar um aparelho</strong>.</div>
+                    <div>3. Aponte a câmera para este QR Code. Assim que conectar, este quadro ficará verde automaticamente!</div>
+                  </div>
+                </div>
+              )}
+
+              {waBotStatus.pairingCode && waBotStatus.status !== 'connected' && (
+                <div className="p-3 rounded-xl bg-emerald-950/50 border border-emerald-500/50 space-y-1.5">
+                  <div className="text-xs font-bold text-emerald-300">
+                    Código de Pareamento para +55 34 99216-6735:
+                  </div>
+                  <div className="text-2xl font-black tracking-widest text-white font-mono bg-slate-900 px-4 py-2 rounded-lg inline-block border border-emerald-500/40">
+                    {waBotStatus.pairingCode}
+                  </div>
+                  <div className="text-[11px] text-slate-300">
+                    No seu WhatsApp, vá em <strong>Aparelhos conectados ➔ Conectar um aparelho ➔ Conectar com número de telefone</strong> e digite o código acima.
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <label className="text-xs font-bold text-slate-300 block mb-1">
+                  Seu WhatsApp p/ Receber Alertas (com DDD)
+                </label>
+                <input
+                  type="text"
+                  value={settings.whatsappNotifyPhone || '5534992166735'}
+                  onChange={(e) => setSettings({ ...settings, whatsappNotifyPhone: e.target.value })}
+                  placeholder="Ex: 5534992166735"
+                  className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-xs text-white font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-400 block mb-1">
+                  CallMeBot API Key (Opcional)
+                </label>
+                <input
+                  type="text"
+                  value={settings.whatsappCallmebotApiKey || ''}
+                  onChange={(e) => setSettings({ ...settings, whatsappCallmebotApiKey: e.target.value })}
+                  placeholder="Opcional se usar o QR Code acima"
+                  className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-xs text-slate-300 font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-400 block mb-1">
+                  Webhook URL Opcional (Z-API / Make / n8n)
+                </label>
+                <input
+                  type="text"
+                  value={settings.whatsappWebhookUrl || ''}
+                  onChange={(e) => setSettings({ ...settings, whatsappWebhookUrl: e.target.value })}
+                  placeholder="https://..."
+                  className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-xs text-white font-mono"
+                />
+              </div>
+            </div>
           </div>
 
           {/* Carriers Enable Toggles */}

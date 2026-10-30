@@ -328,6 +328,9 @@ export interface StoreSettings {
   };
   coupons: StoreCoupon[];
   whatsappSupport: string;
+  whatsappNotifyPhone?: string;
+  whatsappCallmebotApiKey?: string;
+  whatsappWebhookUrl?: string;
   storeNotice?: string;
 }
 

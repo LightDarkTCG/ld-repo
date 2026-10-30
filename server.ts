@@ -3,6 +3,12 @@ import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { createServer as createViteServer, loadEnv } from 'vite';
+import {
+  getWhatsAppBotStatus,
+  startWhatsAppBot,
+  disconnectWhatsAppBot,
+  sendDirectWhatsAppMessage
+} from './whatsappBot';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -403,6 +409,145 @@ async function startServer() {
       });
     } catch (err: any) {
       res.status(500).json({ error: err.message || 'Erro ao consultar pedido no Mercado Pago.' });
+    }
+  });
+
+  // 5. Self-Hosted Direct WhatsApp Connection (QR Code / Pairing Code)
+  app.get('/api/whatsapp/status', (_req, res) => {
+    res.json(getWhatsAppBotStatus());
+  });
+
+  app.post('/api/whatsapp/connect', async (req, res) => {
+    try {
+      const { usePairingCode, phoneNumber, forceReset } = req.body || {};
+      await startWhatsAppBot({
+        usePairingCode: Boolean(usePairingCode),
+        phoneNumber: String(phoneNumber || '5534992166735'),
+        forceReset: Boolean(forceReset)
+      });
+
+      // Wait up to 4 seconds for QR code or pairing code to become ready
+      for (let i = 0; i < 8; i++) {
+        const current = getWhatsAppBotStatus();
+        if (current.status === 'connected' || current.qrDataUrl || current.pairingCode || current.lastError) {
+          break;
+        }
+        await new Promise((r) => setTimeout(r, 500));
+      }
+
+      res.json(getWhatsAppBotStatus());
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message || 'Erro ao iniciar conexão WhatsApp.' });
+    }
+  });
+
+  app.post('/api/whatsapp/disconnect', async (_req, res) => {
+    await disconnectWhatsAppBot(true);
+    res.json(getWhatsAppBotStatus());
+  });
+
+  // 6. Automatic WhatsApp Notification on New Order / Approved Payment
+  app.post('/api/whatsapp/notify-order', async (req, res) => {
+    try {
+      const {
+        order,
+        eventType,
+        phone,
+        callmebotApiKey,
+        webhookUrl
+      } = req.body || {};
+
+      if (!order || !order.id) {
+        res.status(400).json({ error: 'Dados do pedido ausentes.' });
+        return;
+      }
+
+      const itemsText = Array.isArray(order.items)
+        ? order.items
+            .map((it: any) => `• ${it.quantity}x ${it.title}${it.variationName ? ` (${it.variationName})` : ''}`)
+            .join('\n')
+        : '';
+
+      const addr = order.shippingAddress || {};
+      const header =
+        eventType === 'payment_approved'
+          ? `✅ *PAGAMENTO APROVADO - LIGHT DARK TCG*`
+          : `🛒 *NOVO PEDIDO GERADO - LIGHT DARK TCG*`;
+
+      const message = [
+        header,
+        `📦 *Pedido:* #${order.id}`,
+        `👤 *Cliente:* ${order.customerName || ''} (Tel: ${order.customerPhone || ''})`,
+        `💰 *Total:* R$ ${Number(order.totalAmount || 0).toFixed(2).replace('.', ',')} (${order.paymentMethod === 'pix' ? 'PIX' : 'Cartão/MP'})`,
+        `🚚 *Frete:* ${order.shippingMethodName || 'Correios'}`,
+        `📍 *Destino:* ${addr.street || ''}, ${addr.number || ''} - ${addr.city || ''}/${addr.state || ''} (CEP: ${addr.cep || ''})`,
+        itemsText ? `\n🃏 *Itens:*\n${itemsText}` : ''
+      ]
+        .filter(Boolean)
+        .join('\n');
+
+      const results: Record<string, any> = {};
+
+      const targetPhone = String(
+        phone || process.env.WHATSAPP_NOTIFY_PHONE || env.WHATSAPP_NOTIFY_PHONE || '5534992166735'
+      ).replace(/\D/g, '');
+      const targetApiKey = String(callmebotApiKey || process.env.CALLMEBOT_API_KEY || env.CALLMEBOT_API_KEY || '').trim();
+      const targetWebhook = String(webhookUrl || process.env.WHATSAPP_WEBHOOK_URL || env.WHATSAPP_WEBHOOK_URL || '').trim();
+
+      const fullPhone = targetPhone.startsWith('55') ? targetPhone : `55${targetPhone}`;
+
+      // 1st Priority: Built-in Direct WhatsApp Bot (Baileys)
+      const botStatus = getWhatsAppBotStatus();
+      if (botStatus.status === 'connected') {
+        const directRes = await sendDirectWhatsAppMessage(fullPhone, message);
+        results.directBot = directRes;
+      }
+
+      // 2nd Priority: CallMeBot (if API Key configured)
+      if (targetPhone && targetApiKey) {
+        const callUrl = `https://api.callmebot.com/whatsapp.php?phone=${encodeURIComponent(fullPhone)}&text=${encodeURIComponent(message)}&apikey=${encodeURIComponent(targetApiKey)}`;
+        const cbRes = await fetch(callUrl);
+        const cbBody = await cbRes.text().catch(() => '');
+        const isSuccess =
+          cbRes.ok &&
+          !cbBody.toLowerCase().includes('apikey is invalid') &&
+          !cbBody.toLowerCase().includes('error');
+        results.callmebot = {
+          ok: isSuccess,
+          status: cbRes.status,
+          detail: cbBody.replace(/<[^>]*>?/gm, ' ').replace(/\s+/g, ' ').trim().slice(0, 220)
+        };
+      }
+
+      // 3rd Priority: Custom Webhook (if configured)
+      if (targetWebhook) {
+        const whRes = await fetch(targetWebhook, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            eventType: eventType || 'new_order',
+            message,
+            text: message,
+            content: message,
+            phone: fullPhone,
+            order
+          })
+        });
+        results.webhook = { ok: whRes.ok, status: whRes.status };
+      }
+
+      const delivered = Boolean(results.directBot?.ok || results.callmebot?.ok || results.webhook?.ok);
+      res.json({
+        sent: delivered,
+        phone: fullPhone,
+        botConnected: botStatus.status === 'connected',
+        needsSetup: botStatus.status !== 'connected' && !targetApiKey && !targetWebhook,
+        results,
+        message
+      });
+    } catch (err: any) {
+      console.error('Erro ao disparar notificação WhatsApp:', err);
+      res.status(500).json({ error: err.message || 'Erro ao enviar notificação WhatsApp.' });
     }
   });
 

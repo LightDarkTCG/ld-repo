@@ -8,8 +8,9 @@ import {
 import { doc, getDoc, setDoc, onSnapshot } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage, readBrowserCache, writeBrowserCache } from '../firebase';
-import { sanitizeForFirestore } from '../CardContext';
+import { sanitizeForFirestore, useCards } from '../CardContext';
 import { GameField } from './GameField';
+import { InteractionsFaqSection } from './InteractionsFaqSection';
 import { ArchetypeData, TierGuideItem, RarityGuideItem } from '../types';
 
 export const defaultRarityItems: RarityGuideItem[] = [
@@ -358,13 +359,15 @@ interface GameGuideSectionsProps {
   isAdmin: boolean;
   onOpenArchetypeModal?: (archetype: ArchetypeData) => void;
   ArchetypeCardComponent: React.ComponentType<any>;
+  cardTypesShowcase?: React.ReactNode;
 }
 
 export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
   archetypes,
   onSelectArchetype,
   isAdmin,
-  ArchetypeCardComponent
+  ArchetypeCardComponent,
+  cardTypesShowcase
 }) => {
   const [data, setData] = useState<GameManualData>(() => readBrowserCache<GameManualData>('ld_cache_gameManual_v2') || defaultManualData);
   const [isLoading, setIsLoading] = useState(true);
@@ -381,7 +384,8 @@ export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
     regras: false,
     arquetipos: true,
     campos: false,
-    raridades: true
+    raridades: true,
+    faq: false
   });
 
   // Raridades data & state (Frame Moderno & Frame Legado)
@@ -391,6 +395,82 @@ export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
   const [uploadingRarityId, setUploadingRarityId] = useState<string | null>(null);
   const [isSavingRarities, setIsSavingRarities] = useState(false);
   const [rarityFeedback, setRarityFeedback] = useState<string | null>(null);
+
+  // Arquétipos editor state inside Manual
+  const { saveArchetype } = useCards();
+  const [editingArchetype, setEditingArchetype] = useState<{
+    isCreating: boolean;
+    name: string;
+    imageUrl: string;
+    description: string;
+    patchDate: string;
+    isNew: boolean;
+  } | null>(null);
+  const [isUploadingArchetypeIcon, setIsUploadingArchetypeIcon] = useState(false);
+  const [isSavingArchetype, setIsSavingArchetype] = useState(false);
+  const [archetypeFeedback, setArchetypeFeedback] = useState<string | null>(null);
+
+  const handleUploadArchetypeIcon = async (file: File) => {
+    if (!file || !editingArchetype) return;
+    try {
+      setIsUploadingArchetypeIcon(true);
+      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+      const fileRef = ref(storage, `archetype_icons/${Date.now()}_${safeName}`);
+      await uploadBytes(fileRef, file);
+      const url = await getDownloadURL(fileRef);
+      setEditingArchetype(prev => prev ? { ...prev, imageUrl: url } : null);
+      setArchetypeFeedback('Ícone do arquétipo enviado com sucesso!');
+      setTimeout(() => setArchetypeFeedback(null), 3500);
+    } catch (err) {
+      console.error('Erro ao enviar ícone do arquétipo:', err);
+      alert('Erro ao enviar o ícone. Tente novamente.');
+    } finally {
+      setIsUploadingArchetypeIcon(false);
+    }
+  };
+
+  const handleSaveArchetypeForm = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingArchetype || !editingArchetype.name.trim()) return;
+    try {
+      setIsSavingArchetype(true);
+      await saveArchetype({
+        name: editingArchetype.name.trim(),
+        imageUrl: editingArchetype.imageUrl.trim(),
+        description: editingArchetype.description,
+        patchDate: editingArchetype.patchDate.trim() || new Date().toLocaleDateString('pt-BR'),
+        isNew: editingArchetype.isNew
+      });
+      setArchetypeFeedback(`Arquétipo "${editingArchetype.name.trim()}" salvo com sucesso!`);
+      setEditingArchetype(null);
+      setTimeout(() => setArchetypeFeedback(null), 3500);
+    } catch (err) {
+      console.error('Erro ao salvar arquétipo:', err);
+      alert('Erro ao salvar arquétipo.');
+    } finally {
+      setIsSavingArchetype(false);
+    }
+  };
+
+  const handleToggleArchetypeNew = async (arch: ArchetypeData) => {
+    try {
+      await saveArchetype({
+        name: arch.name,
+        imageUrl: arch.imageUrl || '',
+        description: arch.description || '',
+        patchDate: arch.patchDate || new Date().toLocaleDateString('pt-BR'),
+        isNew: !arch.isNew
+      });
+      setArchetypeFeedback(
+        !arch.isNew
+          ? `"${arch.name}" marcado como NOVO!`
+          : `Selo Novo removido de "${arch.name}".`
+      );
+      setTimeout(() => setArchetypeFeedback(null), 3000);
+    } catch (err) {
+      console.error('Erro ao alternar status Novo do arquétipo:', err);
+    }
+  };
 
   // Listen to Firestore real-time doc for game manual
   useEffect(() => {
@@ -560,7 +640,8 @@ export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
       regras: true,
       arquetipos: true,
       campos: true,
-      raridades: true
+      raridades: true,
+      faq: true
     });
   };
 
@@ -573,7 +654,8 @@ export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
       regras: false,
       arquetipos: false,
       campos: false,
-      raridades: false
+      raridades: false,
+      faq: false
     });
   };
 
@@ -632,8 +714,11 @@ export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
             <div className="flex items-center gap-2 text-xs font-mono uppercase tracking-widest text-purple-400 mb-2">
               <BookOpen size={15} /> Compêndio Geral do Jogador
             </div>
-            <h2 className="text-3xl sm:text-4xl font-black text-white uppercase tracking-tight flex items-center gap-3">
-              Manual & Regras de Duelo
+            <h2 className="text-2xl sm:text-4xl font-black text-white uppercase tracking-tight flex flex-wrap items-center gap-3">
+              <span>MANUAL E REGRAS</span>
+              <span className="text-amber-400 text-lg sm:text-2xl font-mono">
+                (PATCH ATUAL: {data.patchDate || 'Atual'})
+              </span>
             </h2>
             <p className="text-slate-400 text-sm mt-1 max-w-xl">
               Consulte todas as diretrizes oficiais de jogo, fases de turno, regras avançadas, arquétipos e layout do campo em seções retráteis.
@@ -747,6 +832,9 @@ export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
               </div>
             )}
           </div>
+
+          {/* TIPOS DE CARTAS (SLIDESHOW) */}
+          {cardTypesShowcase}
 
           {/* 2. BASICO */}
           <div id="section-basico" className="rounded-2xl border border-slate-800 bg-slate-950 overflow-hidden shadow-lg shadow-black/40 transition-all hover:border-slate-700">
@@ -1113,22 +1201,209 @@ export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
                       Pesquise e consulte as habilidades intrínsecas de cada classe do Macroverso.
                     </p>
                   </div>
-                  <div className="relative w-full sm:w-64">
-                    <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-                    <input
-                      type="text"
-                      value={archetypeSearch}
-                      onChange={(e) => setArchetypeSearch(e.target.value)}
-                      placeholder="Filtrar arquétipo..."
-                      className="w-full bg-slate-950 border border-slate-700 rounded-lg pl-9 pr-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-purple-500"
-                    />
+                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 w-full sm:w-auto">
+                    <div className="relative w-full sm:w-64">
+                      <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                      <input
+                        type="text"
+                        value={archetypeSearch}
+                        onChange={(e) => setArchetypeSearch(e.target.value)}
+                        placeholder="Filtrar arquétipo..."
+                        className="w-full bg-slate-950 border border-slate-700 rounded-lg pl-9 pr-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-purple-500"
+                      />
+                    </div>
+                    {isAdmin && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingArchetype({
+                            isCreating: true,
+                            name: '',
+                            imageUrl: '',
+                            description: '',
+                            patchDate: new Date().toLocaleDateString('pt-BR'),
+                            isNew: true
+                          });
+                        }}
+                        className="px-3.5 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow-md shadow-purple-900/40 transition whitespace-nowrap"
+                      >
+                        <Plus size={14} /> Novo Arquétipo
+                      </button>
+                    )}
                   </div>
                 </div>
+
+                {archetypeFeedback && (
+                  <div className="bg-emerald-950/60 border border-emerald-500/40 text-emerald-300 px-4 py-2.5 rounded-xl text-xs font-bold flex items-center gap-2 animate-in fade-in">
+                    <CheckCircle size={15} className="text-emerald-400 shrink-0" />
+                    <span>{archetypeFeedback}</span>
+                  </div>
+                )}
+
+                {isAdmin && editingArchetype && (
+                  <form
+                    onSubmit={handleSaveArchetypeForm}
+                    className="bg-slate-900/95 border-2 border-purple-500/50 rounded-2xl p-4 sm:p-6 space-y-4 shadow-xl animate-in fade-in"
+                  >
+                    <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                      <h5 className="font-black text-white text-sm sm:text-base flex items-center gap-2">
+                        <Crown size={18} className="text-purple-400" />
+                        {editingArchetype.isCreating ? 'Criar Novo Arquétipo' : `Editar Arquétipo: ${editingArchetype.name}`}
+                      </h5>
+                      <button
+                        type="button"
+                        onClick={() => setEditingArchetype(null)}
+                        className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition"
+                      >
+                        <X size={18} />
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs font-bold text-slate-300 mb-1">Nome do Arquétipo</label>
+                        <input
+                          type="text"
+                          required
+                          disabled={!editingArchetype.isCreating}
+                          value={editingArchetype.name}
+                          onChange={(e) => setEditingArchetype(prev => prev ? { ...prev, name: e.target.value } : null)}
+                          placeholder="Ex: Escolhido"
+                          className={`w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-500 ${!editingArchetype.isCreating ? 'opacity-60 cursor-not-allowed' : ''}`}
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-bold text-slate-300 mb-1">Data do Patch</label>
+                        <input
+                          type="text"
+                          value={editingArchetype.patchDate}
+                          onChange={(e) => setEditingArchetype(prev => prev ? { ...prev, patchDate: e.target.value } : null)}
+                          placeholder="Ex: 10/09/2026"
+                          className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-500"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-300 mb-1">Ícone do Arquétipo (URL ou Upload do PC)</label>
+                      <div className="flex flex-col sm:flex-row gap-2.5 items-stretch sm:items-center">
+                        <input
+                          type="text"
+                          value={editingArchetype.imageUrl}
+                          onChange={(e) => setEditingArchetype(prev => prev ? { ...prev, imageUrl: e.target.value } : null)}
+                          placeholder="https://..."
+                          className="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-500"
+                        />
+                        <label className="cursor-pointer bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 px-3.5 py-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition shrink-0">
+                          {isUploadingArchetypeIcon ? <Loader2 size={14} className="animate-spin text-purple-400" /> : <Upload size={14} className="text-purple-400" />}
+                          <span>{isUploadingArchetypeIcon ? 'Enviando...' : 'Enviar do PC'}</span>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            className="hidden"
+                            disabled={isUploadingArchetypeIcon}
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (file) handleUploadArchetypeIcon(file);
+                            }}
+                          />
+                        </label>
+                        {editingArchetype.imageUrl && (
+                          <div className="w-10 h-10 rounded-lg bg-slate-950 border border-slate-700 flex items-center justify-center p-1 shrink-0">
+                            <img src={editingArchetype.imageUrl} alt="Preview" className="w-full h-full object-contain" />
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-300 mb-1">Descrição / Habilidade do Arquétipo</label>
+                      <textarea
+                        rows={4}
+                        required
+                        value={editingArchetype.description}
+                        onChange={(e) => setEditingArchetype(prev => prev ? { ...prev, description: e.target.value } : null)}
+                        placeholder="Descreva a regra e efeito oficial deste arquétipo..."
+                        className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 text-xs text-white leading-relaxed focus:outline-none focus:border-purple-500"
+                      />
+                    </div>
+
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pt-2 border-t border-slate-800">
+                      <label className="flex items-center gap-2.5 cursor-pointer select-none bg-emerald-950/30 border border-emerald-500/30 px-3 py-2 rounded-lg">
+                        <input
+                          type="checkbox"
+                          checked={editingArchetype.isNew}
+                          onChange={(e) => setEditingArchetype(prev => prev ? { ...prev, isNew: e.target.checked } : null)}
+                          className="w-4 h-4 rounded bg-slate-950 border-slate-700 text-emerald-500 focus:ring-0"
+                        />
+                        <span className="text-xs font-bold text-emerald-300">
+                          Destacar com selo "NOVO" (Piscando no Manual)
+                        </span>
+                      </label>
+
+                      <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+                        <button
+                          type="button"
+                          onClick={() => setEditingArchetype(null)}
+                          className="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold transition"
+                        >
+                          Cancelar
+                        </button>
+                        <button
+                          type="submit"
+                          disabled={isSavingArchetype}
+                          className="px-5 py-2 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-md shadow-purple-900/40 transition disabled:opacity-50"
+                        >
+                          <Save size={14} />
+                          <span>{isSavingArchetype ? 'Salvando...' : 'Salvar Arquétipo'}</span>
+                        </button>
+                      </div>
+                    </div>
+                  </form>
+                )}
 
                 <div className="flex flex-col gap-3">
                   {filteredArchetypes.length > 0 ? (
                     filteredArchetypes.map((arch, idx) => (
-                      <ArchetypeCardComponent key={idx} {...arch} />
+                      <div key={arch.name || idx} className="relative group/arch">
+                        <ArchetypeCardComponent {...arch} />
+                        {isAdmin && (
+                          <div className="mt-2 sm:mt-0 sm:absolute sm:top-3.5 sm:right-4 flex items-center justify-end gap-2 z-10">
+                            <button
+                              type="button"
+                              onClick={() => handleToggleArchetypeNew(arch)}
+                              className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition flex items-center gap-1 ${
+                                arch.isNew
+                                  ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50 hover:bg-emerald-500/30'
+                                  : 'bg-slate-800/90 text-slate-400 border-slate-700 hover:text-white hover:border-slate-500'
+                              }`}
+                              title="Alternar destaque Novo no Manual"
+                            >
+                              <Sparkles size={11} />
+                              {arch.isNew ? 'Novo Ativo' : 'Marcar Novo'}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingArchetype({
+                                  isCreating: false,
+                                  name: arch.name,
+                                  imageUrl: arch.imageUrl || '',
+                                  description: arch.description || '',
+                                  patchDate: arch.patchDate || '10/09/2026',
+                                  isNew: !!arch.isNew
+                                });
+                                const el = document.getElementById('section-arquetipos');
+                                if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                              }}
+                              className="px-3 py-1 rounded-lg bg-purple-600/90 hover:bg-purple-500 text-white text-[11px] font-bold flex items-center gap-1 shadow transition"
+                            >
+                              <Edit2 size={11} /> Editar
+                            </button>
+                          </div>
+                        )}
+                      </div>
                     ))
                   ) : (
                     <div className="p-8 text-center text-slate-500 text-sm bg-slate-900/30 rounded-xl border border-slate-800">
@@ -1575,6 +1850,42 @@ export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
             )}
           </div>
 
+          {/* 9. FAQ RÁPIDO DE INTERAÇÕES (JUIZ DIGITAL & EMBAIXADORES) - RETRÁTIL */}
+          <div id="section-faq" className="rounded-2xl border border-indigo-500/40 bg-slate-950 overflow-hidden shadow-lg shadow-black/40 transition-all hover:border-indigo-500/60">
+            <button
+              onClick={() => toggleSection('faq')}
+              className="w-full flex items-center justify-between p-4 sm:p-5 text-left hover:bg-slate-900/50 transition group"
+            >
+              <div className="flex items-center gap-3 sm:gap-4 min-w-0">
+                <div className="w-10 h-10 rounded-xl bg-indigo-600/20 border border-indigo-500/40 flex items-center justify-center text-indigo-400 shrink-0">
+                  <Scale size={20} />
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-xs font-mono font-bold text-indigo-400 uppercase tracking-wider">
+                      Seção 09
+                    </span>
+                    <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-indigo-950 text-indigo-300 border border-indigo-800/50">
+                      Juiz Digital & Embaixadores
+                    </span>
+                  </div>
+                  <h3 className="text-lg sm:text-xl font-black text-white group-hover:text-indigo-300 transition-colors tracking-wide">
+                    FAQ RÁPIDO DE INTERAÇÕES
+                  </h3>
+                </div>
+              </div>
+              <div className="p-2 rounded-lg bg-slate-900 border border-slate-700/60 text-slate-300 group-hover:text-white shrink-0 ml-2">
+                {openSections.faq ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+              </div>
+            </button>
+
+            {openSections.faq && (
+              <div className="p-4 sm:p-6 border-t border-indigo-500/30 bg-slate-950/90 animate-in slide-in-from-top-2 duration-200">
+                <InteractionsFaqSection />
+              </div>
+            )}
+          </div>
+
         </div>
       </div>
 
@@ -1616,9 +1927,21 @@ const ManualEditModal: React.FC<{
     }
     return cloned;
   });
-  const [activeTab, setActiveTab] = useState<'patch' | 'basico' | 'cartas' | 'turnos' | 'regras'>('patch');
+  const [activeTab, setActiveTab] = useState<'patch' | 'basico' | 'cartas' | 'turnos' | 'regras' | 'arquetipos'>('patch');
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const { archetypes, saveArchetype } = useCards();
+  const [modalArchSearch, setModalArchSearch] = useState('');
+  const [modalEditingArch, setModalEditingArch] = useState<{
+    isCreating: boolean;
+    name: string;
+    imageUrl: string;
+    description: string;
+    patchDate: string;
+    isNew: boolean;
+  } | null>(null);
+  const [modalUploadingIcon, setModalUploadingIcon] = useState(false);
+  const [modalSavingArch, setModalSavingArch] = useState(false);
 
   const updateStructureItem = (index: number, field: 'label' | 'text' | 'color', val: string) => {
     setForm(prev => {
@@ -1713,7 +2036,8 @@ const ManualEditModal: React.FC<{
             { id: 'basico', label: '2. Básico', icon: Info },
             { id: 'cartas', label: '3. Cartas', icon: Layers },
             { id: 'turnos', label: '4. Turnos & Combate', icon: Clock },
-            { id: 'regras', label: '5. Regras Avançadas', icon: Sparkles }
+            { id: 'regras', label: '5. Regras Avançadas', icon: Sparkles },
+            { id: 'arquetipos', label: '6. Arquétipos', icon: Crown }
           ].map(tab => (
             <button
               key={tab.id}
@@ -2152,6 +2476,227 @@ const ManualEditModal: React.FC<{
                   }}
                   className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 text-xs text-white font-mono leading-relaxed focus:outline-none focus:border-purple-500"
                 />
+              </div>
+            </div>
+          )}
+
+          {/* TAB 6: ARQUÉTIPOS */}
+          {activeTab === 'arquetipos' && (
+            <div className="space-y-4 animate-in fade-in">
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-slate-900/60 p-4 rounded-xl border border-slate-800">
+                <div>
+                  <h4 className="font-bold text-white text-sm flex items-center gap-2">
+                    <Crown size={16} className="text-purple-400" /> Gerenciar Arquétipos do Manual
+                  </h4>
+                  <p className="text-xs text-slate-400">
+                    Crie ou edite ícones, descrições, datas de patch e destaque "Novo" dos arquétipos.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={modalArchSearch}
+                    onChange={e => setModalArchSearch(e.target.value)}
+                    placeholder="Buscar arquétipo..."
+                    className="bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-purple-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setModalEditingArch({
+                      isCreating: true,
+                      name: '',
+                      imageUrl: '',
+                      description: '',
+                      patchDate: new Date().toLocaleDateString('pt-BR'),
+                      isNew: true
+                    })}
+                    className="px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold flex items-center gap-1 whitespace-nowrap"
+                  >
+                    <Plus size={14} /> Novo Arquétipo
+                  </button>
+                </div>
+              </div>
+
+              {modalEditingArch && (
+                <div className="bg-slate-900 border-2 border-purple-500/50 rounded-xl p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h5 className="font-bold text-white text-xs sm:text-sm">
+                      {modalEditingArch.isCreating ? 'Criar Novo Arquétipo' : `Editando: ${modalEditingArch.name}`}
+                    </h5>
+                    <button type="button" onClick={() => setModalEditingArch(null)} className="text-slate-400 hover:text-white">
+                      <X size={16} />
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-300 mb-1">Nome</label>
+                      <input
+                        type="text"
+                        disabled={!modalEditingArch.isCreating}
+                        value={modalEditingArch.name}
+                        onChange={e => setModalEditingArch(prev => prev ? { ...prev, name: e.target.value } : null)}
+                        className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-300 mb-1">Data do Patch</label>
+                      <input
+                        type="text"
+                        value={modalEditingArch.patchDate}
+                        onChange={e => setModalEditingArch(prev => prev ? { ...prev, patchDate: e.target.value } : null)}
+                        className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-300 mb-1">Ícone (URL ou Upload)</label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={modalEditingArch.imageUrl}
+                        onChange={e => setModalEditingArch(prev => prev ? { ...prev, imageUrl: e.target.value } : null)}
+                        placeholder="https://..."
+                        className="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white"
+                      />
+                      <label className="cursor-pointer bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 shrink-0">
+                        {modalUploadingIcon ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />}
+                        <span>{modalUploadingIcon ? 'Enviando...' : 'Enviar do PC'}</span>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          disabled={modalUploadingIcon}
+                          onChange={async (e) => {
+                            const file = e.target.files?.[0];
+                            if (!file) return;
+                            try {
+                              setModalUploadingIcon(true);
+                              const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+                              const fileRef = ref(storage, `archetype_icons/${Date.now()}_${safeName}`);
+                              await uploadBytes(fileRef, file);
+                              const url = await getDownloadURL(fileRef);
+                              setModalEditingArch(prev => prev ? { ...prev, imageUrl: url } : null);
+                            } catch (err) {
+                              alert('Erro ao enviar imagem.');
+                            } finally {
+                              setModalUploadingIcon(false);
+                            }
+                          }}
+                        />
+                      </label>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-300 mb-1">Descrição</label>
+                    <textarea
+                      rows={3}
+                      value={modalEditingArch.description}
+                      onChange={e => setModalEditingArch(prev => prev ? { ...prev, description: e.target.value } : null)}
+                      className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-xs text-white"
+                    />
+                  </div>
+                  <div className="flex items-center justify-between pt-2">
+                    <label className="flex items-center gap-2 cursor-pointer text-xs text-emerald-300 font-bold">
+                      <input
+                        type="checkbox"
+                        checked={modalEditingArch.isNew}
+                        onChange={e => setModalEditingArch(prev => prev ? { ...prev, isNew: e.target.checked } : null)}
+                      />
+                      Destacar como "Novo" (Piscando)
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setModalEditingArch(null)}
+                        className="px-3 py-1.5 rounded-lg bg-slate-800 text-slate-300 text-xs font-bold"
+                      >
+                        Cancelar
+                      </button>
+                      <button
+                        type="button"
+                        disabled={modalSavingArch || !modalEditingArch.name.trim()}
+                        onClick={async () => {
+                          if (!modalEditingArch) return;
+                          try {
+                            setModalSavingArch(true);
+                            await saveArchetype({
+                              name: modalEditingArch.name.trim(),
+                              imageUrl: modalEditingArch.imageUrl.trim(),
+                              description: modalEditingArch.description,
+                              patchDate: modalEditingArch.patchDate.trim() || new Date().toLocaleDateString('pt-BR'),
+                              isNew: modalEditingArch.isNew
+                            });
+                            setModalEditingArch(null);
+                          } finally {
+                            setModalSavingArch(false);
+                          }
+                        }}
+                        className="px-4 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold flex items-center gap-1"
+                      >
+                        <Save size={13} /> {modalSavingArch ? 'Salvando...' : 'Salvar Arquétipo'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {archetypes
+                  .filter(a => a.name.toLowerCase().includes(modalArchSearch.toLowerCase()) || (a.description || '').toLowerCase().includes(modalArchSearch.toLowerCase()))
+                  .map(arch => (
+                    <div key={arch.name} className="bg-slate-900/80 border border-slate-800 rounded-xl p-3.5 flex flex-col justify-between gap-2">
+                      <div className="flex items-start gap-3">
+                        {arch.imageUrl ? (
+                          <img src={arch.imageUrl} alt={arch.name} className="w-9 h-9 object-contain shrink-0" />
+                        ) : (
+                          <div className="w-9 h-9 rounded-full bg-purple-950/60 flex items-center justify-center text-purple-400 font-bold text-xs shrink-0">
+                            {arch.name.charAt(0)}
+                          </div>
+                        )}
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-bold text-white text-xs">{arch.name}</span>
+                            {arch.isNew && (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                                Novo
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-[11px] text-slate-400 line-clamp-2 mt-1">{arch.description}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center justify-between pt-2 border-t border-slate-800/80 text-[11px]">
+                        <span className="text-slate-500 font-mono">Patch: {arch.patchDate || '10/09/2026'}</span>
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => saveArchetype({ ...arch, isNew: !arch.isNew })}
+                            className={`px-2 py-1 rounded text-[10px] font-bold border ${
+                              arch.isNew
+                                ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                                : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-white'
+                            }`}
+                          >
+                            {arch.isNew ? 'Novo Ativo' : 'Marcar Novo'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setModalEditingArch({
+                              isCreating: false,
+                              name: arch.name,
+                              imageUrl: arch.imageUrl || '',
+                              description: arch.description || '',
+                              patchDate: arch.patchDate || '10/09/2026',
+                              isNew: !!arch.isNew
+                            })}
+                            className="px-2.5 py-1 rounded bg-purple-600/80 hover:bg-purple-600 text-white text-[10px] font-bold flex items-center gap-1"
+                          >
+                            <Edit2 size={10} /> Editar
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
               </div>
             </div>
           )}

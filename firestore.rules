@@ -189,7 +189,16 @@ service cloud.firestore {
         request.auth != null && resource.data.buyerId == request.auth.uid
       );
     }
+
+    // FAQ Rápido de Interações (Dúvidas de Jogadores e Respostas de Embaixadores / Admin)
+    match /faqInteractions/{interactionId} {
+      allow read: if true;
+      allow create: if request.resource.data.question is string
+                    && request.resource.data.question.size() > 0;
+      allow update, delete: if isAdmin() || request.auth != null;
+    }
   }
 }
+
 
 

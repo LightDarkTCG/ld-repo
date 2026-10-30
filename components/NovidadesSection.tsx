@@ -100,15 +100,8 @@ export const NovidadesSection: React.FC<NovidadesSectionProps> = ({
     const buttonText = product.buttonText || (hasLink ? 'Comprar Agora' : 'PRÉ-VENDA');
 
     return (
-      <section id="novidades" className="pt-24 pb-20 bg-[#0c0c10] relative z-20 overflow-hidden">
+      <section id="novidades" className="-mt-12 sm:-mt-20 pt-2 pb-20 bg-gradient-to-b from-transparent via-[#0a0a0c] to-[#0a0a0c] relative z-20 overflow-hidden">
         <div className="container mx-auto px-4 sm:px-6 relative z-10">
-          <div className="text-center mb-8">
-            <h2 className="text-3xl sm:text-4xl md:text-5xl font-black text-white tracking-wider uppercase">
-              NOVIDADES
-            </h2>
-            <div className="w-16 h-1 bg-purple-600 mx-auto mt-3 rounded-full"></div>
-          </div>
-
           <div className="max-w-5xl mx-auto w-full">
             <div 
               onClick={() => onOpenProductModal(product)}
@@ -357,15 +350,8 @@ export const NovidadesSection: React.FC<NovidadesSectionProps> = ({
   const buttonText = currentProduct.buttonText || (hasLink ? 'Comprar Agora' : 'PRÉ-VENDA');
 
   return (
-    <section id="novidades" className="pt-24 pb-20 bg-[#0c0c10] relative z-20 overflow-hidden">
+    <section id="novidades" className="-mt-12 sm:-mt-20 pt-2 pb-20 bg-gradient-to-b from-transparent via-[#0a0a0c] to-[#0a0a0c] relative z-20 overflow-hidden">
       <div className="container mx-auto px-4 sm:px-6 relative z-10">
-        <div className="text-center mb-8">
-          <h2 className="text-3xl sm:text-4xl md:text-5xl font-black text-white tracking-wider uppercase">
-            NOVIDADES
-          </h2>
-          <div className="w-16 h-1 bg-purple-600 mx-auto mt-3 rounded-full"></div>
-        </div>
-
         <div 
           className="max-w-5xl mx-auto w-full relative"
           onMouseEnter={() => setIsPaused(true)}

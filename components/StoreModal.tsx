@@ -30,7 +30,8 @@ import {
   Box,
   SlidersHorizontal,
   User as UserIcon,
-  ChevronRight
+  ChevronRight,
+  Share2
 } from 'lucide-react';
 import {
   CardData,
@@ -58,6 +59,7 @@ import {
   generateOrderId,
   generatePixForOrder,
   getCartItems,
+  getOfficialProductShareUrl,
   getStoreOrderById,
   isValidCpf,
   lookupCepAddress,
@@ -195,6 +197,8 @@ interface StoreModalProps {
   allCards?: CardData[];
   initialTab?: 'vitrine' | 'carrinho';
   initialOrderId?: string | null;
+  initialListingId?: string | null;
+  initialVariationIdx?: number;
   user?: any;
   isAdmin?: boolean;
   onOpenProductDetail?: (product: ExclusiveProduct, variationIndex?: number) => void;
@@ -210,6 +214,8 @@ export const StoreModal: React.FC<StoreModalProps> = ({
   allCards = [],
   initialTab = 'vitrine',
   initialOrderId,
+  initialListingId,
+  initialVariationIdx,
   user,
   isAdmin,
   onOpenProductDetail,
@@ -218,9 +224,17 @@ export const StoreModal: React.FC<StoreModalProps> = ({
   onOpenUserOrders
 }) => {
   // Store Mode: Official Products vs Community Player Listings
-  const [marketSection, setMarketSection] = useState<'official' | 'community'>('official');
+  const [marketSection, setMarketSection] = useState<'official' | 'community'>(() =>
+    initialListingId ? 'community' : 'official'
+  );
   const [communityListings, setCommunityListings] = useState<MarketplaceListing[]>([]);
   const [openSellTrigger, setOpenSellTrigger] = useState(0);
+
+  useEffect(() => {
+    if (initialListingId) {
+      setMarketSection('community');
+    }
+  }, [initialListingId]);
 
   // Store Filter & Search States
   const [selectedCategory, setSelectedCategory] = useState<StoreCategoryFilter>('all');
@@ -237,6 +251,7 @@ export const StoreModal: React.FC<StoreModalProps> = ({
   const [storeSettings, setStoreSettings] = useState<StoreSettings>(DEFAULT_STORE_SETTINGS);
   const [selectedVariations, setSelectedVariations] = useState<Record<number, number>>({});
   const [addedFeedbackIdx, setAddedFeedbackIdx] = useState<number | null>(null);
+  const [copiedLinkIdx, setCopiedLinkIdx] = useState<number | null>(null);
 
   // Shipping & Coupon State
   const [cep, setCep] = useState('');
@@ -940,6 +955,8 @@ export const StoreModal: React.FC<StoreModalProps> = ({
               allCards={allCards}
               user={user}
               isAdmin={isAdmin}
+              initialListingId={initialListingId}
+              initialVariationIdx={initialVariationIdx}
               openSellTrigger={openSellTrigger}
               onOfficialProductCreated={() => setMarketSection('official')}
               onOpenAuth={onOpenAuth}
@@ -1437,6 +1454,27 @@ export const StoreModal: React.FC<StoreModalProps> = ({
                                 <span>{isPreOrder ? 'Reservar' : 'Comprar'}</span>
                               </button>
                             )}
+
+                            <button
+                              type="button"
+                              title="Copiar Link deste Produto"
+                              onClick={() => {
+                                const shareUrl = getOfficialProductShareUrl(
+                                  prod,
+                                  hasVars ? activeVarIdx : undefined
+                                );
+                                navigator.clipboard.writeText(shareUrl);
+                                setCopiedLinkIdx(idx);
+                                setTimeout(() => setCopiedLinkIdx(null), 2000);
+                              }}
+                              className={`p-2.5 rounded-xl border text-xs font-bold transition flex items-center justify-center shrink-0 cursor-pointer ${
+                                copiedLinkIdx === idx
+                                  ? 'bg-emerald-600 text-white border-emerald-500'
+                                  : 'bg-slate-900 hover:bg-slate-800 text-purple-300 border-slate-700'
+                              }`}
+                            >
+                              {copiedLinkIdx === idx ? <Check size={14} /> : <Share2 size={14} />}
+                            </button>
                           </div>
                         </div>
                       </div>

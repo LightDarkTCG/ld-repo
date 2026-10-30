@@ -23,8 +23,8 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
   const [uploadingProductMedia, setUploadingProductMedia] = useState<string | null>(null);
   const [migrationStatusMsg, setMigrationStatusMsg] = useState<string | null>(null);
 
-  const [activeAdminTab, setActiveAdminTab] = useState<'settings' | 'store_orders' | 'tabs' | 'items' | 'timeline' | 'archetypes' | 'collections' | 'cards' | 'batch_cards' | 'batch_images' | 'apendices' | 'add_card'>(() => {
-    if (adminType === 'store') return 'store_orders';
+  const [activeAdminTab, setActiveAdminTab] = useState<'settings' | 'products' | 'store_orders' | 'tabs' | 'items' | 'timeline' | 'archetypes' | 'collections' | 'cards' | 'batch_cards' | 'batch_images' | 'apendices' | 'add_card'>(() => {
+    if (adminType === 'store') return 'products';
     if (adminType === 'home') return 'settings';
     if (adminType === 'catalog') return 'add_card';
     return 'settings'; // Default for master
@@ -757,9 +757,17 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
               {/* Sidebar */}
               <div className="w-full md:w-56 shrink-0 flex flex-col gap-2">
                 {(adminType === 'home' || adminType === 'store' || adminType === 'master') && (
-                  <button onClick={() => { setActiveAdminTab('settings'); resetForm(); }} className={`text-left p-3 rounded font-bold transition flex items-center gap-2 ${activeAdminTab === 'settings' ? 'bg-purple-600 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}>
-                    <Palette size={18}/> {adminType === 'store' ? 'Produtos & Vitrine' : 'Aparência & Produtos'}
-                  </button>
+                  <>
+                    <button onClick={() => { setActiveAdminTab('settings'); resetForm(); }} className={`text-left p-3 rounded font-bold transition flex items-center gap-2 ${activeAdminTab === 'settings' ? 'bg-purple-600 text-white shadow-md shadow-purple-950/40' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'}`}>
+                      <Palette size={18}/> Aparência
+                    </button>
+                    <button onClick={() => { setActiveAdminTab('products'); resetForm(); }} className={`text-left p-3 rounded font-bold transition flex items-center gap-2 ${activeAdminTab === 'products' ? 'bg-purple-600 text-white shadow-md shadow-purple-950/40' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'}`}>
+                      <Box size={18}/> Produtos
+                    </button>
+                    <button onClick={() => { setActiveAdminTab('store_orders'); resetForm(); }} className={`text-left p-3 rounded font-bold transition flex items-center gap-2 ${activeAdminTab === 'store_orders' ? 'bg-emerald-600 text-white shadow-md shadow-emerald-950/40' : 'bg-slate-800 text-emerald-300 hover:bg-slate-700'}`}>
+                      <ShoppingCart size={18}/> Pedidos e Frete
+                    </button>
+                  </>
                 )}
                 
                 {adminType === 'master' && (
@@ -777,18 +785,6 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
                       <BookOpen size={18}/> Apêndices
                     </button>
                   </>
-                )}
-
-                {(adminType === 'home' || adminType === 'store' || adminType === 'master') && (
-                  <button onClick={() => { setActiveAdminTab('store_orders'); resetForm(); }} className={`text-left p-3 rounded font-bold transition flex items-center gap-2 ${activeAdminTab === 'store_orders' ? 'bg-emerald-600 text-white shadow-md shadow-emerald-950/40' : 'bg-slate-800 text-emerald-300 hover:bg-slate-700'}`}>
-                    <ShoppingCart size={18}/> Loja, Pedidos & Frete
-                  </button>
-                )}
-
-                {adminType === 'home' && (
-                  <button onClick={() => { setActiveAdminTab('archetypes'); resetForm(); }} className={`text-left p-3 rounded font-bold transition flex items-center gap-2 ${activeAdminTab === 'archetypes' ? 'bg-purple-600 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}>
-                    <ImageIcon size={18}/> Arquétipos
-                  </button>
                 )}
 
                 {adminType === 'catalog' && (
@@ -827,11 +823,11 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
                   <AdminStoreManager />
                 )}
 
-                {/* SETTINGS TAB */}
+                {/* SETTINGS (APARÊNCIA) TAB */}
                 {activeAdminTab === 'settings' && (
                   <div className="bg-slate-800 p-6 rounded-lg border border-slate-700 mb-8 shadow-inner">
                     <h3 className="text-xl font-bold text-white mb-6 border-b border-slate-700 pb-2">
-                      {(adminType === 'home' || adminType === 'store') ? 'Configurações da Tela Inicial & Produtos da Loja' : 'Configurações de Lore'}
+                      {(adminType === 'home' || adminType === 'store') ? 'Aparência da Página Inicial' : 'Configurações de Lore'}
                     </h3>
                     
                     {(adminType === 'home' || adminType === 'store') ? (
@@ -1003,13 +999,70 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
                           </div>
                         </div>
 
-                        <div className="mt-8 border-t border-slate-700 pt-6">
-                          <h4 className="font-bold text-white mb-2">Gerenciar Produtos em NOVIDADES</h4>
-                          <p className="text-xs text-slate-400 mb-6">
-                            Configure os produtos que aparecem na vitrine NOVIDADES. Se houver 1 produto, ele fica centralizado de fora a fora. Se houver 2 ou mais, vira um carrossel que passa a cada 10 segundos com setas de navegação.
-                          </p>
+                        <div className="flex justify-end pt-4 border-t border-slate-700 mt-6">
+                          <button onClick={saveSettings} disabled={loading} className="bg-purple-600 hover:bg-purple-500 text-white font-bold py-2 px-6 rounded transition">
+                            Salvar Aparência
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="space-y-4">
+                        <div className="flex gap-4">
+                          <div className="flex-1">
+                            <label className="text-sm font-bold text-slate-400 block mb-1">Título Principal (Lore)</label>
+                            <input type="text" value={wbSettings.mainTitle} onChange={e => setWbSettings({...wbSettings, mainTitle: e.target.value})} className="w-full bg-slate-950 border border-slate-700 rounded p-2 text-white" />
+                          </div>
+                          <div className="w-32">
+                            <label className="text-sm font-bold text-slate-400 block mb-1">Cor Primária</label>
+                            <div className="flex gap-2 items-center">
+                              <input type="color" value={wbSettings.primaryColor} onChange={e => setWbSettings({...wbSettings, primaryColor: e.target.value})} className="w-10 h-10 rounded cursor-pointer bg-slate-950" />
+                              <span className="text-white text-xs">{wbSettings.primaryColor}</span>
+                            </div>
+                          </div>
+                        </div>
+                        <div>
+                          <label className="text-sm font-bold text-slate-400 block mb-1">Subtítulo (Abaixo do Título)</label>
+                          <input type="text" value={wbSettings.subtitle} onChange={e => setWbSettings({...wbSettings, subtitle: e.target.value})} className="w-full bg-slate-950 border border-slate-700 rounded p-2 text-white" />
+                        </div>
+                        <div>
+                          <label className="text-sm font-bold text-slate-400 block mb-1">Texto de Boas Vindas (Lore)</label>
+                          <textarea value={wbSettings.description} onChange={e => setWbSettings({...wbSettings, description: e.target.value})} className="w-full bg-slate-950 border border-slate-700 rounded p-3 text-white h-24 resize-none" />
+                        </div>
+                        <div className="flex justify-end pt-4">
+                          <button onClick={saveSettings} disabled={loading} className="bg-purple-600 hover:bg-purple-500 text-white font-bold py-2 px-6 rounded transition">
+                            Salvar Global da Lore
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
 
-                          {(homeSettings.exclusiveProducts || []).map((prod: any, i: number) => {
+                {/* PRODUCTS TAB */}
+                {activeAdminTab === 'products' && (
+                  <div className="bg-slate-800 p-6 rounded-lg border border-slate-700 mb-8 shadow-inner">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 border-b border-slate-700 pb-4">
+                      <div>
+                        <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                          <Box size={20} className="text-purple-400" />
+                          Produtos da Loja & Vitrine NOVIDADES
+                        </h3>
+                        <p className="text-xs text-slate-400 mt-1">
+                          Gerencie todos os produtos oficiais, decks pré-montados, variações (Normal / Full Foil), mídias e estoque.
+                        </p>
+                      </div>
+                      <button
+                        onClick={saveSettings}
+                        disabled={loading}
+                        className="bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white font-bold py-2.5 px-6 rounded-lg transition shadow-lg shadow-purple-900/30 shrink-0"
+                      >
+                        {loading ? 'Salvando...' : 'Salvar Produtos'}
+                      </button>
+                    </div>
+
+                    <div className="space-y-4">
+                      <div>
+                        {(homeSettings.exclusiveProducts || []).map((prod: any, i: number) => {
                             const currentMediaList = (prod.mediaList && Array.isArray(prod.mediaList))
                               ? prod.mediaList
                               : (prod.mediaUrl ? [{ type: prod.mediaType || 'image', url: prod.mediaUrl }] : []);
@@ -2078,41 +2131,11 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
                         </div>
 
                         <div className="flex justify-end pt-4 border-t border-slate-700 mt-6">
-                          <button onClick={saveSettings} disabled={loading} className="bg-purple-600 hover:bg-purple-500 text-white font-bold py-2 px-6 rounded transition">
-                            Salvar Configurações da Home
+                          <button onClick={saveSettings} disabled={loading} className="bg-purple-600 hover:bg-purple-500 text-white font-bold py-2.5 px-6 rounded-lg transition shadow-lg shadow-purple-900/30">
+                            {loading ? 'Salvando...' : 'Salvar Produtos'}
                           </button>
                         </div>
-                      </div>
-                    ) : (
-                      <div className="space-y-4">
-                        <div className="flex gap-4">
-                          <div className="flex-1">
-                            <label className="text-sm font-bold text-slate-400 block mb-1">Título Principal (Lore)</label>
-                            <input type="text" value={wbSettings.mainTitle} onChange={e => setWbSettings({...wbSettings, mainTitle: e.target.value})} className="w-full bg-slate-950 border border-slate-700 rounded p-2 text-white" />
-                          </div>
-                          <div className="w-32">
-                            <label className="text-sm font-bold text-slate-400 block mb-1">Cor Primária</label>
-                            <div className="flex gap-2 items-center">
-                              <input type="color" value={wbSettings.primaryColor} onChange={e => setWbSettings({...wbSettings, primaryColor: e.target.value})} className="w-10 h-10 rounded cursor-pointer bg-slate-950" />
-                              <span className="text-white text-xs">{wbSettings.primaryColor}</span>
-                            </div>
-                          </div>
-                        </div>
-                        <div>
-                          <label className="text-sm font-bold text-slate-400 block mb-1">Subtítulo (Abaixo do Título)</label>
-                          <input type="text" value={wbSettings.subtitle} onChange={e => setWbSettings({...wbSettings, subtitle: e.target.value})} className="w-full bg-slate-950 border border-slate-700 rounded p-2 text-white" />
-                        </div>
-                        <div>
-                          <label className="text-sm font-bold text-slate-400 block mb-1">Texto de Boas Vindas (Lore)</label>
-                          <textarea value={wbSettings.description} onChange={e => setWbSettings({...wbSettings, description: e.target.value})} className="w-full bg-slate-950 border border-slate-700 rounded p-3 text-white h-24 resize-none" />
-                        </div>
-                        <div className="flex justify-end pt-4">
-                          <button onClick={saveSettings} disabled={loading} className="bg-purple-600 hover:bg-purple-500 text-white font-bold py-2 px-6 rounded transition">
-                            Salvar Global da Lore
-                          </button>
-                        </div>
-                      </div>
-                    )}
+                    </div>
                   </div>
                 )}
 

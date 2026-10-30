@@ -65,6 +65,7 @@ import {
   isCamadaCard,
   isContinuousBackrowCard,
   isJimCard,
+  isPlayerEquipmentCard,
   loadBotAdaptiveMemory,
   payDirectHeroSummonCost,
   performBotSmartMulligan,
@@ -2425,12 +2426,44 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
 
   // Click on Player Backrow Support / Equipment Slot (0..5)
   const handlePlayerSupportSlotClick = (slotIndex: number) => {
+    const targetBackSlot = gameState.player.backrow[slotIndex];
+    const targetFrontFighter = gameState.player.frontline[slotIndex];
+    const hasFighterEquipInCol = (targetFrontFighter?.equipments.length ?? 0) > 0;
+
     if (gameState.phase === 'CARD_REACTION' && pendingReactionHandIndex !== null) {
       const reactCard = gameState.player.hand[pendingReactionHandIndex];
       if (!reactCard) return;
 
-      // Qualquer carta que equipa o jogador / permanece em campo pode ser colocada ou empilhada em qualquer espaço!
       if (isContinuousBackrowCard(reactCard)) {
+        if (isPlayerEquipmentCard(reactCard)) {
+          if (targetBackSlot !== null && !isPlayerEquipmentCard(targetBackSlot.card)) {
+            setGameState((prev) => {
+              const next = cloneState(prev);
+              addLog(
+                next,
+                'system',
+                'Equipamentos não podem ser colocados na mesma área que já possui uma Carta de Efeito!',
+                'info'
+              );
+              return next;
+            });
+            return;
+          }
+        } else {
+          if (targetBackSlot !== null || hasFighterEquipInCol) {
+            setGameState((prev) => {
+              const next = cloneState(prev);
+              addLog(
+                next,
+                'system',
+                'Cartas de Efeito não podem ser colocadas na mesma área que já possui uma carta de Equipamento ou Efeito!',
+                'info'
+              );
+              return next;
+            });
+            return;
+          }
+        }
         executePlayerReactionCardOnSlot(pendingReactionHandIndex, slotIndex);
         return;
       }
@@ -2438,8 +2471,21 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
       if (
         reactCard.type === 'Equipamento' &&
         !isContinuousBackrowCard(reactCard) &&
-        gameState.player.frontline[slotIndex] !== null
+        targetFrontFighter !== null
       ) {
+        if (targetBackSlot !== null && !isPlayerEquipmentCard(targetBackSlot.card)) {
+          setGameState((prev) => {
+            const next = cloneState(prev);
+            addLog(
+              next,
+              'system',
+              'Equipamentos não podem ser colocados na mesma área que já possui uma Carta de Efeito!',
+              'info'
+            );
+            return next;
+          });
+          return;
+        }
         handlePlayerFrontSlotClick(slotIndex);
         return;
       }
@@ -2452,8 +2498,36 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
     const card = gameState.player.hand[selectedHandIndex];
     if (!card) return;
 
-    // Qualquer carta que equipa o jogador / permanece em campo pode ser colocada ou empilhada em qualquer espaço!
     if (isContinuousBackrowCard(card)) {
+      if (isPlayerEquipmentCard(card)) {
+        if (targetBackSlot !== null && !isPlayerEquipmentCard(targetBackSlot.card)) {
+          setGameState((prev) => {
+            const next = cloneState(prev);
+            addLog(
+              next,
+              'system',
+              'Equipamentos não podem ser colocados na mesma área que já possui uma Carta de Efeito!',
+              'info'
+            );
+            return next;
+          });
+          return;
+        }
+      } else {
+        if (targetBackSlot !== null || hasFighterEquipInCol) {
+          setGameState((prev) => {
+            const next = cloneState(prev);
+            addLog(
+              next,
+              'system',
+              'Cartas de Efeito não podem ser colocadas na mesma área que já possui uma carta de Equipamento ou Efeito!',
+              'info'
+            );
+            return next;
+          });
+          return;
+        }
+      }
       executePlayerCardPlay(selectedHandIndex, slotIndex);
       return;
     }
@@ -2461,8 +2535,21 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
     if (
       card.type === 'Equipamento' &&
       !isContinuousBackrowCard(card) &&
-      gameState.player.frontline[slotIndex] !== null
+      targetFrontFighter !== null
     ) {
+      if (targetBackSlot !== null && !isPlayerEquipmentCard(targetBackSlot.card)) {
+        setGameState((prev) => {
+          const next = cloneState(prev);
+          addLog(
+            next,
+            'system',
+            'Equipamentos não podem ser colocados na mesma área que já possui uma Carta de Efeito!',
+            'info'
+          );
+          return next;
+        });
+        return;
+      }
       handlePlayerFrontSlotClick(slotIndex);
       return;
     }
@@ -4611,12 +4698,18 @@ export const DuelBotModal: React.FC<DuelBotModalProps> = ({ isOpen, onClose }) =
                     ? selectedReactionCard
                     : null;
 
-                // Qualquer carta que equipa o jogador / permanece em campo pode ser colocada em espaço vazio OU empilhada em espaço já ocupado!
+                // Equipamentos de jogador podem ser colocados em espaço vazio OU empilhados com outros Equipamentos de jogador.
+                // Cartas de Efeito contínuas NUNCA podem ser colocadas na mesma área que já tem uma carta Equipamento ou Efeito!
                 const isSupportTarget =
-                  activeSupportCard !== null && isContinuousBackrowCard(activeSupportCard);
+                  activeSupportCard !== null &&
+                  isContinuousBackrowCard(activeSupportCard) &&
+                  (isPlayerEquipmentCard(activeSupportCard)
+                    ? sup === null || isPlayerEquipmentCard(sup.card)
+                    : sup === null && equippedList.length === 0);
 
                 const isEquipSupportTarget =
                   frontFighter !== null &&
+                  (sup === null || isPlayerEquipmentCard(sup.card)) &&
                   ((gameState.phase === 'MAIN_PHASE' &&
                     selectedHandCard?.type === 'Equipamento' &&
                     !isContinuousBackrowCard(selectedHandCard)) ||

@@ -33,8 +33,10 @@ import { NovidadesSection } from './components/NovidadesSection';
 import { ProductDetailModal } from './components/ProductDetailModal';
 import { GameGuideSections } from './components/GameGuideSections';
 import { StoreModal } from './components/StoreModal';
-import { addToCart, getCartItems } from './storeService';
+import { addToCart, getCartItems, toProductSlug } from './storeService';
 import { DuelBotModal } from './duel-bot/DuelBotModal';
+import { BoosterOpenerModal } from './components/BoosterOpenerModal';
+import { downloadPresentationGuidePdf } from './utils/presentationPdfGenerator';
 
 // --- SUB-COMPONENTS ---
 
@@ -108,17 +110,26 @@ const FieldItem = ({ label, value, icon: Icon, color }: { label: string, value: 
 const GameLore = () => {
   const [isExpanded, setIsExpanded] = useState(false);
   return (
-    <section className="py-20 bg-[#0a0a0c] border-b border-slate-900 relative">
+    <section id="sobre-light-dark" className="py-20 bg-[#0a0a0c] border-b border-slate-900 relative">
        <div className="container mx-auto px-6 max-w-4xl">
           <div className="text-center mb-10">
-            <h2 className="text-3xl md:text-4xl font-bold text-white mb-2">O Fim do Macroverso?</h2>
+            <h2 className="text-3xl md:text-4xl font-black text-white mb-3 uppercase tracking-wider">SOBRE LIGHT DARK</h2>
             <div className="h-1 w-24 bg-gradient-to-r from-purple-600 to-blue-600 mx-auto rounded-full"></div>
           </div>
-          <div className={`relative transition-all duration-700 ease-in-out ${isExpanded ? 'max-h-[3000px]' : 'max-h-40 overflow-hidden'}`}>
-             <div className="prose prose-invert prose-lg mx-auto text-slate-400 leading-relaxed text-justify">
-                <p className="mb-6 first-letter:text-5xl first-letter:font-bold first-letter:text-white first-letter:mr-1 first-letter:float-left">
-                  Light Dark TCG é um jogo de cartas épico que nasceu de uma RPG de mesa que existe a mais de uma década.
-                </p>
+
+          {/* Resumo da ideia do jogo sempre visível */}
+          <div className="prose prose-invert prose-lg mx-auto text-slate-300 leading-relaxed text-justify space-y-5 mb-6">
+            <p className="first-letter:text-5xl first-letter:font-bold first-letter:text-white first-letter:mr-2 first-letter:float-left">
+              <strong>Light Dark TCG</strong> é um jogo de cartas estratégico e colecionável que nasceu de uma campanha de RPG de mesa com mais de uma década de história. Nele, dois (ou quatro) jogadores se enfrentam em duelos dinâmicos de <strong>Ação e Reação</strong> com o objetivo de reduzir os <strong>20 pontos de Vida</strong> do oponente a zero.
+            </p>
+            <p className="border-l-4 border-purple-500 pl-4 bg-slate-900/60 p-4 rounded-r-xl text-slate-200">
+              Você monta um deck único de 30 a 35 cartas sem repetições e assume o comando de <strong>Heróis lendários, Combatentes, Equipamentos e Efeitos</strong> — utilizando <strong>Mana</strong> e <strong>Runas</strong> para invocar criaturas, criar correntes de resposta no turno adversário e dominar diferentes Arquétipos do Macroverso.
+            </p>
+          </div>
+
+          <div className={`relative transition-all duration-700 ease-in-out ${isExpanded ? 'max-h-[3000px] opacity-100 mt-8' : 'max-h-0 opacity-0 overflow-hidden'}`}>
+             <div className="prose prose-invert prose-lg mx-auto text-slate-400 leading-relaxed text-justify border-t border-slate-800/80 pt-8">
+                <h3 className="text-2xl font-bold text-white text-center mb-6">O Fim do Macroverso?</h3>
                 <p className="mb-6">
                   "Antes de existir qualquer universo, havia apenas duas coisas, Nada e o Mestre. Foi nesse contexto que o Mestre, que ao criar algo, criou antes o Caos, a mudança, a necessidade de algo sair da imobildiade, e após isso, criou os Conceitos, como a Criação e a Existência, abrindo o caminho para o nascimento do Tempo, do Fogo, da Água, do Desejo e de inúmeras forças cósmicas. Cada conceito molda realidades inteiras e disputa influência e coexistem sobre os universos, se algo existe é porque existe uma entidade pensante ou não.
                 </p>
@@ -137,9 +148,6 @@ const GameLore = () => {
                 </p>
                 <p className="mb-6">
                   Agora, eles lutam não apenas contra os Errantes colossais ou os exércitos de Asmonious, mas também contra a desilusão. Pois neste novo mundo, as linhas se borraram: heróis são traídos por seus aliados mais confiáveis, vilões como Von Linden se tornam amigos, e a própria loucura, abraçada por acadêmicos como Patrick, pode ser a única forma de enxergar a verdade.
-                </p>
-                <p className="mb-6 border-l-4 border-purple-500 pl-4 italic bg-slate-900/50 p-4 rounded-r">
-                   No jogo, os jogadores assumem o papel de heróis, dragões, Conceitos ou variantes de personagens lendários, disputando poder, fazendo combos e criando interações únicas entre as cartas. O jogo combina estratégia, ação e reação frenética, permitindo que cada partida seja única. Seu objetivo? Zerar a vida do outro jogador!
                 </p>
                 <p className="mb-6">
                   Acima de tudo "Light e Dark" é uma homenagem aos mais de 50 jogadores que já passaram e jogaram essa campanha, sobre amigos que fizemos, sobre relacionamentos desenvolvidos, a lore também é saga sobre os filhos pagando pelos pecados de seus pais.
@@ -160,24 +168,21 @@ const GameLore = () => {
                   ></iframe>
                 </div>
              </div>
-             {!isExpanded && (
-               <div className="absolute bottom-0 left-0 w-full h-32 bg-gradient-to-t from-[#0a0a0c] via-[#0a0a0c]/80 to-transparent pointer-events-none"></div>
-             )}
           </div>
           <button 
             onClick={() => setIsExpanded(!isExpanded)}
-            className="mt-8 text-white bg-slate-800 hover:bg-slate-700 border border-slate-600 px-8 py-3 rounded-full font-bold flex items-center justify-center gap-2 mx-auto transition-all hover:scale-105 group"
+            className="mt-6 text-white bg-slate-800 hover:bg-slate-700 border border-slate-600 px-8 py-3 rounded-full font-bold flex items-center justify-center gap-2 mx-auto transition-all hover:scale-105 group"
           >
             {isExpanded ? (
               <>Ler Menos <ChevronUp size={18} className="group-hover:-translate-y-1 transition-transform" /></>
             ) : (
-              <>Ler Mais sobre a Lore <ChevronDown size={18} className="group-hover:translate-y-1 transition-transform" /></>
+              <>Ler Mais sobre a História & Trailer <ChevronDown size={18} className="group-hover:translate-y-1 transition-transform" /></>
             )}
           </button>
        </div>
     </section>
-  )
-}
+  );
+};
 
 const TYPE_DEFINITIONS: Record<string, { text: string, colorName: string, colorClass: string }> = {
   'Combatente': {
@@ -1416,6 +1421,9 @@ export default function App() {
   const [isBuyModalOpen, setIsBuyModalOpen] = useState(false);
   const [storeInitialTab, setStoreInitialTab] = useState<'vitrine' | 'carrinho'>('vitrine');
   const [storeInitialOrderId, setStoreInitialOrderId] = useState<string | null>(null);
+  const [storeInitialListingId, setStoreInitialListingId] = useState<string | null>(null);
+  const [storeInitialVariationIdx, setStoreInitialVariationIdx] = useState<number | undefined>(undefined);
+  const [pendingProductSlug, setPendingProductSlug] = useState<{ slug: string; varIdx?: number } | null>(null);
   const [cartCount, setCartCount] = useState<number>(() => {
     return getCartItems().reduce((sum, i) => sum + i.quantity, 0);
   });
@@ -1429,6 +1437,7 @@ export default function App() {
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const [isGameOpen, setIsGameOpen] = useState(false);
+  const [isBoosterOpenerOpen, setIsBoosterOpenerOpen] = useState(false);
   const [isTournamentOpen, setIsTournamentOpen] = useState(false);
   const [activeTournamentId, setActiveTournamentId] = useState<string | undefined>(undefined);
   const [isChampionshipHistoryOpen, setIsChampionshipHistoryOpen] = useState(false);
@@ -1526,6 +1535,8 @@ export default function App() {
     setIsManualOpen(false);
     setIsBuyModalOpen(false);
     setStoreInitialOrderId(null);
+    setStoreInitialListingId(null);
+    setStoreInitialVariationIdx(undefined);
     setIsCatalogOpen(false);
     setIsLoreOpen(false);
     setIsDeckBuilderOpen(false);
@@ -1634,24 +1645,96 @@ export default function App() {
       window.history.replaceState(null, '', window.location.pathname + window.location.search);
     }
 
-    const params = new URLSearchParams(window.location.search);
-    if (params.get('mode') === 'game') {
-      setIsGameMode(true);
-      setIsGameOpen(true);
-    }
+    const applyUrlRoute = () => {
+      const path = window.location.pathname.toLowerCase().replace(/\/+$/, '') || '/';
+      const params = new URLSearchParams(window.location.search);
 
-    const mpOrderParam = params.get('mp_order');
-    if (mpOrderParam) {
-      setStoreInitialOrderId(mpOrderParam);
-      setStoreInitialTab('carrinho');
-      setIsBuyModalOpen(true);
-    }
+      if (params.get('mode') === 'game') {
+        setIsGameMode(true);
+        setIsGameOpen(true);
+        return;
+      }
 
-    const tournamentParam = params.get('torneio') || params.get('tournament');
-    if (tournamentParam) {
-      setActiveTournamentId(tournamentParam);
-      setIsTournamentOpen(true);
-    }
+      const mpOrderParam = params.get('mp_order');
+      if (mpOrderParam) {
+        setStoreInitialOrderId(mpOrderParam);
+        setStoreInitialTab('carrinho');
+        setIsBuyModalOpen(true);
+        return;
+      }
+
+      const tournamentParam = params.get('torneio') || params.get('tournament');
+      if (tournamentParam) {
+        setActiveTournamentId(tournamentParam);
+        setIsTournamentOpen(true);
+        return;
+      }
+
+      const produtoParam = params.get('produto') || params.get('product');
+      const anuncioParam = params.get('anuncio') || params.get('listing');
+      const variacaoParam = params.get('variacao');
+      const parsedVarIdx =
+        variacaoParam !== null && !Number.isNaN(Number(variacaoParam))
+          ? Number(variacaoParam)
+          : undefined;
+
+      if (anuncioParam) {
+        clearAllActiveModals();
+        setStoreInitialListingId(anuncioParam);
+        setStoreInitialVariationIdx(parsedVarIdx);
+        setStoreInitialTab('vitrine');
+        setIsBuyModalOpen(true);
+        return;
+      }
+
+      if (produtoParam) {
+        clearAllActiveModals();
+        setPendingProductSlug({ slug: toProductSlug(produtoParam), varIdx: parsedVarIdx });
+        return;
+      }
+
+      if (path === '/catalog' || path === '/catalogo') {
+        clearAllActiveModals();
+        setIsCatalogOpen(true);
+      } else if (path === '/mercado' || path === '/loja' || path === '/store') {
+        clearAllActiveModals();
+        setStoreInitialTab('vitrine');
+        setIsBuyModalOpen(true);
+      } else if (path === '/decks' || path === '/deckbuilder' || path === '/monte-seu-deck') {
+        clearAllActiveModals();
+        setIsDeckBuilderOpen(true);
+      } else if (path === '/lore') {
+        clearAllActiveModals();
+        setIsLoreOpen(true);
+      } else if (path === '/torneios' || path === '/torneio') {
+        clearAllActiveModals();
+        setIsTournamentOpen(true);
+      } else if (path === '/populares') {
+        clearAllActiveModals();
+        setIsPopularCardsOpen(true);
+      } else if (path === '/album') {
+        clearAllActiveModals();
+        setIsAlbumOpen(true);
+      } else if (path === '/ranking' || path === '/hall-da-fama') {
+        clearAllActiveModals();
+        setIsCollectorsRankingOpen(true);
+      } else if (path === '/duelo') {
+        clearAllActiveModals();
+        setIsGameOpen(true);
+      } else if (path === '/duelo-ia' || path === '/bot') {
+        clearAllActiveModals();
+        setIsDuelBotOpen(true);
+      } else if (path === '/manual') {
+        clearAllActiveModals();
+        setIsManualOpen(true);
+      } else if (path === '/') {
+        clearAllActiveModals();
+        setIsDuelBotOpen(false);
+      }
+    };
+
+    applyUrlRoute();
+    window.addEventListener('popstate', applyUrlRoute);
 
     const unsubHomeSettings = onSnapshot(doc(db, 'homeSettings', 'global'), (snap) => {
       if (snap.exists()) {
@@ -1667,8 +1750,113 @@ export default function App() {
       console.error('Erro ao escutar homeSettings:', err);
     });
 
-    return () => unsubHomeSettings();
+    return () => {
+      window.removeEventListener('popstate', applyUrlRoute);
+      unsubHomeSettings();
+    };
   }, []);
+
+  // Abre automaticamente o produto compartilhado via URL (?produto=slug) assim que os produtos carregam
+  useEffect(() => {
+    if (!pendingProductSlug) return;
+    const list: ExclusiveProduct[] = homeSettings?.exclusiveProducts || [];
+    if (list.length === 0) return;
+
+    const matched = list.find(
+      (p) => p && toProductSlug(p.title || '') === pendingProductSlug.slug
+    );
+    if (matched) {
+      setSelectedProduct(matched);
+      setSelectedProductVariationIndex(pendingProductSlug.varIdx);
+      setPendingProductSlug(null);
+    } else {
+      // Caso o slug não seja encontrado nos produtos oficiais, abre o Mercado geral
+      setStoreInitialTab('vitrine');
+      setIsBuyModalOpen(true);
+      setPendingProductSlug(null);
+    }
+  }, [pendingProductSlug, homeSettings]);
+
+  // Sincroniza a URL do navegador com a página/modal ou produto aberto no momento
+  useEffect(() => {
+    if (typeof window === 'undefined' || pendingProductSlug) return;
+
+    let targetUrl = '/';
+    const currentParams = new URLSearchParams(window.location.search);
+
+    if (selectedProduct) {
+      const slug = toProductSlug(selectedProduct.title || 'produto');
+      const p = new URLSearchParams();
+      p.set('produto', slug);
+      if (
+        typeof selectedProductVariationIndex === 'number' &&
+        selectedProductVariationIndex > 0
+      ) {
+        p.set('variacao', String(selectedProductVariationIndex));
+      }
+      targetUrl = `/mercado?${p.toString()}`;
+    } else if (isBuyModalOpen) {
+      const anuncio = currentParams.get('anuncio') || storeInitialListingId;
+      const mpOrder = currentParams.get('mp_order') || storeInitialOrderId;
+      if (anuncio) {
+        const p = new URLSearchParams();
+        p.set('anuncio', anuncio);
+        if (currentParams.get('variacao')) {
+          p.set('variacao', currentParams.get('variacao')!);
+        }
+        targetUrl = `/mercado?${p.toString()}`;
+      } else if (mpOrder) {
+        targetUrl = `/mercado?mp_order=${encodeURIComponent(mpOrder)}`;
+      } else {
+        targetUrl = '/mercado';
+      }
+    } else if (isCatalogOpen) {
+      targetUrl = '/catalog';
+    } else if (isDeckBuilderOpen) {
+      targetUrl = '/decks';
+    } else if (isLoreOpen) {
+      targetUrl = '/lore';
+    } else if (isTournamentOpen) {
+      targetUrl = activeTournamentId
+        ? `/torneios?torneio=${encodeURIComponent(activeTournamentId)}`
+        : '/torneios';
+    } else if (isPopularCardsOpen) {
+      targetUrl = '/populares';
+    } else if (isAlbumOpen) {
+      targetUrl = '/album';
+    } else if (isCollectorsRankingOpen) {
+      targetUrl = '/ranking';
+    } else if (isGameOpen) {
+      targetUrl = '/duelo';
+    } else if (isDuelBotOpen) {
+      targetUrl = '/duelo-ia';
+    } else if (isManualOpen) {
+      targetUrl = '/manual';
+    }
+
+    const currentFull = `${window.location.pathname}${window.location.search}`;
+    if (currentFull !== targetUrl) {
+      window.history.pushState(null, '', targetUrl);
+    }
+  }, [
+    selectedProduct,
+    selectedProductVariationIndex,
+    isBuyModalOpen,
+    storeInitialListingId,
+    storeInitialOrderId,
+    isCatalogOpen,
+    isDeckBuilderOpen,
+    isLoreOpen,
+    isTournamentOpen,
+    activeTournamentId,
+    isPopularCardsOpen,
+    isAlbumOpen,
+    isCollectorsRankingOpen,
+    isGameOpen,
+    isDuelBotOpen,
+    isManualOpen,
+    pendingProductSlug
+  ]);
 
   useEffect(() => {
     const handleContext = (e: MouseEvent) => {
@@ -1810,6 +1998,8 @@ export default function App() {
         }}
         initialTab={storeInitialTab}
         initialOrderId={storeInitialOrderId}
+        initialListingId={storeInitialListingId}
+        initialVariationIdx={storeInitialVariationIdx}
       />
       <CatalogModal isOpen={isCatalogOpen} onClose={closeCurrentModal} onOpenAdmin={() => { 
         if (isAdmin) {
@@ -1911,6 +2101,7 @@ export default function App() {
       <TypeModal type={selectedType} onClose={closeCurrentModal} />
       {isGameOpen && <GameBoard onClose={closeCurrentModal} />}
       <DuelBotModal isOpen={isDuelBotOpen} onClose={() => setIsDuelBotOpen(false)} />
+      <BoosterOpenerModal isOpen={isBoosterOpenerOpen} onClose={() => setIsBoosterOpenerOpen(false)} isAdmin={isAdmin} />
       {adminMode !== 'none' && isAdmin && <AdminPanel adminType={adminMode} onClose={closeCurrentModal} />}
 
       {/* Navbar */}
@@ -1980,6 +2171,13 @@ export default function App() {
               title="Cartas Populares da Comunidade (Meta)"
             >
               <Flame size={14} className="text-red-500 fill-red-500/20" /> Populares
+            </button>
+            <button 
+              onClick={() => setIsBoosterOpenerOpen(true)} 
+              className="bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-slate-950 px-3 py-1.5 rounded-lg text-xs font-black transition-all duration-200 flex items-center gap-1.5 shadow-sm shadow-amber-900/30 active:scale-95 whitespace-nowrap"
+              title="Simulador de Abertura de Booster (Pack Opener)"
+            >
+              <Sparkles size={14} className="text-slate-950" /> Booster
             </button>
             <div className="flex items-center gap-1.5">
               <button 
@@ -2165,16 +2363,28 @@ export default function App() {
                     </button>
 
                     {isAdmin && (
-                      <button
-                        onClick={() => {
-                          setAdminMode('store');
-                          setIsUserMenuOpen(false);
-                        }}
-                        className="px-3 py-2 text-left text-xs text-amber-300 hover:text-white hover:bg-amber-900/30 flex items-center gap-2 transition font-bold"
-                      >
-                        <Package size={14} className="text-amber-400" />
-                        <span>Painel de Vendas & Frete (Admin)</span>
-                      </button>
+                      <>
+                        <button
+                          onClick={() => {
+                            setAdminMode('store');
+                            setIsUserMenuOpen(false);
+                          }}
+                          className="px-3 py-2 text-left text-xs text-amber-300 hover:text-white hover:bg-amber-900/30 flex items-center gap-2 transition font-bold"
+                        >
+                          <Package size={14} className="text-amber-400" />
+                          <span>Painel de Vendas & Frete (Admin)</span>
+                        </button>
+                        <button
+                          onClick={() => {
+                            downloadPresentationGuidePdf();
+                            setIsUserMenuOpen(false);
+                          }}
+                          className="px-3 py-2 text-left text-xs text-purple-300 hover:text-white hover:bg-purple-900/40 flex items-center gap-2 transition font-bold"
+                        >
+                          <FileText size={14} className="text-purple-400" />
+                          <span>Baixar PDF de Apresentação (Vídeo)</span>
+                        </button>
+                      </>
                     )}
 
                     <div className="border-t border-slate-800/80 my-1"></div>
@@ -2250,6 +2460,12 @@ export default function App() {
                   className="bg-slate-100 hover:bg-white text-slate-950 px-3.5 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 shadow-sm text-left"
                 >
                   <Flame size={15} className="text-red-500 fill-red-500/20" /> Cartas Populares (Meta)
+                </button>
+                <button 
+                  onClick={() => { setIsBoosterOpenerOpen(true); setIsMenuOpen(false); }} 
+                  className="bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-slate-950 px-3.5 py-2 rounded-lg text-xs font-black transition flex items-center gap-2 shadow-sm text-left"
+                >
+                  <Sparkles size={15} className="text-slate-950" /> Simulador de Booster (Pack Opener)
                 </button>
                 <div className="flex items-center gap-2">
                   <button 
@@ -2357,6 +2573,18 @@ export default function App() {
                       <Truck size={14} className="text-emerald-400" /> Meus Pedidos & Rastreio
                     </button>
 
+                    {isAdmin && (
+                      <button
+                        onClick={() => {
+                          downloadPresentationGuidePdf();
+                          setIsMenuOpen(false);
+                        }}
+                        className="bg-purple-950/70 hover:bg-purple-900/70 text-purple-200 hover:text-white px-3.5 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 border border-purple-700/60"
+                      >
+                        <FileText size={14} className="text-purple-400" /> Baixar PDF de Apresentação (Vídeo)
+                      </button>
+                    )}
+
                     <button 
                       onClick={() => { logout(); setIsMenuOpen(false); }}
                       className="bg-red-950/80 border border-red-800 text-red-300 hover:text-white px-3.5 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 shadow-sm"
@@ -2369,29 +2597,13 @@ export default function App() {
         )}
       </nav>
 
-      {/* Novidades Section */}
-      <NovidadesSection 
-        products={homeSettings?.exclusiveProducts || []} 
-        onOpenProductModal={(product, variationIndex) => {
-          setSelectedProduct(product);
-          setSelectedProductVariationIndex(variationIndex);
-        }}
-        onOpenStoreCheckout={(product, variationIdx) => {
-          if (product && typeof product === 'object') {
-            addToCart(product, variationIdx, 1);
-          }
-          setStoreInitialOrderId(null);
-          setStoreInitialTab('carrinho');
-          setIsBuyModalOpen(true);
-        }}
-        allCards={allCards}
-      />
-
-      {/* Hero Section */}
-      <header className="relative pt-32 pb-20 lg:pt-48 lg:pb-32 overflow-hidden h-[80vh] flex items-center">
-        <div className="absolute top-0 left-0 w-full h-full z-0 overflow-hidden bg-black">
+      {/* 1. Hero Section (Tipo/Título da Página acima de tudo - ex: Halloween 31/10) */}
+      <header className="relative pt-28 pb-24 lg:pt-36 lg:pb-32 overflow-hidden min-h-[68vh] lg:min-h-[76vh] flex items-center">
+        <div className="absolute top-0 left-0 w-full h-full z-0 overflow-hidden bg-[#0a0a0c]">
           {backgroundVideos.map((vid: any, i: number) => {
             const isActive = i === currentVideoIndex;
+            const resolvedPosition =
+              !vid.position || vid.position === 'center' ? 'center top' : vid.position;
             return (
               <video 
                 key={i} 
@@ -2408,17 +2620,17 @@ export default function App() {
                     setCurrentVideoIndex((prev) => (prev + 1) % backgroundVideos.length);
                   }
                 }} 
-                className={`absolute top-0 left-0 w-full h-full object-cover pointer-events-none transition-opacity duration-1000 ${isActive ? 'opacity-50' : 'opacity-0'} ${vid.transition === 'none' ? 'duration-0' : 'duration-1000'}`}
-                style={{ objectPosition: vid.position || 'center' }}
+                className={`absolute top-0 left-0 w-full h-full object-cover pointer-events-none transition-opacity duration-1000 ${isActive ? 'opacity-55' : 'opacity-0'} ${vid.transition === 'none' ? 'duration-0' : 'duration-1000'}`}
+                style={{ objectPosition: resolvedPosition }}
               />
             );
           })}
-          <div className="absolute inset-0 bg-gradient-to-b from-[#0a0a0c] via-[#0a0a0c]/40 to-[#0a0a0c]"></div>
-          {/* Top smooth gradient blend from Novidades into Hero */}
-          <div className="absolute top-0 left-0 right-0 h-48 bg-gradient-to-b from-[#0a0a0c] via-[#0a0a0c]/80 to-transparent pointer-events-none z-10"></div>
+          {/* Suave escurecimento no topo para leitura da navbar e gradiente intenso na base para não dar corte abrupto */}
+          <div className="absolute inset-0 bg-gradient-to-b from-[#0a0a0c]/75 via-transparent to-[#0a0a0c] pointer-events-none"></div>
+          <div className="absolute bottom-0 left-0 right-0 h-48 sm:h-64 md:h-72 bg-gradient-to-t from-[#0a0a0c] via-[#0a0a0c]/90 to-transparent pointer-events-none z-10"></div>
         </div>
 
-        <div className="container mx-auto px-6 relative z-10 text-center">
+        <div className="container mx-auto px-6 relative z-20 text-center">
           {homeSettings ? (
             <>
               <h2 className="font-mono text-xs sm:text-sm tracking-[0.3em] uppercase mb-4 animate-pulse drop-shadow-md" style={{ color: homeSettings.primaryColor || '#c084fc' }}>
@@ -2462,46 +2674,59 @@ export default function App() {
         </div>
       </header>
 
+      {/* 2. ABAIXO: NOVIDADES */}
+      <NovidadesSection 
+        products={homeSettings?.exclusiveProducts || []} 
+        onOpenProductModal={(product, variationIndex) => {
+          setSelectedProduct(product);
+          setSelectedProductVariationIndex(variationIndex);
+        }}
+        onOpenStoreCheckout={(product, variationIdx) => {
+          if (product && typeof product === 'object') {
+            addToCart(product, variationIdx, 1);
+          }
+          setStoreInitialOrderId(null);
+          setStoreInitialTab('carrinho');
+          setIsBuyModalOpen(true);
+        }}
+        allCards={allCards}
+      />
+
+      {/* 3. ABAIXO: SOBRE LIGHT DARK */}
       <GameLore />
 
-
-
-      {/* Showcase Section */}
-      <section id="cartas" className="py-20 border-y border-slate-900 bg-[#0f0f13]">
-        <div className="container mx-auto px-6">
-          <div className="text-center mb-16">
-            <h3 className="text-3xl font-bold mb-4">Tipos de Cartas</h3>
-            <p className="text-slate-400 max-w-xl mx-auto">
-              Domine as quatro categorias essenciais.
-            </p>
-          </div>
-
-          <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-8 px-4 md:px-0">
-            <AnimatePresence mode="wait">
-              {showcaseCards.map((card, idx) => (
-                <motion.div 
-                  key={`${card.code}-${idx}`} 
-                  initial={{ opacity: 0, scale: 0.9 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  exit={{ opacity: 0, scale: 0.9 }}
-                  transition={{ duration: 0.5 }}
-                  className="cursor-pointer max-w-[140px] md:max-w-none mx-auto"
-                  onClick={() => setSelectedType(card.type)}
-                  title="Clique para saber mais"
-                >
-                  <Card {...card} />
-                </motion.div>
-              ))}
-            </AnimatePresence>
-          </div>
-        </div>
-      </section>
-
-      {/* Manual de Regras Oficial (7 Seções Retráteis) */}
+      {/* 4. ABAIXO: MANUAL E REGRAS (PATCH ATUAL:) + Tipos de Cartas + RESTANTE DO MANUAL */}
       <GameGuideSections 
         archetypes={archetypes} 
         isAdmin={isAdmin} 
-        ArchetypeCardComponent={ArchetypeCard} 
+        ArchetypeCardComponent={ArchetypeCard}
+        cardTypesShowcase={
+          <div id="cartas" className="py-10 px-4 sm:px-6 rounded-2xl border border-slate-800 bg-[#0f0f13]">
+            <div className="text-center mb-10">
+              <h3 className="text-2xl sm:text-3xl font-black text-white uppercase tracking-wider">Tipos de Cartas</h3>
+              <div className="w-16 h-1 bg-purple-600 mx-auto mt-3 rounded-full"></div>
+            </div>
+
+            <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-8 px-2 md:px-0">
+              <AnimatePresence mode="wait">
+                {showcaseCards.map((card, idx) => (
+                  <motion.div 
+                    key={`${card.code}-${idx}`} 
+                    initial={{ opacity: 0, scale: 0.9 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.9 }}
+                    transition={{ duration: 0.5 }}
+                    className="cursor-pointer max-w-[140px] md:max-w-none mx-auto"
+                    onClick={() => setSelectedType(card.type)}
+                    title="Clique para saber mais"
+                  >
+                    <Card {...card} />
+                  </motion.div>
+                ))}
+              </AnimatePresence>
+            </div>
+          </div>
+        }
       />
 
       {/* Footer */}

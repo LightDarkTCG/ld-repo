@@ -157,7 +157,8 @@ export const DEFAULT_STORE_SETTINGS: StoreSettings = {
       isActive: true
     }
   ],
-  whatsappSupport: '5511999999999',
+  whatsappSupport: '5534992166735',
+  whatsappNotifyPhone: '5534992166735',
   storeNotice: 'Envio seguro para todo o Brasil via Correios, Jadlog e Loggi com código de rastreio. Pagamento via PIX Instantâneo ou Cartão em até 12x pelo Mercado Pago.'
 };
 
@@ -571,6 +572,11 @@ export async function fetchStoreSettings(): Promise<StoreSettings> {
       const merged: StoreSettings = {
         ...DEFAULT_STORE_SETTINGS,
         ...rawData,
+        whatsappSupport:
+          !rawData.whatsappSupport || rawData.whatsappSupport === '5511999999999'
+            ? '5534992166735'
+            : rawData.whatsappSupport,
+        whatsappNotifyPhone: rawData.whatsappNotifyPhone || '5534992166735',
         enableJadlog: rawData.enableJadlog ?? DEFAULT_STORE_SETTINGS.enableJadlog,
         enableLoggi: rawData.enableLoggi ?? DEFAULT_STORE_SETTINGS.enableLoggi,
         regionalRates: {
@@ -625,6 +631,52 @@ export function saveLocalOrderId(orderId: string): void {
   }
 }
 
+export function removeLocalOrderId(orderId: string): void {
+  try {
+    const current = getLocalOrderIds();
+    const next = current.filter((id) => id !== orderId);
+    localStorage.setItem(LOCAL_ORDERS_KEY, JSON.stringify(next));
+  } catch {
+    // ignore
+  }
+}
+
+export async function deleteStoreOrder(orderId: string): Promise<void> {
+  const path = `storeOrders/${orderId}`;
+  removeLocalOrderId(orderId);
+  try {
+    await deleteDoc(doc(db, 'storeOrders', orderId));
+  } catch (err) {
+    handleFirestoreError(err, OperationType.DELETE, path);
+  }
+}
+
+export async function notifyAdminWhatsAppOnOrder(
+  order: StoreOrder,
+  eventType: 'new_order' | 'payment_approved' = 'new_order'
+): Promise<void> {
+  try {
+    const settings = await fetchStoreSettings();
+    const phone = settings.whatsappNotifyPhone || settings.whatsappSupport || '5534992166735';
+    const callmebotApiKey = settings.whatsappCallmebotApiKey || '';
+    const webhookUrl = settings.whatsappWebhookUrl || '';
+
+    await fetch('/api/whatsapp/notify-order', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        order,
+        eventType,
+        phone,
+        callmebotApiKey,
+        webhookUrl
+      })
+    });
+  } catch (err) {
+    console.warn('Falha ao enviar alerta automático de WhatsApp:', err);
+  }
+}
+
 export function generateOrderId(): string {
   const now = new Date();
   const y = now.getFullYear();
@@ -640,6 +692,7 @@ export async function createStoreOrder(order: StoreOrder): Promise<StoreOrder> {
     const clean = JSON.parse(JSON.stringify(order));
     await setDoc(doc(db, 'storeOrders', order.id), clean);
     saveLocalOrderId(order.id);
+    notifyAdminWhatsAppOnOrder(order, 'new_order').catch(() => {});
     return order;
   } catch (err) {
     handleFirestoreError(err, OperationType.CREATE, path);
@@ -650,6 +703,9 @@ export async function updateStoreOrderFields(
   orderId: string,
   fields: Partial<StoreOrder>
 ): Promise<void> {
+  if (fields.orderStatus === 'cancelled' || fields.paymentStatus === 'cancelled') {
+    removeLocalOrderId(orderId);
+  }
   const path = `storeOrders/${orderId}`;
   try {
     const payload = JSON.parse(
@@ -724,7 +780,14 @@ export async function fetchCustomerOrders(userId?: string, userEmail?: string): 
     }
   }
 
-  const list = Array.from(ordersMap.values());
+  const list = Array.from(ordersMap.values()).filter((o) => {
+    const isCancelled = o.orderStatus === 'cancelled' || o.paymentStatus === 'cancelled';
+    if (isCancelled) {
+      removeLocalOrderId(o.id);
+      return false;
+    }
+    return true;
+  });
   list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   return list;
 }
@@ -737,9 +800,23 @@ export function subscribeAllStoreOrders(
   return onSnapshot(
     collection(db, path),
     (snap) => {
-      const list = snap.docs.map((d) => d.data() as StoreOrder);
-      list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-      onOrders(list);
+      const rawList = snap.docs.map((d) => d.data() as StoreOrder);
+      const isAdminSession = auth.currentUser?.email === 'viniciuspdiasuzumaki@gmail.com';
+      const activeList: StoreOrder[] = [];
+
+      for (const ord of rawList) {
+        if (ord.orderStatus === 'cancelled' || ord.paymentStatus === 'cancelled') {
+          removeLocalOrderId(ord.id);
+          if (isAdminSession && ord.id) {
+            deleteDoc(doc(db, path, ord.id)).catch(() => {});
+          }
+        } else {
+          activeList.push(ord);
+        }
+      }
+
+      activeList.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      onOrders(activeList);
     },
     (err) => {
       if (onError) onError(err);
@@ -880,8 +957,20 @@ export async function syncOrderPaymentStatus(order: StoreOrder): Promise<StoreOr
         ...(isApproved && !order.paidAt ? { paidAt: new Date().toISOString() } : {})
       };
 
+      const nextOrder = { ...order, ...updates };
+      if (nextOrderStatus === 'cancelled') {
+        removeLocalOrderId(order.id);
+        if (auth.currentUser?.email === 'viniciuspdiasuzumaki@gmail.com') {
+          await deleteStoreOrder(order.id);
+          return nextOrder;
+        }
+      }
+
       await updateStoreOrderFields(order.id, updates);
-      return { ...order, ...updates };
+      if (isApproved) {
+        notifyAdminWhatsAppOnOrder(nextOrder, 'payment_approved').catch(() => {});
+      }
+      return nextOrder;
     }
   } catch (err) {
     console.warn('Falha ao sincronizar status no Mercado Pago:', err);
@@ -1268,5 +1357,44 @@ export async function convertMarketplaceListingToOfficialProduct(
   return officialProduct;
 }
 
+export function toProductSlug(text: string): string {
+  return (text || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
 
+export function getOfficialProductShareUrl(
+  product: ExclusiveProduct,
+  variationIndex?: number
+): string {
+  const origin =
+    typeof window !== 'undefined' && window.location?.origin
+      ? window.location.origin
+      : 'https://www.lightdark.com.br';
+  const slug = toProductSlug(product.title || 'produto');
+  const params = new URLSearchParams();
+  params.set('produto', slug);
+  if (typeof variationIndex === 'number' && variationIndex > 0) {
+    params.set('variacao', String(variationIndex));
+  }
+  return `${origin}/mercado?${params.toString()}`;
+}
 
+export function getCommunityListingShareUrl(
+  listingId: string,
+  variationIndex?: number
+): string {
+  const origin =
+    typeof window !== 'undefined' && window.location?.origin
+      ? window.location.origin
+      : 'https://www.lightdark.com.br';
+  const params = new URLSearchParams();
+  params.set('anuncio', listingId);
+  if (typeof variationIndex === 'number' && variationIndex > 0) {
+    params.set('variacao', String(variationIndex));
+  }
+  return `${origin}/mercado?${params.toString()}`;
+}

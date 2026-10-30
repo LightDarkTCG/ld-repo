@@ -1451,11 +1451,29 @@ export const CosmicLoreMap: React.FC<CosmicLoreMapProps> = ({
       canvas.height = size;
       const ctx = canvas.getContext('2d')!;
 
+      // Master Circular Clip so the war-table base is strictly round
+      const maxDiscPx = 65 * pxPerUnit;
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(cx, cy, maxDiscPx, 0, Math.PI * 2);
+      ctx.clip();
+
+      // Subtle Circular Base Disc Tint & Outer Astrolabe Ring
+      const baseGrad = ctx.createRadialGradient(cx, cy, 0, cx, cy, maxDiscPx);
+      baseGrad.addColorStop(0, 'rgba(12, 14, 32, 0.22)');
+      baseGrad.addColorStop(0.75, 'rgba(8, 10, 24, 0.14)');
+      baseGrad.addColorStop(1, 'rgba(4, 6, 16, 0.04)');
+      ctx.fillStyle = baseGrad;
+      ctx.beginPath();
+      ctx.arc(cx, cy, maxDiscPx, 0, Math.PI * 2);
+      ctx.fill();
+
       const traceSectorWedge = (sec: CosmicTerritoryData) => {
         const rIn = Math.max(4, sec.innerRadius ?? 10) * pxPerUnit;
-        const rOut = Math.max(rIn + 4, sec.outerRadius ?? 24) * pxPerUnit;
+        const rOut = Math.min(maxDiscPx, Math.max(rIn + 4, (sec.outerRadius ?? 24) * pxPerUnit));
         const aStart = ((sec.startAngleDeg ?? 0) * Math.PI) / 180;
-        const aEnd = ((sec.endAngleDeg ?? 45) * Math.PI) / 180;
+        let aEnd = ((sec.endAngleDeg ?? 45) * Math.PI) / 180;
+        if (aEnd <= aStart) aEnd += Math.PI * 2;
 
         ctx.beginPath();
         ctx.arc(cx, cy, rOut, aStart, aEnd, false);
@@ -1487,8 +1505,6 @@ export const CosmicLoreMap: React.FC<CosmicLoreMapProps> = ({
         traceSectorWedge(sec);
 
         if (sec.faction && sec.faction !== 'Neutro') {
-          ctx.clip();
-
           let fillRgba = 'rgba(153, 27, 27, 0.22)';
           let hatchRgba = 'rgba(252, 165, 165, 0.22)';
           if (sec.faction === 'Caos') {
@@ -1500,7 +1516,8 @@ export const CosmicLoreMap: React.FC<CosmicLoreMapProps> = ({
           }
 
           ctx.fillStyle = fillRgba;
-          ctx.fillRect(0, 0, size, size);
+          ctx.fill();
+          ctx.clip();
 
           // Signature Helldivers 45° Diagonal Hatch Stripes inside the Sector Wedge
           ctx.strokeStyle = hatchRgba;
@@ -1540,13 +1557,20 @@ export const CosmicLoreMap: React.FC<CosmicLoreMapProps> = ({
         ctx.restore();
       });
 
+      // Outer Circular Rim Border
+      ctx.beginPath();
+      ctx.arc(cx, cy, maxDiscPx - 2, 0, Math.PI * 2);
+      ctx.lineWidth = 2.2;
+      ctx.strokeStyle = 'rgba(212, 175, 55, 0.35)';
+      ctx.stroke();
+
       // 4. Pass 3: Sector Labels & Faction Ownership Tags inside each Wedge
       ctx.save();
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       sectors.forEach((sec) => {
         const rIn = (sec.innerRadius ?? 10) * pxPerUnit;
-        const rOut = (sec.outerRadius ?? 24) * pxPerUnit;
+        const rOut = Math.min(maxDiscPx, (sec.outerRadius ?? 24) * pxPerUnit);
         const midR = (rIn + rOut) * 0.5;
         const midAng = (((sec.startAngleDeg ?? 0) + (sec.endAngleDeg ?? 45)) * 0.5 * Math.PI) / 180;
 
@@ -1567,6 +1591,9 @@ export const CosmicLoreMap: React.FC<CosmicLoreMapProps> = ({
         ctx.fillStyle = isControlled ? 'rgba(255, 255, 255, 0.56)' : 'rgba(255, 255, 255, 0.24)';
         ctx.fillText(isControlled ? `Setor · ${sec.faction}` : 'Setor', tx, ty + 12);
       });
+      ctx.restore();
+
+      // End Master Circular Clip
       ctx.restore();
 
       const tex = new THREE.CanvasTexture(canvas);
@@ -2944,8 +2971,8 @@ export const CosmicLoreMap: React.FC<CosmicLoreMapProps> = ({
       if (!activeSectors || activeSectors.length === 0) return;
 
       const mapTex = createHelldiversSectorMapTexture(activeSectors, selectedTerritoryId);
-      const planeSize = 136;
-      const mapGeo = new THREE.PlaneGeometry(planeSize, planeSize);
+      const discRadius = 68;
+      const mapGeo = new THREE.CircleGeometry(discRadius, 128);
       mapGeo.rotateX(-Math.PI / 2);
 
       const mapMat = new THREE.MeshBasicMaterial({
@@ -2953,7 +2980,8 @@ export const CosmicLoreMap: React.FC<CosmicLoreMapProps> = ({
         transparent: true,
         opacity: 0.65,
         side: THREE.DoubleSide,
-        depthWrite: false
+        depthWrite: false,
+        fog: false
       });
 
       const warTableMesh = new THREE.Mesh(mapGeo, mapMat);

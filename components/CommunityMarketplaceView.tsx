@@ -28,7 +28,8 @@ import {
   Heart,
   Upload,
   Image as ImageIcon,
-  Loader2
+  Loader2,
+  Share2
 } from 'lucide-react';
 import {
   CardCondition,
@@ -50,6 +51,7 @@ import {
   formatBRL,
   formatCep,
   formatPhone,
+  getCommunityListingShareUrl,
   parseBRLPrice,
   saveOfficialProductToStore,
   subscribeMarketplaceSellerReviews,
@@ -65,6 +67,8 @@ interface CommunityMarketplaceViewProps {
   user: any;
   isAdmin?: boolean;
   initialSubTab?: 'explore' | 'sell' | 'my_listings' | 'sellers_reputation';
+  initialListingId?: string | null;
+  initialVariationIdx?: number;
   openSellTrigger?: number;
   onOfficialProductCreated?: () => void;
   onOpenAuth?: () => void;
@@ -86,6 +90,8 @@ export const CommunityMarketplaceView: React.FC<CommunityMarketplaceViewProps> =
   user,
   isAdmin,
   initialSubTab = 'explore',
+  initialListingId,
+  initialVariationIdx,
   openSellTrigger,
   onOfficialProductCreated,
   onOpenAuth
@@ -142,6 +148,36 @@ export const CommunityMarketplaceView: React.FC<CommunityMarketplaceViewProps> =
   const [sortBy, setSortBy] = useState<'recent' | 'price-asc' | 'price-desc' | 'rating-desc'>('recent');
   const [inspectListing, setInspectListing] = useState<MarketplaceListing | null>(null);
   const [copiedDeckCode, setCopiedDeckCode] = useState(false);
+  const [copiedListingLink, setCopiedListingLink] = useState(false);
+  const autoOpenedListingRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!initialListingId || !listings || listings.length === 0) return;
+    if (autoOpenedListingRef.current === initialListingId) return;
+    const match = listings.find((l) => l.id === initialListingId);
+    if (match) {
+      autoOpenedListingRef.current = initialListingId;
+      setInspectListing(match);
+      if (typeof initialVariationIdx === 'number' && initialVariationIdx >= 0) {
+        setInspectVariationIdx(initialVariationIdx);
+      }
+    }
+  }, [initialListingId, initialVariationIdx, listings]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    if (inspectListing) {
+      params.set('anuncio', inspectListing.id);
+      params.delete('produto');
+      window.history.replaceState(null, '', `/mercado?${params.toString()}`);
+    } else if (params.has('anuncio')) {
+      params.delete('anuncio');
+      params.delete('variacao');
+      const qs = params.toString();
+      window.history.replaceState(null, '', `/mercado${qs ? `?${qs}` : ''}`);
+    }
+  }, [inspectListing]);
 
   const { wishlist } = useUserWishlist(user?.uid, user);
   const wantedCardLookup = useMemo(() => {
@@ -3431,6 +3467,36 @@ export const CommunityMarketplaceView: React.FC<CommunityMarketplaceViewProps> =
                       </span>
                     </button>
                   )}
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const shareUrl = getCommunityListingShareUrl(
+                        inspectListing.id,
+                        modalVars.length > 0 ? inspectVariationIdx : undefined
+                      );
+                      navigator.clipboard.writeText(shareUrl);
+                      setCopiedListingLink(true);
+                      setTimeout(() => setCopiedListingLink(false), 2500);
+                    }}
+                    className={`w-full py-2.5 rounded-xl border font-bold text-xs flex items-center justify-center gap-1.5 transition cursor-pointer ${
+                      copiedListingLink
+                        ? 'bg-emerald-950/90 border-emerald-500 text-emerald-300'
+                        : 'bg-slate-900 hover:bg-slate-800 border-purple-500/40 text-purple-200'
+                    }`}
+                  >
+                    {copiedListingLink ? (
+                      <>
+                        <Check size={13} className="text-emerald-400" />
+                        <span>Link do Anúncio Copiado!</span>
+                      </>
+                    ) : (
+                      <>
+                        <Share2 size={13} className="text-purple-400" />
+                        <span>Compartilhar Link deste Anúncio</span>
+                      </>
+                    )}
+                  </button>
 
                   <button
                     type="button"

@@ -1,25 +1,40 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { collection, getDocs, doc, getDoc, setDoc, deleteDoc, updateDoc } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage, readBrowserCache, writeBrowserCache } from '../firebase';
 import {
   X, Clock, Grid, Feather, ChevronRight, ChevronUp, ChevronDown, Compass, Edit3, Plus, Trash2,
-  ArrowUp, ArrowDown, Upload, Film, Image as ImageIcon, Type, Quote, Layers, Check, Loader2, GitFork
+  ArrowUp, ArrowDown, Upload, Film, Image as ImageIcon, Type, Quote, Layers, Check, Loader2, GitFork,
+  HelpCircle, Eye, EyeOff
 } from 'lucide-react';
 import { AdminPanel } from './AdminPanel';
 import {
   CosmicLoreMap,
   CosmicNodeData,
   CosmicTerritoryData,
+  CosmicFactionId,
+  FACTION_PRESETS,
   DEFAULT_COSMIC_NODES,
   DEFAULT_COSMIC_TERRITORIES,
   LoreContentBlock
 } from './CosmicLoreMap';
 import { CharacterRelationsTree } from './CharacterRelationsTree';
+import { DailyQuizSection } from './DailyQuizSection';
 import { useCards, sanitizeForFirestore } from '../CardContext';
 import { useAuth } from '../authService';
 import { CardDetailModal } from './CardDetailModal';
 import { CardData } from '../types';
+
+export interface Macroverse13Epoch {
+  id: string;
+  eraLabel: string;
+  title: string;
+  description: string;
+  accentColor: string;
+  hiddenNodeIds?: string[];
+  customNodes?: CosmicNodeData[];
+  customTerritories?: CosmicTerritoryData[];
+}
 
 export const LoreView = ({ onClose }: { onClose: () => void }) => {
   const { cards, archetypes } = useCards();
@@ -48,11 +63,23 @@ export const LoreView = ({ onClose }: { onClose: () => void }) => {
     return cached && cached.length > 0 ? cached : DEFAULT_COSMIC_TERRITORIES;
   });
 
-  // Navigation State ('cosmic_map' and 'relations_tree' are available alongside 'home', 'tab_view', 'item_detail')
-  const [currentView, setCurrentView] = useState<'home' | 'cosmic_map' | 'relations_tree' | 'tab_view' | 'item_detail'>('home');
+  // Macroverso Switcher ('macroverso_13' holds 90% of LD lore + the Retractable Map Timeline; 'macroverso_1' has its own tab)
+  const [selectedMacroverse, setSelectedMacroverse] = useState<'macroverso_13' | 'macroverso_1'>('macroverso_13');
+
+  // Navigation State ('cosmic_map', 'relations_tree', 'daily_quiz' alongside 'home', 'tab_view', 'item_detail')
+  const [currentView, setCurrentView] = useState<'home' | 'cosmic_map' | 'relations_tree' | 'daily_quiz' | 'tab_view' | 'item_detail'>('home');
   const [isTopNavCollapsed, setIsTopNavCollapsed] = useState<boolean>(false);
   const [activeTabId, setActiveTabId] = useState<string>('');
   const [selectedItem, setSelectedItem] = useState<any>(null);
+
+  // Linha do Tempo Retrátil no Mapa 3D (somente Macroverso 13) - inicia vazia sem dados pré-preenchidos
+  const [m13Timeline, setM13Timeline] = useState<Macroverse13Epoch[]>(() => {
+    return readBrowserCache<Macroverse13Epoch[]>('ld_cache_m13Timeline_v2') || [];
+  });
+  const [selectedM13EpochId, setSelectedM13EpochId] = useState<string | null>(null);
+  const [isMapTimelineExpanded, setIsMapTimelineExpanded] = useState<boolean>(false);
+  const [editingM13Epoch, setEditingM13Epoch] = useState<(Macroverse13Epoch & { isNew?: boolean }) | null>(null);
+  const [savingM13Timeline, setSavingM13Timeline] = useState<boolean>(false);
 
   // In-page Rich Editor state for standard Lore Items & Timeline
   const [isEditingItemDetail, setIsEditingItemDetail] = useState(false);
@@ -63,6 +90,31 @@ export const LoreView = ({ onClose }: { onClose: () => void }) => {
   useEffect(() => {
     loadData();
   }, [isAdminOpen]);
+
+  const handleSelectMacroverse = (target: 'macroverso_13' | 'macroverso_1') => {
+    setSelectedMacroverse(target);
+    if (target === 'macroverso_1') {
+      setSelectedM13EpochId(null);
+      setIsMapTimelineExpanded(false);
+    }
+  };
+
+  const handleSaveM13Timeline = async (nextList: Macroverse13Epoch[]) => {
+    setSavingM13Timeline(true);
+    try {
+      const cleanList = sanitizeForFirestore(nextList);
+      await setDoc(doc(db, 'wbSettings', 'macroverso13Timeline'), {
+        items: cleanList,
+        updatedAt: Date.now()
+      });
+      setM13Timeline(cleanList);
+      writeBrowserCache('ld_cache_m13Timeline_v2', cleanList);
+    } catch (e) {
+      console.error('Erro ao salvar linha do tempo do Macroverso 13:', e);
+    } finally {
+      setSavingM13Timeline(false);
+    }
+  };
 
   const LEGACY_NODE_IDS = new Set([
     'node_macroverso_13',
@@ -89,6 +141,13 @@ export const LoreView = ({ onClose }: { onClose: () => void }) => {
         const data = gSnap.data();
         setWbSettings(data);
         writeBrowserCache('ld_cache_wbSettings_v2', data);
+      }
+
+      const m13Snap = await getDoc(doc(db, 'wbSettings', 'macroverso13Timeline'));
+      if (m13Snap.exists() && Array.isArray(m13Snap.data()?.items)) {
+        const loadedM13 = m13Snap.data().items as Macroverse13Epoch[];
+        setM13Timeline(loadedM13);
+        writeBrowserCache('ld_cache_m13Timeline_v2', loadedM13);
       }
 
       const terrSnap = await getDoc(doc(db, 'wbSettings', 'cosmicTerritories'));
@@ -214,9 +273,55 @@ export const LoreView = ({ onClose }: { onClose: () => void }) => {
     return await getDownloadURL(fileRef);
   };
 
-  // Save or update a 3D Cosmic Node (and seed defaults if collection was empty)
+  // Época ativa na Linha do Tempo do Mapa 3D (somente no Macroverso 13)
+  const activeM13Epoch = useMemo(() => {
+    if (selectedMacroverse !== 'macroverso_13' || !selectedM13EpochId) return null;
+    return m13Timeline.find((ep) => ep.id === selectedM13EpochId) || null;
+  }, [selectedMacroverse, selectedM13EpochId, m13Timeline]);
+
+  // Nós e Territórios efetivos renderizados no Mapa 3D de acordo com a época selecionada
+  const effectiveMapNodes = useMemo<CosmicNodeData[]>(() => {
+    if (!activeM13Epoch) return cosmicNodes;
+    const baseList =
+      Array.isArray(activeM13Epoch.customNodes) && activeM13Epoch.customNodes.length > 0
+        ? activeM13Epoch.customNodes
+        : cosmicNodes;
+    const hiddenSet = new Set(activeM13Epoch.hiddenNodeIds || []);
+    return baseList.filter((n) => !hiddenSet.has(n.id));
+  }, [activeM13Epoch, cosmicNodes]);
+
+  const effectiveMapTerritories = useMemo<CosmicTerritoryData[]>(() => {
+    if (!activeM13Epoch) return cosmicTerritories;
+    if (
+      Array.isArray(activeM13Epoch.customTerritories) &&
+      activeM13Epoch.customTerritories.length > 0
+    ) {
+      return activeM13Epoch.customTerritories;
+    }
+    return cosmicTerritories;
+  }, [activeM13Epoch, cosmicTerritories]);
+
+  // Save or update a 3D Cosmic Node (saves to the active Epoch if an Epoch is selected, or to the base map otherwise)
   const handleSaveCosmicNode = async (node: CosmicNodeData) => {
     const cleanNode = sanitizeForFirestore({ ...node, cosmologyVersion: 7 });
+
+    if (activeM13Epoch) {
+      const currentEpochNodes =
+        Array.isArray(activeM13Epoch.customNodes) && activeM13Epoch.customNodes.length > 0
+          ? [...activeM13Epoch.customNodes]
+          : [...cosmicNodes];
+      const exists = currentEpochNodes.some((n) => n.id === cleanNode.id);
+      const nextEpochNodes = exists
+        ? currentEpochNodes.map((n) => (n.id === cleanNode.id ? cleanNode : n))
+        : [...currentEpochNodes, cleanNode];
+
+      const nextTimeline = m13Timeline.map((ep) =>
+        ep.id === activeM13Epoch.id ? { ...ep, customNodes: nextEpochNodes } : ep
+      );
+      await handleSaveM13Timeline(nextTimeline);
+      return;
+    }
+
     await setDoc(doc(db, 'wbCosmicNodes', node.id), cleanNode);
 
     const existingIds = new Set(cosmicNodes.map(n => n.id));
@@ -239,6 +344,15 @@ export const LoreView = ({ onClose }: { onClose: () => void }) => {
 
   const handleSaveTerritories = async (nextTerritories: CosmicTerritoryData[]) => {
     const cleanItems = sanitizeForFirestore(nextTerritories);
+
+    if (activeM13Epoch) {
+      const nextTimeline = m13Timeline.map((ep) =>
+        ep.id === activeM13Epoch.id ? { ...ep, customTerritories: cleanItems } : ep
+      );
+      await handleSaveM13Timeline(nextTimeline);
+      return;
+    }
+
     await setDoc(doc(db, 'wbSettings', 'cosmicTerritories'), { items: cleanItems });
     setCosmicTerritories(cleanItems);
     writeBrowserCache('ld_cache_wbTerritories_v3', cleanItems);
@@ -265,6 +379,15 @@ export const LoreView = ({ onClose }: { onClose: () => void }) => {
   };
 
   const handleDeleteCosmicNode = async (nodeId: string) => {
+    if (activeM13Epoch) {
+      const nextHidden = Array.from(new Set([...(activeM13Epoch.hiddenNodeIds || []), nodeId]));
+      const nextTimeline = m13Timeline.map((ep) =>
+        ep.id === activeM13Epoch.id ? { ...ep, hiddenNodeIds: nextHidden } : ep
+      );
+      await handleSaveM13Timeline(nextTimeline);
+      return;
+    }
+
     await deleteDoc(doc(db, 'wbCosmicNodes', nodeId)).catch(() => {});
     const nextNodes = cosmicNodes.filter(n => n.id !== nodeId);
     setCosmicNodes(nextNodes);
@@ -417,7 +540,7 @@ export const LoreView = ({ onClose }: { onClose: () => void }) => {
 
     return (
       <nav className="fixed top-0 left-0 w-full h-14 z-[100] border-b border-[rgba(var(--primary-rgb),0.2)] bg-[#060608]/95 px-4 sm:px-6 flex items-center justify-between transition-colors">
-        <div className="flex items-center gap-4 sm:gap-6 overflow-x-auto no-scrollbar">
+        <div className="flex items-center gap-3 sm:gap-5 overflow-x-auto no-scrollbar">
           <button
             type="button"
             onClick={() => setCurrentView('home')}
@@ -426,7 +549,36 @@ export const LoreView = ({ onClose }: { onClose: () => void }) => {
           >
             {wbSettings.mainTitle || 'ARCHIVUM'}
           </button>
-          <div className="flex items-center gap-4 text-[11px] tracking-[0.16em] uppercase text-[#a8a29e] font-bold">
+
+          {/* Seletor de Macroverso: Macroverso 13 (90% da Lore + Linha do Tempo no Mapa) vs Macroverso 1 */}
+          <div className="flex items-center bg-[#0e0e14] border border-white/15 rounded-lg p-0.5 shrink-0">
+            <button
+              type="button"
+              onClick={() => handleSelectMacroverse('macroverso_13')}
+              className={`px-2.5 py-1 rounded-md text-[10px] font-black uppercase tracking-wider transition whitespace-nowrap ${
+                selectedMacroverse === 'macroverso_13'
+                  ? 'bg-amber-500 text-slate-950 shadow-sm'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+              title="Macroverso 13 (90% da Lore de Light Dark acontece aqui)"
+            >
+              Macroverso 13
+            </button>
+            <button
+              type="button"
+              onClick={() => handleSelectMacroverse('macroverso_1')}
+              className={`px-2.5 py-1 rounded-md text-[10px] font-black uppercase tracking-wider transition whitespace-nowrap ${
+                selectedMacroverse === 'macroverso_1'
+                  ? 'bg-cyan-500 text-slate-950 shadow-sm'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+              title="Alternar para o Macroverso 1 (Ciclo Primordial)"
+            >
+              Macroverso 1
+            </button>
+          </div>
+
+          <div className="flex items-center gap-3.5 text-[11px] tracking-[0.14em] uppercase text-[#a8a29e] font-bold">
             <button
               onClick={() => setCurrentView('home')}
               className={`hover:text-white transition whitespace-nowrap py-1 ${currentView === 'home' ? 'text-[var(--primary-color)] border-b border-[var(--primary-color)]' : ''}`}
@@ -445,7 +597,7 @@ export const LoreView = ({ onClose }: { onClose: () => void }) => {
                   : 'border-[rgba(var(--primary-rgb),0.3)] text-[#d4af37]'
               }`}
             >
-              <Compass size={13} /> Mapa 3D do Universo
+              <Compass size={13} /> Mapa 3D ({selectedMacroverse === 'macroverso_13' ? 'M13' : 'M1'})
             </button>
 
             <button
@@ -460,6 +612,20 @@ export const LoreView = ({ onClose }: { onClose: () => void }) => {
               }`}
             >
               <GitFork size={13} /> Árvore de Relações
+            </button>
+
+            <button
+              onClick={() => {
+                setSelectedItem(null);
+                setCurrentView('daily_quiz');
+              }}
+              className={`flex items-center gap-1.5 hover:text-white transition whitespace-nowrap px-2.5 py-1 rounded border ${
+                currentView === 'daily_quiz'
+                  ? 'bg-amber-500/20 text-amber-300 border-amber-400'
+                  : 'border-amber-500/40 text-amber-300 hover:bg-amber-950/30'
+              }`}
+            >
+              <HelpCircle size={13} /> Quiz do Macroverso
             </button>
 
             {wbTabs.map(t => (
@@ -497,7 +663,12 @@ export const LoreView = ({ onClose }: { onClose: () => void }) => {
                 setSelectedItem(null);
                 setIsEditingItemDetail(false);
                 setCurrentView('tab_view');
-              } else if (currentView === 'tab_view' || currentView === 'cosmic_map' || currentView === 'relations_tree') {
+              } else if (
+                currentView === 'tab_view' ||
+                currentView === 'cosmic_map' ||
+                currentView === 'relations_tree' ||
+                currentView === 'daily_quiz'
+              ) {
                 setCurrentView('home');
               } else {
                 onClose();
@@ -563,19 +734,437 @@ export const LoreView = ({ onClose }: { onClose: () => void }) => {
         <div className={currentView === 'cosmic_map' || currentView === 'relations_tree' ? (isTopNavCollapsed ? 'h-screen' : 'pt-14 h-screen') : 'pt-14 min-h-screen'}>
           {/* 3D INTERACTIVE MULTIVERSE / COSMOS MAP VIEW */}
           {currentView === 'cosmic_map' && (
-            <CosmicLoreMap
-              nodes={cosmicNodes}
-              territories={cosmicTerritories}
-              isAdmin={isAdmin}
-              cards={cards}
-              archetypes={archetypes}
-              onSaveNode={handleSaveCosmicNode}
-              onDeleteNode={handleDeleteCosmicNode}
-              onSaveTerritories={handleSaveTerritories}
-              onResetDefaultCosmology={handleResetDefaultCosmology}
-              onUploadMedia={handleUploadMediaFile}
-              onSelectCard={(card) => setInspectedCard(card)}
-            />
+            <div className="relative w-full h-full">
+              {/* Barra flutuante superior de alternância Macroverso 13 vs Macroverso 1 no Mapa 3D */}
+              <div className="absolute top-3 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2 bg-[#08080e]/90 border border-white/15 px-3 py-1.5 rounded-xl shadow-2xl backdrop-blur-md">
+                <button
+                  type="button"
+                  onClick={() => handleSelectMacroverse('macroverso_13')}
+                  className={`px-3 py-1 rounded-lg text-[11px] font-black uppercase tracking-wider transition flex items-center gap-1.5 ${
+                    selectedMacroverse === 'macroverso_13'
+                      ? 'bg-amber-500 text-slate-950 shadow'
+                      : 'text-slate-300 hover:text-white'
+                  }`}
+                >
+                  <span>Macroverso 13</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleSelectMacroverse('macroverso_1')}
+                  className={`px-3 py-1 rounded-lg text-[11px] font-black uppercase tracking-wider transition flex items-center gap-1.5 ${
+                    selectedMacroverse === 'macroverso_1'
+                      ? 'bg-cyan-500 text-slate-950 shadow'
+                      : 'text-slate-300 hover:text-white'
+                  }`}
+                >
+                  <span>Macroverso 1</span>
+                </button>
+              </div>
+
+              {/* Aviso de Aba Macroverso 1 */}
+              {selectedMacroverse === 'macroverso_1' && (
+                <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-40 max-w-lg w-[92%] bg-cyan-950/90 border border-cyan-500/50 text-cyan-100 px-4 py-2.5 rounded-xl shadow-2xl backdrop-blur-md flex items-center justify-between gap-4">
+                  <span className="text-xs font-bold text-cyan-200">
+                    Macroverso 1 selecionado (sem Linha do Tempo).
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => handleSelectMacroverse('macroverso_13')}
+                    className="shrink-0 px-3 py-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-[11px] uppercase tracking-wider transition"
+                  >
+                    Voltar p/ Macroverso 13
+                  </button>
+                </div>
+              )}
+
+              {/* LINHA DO TEMPO RETRÁTIL NA PARTE DE BAIXO DO MAPA 3D (EXCLUSIVA DO MACROVERSO 13) */}
+              {selectedMacroverse === 'macroverso_13' && (
+                <div className="fixed bottom-0 left-0 right-0 z-40 flex flex-col items-center pointer-events-none">
+                  {/* Botão Retrátil (Aba para abrir/recolher a Linha do Tempo no rodapé do Mapa) */}
+                  <div className="pointer-events-auto flex items-center gap-2 mb-1">
+                    <button
+                      type="button"
+                      onClick={() => setIsMapTimelineExpanded((prev) => !prev)}
+                      className="px-4 py-1.5 rounded-t-xl bg-[#090910]/95 hover:bg-[#12121e] border border-b-0 border-amber-500/40 text-amber-300 text-xs font-cinzel font-black uppercase tracking-widest flex items-center gap-2 shadow-2xl backdrop-blur-md transition"
+                    >
+                      <Clock size={14} className="text-amber-400" />
+                      <span>
+                        Linha do Tempo do Mapa (M13)
+                        {activeM13Epoch ? ` · ${activeM13Epoch.eraLabel || activeM13Epoch.title}` : ''}
+                      </span>
+                      {isMapTimelineExpanded ? <ChevronDown size={15} /> : <ChevronUp size={15} />}
+                    </button>
+                  </div>
+
+                  {/* Gaveta Retrátil Inferior da Linha do Tempo no Mapa 3D */}
+                  {isMapTimelineExpanded && (
+                    <div className="pointer-events-auto w-full max-w-6xl bg-[#08080f]/95 border-t border-x border-amber-500/40 rounded-t-2xl px-4 py-3.5 shadow-[0_-15px_40px_rgba(0,0,0,0.85)] backdrop-blur-xl animate-in slide-in-from-bottom-3 duration-200">
+                      <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-[11px] font-cinzel font-black uppercase tracking-widest text-amber-400 flex items-center gap-1.5">
+                            <Clock size={13} /> Épocas do Macroverso 13
+                          </span>
+                          {activeM13Epoch && (
+                            <span className="text-[11px] text-emerald-300 bg-emerald-950/50 border border-emerald-500/40 px-2 py-0.5 rounded-full">
+                              Visualizando mapa na época: <strong>{activeM13Epoch.title || activeM13Epoch.eraLabel}</strong>
+                              {isAdmin ? ' (Qualquer edição nos nós/setores do mapa 3D será salva nesta época)' : ''}
+                            </span>
+                          )}
+                        </div>
+
+                        {isAdmin && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setEditingM13Epoch({
+                                id: `m13_epoch_${Date.now()}`,
+                                eraLabel: '',
+                                title: '',
+                                description: '',
+                                accentColor: '#d4af37',
+                                hiddenNodeIds: [],
+                                customNodes: cosmicNodes.map((n) => ({ ...n })),
+                                customTerritories: cosmicTerritories.map((t) => ({ ...t })),
+                                isNew: true
+                              })
+                            }
+                            className="px-3 py-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 text-[11px] font-black uppercase tracking-wider flex items-center gap-1 transition shadow"
+                          >
+                            <Plus size={13} /> Adicionar Época
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Trilha Horizontal de Épocas */}
+                      <div className="flex items-center gap-2.5 overflow-x-auto pb-1.5 custom-scrollbar">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedM13EpochId(null)}
+                          className={`shrink-0 px-3.5 py-2 rounded-xl border text-left transition flex flex-col min-w-[140px] ${
+                            selectedM13EpochId === null
+                              ? 'bg-amber-500/20 border-amber-400 text-white shadow-[0_0_15px_rgba(245,158,11,0.25)]'
+                              : 'bg-[#10101a] border-white/10 text-slate-400 hover:text-white'
+                          }`}
+                        >
+                          <span className="text-[10px] font-mono uppercase text-amber-400 font-bold">
+                            Padrão
+                          </span>
+                          <span className="text-xs font-cinzel font-black truncate">
+                            Mapa Base / Atual
+                          </span>
+                        </button>
+
+                        {m13Timeline.map((ep, idx) => {
+                          const isSelected = selectedM13EpochId === ep.id;
+                          return (
+                            <div
+                              key={ep.id}
+                              onClick={() => setSelectedM13EpochId(ep.id)}
+                              className={`shrink-0 px-3.5 py-2 rounded-xl border cursor-pointer transition flex flex-col justify-between min-w-[175px] max-w-[230px] ${
+                                isSelected
+                                  ? 'bg-amber-500/20 border-amber-400 text-white shadow-[0_0_15px_rgba(245,158,11,0.25)]'
+                                  : 'bg-[#10101a] border-white/10 text-slate-300 hover:border-amber-500/40'
+                              }`}
+                            >
+                              <div>
+                                <div className="flex items-center justify-between gap-2">
+                                  <span
+                                    className="text-[10px] font-mono font-black uppercase truncate"
+                                    style={{ color: ep.accentColor || '#d4af37' }}
+                                  >
+                                    {ep.eraLabel || `Época ${idx + 1}`}
+                                  </span>
+                                  {isAdmin && (
+                                    <div
+                                      className="flex items-center gap-0.5"
+                                      onClick={(e) => e.stopPropagation()}
+                                    >
+                                      <button
+                                        type="button"
+                                        disabled={idx === 0 || savingM13Timeline}
+                                        onClick={() => {
+                                          const copy = [...m13Timeline];
+                                          const temp = copy[idx - 1];
+                                          copy[idx - 1] = copy[idx];
+                                          copy[idx] = temp;
+                                          handleSaveM13Timeline(copy);
+                                        }}
+                                        className="p-0.5 text-slate-400 hover:text-white disabled:opacity-30"
+                                      >
+                                        <ArrowUp size={11} />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        disabled={idx === m13Timeline.length - 1 || savingM13Timeline}
+                                        onClick={() => {
+                                          const copy = [...m13Timeline];
+                                          const temp = copy[idx + 1];
+                                          copy[idx + 1] = copy[idx];
+                                          copy[idx] = temp;
+                                          handleSaveM13Timeline(copy);
+                                        }}
+                                        className="p-0.5 text-slate-400 hover:text-white disabled:opacity-30"
+                                      >
+                                        <ArrowDown size={11} />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => setEditingM13Epoch({ ...ep })}
+                                        className="p-0.5 text-amber-400 hover:text-amber-300"
+                                        title="Configurar época e estado do mapa"
+                                      >
+                                        <Edit3 size={11} />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          const next = m13Timeline.filter((item) => item.id !== ep.id);
+                                          if (selectedM13EpochId === ep.id) setSelectedM13EpochId(null);
+                                          handleSaveM13Timeline(next);
+                                        }}
+                                        className="p-0.5 text-red-400 hover:text-red-300"
+                                        title="Excluir época"
+                                      >
+                                        <Trash2 size={11} />
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
+                                <div className="text-xs font-cinzel font-bold text-white truncate mt-0.5">
+                                  {ep.title || 'Sem título'}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+
+                        {m13Timeline.length === 0 && (
+                          <span className="text-xs text-slate-500 italic py-2 px-2">
+                            Nenhuma época cadastrada ainda.{isAdmin ? ' Clique em "Adicionar Época" para criar a primeira e configurar o mapa dela.' : ''}
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Resumo da época selecionada */}
+                      {activeM13Epoch && activeM13Epoch.description && (
+                        <div className="mt-2.5 pt-2.5 border-t border-white/10 text-xs text-slate-300 flex items-start justify-between gap-4">
+                          <p className="leading-relaxed">{activeM13Epoch.description}</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Modal Admin para Criar/Editar Época e definir mudanças no Mapa */}
+              {isAdmin && editingM13Epoch && (
+                <div className="fixed inset-0 z-[130] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+                  <div className="bg-[#0e0e16] border border-amber-500/40 rounded-2xl max-w-3xl w-full p-6 max-h-[90vh] overflow-y-auto shadow-2xl space-y-4 text-xs">
+                    <div className="flex items-center justify-between pb-3 border-b border-white/10">
+                      <h3 className="font-cinzel text-base sm:text-lg font-black text-amber-400 uppercase">
+                        {editingM13Epoch.isNew
+                          ? 'Adicionar Época na Linha do Tempo do Mapa (M13)'
+                          : 'Configurar Época e Mudanças no Mapa'}
+                      </h3>
+                      <button
+                        type="button"
+                        onClick={() => setEditingM13Epoch(null)}
+                        className="text-slate-400 hover:text-white"
+                      >
+                        <X size={18} />
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div>
+                        <label className="block text-slate-400 font-bold mb-1">Período / Era</label>
+                        <input
+                          type="text"
+                          value={editingM13Epoch.eraLabel || ''}
+                          onChange={(e) =>
+                            setEditingM13Epoch({ ...editingM13Epoch, eraLabel: e.target.value })
+                          }
+                          placeholder="Ex: Era I"
+                          className="w-full bg-black/60 border border-white/15 rounded-lg px-3 py-2 text-white"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-slate-400 font-bold mb-1">Título da Época</label>
+                        <input
+                          type="text"
+                          value={editingM13Epoch.title || ''}
+                          onChange={(e) =>
+                            setEditingM13Epoch({ ...editingM13Epoch, title: e.target.value })
+                          }
+                          placeholder="Nome da época..."
+                          className="w-full bg-black/60 border border-white/15 rounded-lg px-3 py-2 text-white font-bold"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-slate-400 font-bold mb-1">Cor de Destaque</label>
+                        <input
+                          type="color"
+                          value={editingM13Epoch.accentColor || '#d4af37'}
+                          onChange={(e) =>
+                            setEditingM13Epoch({ ...editingM13Epoch, accentColor: e.target.value })
+                          }
+                          className="w-full h-9 bg-black/60 border border-white/15 rounded-lg px-1 cursor-pointer"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-slate-400 font-bold mb-1">
+                        Resumo / Descrição da Época (Opcional)
+                      </label>
+                      <textarea
+                        rows={3}
+                        value={editingM13Epoch.description || ''}
+                        onChange={(e) =>
+                          setEditingM13Epoch({ ...editingM13Epoch, description: e.target.value })
+                        }
+                        placeholder="Descreva o que acontecia no mapa nesta época..."
+                        className="w-full bg-black/60 border border-white/15 rounded-lg px-3 py-2 text-white"
+                      />
+                    </div>
+
+                    {/* Seleção de quais locais/nós do Mapa 3D existem/aparecem nesta época */}
+                    <div className="border-t border-white/10 pt-4 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-amber-300 uppercase tracking-wider">
+                          Locais Visíveis no Mapa 3D nesta Época
+                        </span>
+                        <span className="text-[11px] text-slate-400">
+                          Desmarque locais que ainda não existiam ou haviam desaparecido nesta época
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 max-h-48 overflow-y-auto p-2 bg-black/40 border border-white/10 rounded-xl">
+                        {(editingM13Epoch.customNodes || cosmicNodes).map((node) => {
+                          const isHidden = (editingM13Epoch.hiddenNodeIds || []).includes(node.id);
+                          return (
+                            <button
+                              key={node.id}
+                              type="button"
+                              onClick={() => {
+                                const cur = editingM13Epoch.hiddenNodeIds || [];
+                                const nextHidden = isHidden
+                                  ? cur.filter((id) => id !== node.id)
+                                  : [...cur, node.id];
+                                setEditingM13Epoch({
+                                  ...editingM13Epoch,
+                                  hiddenNodeIds: nextHidden
+                                });
+                              }}
+                              className={`p-2 rounded-lg border text-left flex items-center justify-between gap-2 transition ${
+                                !isHidden
+                                  ? 'bg-emerald-950/40 border-emerald-500/40 text-white'
+                                  : 'bg-slate-950 border-white/10 text-slate-500 line-through'
+                              }`}
+                            >
+                              <span className="truncate font-bold">{node.name}</span>
+                              {!isHidden ? (
+                                <Eye size={13} className="text-emerald-400 shrink-0" />
+                              ) : (
+                                <EyeOff size={13} className="text-slate-600 shrink-0" />
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Domínio dos Setores nesta Época */}
+                    <div className="border-t border-white/10 pt-4 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-amber-300 uppercase tracking-wider">
+                          Domínio dos Setores do Mapa nesta Época
+                        </span>
+                        <span className="text-[11px] text-slate-400">
+                          Altere a facção dominante de qualquer setor nesta época (ou edite direto no Mapa 3D com a época selecionada)
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 max-h-48 overflow-y-auto p-2 bg-black/40 border border-white/10 rounded-xl">
+                        {(editingM13Epoch.customTerritories || cosmicTerritories).map((terr, tIdx) => (
+                          <div
+                            key={terr.id}
+                            className="p-2 rounded-lg bg-slate-950 border border-white/10 flex flex-col gap-1"
+                          >
+                            <span className="font-bold text-white text-[11px]">{terr.name}</span>
+                            <select
+                              value={terr.faction}
+                              onChange={(e) => {
+                                const newFac = e.target.value as CosmicFactionId;
+                                const presetCol = FACTION_PRESETS[newFac]?.color || terr.color;
+                                const list = [
+                                  ...(editingM13Epoch.customTerritories || cosmicTerritories)
+                                ];
+                                list[tIdx] = { ...list[tIdx], faction: newFac, color: presetCol };
+                                setEditingM13Epoch({
+                                  ...editingM13Epoch,
+                                  customTerritories: list
+                                });
+                              }}
+                              className="bg-black border border-white/15 rounded px-1.5 py-1 text-[11px] text-amber-300"
+                            >
+                              <option value="Neutro">Neutro</option>
+                              <option value="Aliança">Aliança</option>
+                              <option value="Caos">Caos</option>
+                              <option value="Asmonious">Asmonious</option>
+                            </select>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="flex justify-end gap-2 pt-4 border-t border-white/10">
+                      <button
+                        type="button"
+                        onClick={() => setEditingM13Epoch(null)}
+                        className="px-4 py-2 rounded-lg border border-white/15 text-slate-300 hover:text-white"
+                      >
+                        Cancelar
+                      </button>
+                      <button
+                        type="button"
+                        disabled={
+                          savingM13Timeline ||
+                          (!editingM13Epoch.title?.trim() && !editingM13Epoch.eraLabel?.trim())
+                        }
+                        onClick={async () => {
+                          const { isNew, ...cleanEpoch } = editingM13Epoch;
+                          const exists = m13Timeline.some((item) => item.id === cleanEpoch.id);
+                          const nextList = exists
+                            ? m13Timeline.map((item) =>
+                                item.id === cleanEpoch.id ? cleanEpoch : item
+                              )
+                            : [...m13Timeline, cleanEpoch];
+                          await handleSaveM13Timeline(nextList);
+                          setSelectedM13EpochId(cleanEpoch.id);
+                          setEditingM13Epoch(null);
+                        }}
+                        className="px-5 py-2 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-black uppercase tracking-wider"
+                      >
+                        Salvar Época
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <CosmicLoreMap
+                nodes={effectiveMapNodes}
+                territories={effectiveMapTerritories}
+                isAdmin={isAdmin}
+                cards={cards}
+                archetypes={archetypes}
+                onSaveNode={handleSaveCosmicNode}
+                onDeleteNode={handleDeleteCosmicNode}
+                onSaveTerritories={handleSaveTerritories}
+                onResetDefaultCosmology={handleResetDefaultCosmology}
+                onUploadMedia={handleUploadMediaFile}
+                onSelectCard={(card) => setInspectedCard(card)}
+              />
+            </div>
           )}
 
           {/* CHARACTER RELATIONS TREE VIEW */}
@@ -587,10 +1176,45 @@ export const LoreView = ({ onClose }: { onClose: () => void }) => {
             />
           )}
 
+          {/* QUIZ DIÁRIO DO MACROVERSO (DENTRO DE LORE) */}
+          {currentView === 'daily_quiz' && (
+            <div className="pb-24 pt-4">
+              <DailyQuizSection isAdmin={isAdmin} />
+            </div>
+          )}
+
           {/* HOME VIEW */}
           {currentView === 'home' && (
             <div className="flex flex-col items-center justify-center min-h-[85vh] px-4 text-center relative overflow-hidden">
               <div className="absolute inset-0 pointer-events-none opacity-25" style={{ background: 'radial-gradient(ellipse at center, rgba(var(--primary-rgb),0.25), #060608, #060608)' }}></div>
+
+              {/* Abas Macroverso 13 vs Macroverso 1 no topo da Home do Archivum */}
+              <div className="relative z-10 mb-6 flex flex-col items-center gap-2">
+                <div className="inline-flex items-center bg-[#0d0d14] border border-white/15 rounded-xl p-1 shadow-xl">
+                  <button
+                    type="button"
+                    onClick={() => handleSelectMacroverse('macroverso_13')}
+                    className={`px-4 py-2 rounded-lg text-xs font-black uppercase tracking-wider transition ${
+                      selectedMacroverse === 'macroverso_13'
+                        ? 'bg-amber-500 text-slate-950 shadow'
+                        : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    Macroverso 13 (90% da Lore)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSelectMacroverse('macroverso_1')}
+                    className={`px-4 py-2 rounded-lg text-xs font-black uppercase tracking-wider transition ${
+                      selectedMacroverse === 'macroverso_1'
+                        ? 'bg-cyan-500 text-slate-950 shadow'
+                        : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    Macroverso 1 (Ciclo Primordial)
+                  </button>
+                </div>
+              </div>
 
               <p className="text-theme tracking-[0.3em] text-xs font-bold uppercase mb-4 opacity-80">{wbSettings.subtitle}</p>
 
@@ -609,7 +1233,7 @@ export const LoreView = ({ onClose }: { onClose: () => void }) => {
                   onClick={() => setCurrentView('cosmic_map')}
                   className="font-cinzel border-2 border-theme bg-[rgba(var(--primary-rgb),0.2)] hover:bg-[rgba(var(--primary-rgb),0.35)] text-white px-7 py-4 tracking-widest uppercase text-sm font-bold transition duration-300 shadow-[0_0_25px_rgba(var(--primary-rgb),0.35)] flex items-center gap-3"
                 >
-                  <Compass size={18} className="text-theme" /> Explorar Mapa 3D do Universo
+                  <Compass size={18} className="text-theme" /> Explorar Mapa 3D ({selectedMacroverse === 'macroverso_13' ? 'Macroverso 13' : 'Macroverso 1'})
                 </button>
 
                 <button
@@ -617,6 +1241,13 @@ export const LoreView = ({ onClose }: { onClose: () => void }) => {
                   className="font-cinzel border-2 border-purple-500/70 bg-purple-950/35 hover:bg-purple-900/50 text-purple-100 px-7 py-4 tracking-widest uppercase text-sm font-bold transition duration-300 shadow-[0_0_25px_rgba(168,85,247,0.3)] flex items-center gap-3"
                 >
                   <GitFork size={18} className="text-purple-400" /> Árvore de Relações
+                </button>
+
+                <button
+                  onClick={() => setCurrentView('daily_quiz')}
+                  className="font-cinzel border-2 border-amber-500/70 bg-amber-950/35 hover:bg-amber-900/50 text-amber-100 px-7 py-4 tracking-widest uppercase text-sm font-bold transition duration-300 shadow-[0_0_25px_rgba(245,158,11,0.25)] flex items-center gap-3"
+                >
+                  <HelpCircle size={18} className="text-amber-400" /> Quiz Diário do Macroverso
                 </button>
 
                 {wbTabs.length > 0 ? (

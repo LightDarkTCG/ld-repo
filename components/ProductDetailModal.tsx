@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { X, ShoppingCart, Play, Image as ImageIcon, ChevronLeft, ChevronRight, Layers, Sword, Shield, Sparkles, ExternalLink, Copy, Check, Info, Calendar, Dices } from 'lucide-react';
+import { X, ShoppingCart, Play, Image as ImageIcon, ChevronLeft, ChevronRight, Layers, Sword, Shield, Sparkles, ExternalLink, Copy, Check, Info, Calendar, Dices, Share2 } from 'lucide-react';
 import { ExclusiveProduct, ProductMediaItem, CardData, ProductPriceVariation } from '../types';
 import { parseDeckFromCode, ParsedDeckData, DeckCardEntry } from '../deckUtils';
+import { getOfficialProductShareUrl } from '../storeService';
 import { MulliganSimulatorModal } from './MulliganSimulatorModal';
 
 interface ProductDetailModalProps {
@@ -25,6 +26,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
 }) => {
   const [activeMediaIndex, setActiveMediaIndex] = useState(0);
   const [copiedCode, setCopiedCode] = useState(false);
+  const [copiedProductLink, setCopiedProductLink] = useState(false);
   const [showNotice, setShowNotice] = useState(false);
   const [addedToCartFeedback, setAddedToCartFeedback] = useState(false);
   const [showMulliganSimulator, setShowMulliganSimulator] = useState(false);
@@ -505,6 +507,37 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                     Vendas temporariamente indisponíveis
                   </div>
                 )}
+
+                {/* Botão de Compartilhar Link Direto do Produto */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const shareUrl = getOfficialProductShareUrl(
+                      product,
+                      hasVariations ? activeVariationIndex : undefined
+                    );
+                    navigator.clipboard.writeText(shareUrl);
+                    setCopiedProductLink(true);
+                    setTimeout(() => setCopiedProductLink(false), 2500);
+                  }}
+                  className={`w-full py-2.5 px-4 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 border cursor-pointer ${
+                    copiedProductLink
+                      ? 'bg-emerald-950/90 border-emerald-500 text-emerald-300'
+                      : 'bg-slate-900/90 hover:bg-slate-800 border-purple-500/40 text-purple-200'
+                  }`}
+                >
+                  {copiedProductLink ? (
+                    <>
+                      <Check size={14} className="text-emerald-400" />
+                      <span>Link do Produto Copiado!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Share2 size={14} className="text-purple-400" />
+                      <span>Compartilhar Link deste Produto</span>
+                    </>
+                  )}
+                </button>
               </div>
             </div>
 

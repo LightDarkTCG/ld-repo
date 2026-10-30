@@ -265,9 +265,9 @@ export function isTreatedAsHeroCard(p: PlayerDuelState, card: CardData): boolean
   return false;
 }
 
-export function isContinuousBackrowCard(card: CardData): boolean {
+export function isPlayerEquipmentCard(card: CardData): boolean {
   const desc = (card.description || '').toLowerCase();
-  if (
+  return (
     card.type === 'Equipamento' &&
     (desc.includes('equipa o jogador') ||
       desc.includes('equipado no jogador') ||
@@ -275,9 +275,14 @@ export function isContinuousBackrowCard(card: CardData): boolean {
       isCamadaCard(card) ||
       card.name.includes('Conceito Fogo') ||
       card.name.includes('Base ARC'))
-  ) {
+  );
+}
+
+export function isContinuousBackrowCard(card: CardData): boolean {
+  if (isPlayerEquipmentCard(card)) {
     return true;
   }
+  const desc = (card.description || '').toLowerCase();
   if (
     card.code === '2025/0001/00016' ||
     card.code === '2025/0001/00017' ||
@@ -2186,69 +2191,121 @@ export function equipSupportOrCamadaToBackrow(
   preferredSlot = -1
 ): boolean {
   const owner = getPlayerState(state, ownerId);
+  const isPlayerEquip = isPlayerEquipmentCard(card);
 
-  // O Bot (ou qualquer efeito automático com preferredSlot === -1) SEMPRE empilha Camadas e equipamentos de jogador na mesma área!
-  if (ownerId === 'bot' || preferredSlot === -1) {
-    const existingStackSlot = owner.backrow.findIndex((s) => s !== null);
-    if (existingStackSlot !== -1) {
-      const targetSup = owner.backrow[existingStackSlot]!;
+  // REGRA OFICIAL:
+  // 1) Cartas que equipam o jogador (Equipamentos de Jogador: Camadas, Conceito Fogo, Base ARC)
+  //    podem ser empilhadas juntas na mesma área de Equipamento, mas NUNCA na mesma área de uma Carta de Efeito!
+  // 2) Cartas de Efeito contínuas (ex: Apoteose do Véu, Ascensão do Rei, Busca Pela Eternidade, Coroa Lúmeni)
+  //    NÃO podem ser colocadas na mesma área que já tem uma carta Equipamento (nem de jogador, nem de combatente) ou outra carta!
+  if (isPlayerEquip) {
+    if (ownerId === 'bot' || preferredSlot === -1) {
+      const existingEquipSlot = owner.backrow.findIndex(
+        (s) => s !== null && isPlayerEquipmentCard(s.card)
+      );
+      if (existingEquipSlot !== -1) {
+        const targetSup = owner.backrow[existingEquipSlot]!;
+        targetSup.stackedCards = targetSup.stackedCards || [];
+        targetSup.stackedCards.push(card);
+        addLog(
+          state,
+          ownerId,
+          `✨ ${owner.name} empilhou «${card.name}» na Área de Efeito/Equipamento ${existingEquipSlot + 1} (${
+            getAllSupportCardsInSlot(targetSup).length
+          } equipamentos nesta área).`,
+          'effect'
+        );
+        return true;
+      }
+    }
+
+    if (
+      preferredSlot >= 0 &&
+      preferredSlot < 6 &&
+      owner.backrow[preferredSlot] !== null &&
+      isPlayerEquipmentCard(owner.backrow[preferredSlot]!.card)
+    ) {
+      const targetSup = owner.backrow[preferredSlot]!;
       targetSup.stackedCards = targetSup.stackedCards || [];
       targetSup.stackedCards.push(card);
       addLog(
         state,
         ownerId,
-        `✨ ${owner.name} empilhou «${card.name}» na Área de Efeito/Equipamento ${existingStackSlot + 1} (${
+        `✨ ${owner.name} empilhou «${card.name}» na Área de Efeito/Equipamento ${preferredSlot + 1} (${
           getAllSupportCardsInSlot(targetSup).length
-        } cartas nesta área).`,
+        } equipamentos nesta área).`,
         'effect'
       );
       return true;
     }
-  }
 
-  // Qualquer carta que equipa o jogador / permanece na área de efeito/equipamento pode ser empilhada na mesma área escolhida pelo jogador!
-  if (preferredSlot >= 0 && preferredSlot < 6 && owner.backrow[preferredSlot] !== null) {
-    const targetSup = owner.backrow[preferredSlot]!;
-    targetSup.stackedCards = targetSup.stackedCards || [];
-    targetSup.stackedCards.push(card);
+    const slot =
+      ownerId !== 'bot' &&
+      preferredSlot >= 0 &&
+      preferredSlot < 6 &&
+      owner.backrow[preferredSlot] === null
+        ? preferredSlot
+        : owner.backrow.findIndex((s) => s === null);
+
+    if (slot === -1) {
+      const fallbackEquipSlot = owner.backrow.findIndex(
+        (s) => s !== null && isPlayerEquipmentCard(s.card)
+      );
+      if (fallbackEquipSlot !== -1) {
+        const fallbackSup = owner.backrow[fallbackEquipSlot]!;
+        fallbackSup.stackedCards = fallbackSup.stackedCards || [];
+        fallbackSup.stackedCards.push(card);
+        addLog(
+          state,
+          ownerId,
+          `✨ ${owner.name} empilhou «${card.name}» na Área de Efeito/Equipamento ${fallbackEquipSlot + 1}.`,
+          'effect'
+        );
+        return true;
+      }
+      return false;
+    }
+
+    owner.backrow[slot] = {
+      instanceId: nextUid('sup'),
+      card,
+      stackedCards: [],
+      slotIndex: slot,
+      owner: ownerId,
+      usedOncePerRound: false
+    };
+
     addLog(
       state,
       ownerId,
-      `✨ ${owner.name} empilhou «${card.name}» na Área de Efeito/Equipamento ${preferredSlot + 1} (${
-        getAllSupportCardsInSlot(targetSup).length
-      } cartas nesta área).`,
+      `✨ ${owner.name} equipou «${card.name}» na Área de Efeito/Equipamento ${slot + 1}${
+        isCamadaCard(card) ? ` (${countCamadasOnField(owner)} «Camada(s)» em seu lado do campo)` : ''
+      }.`,
       'effect'
     );
     return true;
   }
 
-  const slot =
-    ownerId !== 'bot' &&
-    preferredSlot >= 0 &&
-    preferredSlot < 6 &&
-    owner.backrow[preferredSlot] === null
-      ? preferredSlot
-      : owner.backrow.findIndex((s) => s === null);
+  // Carta de Efeito contínua: NUNCA pode entrar numa área que já tenha Equipamento (de jogador ou de combatente) ou outra carta!
+  const isSlotFreeForEffect = (idx: number) =>
+    idx >= 0 &&
+    idx < 6 &&
+    owner.backrow[idx] === null &&
+    (owner.frontline[idx]?.equipments.length ?? 0) === 0;
 
-  if (slot === -1) {
-    // Caso todas as 6 áreas estejam ocupadas, empilha na primeira área
-    const fallbackSup = owner.backrow[0]!;
-    fallbackSup.stackedCards = fallbackSup.stackedCards || [];
-    fallbackSup.stackedCards.push(card);
-    addLog(
-      state,
-      ownerId,
-      `✨ ${owner.name} empilhou «${card.name}» na Área de Efeito/Equipamento 1.`,
-      'effect'
-    );
-    return true;
+  const effectSlot = isSlotFreeForEffect(preferredSlot)
+    ? preferredSlot
+    : owner.backrow.findIndex((_, idx) => isSlotFreeForEffect(idx));
+
+  if (effectSlot === -1) {
+    return false;
   }
 
-  owner.backrow[slot] = {
+  owner.backrow[effectSlot] = {
     instanceId: nextUid('sup'),
     card,
     stackedCards: [],
-    slotIndex: slot,
+    slotIndex: effectSlot,
     owner: ownerId,
     usedOncePerRound: false
   };
@@ -2256,9 +2313,7 @@ export function equipSupportOrCamadaToBackrow(
   addLog(
     state,
     ownerId,
-    `✨ ${owner.name} equipou/ativou «${card.name}» na Área de Efeito/Equipamento ${slot + 1}${
-      isCamadaCard(card) ? ` (${countCamadasOnField(owner)} «Camada(s)» em seu lado do campo)` : ''
-    }.`,
+    `✨ ${owner.name} ativou «${card.name}» na Área de Efeito/Equipamento ${effectSlot + 1}.`,
     'effect'
   );
   return true;
@@ -3532,10 +3587,11 @@ export function processStartOfRound(state: DuelGameState) {
           if (plannedCard.type === 'Combatente' || plannedCard.type === 'Herói') {
             canAutoUse = p.frontline.some((s) => s === null);
           } else if (isContinuousBackrowCard(plannedCard)) {
-            canAutoUse =
-              p.backrow.some((s) => s === null) ||
-              (isCamadaCard(plannedCard) &&
-                p.backrow.some((s) => s !== null && isCamadaCard(s.card)));
+            canAutoUse = isPlayerEquipmentCard(plannedCard)
+              ? p.backrow.some((s) => s === null || isPlayerEquipmentCard(s.card))
+              : p.backrow.some(
+                  (s, idx) => s === null && (p.frontline[idx]?.equipments.length ?? 0) === 0
+                );
           } else if (plannedCard.type === 'Equipamento') {
             canAutoUse = p.frontline.some((f) => f !== null);
           } else {
@@ -3560,14 +3616,21 @@ export function processStartOfRound(state: DuelGameState) {
               `🎯 «Como Planejado»: A carta «${plannedCard.name}» da Zona Apagada foi usada automaticamente sem custo para ${p.name}!`,
               'effect'
             );
-            const existingBackrowSlot = p.backrow.findIndex((s) => s !== null);
+            const existingPlayerEquipSlot = p.backrow.findIndex(
+              (s) => s !== null && isPlayerEquipmentCard(s.card)
+            );
+            const freeEffectSlot = p.backrow.findIndex(
+              (s, idx) => s === null && (p.frontline[idx]?.equipments.length ?? 0) === 0
+            );
             const targetSlot =
               plannedCard.type === 'Combatente' || plannedCard.type === 'Herói'
                 ? p.frontline.findIndex((s) => s === null)
                 : isContinuousBackrowCard(plannedCard)
-                ? existingBackrowSlot !== -1
-                  ? existingBackrowSlot
-                  : 0
+                ? isPlayerEquipmentCard(plannedCard)
+                  ? existingPlayerEquipSlot !== -1
+                    ? existingPlayerEquipSlot
+                    : p.backrow.findIndex((s) => s === null)
+                  : freeEffectSlot
                 : 0;
             resolveInsanisCardEffect(state, pid, plannedCard, Math.max(0, targetSlot));
           } else {
@@ -4621,7 +4684,28 @@ export function canPlayCardInMainPhase(
   }
 
   if (isContinuousBackrowCard(card)) {
-    // Cartas que equipam o jogador / permanecem em campo podem ser colocadas em qualquer espaço ou empilhadas no mesmo espaço!
+    if (isPlayerEquipmentCard(card)) {
+      const canPlacePlayerEquip = p.backrow.some(
+        (s) => s === null || isPlayerEquipmentCard(s.card)
+      );
+      if (!canPlacePlayerEquip) {
+        return {
+          allowed: false,
+          reason: 'Não há área disponível para Equipamento de Jogador (Cartas de Efeito não podem dividir área com Equipamentos).'
+        };
+      }
+      return { allowed: true };
+    }
+
+    const hasFreeSlotForEffect = p.backrow.some(
+      (s, idx) => s === null && (p.frontline[idx]?.equipments.length ?? 0) === 0
+    );
+    if (!hasFreeSlotForEffect) {
+      return {
+        allowed: false,
+        reason: 'Cartas de Efeito não podem ser colocadas na mesma área que já possui uma carta de Equipamento ou Efeito.'
+      };
+    }
     return { allowed: true };
   }
 
@@ -5037,6 +5121,23 @@ export function resolveInsanisCardEffect(
           ? chosenArchetypes
           : ['Caos', 'Lúmen', 'Darkus']
         : undefined;
+
+    // Se a área de suporte desta coluna contiver uma Carta de Efeito, move a Carta de Efeito para uma área livre
+    // para que uma Carta de Efeito nunca fique na mesma área que um Equipamento!
+    const existingSupInCol = p.backrow[fighter.slotIndex];
+    if (existingSupInCol && !isPlayerEquipmentCard(existingSupInCol.card)) {
+      const relocateIdx = p.backrow.findIndex(
+        (s, idx) =>
+          idx !== fighter.slotIndex &&
+          s === null &&
+          (p.frontline[idx]?.equipments.length ?? 0) === 0
+      );
+      if (relocateIdx !== -1) {
+        existingSupInCol.slotIndex = relocateIdx;
+        p.backrow[relocateIdx] = existingSupInCol;
+        p.backrow[fighter.slotIndex] = null;
+      }
+    }
 
     fighter.equipments.push({
       instanceId: nextUid('eq'),
@@ -6856,8 +6957,19 @@ export function executeBotTurnStep(
       const [card] = bot.hand.splice(continuousIdx, 1);
       const cost = getEffectiveCt(bot, card);
       bot.mana -= cost;
-      const existingBackSlot = bot.backrow.findIndex((s) => s !== null);
-      const backSlot = existingBackSlot !== -1 ? existingBackSlot : 0;
+      let backSlot = 0;
+      if (isPlayerEquipmentCard(card)) {
+        const existingEquipSlot = bot.backrow.findIndex(
+          (s) => s !== null && isPlayerEquipmentCard(s.card)
+        );
+        const emptySlot = bot.backrow.findIndex((s) => s === null);
+        backSlot = existingEquipSlot !== -1 ? existingEquipSlot : emptySlot !== -1 ? emptySlot : 0;
+      } else {
+        const freeEffectSlot = bot.backrow.findIndex(
+          (s, idx) => s === null && (bot.frontline[idx]?.equipments.length ?? 0) === 0
+        );
+        backSlot = freeEffectSlot !== -1 ? freeEffectSlot : 0;
+      }
       return queueBotCardWithReactionCheck(state, card, backSlot, cost);
     }
 
