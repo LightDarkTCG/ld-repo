@@ -1,5 +1,5 @@
 import React from 'react';
-import { Sword, Shield, Scale, Sparkles, Hash } from 'lucide-react';
+import { Sword, Shield, Scale, Sparkles, Hash, Hexagon } from 'lucide-react';
 import { CardData, CardType } from '../types';
 import { LazyCardImage } from './LazyCardImage';
 
@@ -40,6 +40,14 @@ const getCardStyle = (type: CardType) => {
         icon: 'text-purple-500',
         glow: 'shadow-[0_0_30px_rgba(147,51,234,0.3)]',
         badge: 'bg-purple-900 text-purple-100'
+      };
+    case 'Token': // Amarelo
+      return {
+        border: 'border-yellow-500',
+        bg: 'bg-yellow-950/40',
+        icon: 'text-yellow-400',
+        glow: 'shadow-[0_0_30px_rgba(234,179,8,0.35)]',
+        badge: 'bg-yellow-900 text-yellow-100'
       };
     default:
       return { border: 'border-slate-600', bg: 'bg-slate-900', icon: 'text-slate-400', glow: '', badge: 'bg-slate-800' };
@@ -93,16 +101,24 @@ export const Card: React.FC<CardProps> = React.memo(({ name, type, archetype, ct
             {ct}
           </div>
         </div>
-        <div className={`w-full h-44 ${imageGradient || 'bg-slate-800'} rounded border border-slate-700 mb-3 relative overflow-hidden group-hover:brightness-110 transition`}>
+        <div className={`w-full h-44 ${imageGradient || (type === 'Token' ? 'bg-gradient-to-br from-yellow-900/50 via-amber-950/70 to-slate-950' : 'bg-slate-800')} rounded border ${type === 'Token' ? 'border-yellow-500/40' : 'border-slate-700'} mb-3 relative overflow-hidden group-hover:brightness-110 transition flex items-center justify-center`}>
           <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent"></div>
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 opacity-20 text-white">
+          <div className={`relative z-10 flex flex-col items-center justify-center gap-1.5 ${type === 'Token' ? 'text-yellow-400/70' : 'opacity-20 text-white'}`}>
             {type === 'Herói' && <Sword size={64} />}
             {type === 'Combatente' && <Shield size={64} />}
             {type === 'Equipamento' && <Scale size={64} />}
             {type === 'Efeito' && <Sparkles size={64} />}
+            {type === 'Token' && (
+              <>
+                <Hexagon size={56} className="text-yellow-400 drop-shadow-[0_0_12px_rgba(234,179,8,0.5)]" />
+                <span className="text-[10px] font-black uppercase tracking-widest text-yellow-300/90 bg-yellow-950/80 border border-yellow-500/40 px-2.5 py-0.5 rounded-full">
+                  Placeholder • Token
+                </span>
+              </>
+            )}
           </div>
         </div>
-        <div className={`w-full flex-grow ${styles.bg} rounded p-2 mb-2 border border-white/5 overflow-hidden`}>
+        <div className={`w-full flex-grow ${styles.bg} rounded p-2 mb-2 border ${type === 'Token' ? 'border-yellow-500/20' : 'border-white/5'} overflow-hidden`}>
           <p className="text-slate-300 text-[10px] leading-relaxed font-sans line-clamp-[8]">
             {description}
           </p>
@@ -118,7 +134,7 @@ export const Card: React.FC<CardProps> = React.memo(({ name, type, archetype, ct
                 </div>
               </div>
             ) : (
-              <div className="text-xs text-slate-500 uppercase tracking-widest font-bold text-center w-full">
+              <div className={`text-xs uppercase tracking-widest font-bold text-center w-full ${type === 'Token' ? 'text-yellow-400' : 'text-slate-500'}`}>
                 Carta de {type}
               </div>
             )}

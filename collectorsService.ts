@@ -6,6 +6,17 @@ import { CardData } from './types';
 import { isLegacyCard, isSpecialCard } from './components/AlbumModal';
 import { cleanCardCode } from './CardContext';
 
+export interface UserCustomBadge {
+  id: string;
+  title: string;
+  category: string; // Ex: 'Torneio', 'Título Especial', 'Colecionismo', 'Evento', 'Comunidade'
+  description?: string;
+  color?: 'gold' | 'purple' | 'red' | 'blue' | 'emerald' | 'cyan' | 'pink';
+  imageUrl?: string;
+  assignedAt?: string;
+  assignedBy?: string;
+}
+
 export interface CollectorRankEntry {
   userId: string;
   displayName: string;
@@ -21,6 +32,7 @@ export interface CollectorRankEntry {
   ambassadorRole?: string; // Ex: 'Embaixador Oficial', 'Criador & Embaixador'
   ambassadorAssignedBy?: string; // Email do administrador que nomeou
   ambassadorAssignedAt?: any; // Data da nomeação
+  customBadges?: UserCustomBadge[]; // Insígnias e títulos atribuídos manualmente pelo ADM
   updatedAt?: any;
 }
 
@@ -299,6 +311,7 @@ export function subscribeCollectorsRanking(
           ambassadorRole: data.ambassadorRole || (data.isAmbassador ? 'Embaixador Oficial' : undefined),
           ambassadorAssignedBy: data.ambassadorAssignedBy || undefined,
           ambassadorAssignedAt: data.ambassadorAssignedAt || undefined,
+          customBadges: Array.isArray(data.customBadges) ? data.customBadges : [],
           updatedAt: data.updatedAt
         });
       }
@@ -308,6 +321,58 @@ export function subscribeCollectorsRanking(
     console.error('Erro ao ouvir ranking de colecionadores:', err);
     if (onError) onError(err);
   });
+}
+
+/**
+ * Salva a lista de Insígnias / Títulos atribuídos pelo Administrador a um jogador específico.
+ */
+export async function setPlayerCustomBadges(
+  userId: string,
+  badges: UserCustomBadge[]
+): Promise<void> {
+  if (!userId) throw new Error('ID do usuário é obrigatório');
+  const rankRef = doc(db, 'collectorsRanking', userId);
+  await setDoc(rankRef, {
+    customBadges: badges,
+    updatedAt: serverTimestamp()
+  }, { merge: true });
+
+  try {
+    const userRef = doc(db, 'users', userId);
+    await setDoc(userRef, {
+      customBadges: badges
+    }, { merge: true });
+  } catch (err) {
+    console.warn('Não foi possível espelhar customBadges em users:', err);
+  }
+}
+
+/**
+ * Busca o catálogo de modelos de Insígnias criados pelo Administrador (vazio por padrão).
+ */
+export async function fetchAdminBadgesCatalog(): Promise<UserCustomBadge[]> {
+  try {
+    const ref = doc(db, 'appSettings', 'profileBadgesCatalog');
+    const snap = await getDoc(ref);
+    if (snap.exists()) {
+      const data = snap.data();
+      return Array.isArray(data.badges) ? data.badges : [];
+    }
+  } catch (err) {
+    console.warn('Erro ao buscar catálogo de insígnias do ADM:', err);
+  }
+  return [];
+}
+
+/**
+ * Salva o catálogo de modelos de Insígnias criados pelo Administrador.
+ */
+export async function saveAdminBadgesCatalog(badges: UserCustomBadge[]): Promise<void> {
+  const ref = doc(db, 'appSettings', 'profileBadgesCatalog');
+  await setDoc(ref, {
+    badges,
+    updatedAt: serverTimestamp()
+  }, { merge: true });
 }
 
 /**

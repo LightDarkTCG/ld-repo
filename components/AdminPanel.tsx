@@ -2634,6 +2634,7 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
                             <option value="Combatente">Combatente</option>
                             <option value="Equipamento">Equipamento</option>
                             <option value="Efeito">Efeito</option>
+                            <option value="Token">Token</option>
                           </select>
                         </div>
                         

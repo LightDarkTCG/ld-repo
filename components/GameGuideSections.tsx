@@ -3,7 +3,7 @@ import {
   BookOpen, Clock, Layers, Scale, Sparkles, ChevronDown, ChevronUp, 
   Info, Sword, Crown, Zap, CheckCircle, Ghost, FileText, 
   Edit2, Save, X, Plus, Trash2, AlertCircle, Eye, EyeOff, Check, Search, Grid,
-  Trophy, Award, Upload, Loader2, Image as ImageIcon, Flame, Filter
+  Trophy, Award, Upload, Loader2, Image as ImageIcon, Flame, Filter, Hexagon
 } from 'lucide-react';
 import { doc, getDoc, setDoc, onSnapshot } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
@@ -207,6 +207,7 @@ export interface GameManualData {
     heroiText: string;
     equipamentoText: string;
     efeitoText: string;
+    tokenText?: string;
   };
 
   turnos: {
@@ -288,6 +289,7 @@ export const defaultManualData: GameManualData = {
       'Deck Composto por 30 a 35 cartas (contando com os heróis, se houver).',
       'Não é permitido cartas repetidas em todo o deck.',
       'O uso de Herói é opcional, mas se usar, apenas 1 Herói e suas variações no Deck (com exceções para heróis que interagem entre si).',
+      'Tokens: Os Tokens ficam no Deck de Heróis e você pode colocar no máximo 15. Quando deixam o campo, voltam para o Deck de Heróis.',
       'Opcionais: Campo físico, marcadores de status/vida/mana e dados D6/D20 para efeitos.'
     ],
     statusItems: [
@@ -314,7 +316,8 @@ export const defaultManualData: GameManualData = {
     combatenteText: 'Os "monstros" comuns e auxiliares de cada deck. Não são classificados como Heróis a não ser por efeitos únicos. Lutam na linha de frente e atacam os inimigos.',
     heroiText: 'Foco principal do deck. Inicialmente ficam fora do deck principal, em sua Zona de Herói dedicada, necessitando de condições específicas para serem invocados. Limite de 1 Herói em campo por jogador (salvo exceções).',
     equipamentoText: 'Alteram status, adicionam arquétipos ou concedem habilidades únicas ao combatente equipado. Ficam vinculados ao alvo até que ele saia de campo. Caso o herói seja substituído, o equipamento é herdado pelo novo herói.',
-    efeitoText: 'Cartas de intervenção imediata, feitiços de uso único ou contínuos que alteram o rumo do jogo. Possuem custo em Mana e condições de ativação. Ao terminarem, são enviadas à Zona Morta.'
+    efeitoText: 'Cartas de intervenção imediata, feitiços de uso único ou contínuos que alteram o rumo do jogo. Possuem custo em Mana e condições de ativação. Ao terminarem, são enviadas à Zona Morta.',
+    tokenText: 'Tokens são cartas vinculadas a cartas que se utilizam delas, tokens só podem ser afetadas por cartas que as afetam diretamente, elas ocupam espaço em campo mas não declaram ataques e nem possuem efeitos, tokens também não podem ser equipados. Os Tokens ficam no deck de heróis e você pode colocar no máximo 15, quando deixam o campo, elas voltam para o deck de heróis.'
   },
 
   turnos: {
@@ -348,7 +351,8 @@ export const defaultManualData: GameManualData = {
       'Heróis destruídos ou devolvidos retornam para a Zona do Deck de Heróis, e jamais para o Deck Principal.',
       'Tanto a Vida (20) quanto a Mana (12) podem ultrapassar seus limites iniciais por meio de bônus e feitiços.',
       'Arquétipos especiais como Lúmen e Darkus possuem linhagens de evolução ativadas por cartas específicas.',
-      'Não existe limite máximo para cartas acumuladas na mão do jogador.'
+      'Não existe limite máximo para cartas acumuladas na mão do jogador.',
+      'Tokens ficam no Deck de Heróis (máximo de 15), ocupam espaço em campo sem declarar ataques, sem efeitos e sem poderem ser equipados; ao deixarem o campo, retornam para o Deck de Heróis.'
     ]
   }
 };
@@ -369,7 +373,7 @@ export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
   ArchetypeCardComponent,
   cardTypesShowcase
 }) => {
-  const [data, setData] = useState<GameManualData>(() => readBrowserCache<GameManualData>('ld_cache_gameManual_v2') || defaultManualData);
+  const [data, setData] = useState<GameManualData>(() => readBrowserCache<GameManualData>('ld_cache_gameManual_v3') || defaultManualData);
   const [isLoading, setIsLoading] = useState(true);
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [archetypeSearch, setArchetypeSearch] = useState('');
@@ -487,6 +491,7 @@ export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
           cartas: { 
             ...defaultManualData.cartas, 
             ...(remoteData.cartas || {}),
+            tokenText: remoteData.cartas?.tokenText || defaultManualData.cartas.tokenText,
             structureTitle: remoteData.cartas?.structureTitle || defaultManualData.cartas.structureTitle || 'Anatomia & Estrutura das Cartas',
             structureItems: (remoteData.cartas?.structureItems && remoteData.cartas.structureItems.length > 0)
               ? remoteData.cartas.structureItems
@@ -496,7 +501,7 @@ export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
           regras: { ...defaultManualData.regras, ...(remoteData.regras || {}) }
         };
         setData(nextManual);
-        writeBrowserCache('ld_cache_gameManual_v2', nextManual);
+        writeBrowserCache('ld_cache_gameManual_v3', nextManual);
       }
       setIsLoading(false);
     }, (err) => {
@@ -959,10 +964,10 @@ export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
                   </div>
                 </div>
 
-                {/* 4 Categorias */}
+                {/* 5 Categorias */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {/* Combatente */}
-                  <div className="bg-slate-900/60 p-4 rounded-xl border-l-4 border-blue-500 border-t border-r border-b border-slate-800 flex gap-3.5">
+                  <div className="bg-slate-900/60 p-4 rounded-xl border-l-4 border-t border-r border-b border-blue-500 flex gap-3.5">
                     <div className="p-2.5 rounded-lg bg-blue-950/50 text-blue-400 border border-blue-800/40 shrink-0 h-fit">
                       <Sword size={22} />
                     </div>
@@ -978,7 +983,7 @@ export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
                   </div>
 
                   {/* Herói */}
-                  <div className="bg-slate-900/60 p-4 rounded-xl border-l-4 border-red-500 border-t border-r border-b border-slate-800 flex gap-3.5">
+                  <div className="bg-slate-900/60 p-4 rounded-xl border-l-4 border-t border-r border-b border-red-500 flex gap-3.5">
                     <div className="p-2.5 rounded-lg bg-red-950/50 text-red-400 border border-red-800/40 shrink-0 h-fit">
                       <Crown size={22} />
                     </div>
@@ -994,7 +999,7 @@ export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
                   </div>
 
                   {/* Equipamento */}
-                  <div className="bg-slate-900/60 p-4 rounded-xl border-l-4 border-green-500 border-t border-r border-b border-slate-800 flex gap-3.5">
+                  <div className="bg-slate-900/60 p-4 rounded-xl border-l-4 border-t border-r border-b border-green-500 flex gap-3.5">
                     <div className="p-2.5 rounded-lg bg-green-950/50 text-green-400 border border-green-800/40 shrink-0 h-fit">
                       <Scale size={22} />
                     </div>
@@ -1010,7 +1015,7 @@ export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
                   </div>
 
                   {/* Efeito */}
-                  <div className="bg-slate-900/60 p-4 rounded-xl border-l-4 border-purple-500 border-t border-r border-b border-slate-800 flex gap-3.5">
+                  <div className="bg-slate-900/60 p-4 rounded-xl border-l-4 border-t border-r border-b border-purple-500 flex gap-3.5">
                     <div className="p-2.5 rounded-lg bg-purple-950/50 text-purple-400 border border-purple-800/40 shrink-0 h-fit">
                       <Zap size={22} />
                     </div>
@@ -1021,6 +1026,23 @@ export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
                       </div>
                       <p className="text-xs sm:text-sm text-slate-300 leading-relaxed text-justify">
                         {data.cartas.efeitoText}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Token */}
+                  <div className="bg-slate-900/60 p-4 rounded-xl border-l-4 border-t border-r border-b border-yellow-500 flex gap-3.5 md:col-span-2">
+                    <div className="p-2.5 rounded-lg bg-yellow-950/50 text-yellow-400 border border-yellow-800/40 shrink-0 h-fit">
+                      <Hexagon size={22} />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2 mb-1 flex-wrap">
+                        <h5 className="font-bold text-yellow-400 text-base">Token</h5>
+                        <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded bg-yellow-950 text-yellow-300 border border-yellow-800/50">MOLDURA AMARELA</span>
+                        <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded bg-amber-950/60 text-amber-300 border border-amber-700/40">DECK DE HERÓIS • MÁX. 15</span>
+                      </div>
+                      <p className="text-xs sm:text-sm text-slate-300 leading-relaxed text-justify">
+                        {data.cartas.tokenText || defaultManualData.cartas.tokenText}
                       </p>
                     </div>
                   </div>
@@ -2384,6 +2406,19 @@ const ManualEditModal: React.FC<{
                     cartas: { ...prev.cartas, efeitoText: e.target.value }
                   }))}
                   className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-xs text-white focus:outline-none focus:border-purple-500"
+                />
+              </div>
+
+              <div className="bg-slate-900/60 p-4 rounded-xl border border-slate-800 space-y-3">
+                <h4 className="font-bold text-yellow-400 text-sm">Descrição: Token (Amarelo)</h4>
+                <textarea
+                  rows={3}
+                  value={form.cartas.tokenText || ''}
+                  onChange={e => setForm(prev => ({
+                    ...prev,
+                    cartas: { ...prev.cartas, tokenText: e.target.value }
+                  }))}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-xs text-white focus:outline-none focus:border-yellow-500"
                 />
               </div>
             </div>

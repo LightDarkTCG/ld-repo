@@ -37,7 +37,13 @@ import { User } from 'firebase/auth';
 import { useAuth, isUserAdmin } from '../authService';
 import { useCards, cleanCardCode } from '../CardContext';
 import { useUserAlbum, FOIL_TYPES, FoilTypeInfo } from '../albumService';
-import { setCollectorAmbassadorStatus } from '../collectorsService';
+import { 
+  setCollectorAmbassadorStatus, 
+  UserCustomBadge, 
+  setPlayerCustomBadges, 
+  fetchAdminBadgesCatalog, 
+  saveAdminBadgesCatalog 
+} from '../collectorsService';
 import { 
   WantedCardItem, 
   MostWantedCardSummary,
@@ -82,7 +88,7 @@ interface UserProfileModalProps {
   isOpen: boolean;
   onClose: () => void;
   targetProfile?: TargetUserProfile | null;
-  initialTab?: 'wishlist' | 'most_wanted' | 'stats' | 'verifications' | 'orders';
+  initialTab?: 'wishlist' | 'most_wanted' | 'badges' | 'stats' | 'verifications' | 'orders';
   onOpenCardDetail?: (card: CardData) => void;
   onOpenAlbum?: () => void;
   onOpenAuth?: () => void;
@@ -115,7 +121,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
   const { album: myAlbum, getQuantity: getMyQuantity } = useUserAlbum(currentUser?.uid);
 
   // Tab ativa
-  const [activeTab, setActiveTab] = useState<'wishlist' | 'most_wanted' | 'stats' | 'verifications' | 'orders'>(initialTab);
+  const [activeTab, setActiveTab] = useState<'wishlist' | 'most_wanted' | 'badges' | 'stats' | 'verifications' | 'orders'>(initialTab);
 
   // Meus Pedidos & Rastreio (exclusivo no Perfil de Usuário)
   const [myOrders, setMyOrders] = useState<StoreOrder[]>([]);
@@ -287,11 +293,22 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
   const [targetWishlist, setTargetWishlist] = useState<WantedCardItem[]>([]);
   const [loadingTargetWishlist, setLoadingTargetWishlist] = useState(false);
 
-  // Status de Embaixador e Pontuação do Quiz do Jogador
+  // Status de Embaixador, Pontuação do Quiz e Insígnias atribuídas pelo ADM
   const [isAmbassador, setIsAmbassador] = useState<boolean>(Boolean(targetProfile?.isAmbassador));
   const [ambassadorRole, setAmbassadorRole] = useState<string>(targetProfile?.ambassadorRole || 'Embaixador Oficial');
   const [isUpdatingAmbassador, setIsUpdatingAmbassador] = useState(false);
   const [profileQuizPoints, setProfileQuizPoints] = useState<number>(0);
+  const [playerBadges, setPlayerBadges] = useState<UserCustomBadge[]>([]);
+  const [adminBadgesCatalog, setAdminBadgesCatalog] = useState<UserCustomBadge[]>([]);
+
+  // Estados do formulário do ADM para criar/atribuir Insígnia ou Título
+  const [newBadgeTitle, setNewBadgeTitle] = useState('');
+  const [newBadgeCategory, setNewBadgeCategory] = useState('Torneio');
+  const [newBadgeDesc, setNewBadgeDesc] = useState('');
+  const [newBadgeColor, setNewBadgeColor] = useState<'gold' | 'purple' | 'red' | 'blue' | 'emerald' | 'cyan' | 'pink'>('gold');
+  const [newBadgeImageUrl, setNewBadgeImageUrl] = useState('');
+  const [saveToCatalogAlso, setSaveToCatalogAlso] = useState(true);
+  const [isSavingBadge, setIsSavingBadge] = useState(false);
 
   useEffect(() => {
     if (!isOpen || !activeUserId) return;
@@ -308,13 +325,19 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
           setAmbassadorRole(data.ambassadorRole);
         }
         setProfileQuizPoints(Number(data.quizPoints) || 0);
+        setPlayerBadges(Array.isArray(data.customBadges) ? data.customBadges : []);
       } else {
         setProfileQuizPoints(0);
+        setPlayerBadges([]);
       }
     }).catch(err => {
-      console.warn('Erro ao carregar status de embaixador:', err);
+      console.warn('Erro ao carregar dados do perfil:', err);
     });
-  }, [isOpen, activeUserId, targetProfile?.isAmbassador, targetProfile?.ambassadorRole]);
+
+    if (isUserAdmin(currentUser)) {
+      fetchAdminBadgesCatalog().then(setAdminBadgesCatalog);
+    }
+  }, [isOpen, activeUserId, targetProfile?.isAmbassador, targetProfile?.ambassadorRole, currentUser]);
 
   // Carrega a wishlist de outro jogador caso não seja o usuário logado
   useEffect(() => {
@@ -336,6 +359,133 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
   }, [isOpen, isMe, activeUserId]);
 
   const displayedWishlist = isMe ? myWishlist : targetWishlist;
+
+  const getBadgeStyleClasses = (color?: string) => {
+    switch (color) {
+      case 'gold':
+        return {
+          card: 'from-amber-500/25 via-yellow-950/40 to-slate-950 border-amber-400/70 text-amber-200',
+          pill: 'bg-amber-950/90 border-amber-400/70 text-amber-200',
+          dot: 'bg-amber-400'
+        };
+      case 'red':
+        return {
+          card: 'from-red-600/25 via-rose-950/40 to-slate-950 border-red-500/70 text-red-200',
+          pill: 'bg-red-950/90 border-red-500/70 text-red-200',
+          dot: 'bg-red-500'
+        };
+      case 'blue':
+        return {
+          card: 'from-blue-600/25 via-indigo-950/40 to-slate-950 border-blue-400/70 text-blue-200',
+          pill: 'bg-blue-950/90 border-blue-400/70 text-blue-200',
+          dot: 'bg-blue-400'
+        };
+      case 'emerald':
+        return {
+          card: 'from-emerald-600/25 via-teal-950/40 to-slate-950 border-emerald-400/70 text-emerald-200',
+          pill: 'bg-emerald-950/90 border-emerald-400/70 text-emerald-200',
+          dot: 'bg-emerald-400'
+        };
+      case 'cyan':
+        return {
+          card: 'from-cyan-500/25 via-sky-950/40 to-slate-950 border-cyan-400/70 text-cyan-200',
+          pill: 'bg-cyan-950/90 border-cyan-400/70 text-cyan-200',
+          dot: 'bg-cyan-400'
+        };
+      case 'pink':
+        return {
+          card: 'from-pink-500/25 via-fuchsia-950/40 to-slate-950 border-pink-400/70 text-pink-200',
+          pill: 'bg-pink-950/90 border-pink-400/70 text-pink-200',
+          dot: 'bg-pink-400'
+        };
+      case 'purple':
+      default:
+        return {
+          card: 'from-purple-600/25 via-indigo-950/40 to-slate-950 border-purple-400/70 text-purple-200',
+          pill: 'bg-purple-950/90 border-purple-400/70 text-purple-200',
+          dot: 'bg-purple-400'
+        };
+    }
+  };
+
+  const handleAdminGrantBadge = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!isUserAdmin(currentUser) || !activeUserId || !newBadgeTitle.trim()) return;
+    setIsSavingBadge(true);
+    try {
+      const created: UserCustomBadge = {
+        id: `badge_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        title: newBadgeTitle.trim(),
+        category: newBadgeCategory.trim() || 'Título Especial',
+        description: newBadgeDesc.trim(),
+        color: newBadgeColor,
+        imageUrl: newBadgeImageUrl.trim() || undefined,
+        assignedAt: new Date().toISOString(),
+        assignedBy: currentUser?.email || 'admin'
+      };
+
+      const nextPlayerBadges = [...playerBadges, created];
+      await setPlayerCustomBadges(activeUserId, nextPlayerBadges);
+      setPlayerBadges(nextPlayerBadges);
+
+      if (saveToCatalogAlso) {
+        const existsInCatalog = adminBadgesCatalog.some(
+          (b) => b.title.toLowerCase() === created.title.toLowerCase()
+        );
+        if (!existsInCatalog) {
+          const nextCatalog = [...adminBadgesCatalog, created];
+          await saveAdminBadgesCatalog(nextCatalog);
+          setAdminBadgesCatalog(nextCatalog);
+        }
+      }
+
+      setNewBadgeTitle('');
+      setNewBadgeDesc('');
+      setNewBadgeImageUrl('');
+    } catch (err) {
+      console.error('Erro ao conceder insígnia:', err);
+    } finally {
+      setIsSavingBadge(false);
+    }
+  };
+
+  const handleAdminAssignFromCatalog = async (template: UserCustomBadge) => {
+    if (!isUserAdmin(currentUser) || !activeUserId) return;
+    if (playerBadges.some((b) => b.title.toLowerCase() === template.title.toLowerCase())) return;
+    setIsSavingBadge(true);
+    try {
+      const assigned: UserCustomBadge = {
+        ...template,
+        id: `badge_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        assignedAt: new Date().toISOString(),
+        assignedBy: currentUser?.email || 'admin'
+      };
+      const next = [...playerBadges, assigned];
+      await setPlayerCustomBadges(activeUserId, next);
+      setPlayerBadges(next);
+    } finally {
+      setIsSavingBadge(false);
+    }
+  };
+
+  const handleAdminRemovePlayerBadge = async (badgeId: string) => {
+    if (!isUserAdmin(currentUser) || !activeUserId) return;
+    setIsSavingBadge(true);
+    try {
+      const next = playerBadges.filter((b) => b.id !== badgeId);
+      await setPlayerCustomBadges(activeUserId, next);
+      setPlayerBadges(next);
+    } finally {
+      setIsSavingBadge(false);
+    }
+  };
+
+  const handleAdminDeleteCatalogTemplate = async (templateId: string) => {
+    if (!isUserAdmin(currentUser)) return;
+    const next = adminBadgesCatalog.filter((b) => b.id !== templateId);
+    await saveAdminBadgesCatalog(next);
+    setAdminBadgesCatalog(next);
+  };
 
   // Comunidade: Cartas mais procuradas
   const [communityWishlists, setCommunityWishlists] = useState<UserWishlistDoc[]>([]);
@@ -571,6 +721,19 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                   <span className="text-[11px] text-amber-300/80">pts no Quiz</span>
                 </div>
 
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('badges')}
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-indigo-950/70 hover:bg-indigo-900/80 border border-indigo-500/50 text-xs text-indigo-200 transition cursor-pointer"
+                  title="Ver Insígnias e Títulos do Perfil"
+                >
+                  <Award size={13} className="text-indigo-400" />
+                  <span className="font-bold">{playerBadges.length}</span>
+                  <span className="text-[11px] text-indigo-300/90">
+                    {isUserAdmin(currentUser) ? 'Insígnias (Gerenciar)' : 'Insígnias'}
+                  </span>
+                </button>
+
                 {isMe && onOpenAlbum && (
                   <button
                     onClick={() => { onOpenAlbum(); }}
@@ -592,6 +755,34 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                   </button>
                 )}
               </div>
+
+              {/* Vitrine Rápida de Insígnias & Títulos no Topo do Perfil */}
+              {playerBadges.length > 0 && (
+                <div className="flex flex-wrap items-center justify-center sm:justify-start gap-1.5 mt-2.5 pt-2 border-t border-white/10">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 mr-1">
+                    Insígnias & Títulos:
+                  </span>
+                  {playerBadges.map((b) => {
+                    const st = getBadgeStyleClasses(b.color);
+                    return (
+                      <button
+                        key={b.id}
+                        type="button"
+                        onClick={() => setActiveTab('badges')}
+                        title={`${b.title} (${b.category})${b.description ? `: ${b.description}` : ''}`}
+                        className={`flex items-center gap-1.5 px-2.5 py-0.5 rounded-full border text-[10px] font-bold transition hover:scale-105 cursor-pointer ${st.pill}`}
+                      >
+                        {b.imageUrl ? (
+                          <img src={b.imageUrl} alt={b.title} referrerPolicy="no-referrer" className="w-3.5 h-3.5 rounded-full object-cover" />
+                        ) : (
+                          <Award size={11} />
+                        )}
+                        <span>{b.title}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </div>
 
@@ -650,6 +841,21 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
               <span>{isMe ? 'Cartas que Procuro' : `Cartas que ${activeDisplayName.split(' ')[0]} Procura`}</span>
               <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-black/40 font-mono">
                 {displayedWishlist.length}
+              </span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('badges')}
+              className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 transition shrink-0 ${
+                activeTab === 'badges'
+                  ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-lg shadow-indigo-950/40'
+                  : 'bg-slate-900/80 hover:bg-slate-800 text-indigo-200 border border-indigo-800/50'
+              }`}
+            >
+              <Award size={15} className={activeTab === 'badges' ? 'text-amber-300' : 'text-indigo-400'} />
+              <span>Insígnias & Títulos</span>
+              <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-black/40 font-mono text-amber-300">
+                {playerBadges.length}
               </span>
             </button>
 
@@ -1032,6 +1238,268 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                       </div>
                     );
                   })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* TAB INSÍGNIAS & TÍTULOS DO PERFIL (GERENCIADOS PELO ADM) */}
+          {activeTab === 'badges' && (
+            <div className="space-y-6">
+              {/* Cabeçalho da Aba */}
+              <div className="bg-gradient-to-r from-indigo-950/80 via-slate-900 to-purple-950/80 border border-indigo-500/40 rounded-2xl p-4 sm:p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-xl">
+                <div className="flex items-center gap-3.5">
+                  <div className="w-12 h-12 rounded-2xl bg-indigo-500/20 border border-indigo-400/50 flex items-center justify-center text-amber-300 shadow-lg shrink-0">
+                    <Award size={26} />
+                  </div>
+                  <div>
+                    <h3 className="text-base sm:text-lg font-black text-white uppercase tracking-wider">
+                      Insígnias & Títulos Oficiais de {isMe ? activeDisplayName : activeDisplayName}
+                    </h3>
+                    <p className="text-xs text-slate-300 mt-0.5">
+                      Insígnias de Torneios, Títulos Especiais, Colecionismo e Honrarias concedidas oficialmente pela Administração de Light Dark TCG.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="px-4 py-2 rounded-xl bg-slate-950/80 border border-slate-800 text-xs font-bold text-amber-300 shrink-0">
+                  {playerBadges.length} {playerBadges.length === 1 ? 'Insígnia Concedida' : 'Insígnias Concedidas'}
+                </div>
+              </div>
+
+              {/* Lista de Insígnias do Jogador */}
+              {playerBadges.length === 0 ? (
+                <div className="py-12 px-4 text-center border-2 border-dashed border-slate-800 rounded-2xl bg-slate-900/30">
+                  <Award size={36} className="mx-auto text-slate-500 mb-2" />
+                  <p className="text-sm font-bold text-slate-300">
+                    Nenhuma insígnia ou título concedido a este perfil ainda.
+                  </p>
+                  {isUserAdmin(currentUser) && (
+                    <p className="text-xs text-amber-300 mt-1">
+                      Use o painel de Administrador abaixo para criar e conceder insígnias de Torneios, Títulos ou Colecionismo a {activeDisplayName}.
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
+                  {playerBadges.map((badge) => {
+                    const st = getBadgeStyleClasses(badge.color);
+                    return (
+                      <div
+                        key={badge.id}
+                        className={`rounded-2xl p-4 border bg-gradient-to-br ${st.card} shadow-lg flex flex-col justify-between gap-3 relative`}
+                      >
+                        <div className="flex items-start gap-3">
+                          <div className="w-12 h-12 rounded-xl bg-black/50 border border-white/20 flex items-center justify-center shrink-0 overflow-hidden shadow-md">
+                            {badge.imageUrl ? (
+                              <img
+                                src={badge.imageUrl}
+                                alt={badge.title}
+                                referrerPolicy="no-referrer"
+                                className="w-full h-full object-cover"
+                              />
+                            ) : (
+                              <Trophy size={22} className="text-amber-300" />
+                            )}
+                          </div>
+
+                          <div className="min-w-0 flex-1">
+                            <span className="text-[10px] uppercase tracking-wider font-black px-2 py-0.5 rounded-full bg-black/40 border border-white/15 inline-block mb-1">
+                              {badge.category}
+                            </span>
+                            <h4 className="font-black text-sm sm:text-base text-white leading-tight">
+                              {badge.title}
+                            </h4>
+                            {badge.description && (
+                              <p className="text-xs text-slate-200/90 mt-1 leading-relaxed">
+                                {badge.description}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+
+                        {isUserAdmin(currentUser) && (
+                          <div className="pt-2 border-t border-white/10 flex justify-end">
+                            <button
+                              type="button"
+                              disabled={isSavingBadge}
+                              onClick={() => handleAdminRemovePlayerBadge(badge.id)}
+                              className="text-[11px] font-bold text-red-300 hover:text-white bg-red-950/70 hover:bg-red-800 px-2.5 py-1 rounded-lg border border-red-600/40 flex items-center gap-1 transition cursor-pointer"
+                            >
+                              <Trash2 size={12} />
+                              <span>Remover do Jogador</span>
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* PAINEL EXCLUSIVO DO ADMINISTRADOR: CRIAR E CONCEDER INSÍGNIAS / TÍTULOS */}
+              {isUserAdmin(currentUser) && (
+                <div className="bg-slate-900/95 border-2 border-amber-500/40 rounded-2xl p-4 sm:p-6 space-y-5 shadow-2xl">
+                  <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                    <div className="flex items-center gap-2.5">
+                      <Crown size={20} className="text-amber-400" />
+                      <div>
+                        <h4 className="text-sm sm:text-base font-black text-white uppercase tracking-wider">
+                          Painel do Administrador • Conceder Insígnia ou Título para {activeDisplayName}
+                        </h4>
+                        <p className="text-xs text-slate-400">
+                          Crie insígnias de Torneios, Títulos exclusivos, Colecionismo ou Eventos e atribua ao jogador.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <form onSubmit={handleAdminGrantBadge} className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-xs font-bold text-slate-300 block mb-1">
+                        Nome da Insígnia / Título *
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={newBadgeTitle}
+                        onChange={(e) => setNewBadgeTitle(e.target.value)}
+                        placeholder="Ex: Campeão Torneio Nacional, Mestre de Lore, Top 4..."
+                        className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white font-bold focus:border-amber-400 outline-none"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-xs font-bold text-slate-300 block mb-1">
+                        Categoria (Torneio, Título, Colecionismo, etc.)
+                      </label>
+                      <input
+                        type="text"
+                        list="badge-categories-list"
+                        value={newBadgeCategory}
+                        onChange={(e) => setNewBadgeCategory(e.target.value)}
+                        placeholder="Ex: Torneio, Título Especial, Colecionismo..."
+                        className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:border-amber-400 outline-none"
+                      />
+                      <datalist id="badge-categories-list">
+                        <option value="Torneio" />
+                        <option value="Título Especial" />
+                        <option value="Colecionismo" />
+                        <option value="Evento Oficial" />
+                        <option value="Honraria" />
+                        <option value="Comunidade" />
+                      </datalist>
+                    </div>
+
+                    <div className="sm:col-span-2">
+                      <label className="text-xs font-bold text-slate-300 block mb-1">
+                        Descrição / Motivo da Conquista (Opcional)
+                      </label>
+                      <input
+                        type="text"
+                        value={newBadgeDesc}
+                        onChange={(e) => setNewBadgeDesc(e.target.value)}
+                        placeholder="Ex: Vencedor invicto do Torneio Oficial Light Dark TCG..."
+                        className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:border-amber-400 outline-none"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-xs font-bold text-slate-300 block mb-1">
+                        Cor da Insígnia
+                      </label>
+                      <select
+                        value={newBadgeColor}
+                        onChange={(e) => setNewBadgeColor(e.target.value as any)}
+                        className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-amber-400"
+                      >
+                        <option value="gold">Dourado (Campeão / Destaque)</option>
+                        <option value="purple">Roxo Macroversal</option>
+                        <option value="red">Vermelho Carmesim</option>
+                        <option value="blue">Azul Real</option>
+                        <option value="emerald">Verde Esmeralda</option>
+                        <option value="cyan">Ciano</option>
+                        <option value="pink">Rosa / Fúcsia</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="text-xs font-bold text-slate-300 block mb-1">
+                        URL de Imagem / Medalha (Opcional)
+                      </label>
+                      <input
+                        type="text"
+                        value={newBadgeImageUrl}
+                        onChange={(e) => setNewBadgeImageUrl(e.target.value)}
+                        placeholder="https://i.imgur.com/... (deixe vazio p/ usar ícone de Troféu)"
+                        className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:border-amber-400 outline-none"
+                      />
+                    </div>
+
+                    <div className="sm:col-span-2 flex flex-wrap items-center justify-between gap-3 pt-2">
+                      <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={saveToCatalogAlso}
+                          onChange={(e) => setSaveToCatalogAlso(e.target.checked)}
+                          className="rounded border-slate-700 bg-slate-950 text-amber-500"
+                        />
+                        <span>Salvar também nos meus Modelos de Insígnias para reutilizar em outros jogadores</span>
+                      </label>
+
+                      <button
+                        type="submit"
+                        disabled={isSavingBadge || !newBadgeTitle.trim()}
+                        className="px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 font-black text-xs uppercase tracking-wider flex items-center gap-2 shadow-lg transition cursor-pointer"
+                      >
+                        <Plus size={15} />
+                        <span>{isSavingBadge ? 'Salvando...' : `Conceder a ${activeDisplayName.split(' ')[0]}`}</span>
+                      </button>
+                    </div>
+                  </form>
+
+                  {/* Catálogo de Modelos Salvos pelo ADM para atribuir com 1 clique */}
+                  {adminBadgesCatalog.length > 0 && (
+                    <div className="pt-4 border-t border-slate-800 space-y-2.5">
+                      <span className="text-xs font-black uppercase tracking-wider text-amber-300 block">
+                        Insígnias Salvas no Seu Catálogo (Clique para conceder rapidamente):
+                      </span>
+                      <div className="flex flex-wrap gap-2">
+                        {adminBadgesCatalog.map((tpl) => {
+                          const alreadyHas = playerBadges.some(
+                            (b) => b.title.toLowerCase() === tpl.title.toLowerCase()
+                          );
+                          const st = getBadgeStyleClasses(tpl.color);
+                          return (
+                            <div
+                              key={tpl.id}
+                              className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs font-bold ${st.pill}`}
+                            >
+                              <span>
+                                {tpl.title} <span className="opacity-70 text-[10px]">({tpl.category})</span>
+                              </span>
+                              <button
+                                type="button"
+                                disabled={alreadyHas || isSavingBadge}
+                                onClick={() => handleAdminAssignFromCatalog(tpl)}
+                                className="px-2 py-0.5 rounded bg-emerald-500 hover:bg-emerald-400 disabled:opacity-40 text-slate-950 text-[10px] font-black cursor-pointer"
+                              >
+                                {alreadyHas ? 'Já possui' : '+ Conceder'}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleAdminDeleteCatalogTemplate(tpl.id)}
+                                className="text-red-400 hover:text-red-200 p-0.5 cursor-pointer"
+                                title="Excluir este modelo do catálogo"
+                              >
+                                <X size={12} />
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

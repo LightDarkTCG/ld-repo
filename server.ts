@@ -48,6 +48,39 @@ async function startServer() {
     });
   });
 
+  // Card Image Proxy for Canvas / PDF generation (avoids Imgur Referer/CORS blocks)
+  app.get('/api/image-proxy', async (req, res) => {
+    const rawUrl = String(req.query.url || '').trim();
+    if (!rawUrl || (!rawUrl.startsWith('http://') && !rawUrl.startsWith('https://'))) {
+      res.status(400).send('Invalid URL');
+      return;
+    }
+
+    try {
+      const upstream = await fetch(rawUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
+          'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8'
+        },
+        referrerPolicy: 'no-referrer'
+      });
+
+      if (!upstream.ok) {
+        res.status(upstream.status).send('Failed to fetch upstream image');
+        return;
+      }
+
+      const contentType = upstream.headers.get('content-type') || 'image/png';
+      const arrayBuffer = await upstream.arrayBuffer();
+      res.setHeader('Content-Type', contentType);
+      res.setHeader('Cache-Control', 'public, max-age=86400');
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.send(Buffer.from(arrayBuffer));
+    } catch (err) {
+      res.status(500).send('Proxy error');
+    }
+  });
+
   // CEP Lookup Proxy with ViaCEP + BrasilAPI fallback
   app.get('/api/cep/:cep', async (req, res) => {
     const cleanCep = String(req.params.cep || '').replace(/\D/g, '');

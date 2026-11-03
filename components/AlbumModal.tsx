@@ -68,6 +68,55 @@ export const COLLECTION_METADATA: Record<string, { subtitle: string; heroName: s
   'LOUCURAS CAÓTICAS': { subtitle: 'Coleção Especial de Artes Alternativas e Skins', heroName: 'O Caos', category: 'booster' },
 };
 
+export interface AlbumProductPreset {
+  id: string;
+  name: string;
+  subtitle: string;
+  badge: string;
+  includedCollections: string[];
+  foilId?: string;
+  foilLabel?: string;
+  heroName?: string;
+}
+
+/**
+ * Produtos Oficiais para adição rápida em lote no Álbum
+ */
+export const ALBUM_PRODUCTS: AlbumProductPreset[] = [
+  {
+    id: 'pacote_macroversal',
+    name: 'Pacote Macroversal',
+    subtitle: 'Adiciona de uma só vez os 9 Decks Estruturais + Todas as cartas do Booster Invasão do Caos (Todas em Foil 3D)',
+    badge: '9 ESTRUTURAIS + BOOSTER INVASÃO DO CAOS • TODAS FOIL 3D',
+    includedCollections: [
+      'Insanis',
+      'Príncipe do Macroverso',
+      'Mechs e Mangas',
+      'Herdeiro do Caos',
+      'Mundo em Chamas',
+      'Corruptor Profano',
+      'O Escolhido',
+      'Deusa da Lua',
+      'Invasão do Caos',
+      'Booster Invasão do Caos'
+    ],
+    foilId: 'confeti 3d',
+    foilLabel: 'Foil 3D',
+    heroName: 'Jim - O Senhor do Macroverso'
+  },
+  {
+    id: 'colecao_reforco_macroversal',
+    name: 'Coleção Reforço Macroversal',
+    subtitle: 'Adiciona de uma só vez todas as cartas do Booster Reforço Macroversal ao seu álbum',
+    badge: 'TODAS DO BOOSTER REFORÇO MACROVERSAL',
+    includedCollections: [
+      'Reforço Macroversal',
+      'Booster Reforço Macroversal'
+    ],
+    heroName: 'ASMONIOUS - A ESSÊNCIA DA CORRUPÇÃO'
+  }
+];
+
 /**
  * Identifica se a carta pertence ao formato / era Legado
  */
@@ -195,10 +244,10 @@ export const AlbumModal: React.FC<AlbumModalProps> = ({ isOpen, onClose, onSelec
   const [selectedFoilFilter, setSelectedFoilFilter] = useState<'all' | 'any_foil' | string>('all');
   const [cardForFoilModal, setCardForFoilModal] = useState<CardData | null>(null);
 
-  // Estados para inserção de coleções completas em lote
+  // Estados para inserção de produtos e coleções completas em lote
   const [showBulkModal, setShowBulkModal] = useState(false);
   const [bulkMode, setBulkMode] = useState<'add' | 'ensure_at_least'>('add');
-  const [bulkTab, setBulkTab] = useState<'all' | 'deck' | 'booster'>('all');
+  const [bulkTab, setBulkTab] = useState<'all' | 'products' | 'deck' | 'booster'>('all');
   const [bulkLoadingName, setBulkLoadingName] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
@@ -288,11 +337,140 @@ export const AlbumModal: React.FC<AlbumModalProps> = ({ isOpen, onClose, onSelec
     });
   }, [albumPoolCards, getQuantity]);
 
+  // Resumo dos Produtos Oficiais (Pacote Macroversal, Coleção Reforço Macroversal, etc.)
+  const productsSummary = useMemo(() => {
+    const universe = getCatalogueUniverse(allCards);
+    const fullCards = universe.cardsList;
+
+    return ALBUM_PRODUCTS.map(prod => {
+      const targetCols = new Set(prod.includedCollections.map(c => c.trim().toLowerCase()));
+      // Busca primeiro no pool ativo (ou no universo completo caso o filtro de edição oculte cartas do produto)
+      let matched = albumPoolCards.filter(card => {
+        const cCol = (card.collection || '').trim().toLowerCase();
+        if (targetCols.has(cCol)) return true;
+        return Boolean(card.variants && card.variants.some((v: any) => targetCols.has((v.collection || '').trim().toLowerCase())));
+      });
+
+      if (matched.length === 0) {
+        matched = fullCards.filter(card => {
+          const cCol = (card.collection || '').trim().toLowerCase();
+          if (targetCols.has(cCol)) return true;
+          return Boolean(card.variants && card.variants.some((v: any) => targetCols.has((v.collection || '').trim().toLowerCase())));
+        });
+      }
+
+      // Garante que todas as coleções integrantes do produto estejam representadas mesmo que o usuário esteja em outra aba
+      const matchedCols = new Set(matched.map(c => (c.collection || '').trim().toLowerCase()));
+      targetCols.forEach(tc => {
+        if (!matchedCols.has(tc)) {
+          const fromFull = fullCards.filter(card => (card.collection || '').trim().toLowerCase() === tc);
+          if (fromFull.length > 0) {
+            matched = [...matched, ...fromFull];
+          }
+        }
+      });
+
+      // Deduplica por chave do álbum
+      const uniqueMap = new Map<string, CardData>();
+      matched.forEach(c => {
+        const k = normalizeAlbumKey(c);
+        if (k && !uniqueMap.has(k)) {
+          uniqueMap.set(k, c);
+        }
+      });
+      const cards = Array.from(uniqueMap.values());
+
+      let ownedCount = 0;
+      let totalCopies = 0;
+      let foilCount = 0;
+      cards.forEach(c => {
+        const q = getQuantity(c);
+        if (q > 0) {
+          ownedCount++;
+          totalCopies += q;
+        }
+        if (prod.foilId && hasFoil(c, prod.foilId)) {
+          foilCount++;
+        }
+      });
+
+      const heroCard = prod.heroName
+        ? cards.find(c => c.name.toLowerCase().includes(prod.heroName!.toLowerCase())) || cards[0]
+        : cards[0];
+
+      return {
+        ...prod,
+        totalCards: cards.length,
+        ownedCount,
+        totalCopies,
+        foilCount,
+        percent: cards.length > 0 ? Math.round((ownedCount / cards.length) * 100) : 0,
+        cards,
+        coverImage: heroCard?.imageUrl
+      };
+    });
+  }, [allCards, albumPoolCards, getQuantity, hasFoil]);
+
   // Coleção atualmente selecionada no filtro (se for uma coleção real)
   const currentCollectionData = useMemo(() => {
     if (selectedCollection === 'Todas' || selectedCollection.startsWith('★')) return null;
     return collectionsSummary.find(c => c.name === selectedCollection) || null;
   }, [collectionsSummary, selectedCollection]);
+
+  const handleAddProduct = async (productId: string, mode: 'add' | 'ensure_at_least' = bulkMode) => {
+    if (!user) {
+      if (onOpenAuth) onOpenAuth();
+      else alert('Faça login com sua conta para salvar seus produtos no álbum.');
+      return;
+    }
+
+    const prod = productsSummary.find(p => p.id === productId);
+    if (!prod || prod.cards.length === 0) return;
+
+    setBulkLoadingName(prod.id);
+    try {
+      const eligibleCards = isUserAdmin(user)
+        ? prod.cards
+        : prod.cards.filter(c => !isCardRarePrint(c));
+
+      const foilsToApply = prod.foilId ? [prod.foilId] : undefined;
+      const count = await addCollectionCards(eligibleCards, mode, 1, foilsToApply);
+      const foilMsg = prod.foilLabel ? ` (todas marcadas com ${prod.foilLabel})` : '';
+      const actionText = mode === 'add' ? 'adicionadas (+1 cópia de cada)' : 'completadas com sucesso';
+      let message = `Produto "${prod.name}": ${count} cartas foram ${actionText}${foilMsg}!`;
+      if (prod.cards.length > eligibleCards.length) {
+        message += ' (Cartas de tiragem rara requerem aprovação individual do administrador).';
+      }
+      setToastMessage(message);
+      setTimeout(() => setToastMessage(null), 4500);
+    } catch (err) {
+      console.error('Erro ao adicionar produto:', err);
+      alert('Houve um erro ao atualizar o álbum. Tente novamente.');
+    } finally {
+      setBulkLoadingName(null);
+    }
+  };
+
+  const handleRemoveProduct = async (productId: string) => {
+    if (!user) return;
+    const prod = productsSummary.find(p => p.id === productId);
+    if (!prod || prod.cards.length === 0) return;
+
+    if (!window.confirm(`Deseja realmente zerar no seu álbum todas as cartas do produto "${prod.name}"?`)) {
+      return;
+    }
+
+    setBulkLoadingName(prod.id);
+    try {
+      await removeCollectionCards(prod.cards);
+      setToastMessage(`Cartas do produto "${prod.name}" foram zeradas no seu álbum.`);
+      setTimeout(() => setToastMessage(null), 3500);
+    } catch (err) {
+      console.error('Erro ao remover produto:', err);
+    } finally {
+      setBulkLoadingName(null);
+    }
+  };
 
   const handleAddCollection = async (collectionName: string, mode: 'add' | 'ensure_at_least' = bulkMode) => {
     if (!user) {
@@ -518,15 +696,15 @@ export const AlbumModal: React.FC<AlbumModalProps> = ({ isOpen, onClose, onSelec
             </div>
 
             <div className="flex items-center gap-1.5 shrink-0">
-              {/* Inserir Coleção Rápido */}
+              {/* Inserir Produto / Coleção Rápido */}
               <button
                 type="button"
                 onClick={() => setShowBulkModal(true)}
                 className="px-2 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold flex items-center gap-1 active:scale-95 shadow-sm"
-                title="Inserir Coleção ou Deck Completo"
+                title="Adicionar Produtos, Coleções ou Decks Completos"
               >
                 <PackagePlus size={13} />
-                <span>+ Deck</span>
+                <span>+ Produto / Deck</span>
               </button>
 
               {/* Ranking Hall da Fama */}
@@ -854,15 +1032,15 @@ export const AlbumModal: React.FC<AlbumModalProps> = ({ isOpen, onClose, onSelec
               </button>
             )}
 
-            {/* BOTÃO PARA INSERIR COLEÇÕES / DECKS COMPLETOS */}
+            {/* BOTÃO PARA INSERIR PRODUTOS / COLEÇÕES / DECKS COMPLETOS */}
             <button
               onClick={() => setShowBulkModal(true)}
               className="px-3 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white transition flex items-center gap-1.5 shadow-lg shadow-emerald-950/40 active:scale-95 shrink-0"
-              title="Adicionar Decks Estruturais ou Coleções inteiras de uma só vez ao seu álbum"
+              title="Adicionar Produtos Oficiais (Pacote Macroversal, Coleção Reforço Macroversal), Decks Estruturais ou Coleções inteiras de uma só vez ao seu álbum"
             >
               <PackagePlus size={16} />
-              <span className="hidden sm:inline">Inserir Coleção / Deck</span>
-              <span className="sm:hidden">+ Coleção</span>
+              <span className="hidden sm:inline">Adicionar Produto / Coleção</span>
+              <span className="sm:hidden">+ Produto</span>
             </button>
 
             {!user ? (
@@ -1732,7 +1910,7 @@ export const AlbumModal: React.FC<AlbumModalProps> = ({ isOpen, onClose, onSelec
 
       </div>
 
-      {/* MODAL DE INSERÇÃO DE COLEÇÕES / DECKS COMPLETOS */}
+      {/* MODAL DE INSERÇÃO DE PRODUTOS, COLEÇÕES & DECKS COMPLETOS */}
       {showBulkModal && (
         <div className="fixed inset-0 z-[160] bg-black/85 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 animate-in fade-in duration-200">
           <div 
@@ -1747,10 +1925,10 @@ export const AlbumModal: React.FC<AlbumModalProps> = ({ isOpen, onClose, onSelec
                 </div>
                 <div>
                   <h3 className="text-lg sm:text-xl font-black text-white flex items-center gap-2">
-                    Inserir Coleções & Decks Completos
+                    Adicionar Produtos, Coleções & Decks
                   </h3>
                   <p className="text-xs sm:text-sm text-slate-400 mt-0.5">
-                    Adicione todas as cartas de um Deck Estrutural ou Coleção de uma só vez ao seu álbum!
+                    Adicione produtos completos (ex: Pacote Macroversal em Foil 3D ou Coleção Reforço Macroversal), Decks ou Boosters de uma só vez!
                   </p>
                 </div>
               </div>
@@ -1794,14 +1972,25 @@ export const AlbumModal: React.FC<AlbumModalProps> = ({ isOpen, onClose, onSelec
               </div>
 
               {/* ABAS */}
-              <div className="flex items-center bg-slate-950 border border-slate-800 rounded-xl p-1 gap-1">
+              <div className="flex items-center bg-slate-950 border border-slate-800 rounded-xl p-1 gap-1 flex-wrap">
                 <button
                   onClick={() => setBulkTab('all')}
                   className={`px-3 py-1 rounded-lg font-bold transition text-xs ${
                     bulkTab === 'all' ? 'bg-slate-800 text-white shadow-sm' : 'text-slate-400 hover:text-white'
                   }`}
                 >
-                  Todas ({collectionsSummary.length})
+                  Tudo
+                </button>
+                <button
+                  onClick={() => setBulkTab('products')}
+                  className={`px-3 py-1 rounded-lg font-bold transition text-xs flex items-center gap-1 ${
+                    bulkTab === 'products'
+                      ? 'bg-emerald-950/90 text-emerald-300 border border-emerald-500/50 shadow-sm'
+                      : 'text-emerald-400 hover:text-emerald-200'
+                  }`}
+                >
+                  <PackagePlus size={12} />
+                  <span>Produtos ({productsSummary.length})</span>
                 </button>
                 <button
                   onClick={() => setBulkTab('deck')}
@@ -1824,112 +2013,253 @@ export const AlbumModal: React.FC<AlbumModalProps> = ({ isOpen, onClose, onSelec
               </div>
             </div>
 
-            {/* LISTA DE CARDS DAS COLEÇÕES */}
-            <div className="flex-1 overflow-y-auto p-4 sm:p-6 bg-[#08080c] space-y-3.5 custom-scrollbar">
-              {collectionsSummary
-                .filter(col => bulkTab === 'all' || col.category === bulkTab)
-                .map(col => {
-                  const isLoading = bulkLoadingName === col.name;
-                  const isComplete = col.ownedCount >= col.totalCards;
+            {/* LISTA DE PRODUTOS E COLEÇÕES */}
+            <div className="flex-1 overflow-y-auto p-4 sm:p-6 bg-[#08080c] space-y-4 custom-scrollbar">
+              {/* SEÇÃO DE PRODUTOS OFICIAIS (Pacote Macroversal / Coleção Reforço Macroversal) */}
+              {(bulkTab === 'all' || bulkTab === 'products') && (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-xs font-black uppercase tracking-wider text-emerald-400 flex items-center gap-2">
+                      <PackagePlus size={15} />
+                      Produtos Oficiais (Adição Completa em 1 Clique)
+                    </h4>
+                  </div>
 
-                  return (
-                    <div
-                      key={col.name}
-                      className={`p-3.5 sm:p-4 rounded-2xl border transition flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 ${
-                        isComplete
-                          ? 'bg-slate-900/70 border-emerald-500/40 shadow-sm'
-                          : 'bg-slate-900/40 border-slate-800 hover:border-purple-500/40'
-                      }`}
-                    >
-                      <div className="flex items-center gap-3.5 flex-1 min-w-0">
-                        <div className="w-12 h-16 sm:w-14 sm:h-20 rounded-xl bg-slate-950 overflow-hidden shrink-0 border border-slate-700/80 shadow-md flex items-center justify-center">
-                          {col.coverImage ? (
-                            <img src={col.coverImage} alt={col.name} className="w-full h-full object-cover" />
-                          ) : (
-                            <Layers size={22} className="text-purple-400" />
-                          )}
-                        </div>
+                  {productsSummary.map(prod => {
+                    const isLoading = bulkLoadingName === prod.id;
+                    const isComplete = prod.totalCards > 0 && prod.ownedCount >= prod.totalCards;
+                    const isFoilComplete = prod.foilId ? (prod.totalCards > 0 && prod.foilCount >= prod.totalCards) : true;
 
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <h4 className="text-sm sm:text-base font-black text-white">
-                              {col.name}
-                            </h4>
-                            <span className={`px-2 py-0.5 rounded-md text-[10px] font-extrabold uppercase tracking-wider ${
-                              col.category === 'deck' 
-                                ? 'bg-amber-950/80 text-amber-300 border border-amber-600/40' 
-                                : 'bg-purple-950/80 text-purple-300 border border-purple-600/40'
-                            }`}>
-                              {col.category === 'deck' ? 'Deck Estrutural (30)' : 'Booster Pack'}
-                            </span>
-                            {isComplete && (
-                              <span className="px-2 py-0.5 rounded-md text-[10px] font-extrabold bg-emerald-950/80 text-emerald-300 border border-emerald-500/40 flex items-center gap-1">
-                                <CheckCircle2 size={11} /> Completo
+                    return (
+                      <div
+                        key={prod.id}
+                        className={`p-4 rounded-2xl border-2 transition flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 ${
+                          isComplete && isFoilComplete
+                            ? 'bg-gradient-to-r from-emerald-950/30 via-slate-900/80 to-slate-900/70 border-emerald-500/50 shadow-lg shadow-emerald-950/20'
+                            : 'bg-gradient-to-r from-purple-950/35 via-slate-900/70 to-slate-900/50 border-purple-500/40 hover:border-emerald-500/50'
+                        }`}
+                      >
+                        <div className="flex items-center gap-3.5 flex-1 min-w-0">
+                          <div className="w-14 h-20 sm:w-16 sm:h-22 rounded-xl bg-slate-950 overflow-hidden shrink-0 border-2 border-purple-500/50 shadow-lg flex items-center justify-center relative">
+                            {prod.coverImage ? (
+                              <img src={prod.coverImage} alt={prod.name} className="w-full h-full object-cover" />
+                            ) : (
+                              <PackagePlus size={24} className="text-emerald-400" />
+                            )}
+                            {prod.foilLabel && (
+                              <span className="absolute bottom-0 inset-x-0 bg-emerald-600/95 text-[8px] font-black text-white text-center py-0.5 uppercase tracking-tighter">
+                                {prod.foilLabel}
                               </span>
                             )}
                           </div>
-                          <p className="text-xs text-slate-400 mt-0.5">
-                            {col.subtitle} • {col.totalCards} cartas registradas
-                          </p>
 
-                          {/* Progresso no Álbum */}
-                          <div className="mt-2 space-y-1 max-w-md">
-                            <div className="flex items-center justify-between text-[11px]">
-                              <span className="text-slate-400">Posse no Álbum:</span>
-                              <span className="font-bold text-slate-200">
-                                {col.ownedCount} de {col.totalCards} únicas ({col.percent}%) • {col.totalCopies} cópias
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <h4 className="text-base sm:text-lg font-black text-white">
+                                {prod.name}
+                              </h4>
+                              <span className="px-2 py-0.5 rounded-md text-[10px] font-extrabold uppercase tracking-wider bg-emerald-950/90 text-emerald-300 border border-emerald-500/50">
+                                {prod.badge}
                               </span>
+                              {isComplete && isFoilComplete && (
+                                <span className="px-2 py-0.5 rounded-md text-[10px] font-extrabold bg-emerald-600 text-white flex items-center gap-1">
+                                  <CheckCircle2 size={11} /> No Álbum
+                                </span>
+                              )}
                             </div>
-                            <div className="w-full bg-slate-950 h-2 rounded-full overflow-hidden border border-slate-800">
-                              <div
-                                className={`h-full rounded-full transition-all duration-500 ${
-                                  isComplete ? 'bg-gradient-to-r from-emerald-500 to-teal-400' : 'bg-gradient-to-r from-purple-600 to-indigo-500'
-                                }`}
-                                style={{ width: `${col.percent}%` }}
-                              />
+
+                            <p className="text-xs text-slate-300 mt-1">
+                              {prod.subtitle} • <strong className="text-white">{prod.totalCards} cartas incluídas</strong>
+                            </p>
+
+                            {/* Lista resumida das coleções inclusas */}
+                            <div className="flex flex-wrap gap-1 mt-2">
+                              {prod.includedCollections.map(colName => (
+                                <span
+                                  key={colName}
+                                  className="px-1.5 py-0.5 rounded bg-slate-950/90 border border-slate-800 text-[10px] text-slate-300 font-semibold"
+                                >
+                                  {colName}
+                                </span>
+                              ))}
+                            </div>
+
+                            {/* Progresso no Álbum */}
+                            <div className="mt-2.5 space-y-1 max-w-md">
+                              <div className="flex items-center justify-between text-[11px]">
+                                <span className="text-slate-400">Posse deste Produto:</span>
+                                <span className="font-bold text-slate-200">
+                                  {prod.ownedCount} de {prod.totalCards} cartas ({prod.percent}%)
+                                  {prod.foilId ? ` • ${prod.foilCount} com ${prod.foilLabel}` : ''}
+                                </span>
+                              </div>
+                              <div className="w-full bg-slate-950 h-2 rounded-full overflow-hidden border border-slate-800">
+                                <div
+                                  className="h-full rounded-full transition-all duration-500 bg-gradient-to-r from-emerald-500 via-teal-400 to-cyan-400"
+                                  style={{ width: `${prod.percent}%` }}
+                                />
+                              </div>
                             </div>
                           </div>
                         </div>
-                      </div>
 
-                      {/* Botões de Ação */}
-                      <div className="flex items-center gap-2 w-full sm:w-auto justify-end shrink-0">
-                        {col.ownedCount > 0 && (
-                          <button
-                            onClick={() => handleRemoveCollection(col.name)}
-                            disabled={isLoading}
-                            className="p-2.5 rounded-xl bg-slate-900 hover:bg-red-950/80 text-slate-400 hover:text-red-300 border border-slate-800 hover:border-red-700/60 transition text-xs font-bold"
-                            title="Zerar cópias desta coleção no álbum"
-                          >
-                            <Trash2 size={15} />
-                          </button>
-                        )}
-
-                        <button
-                          onClick={() => handleAddCollection(col.name)}
-                          disabled={isLoading}
-                          className="flex-1 sm:flex-initial px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-2 transition shadow-lg shadow-emerald-950/40 active:scale-95 disabled:opacity-50"
-                        >
-                          {isLoading ? (
-                            <>
-                              <RefreshCw size={15} className="animate-spin" />
-                              <span>Salvando...</span>
-                            </>
-                          ) : (
-                            <>
-                              <Plus size={15} />
-                              <span>
-                                {bulkMode === 'add'
-                                  ? `Inserir Coleção (+1 cada)`
-                                  : `Completar Faltantes`}
-                              </span>
-                            </>
+                        {/* Botões de Ação do Produto */}
+                        <div className="flex items-center gap-2 w-full sm:w-auto justify-end shrink-0">
+                          {prod.ownedCount > 0 && (
+                            <button
+                              onClick={() => handleRemoveProduct(prod.id)}
+                              disabled={isLoading}
+                              className="p-2.5 rounded-xl bg-slate-900 hover:bg-red-950/80 text-slate-400 hover:text-red-300 border border-slate-800 hover:border-red-700/60 transition text-xs font-bold"
+                              title="Zerar cartas deste produto no álbum"
+                            >
+                              <Trash2 size={15} />
+                            </button>
                           )}
-                        </button>
+
+                          <button
+                            onClick={() => handleAddProduct(prod.id)}
+                            disabled={isLoading}
+                            className="flex-1 sm:flex-initial px-4 py-3 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black text-xs flex items-center justify-center gap-2 transition shadow-lg shadow-emerald-950/50 active:scale-95 disabled:opacity-50"
+                          >
+                            {isLoading ? (
+                              <>
+                                <RefreshCw size={15} className="animate-spin" />
+                                <span>Adicionando Produto...</span>
+                              </>
+                            ) : (
+                              <>
+                                <PackagePlus size={16} />
+                                <span>
+                                  {prod.foilLabel
+                                    ? `Adicionar Produto (${prod.foilLabel})`
+                                    : 'Adicionar Produto Completo'}
+                                </span>
+                              </>
+                            )}
+                          </button>
+                        </div>
                       </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* SEÇÃO DE DECKS E BOOSTERS INDIVIDUAIS */}
+              {bulkTab !== 'products' && (
+                <div className="space-y-3">
+                  {bulkTab === 'all' && (
+                    <h4 className="text-xs font-black uppercase tracking-wider text-purple-400 flex items-center gap-2 pt-2">
+                      <Layers size={15} />
+                      Decks Estruturais & Boosters Individuais
+                    </h4>
+                  )}
+
+                  {collectionsSummary
+                    .filter(col => bulkTab === 'all' || col.category === bulkTab)
+                    .map(col => {
+                      const isLoading = bulkLoadingName === col.name;
+                      const isComplete = col.ownedCount >= col.totalCards;
+
+                      return (
+                        <div
+                          key={col.name}
+                          className={`p-3.5 sm:p-4 rounded-2xl border transition flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 ${
+                            isComplete
+                              ? 'bg-slate-900/70 border-emerald-500/40 shadow-sm'
+                              : 'bg-slate-900/40 border-slate-800 hover:border-purple-500/40'
+                          }`}
+                        >
+                          <div className="flex items-center gap-3.5 flex-1 min-w-0">
+                            <div className="w-12 h-16 sm:w-14 sm:h-20 rounded-xl bg-slate-950 overflow-hidden shrink-0 border border-slate-700/80 shadow-md flex items-center justify-center">
+                              {col.coverImage ? (
+                                <img src={col.coverImage} alt={col.name} className="w-full h-full object-cover" />
+                              ) : (
+                                <Layers size={22} className="text-purple-400" />
+                              )}
+                            </div>
+
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <h4 className="text-sm sm:text-base font-black text-white">
+                                  {col.name}
+                                </h4>
+                                <span className={`px-2 py-0.5 rounded-md text-[10px] font-extrabold uppercase tracking-wider ${
+                                  col.category === 'deck' 
+                                    ? 'bg-amber-950/80 text-amber-300 border border-amber-600/40' 
+                                    : 'bg-purple-950/80 text-purple-300 border border-purple-600/40'
+                                }`}>
+                                  {col.category === 'deck' ? 'Deck Estrutural (30)' : 'Booster Pack'}
+                                </span>
+                                {isComplete && (
+                                  <span className="px-2 py-0.5 rounded-md text-[10px] font-extrabold bg-emerald-950/80 text-emerald-300 border border-emerald-500/40 flex items-center gap-1">
+                                    <CheckCircle2 size={11} /> Completo
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-xs text-slate-400 mt-0.5">
+                                {col.subtitle} • {col.totalCards} cartas registradas
+                              </p>
+
+                              {/* Progresso no Álbum */}
+                              <div className="mt-2 space-y-1 max-w-md">
+                                <div className="flex items-center justify-between text-[11px]">
+                                  <span className="text-slate-400">Posse no Álbum:</span>
+                                  <span className="font-bold text-slate-200">
+                                    {col.ownedCount} de {col.totalCards} únicas ({col.percent}%) • {col.totalCopies} cópias
+                                  </span>
+                                </div>
+                                <div className="w-full bg-slate-950 h-2 rounded-full overflow-hidden border border-slate-800">
+                                  <div
+                                    className={`h-full rounded-full transition-all duration-500 ${
+                                      isComplete ? 'bg-gradient-to-r from-emerald-500 to-teal-400' : 'bg-gradient-to-r from-purple-600 to-indigo-500'
+                                    }`}
+                                    style={{ width: `${col.percent}%` }}
+                                  />
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Botões de Ação */}
+                          <div className="flex items-center gap-2 w-full sm:w-auto justify-end shrink-0">
+                            {col.ownedCount > 0 && (
+                              <button
+                                onClick={() => handleRemoveCollection(col.name)}
+                                disabled={isLoading}
+                                className="p-2.5 rounded-xl bg-slate-900 hover:bg-red-950/80 text-slate-400 hover:text-red-300 border border-slate-800 hover:border-red-700/60 transition text-xs font-bold"
+                                title="Zerar cópias desta coleção no álbum"
+                              >
+                                <Trash2 size={15} />
+                              </button>
+                            )}
+
+                            <button
+                              onClick={() => handleAddCollection(col.name)}
+                              disabled={isLoading}
+                              className="flex-1 sm:flex-initial px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-2 transition shadow-lg shadow-emerald-950/40 active:scale-95 disabled:opacity-50"
+                            >
+                              {isLoading ? (
+                                <>
+                                  <RefreshCw size={15} className="animate-spin" />
+                                  <span>Salvando...</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Plus size={15} />
+                                  <span>
+                                    {bulkMode === 'add'
+                                      ? `Inserir Coleção (+1 cada)`
+                                      : `Completar Faltantes`}
+                                  </span>
+                                </>
+                              )}
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                </div>
+              )}
             </div>
 
             {/* FOOTER DO MODAL */}

@@ -105,8 +105,8 @@ export const FOIL_TYPES: FoilTypeInfo[] = [
   },
   { 
     id: 'confeti 3d', 
-    name: 'Confeti 3D', 
-    shortName: 'Confeti 3D',
+    name: 'Foil 3D (Confeti 3D)', 
+    shortName: 'Foil 3D',
     color: 'text-emerald-300', 
     badgeBg: 'bg-emerald-950/70 text-emerald-200 border-emerald-500/50', 
     border: 'border-emerald-500', 
@@ -310,20 +310,24 @@ export const setUserCardQuantity = async (
  */
 export const setMultipleUserCardQuantities = async (
   userId: string,
-  entries: { cardOrCode: CardData | string; quantity: number; frame?: string }[]
+  entries: { cardOrCode: CardData | string; quantity: number; frame?: string; foils?: string[] }[]
 ): Promise<void> => {
   if (!userId || !entries || entries.length === 0) return;
   const albumRef = doc(db, 'users', userId, 'album', 'data');
   const now = new Date().toISOString();
 
-  const cardsUpdate: Record<string, { quantity: number; updatedAt: string }> = {};
+  const cardsUpdate: Record<string, { quantity: number; foils?: string[]; updatedAt: string }> = {};
   for (const entry of entries) {
     const key = normalizeAlbumKey(entry.cardOrCode, entry.frame);
     if (!key) continue;
-    cardsUpdate[key] = {
+    const itemPayload: { quantity: number; foils?: string[]; updatedAt: string } = {
       quantity: Math.max(0, Math.floor(entry.quantity)),
       updatedAt: now
     };
+    if (entry.foils !== undefined) {
+      itemPayload.foils = Array.from(new Set(entry.foils.map(f => f.trim().toLowerCase()))).filter(Boolean);
+    }
+    cardsUpdate[key] = itemPayload;
   }
 
   await setDoc(albumRef, {
@@ -374,7 +378,7 @@ export const toggleUserCardFoil = async (
   currentEntry?: AlbumEntry,
   frame?: string
 ): Promise<string[]> => {
-  if (!userId || !cardOrCode || !foilId) return [];
+  if (!userId || !foilId) return [];
   const key = normalizeAlbumKey(cardOrCode, frame);
   if (!key) return [];
 
@@ -455,25 +459,30 @@ export const useUserAlbum = (userId?: string | null) => {
   };
 
   /**
-   * Adiciona todas as cartas de uma coleção/deck de uma só vez ao álbum.
+   * Adiciona todas as cartas de uma coleção/deck/produto de uma só vez ao álbum.
    * - mode 'add': adiciona +qty cópias para cada carta da coleção.
    * - mode 'ensure_at_least': garante que o usuário tenha pelo menos qty cópias de cada carta (completa faltantes).
-   * Cada carta mantém sua identidade (Legado vs Moderno) de forma independente.
+   * - foilTypesToAdd: se informado (ex: ['confeti 3d']), marca esses tipos de foil em todas as cartas adicionadas.
    */
   const addCollectionCards = async (
     cards: (CardData | string)[],
     mode: 'add' | 'ensure_at_least' = 'add',
-    qty: number = 1
+    qty: number = 1,
+    foilTypesToAdd?: string[]
   ): Promise<number> => {
     if (!userId || !cards || cards.length === 0) return 0;
 
-    const entriesMap = new Map<string, { cardOrCode: CardData | string; quantity: number }>();
+    const entriesMap = new Map<string, { cardOrCode: CardData | string; quantity: number; foils?: string[] }>();
     for (const c of cards) {
       const key = normalizeAlbumKey(c);
       if (!key) continue;
       const current = getQuantity(c);
       const targetQty = mode === 'add' ? current + qty : Math.max(current, qty);
-      entriesMap.set(key, { cardOrCode: c, quantity: targetQty });
+      const existingFoils = album[key]?.foils || [];
+      const mergedFoils = foilTypesToAdd && foilTypesToAdd.length > 0
+        ? Array.from(new Set([...existingFoils, ...foilTypesToAdd.map(f => f.trim().toLowerCase())]))
+        : (existingFoils.length > 0 ? existingFoils : undefined);
+      entriesMap.set(key, { cardOrCode: c, quantity: targetQty, foils: mergedFoils });
     }
 
     const entries = Array.from(entriesMap.values());
@@ -486,11 +495,11 @@ export const useUserAlbum = (userId?: string | null) => {
    */
   const removeCollectionCards = async (cards: (CardData | string)[]): Promise<number> => {
     if (!userId || !cards || cards.length === 0) return 0;
-    const entriesMap = new Map<string, { cardOrCode: CardData | string; quantity: number }>();
+    const entriesMap = new Map<string, { cardOrCode: CardData | string; quantity: number; foils?: string[] }>();
     for (const c of cards) {
       const key = normalizeAlbumKey(c);
       if (!key) continue;
-      entriesMap.set(key, { cardOrCode: c, quantity: 0 });
+      entriesMap.set(key, { cardOrCode: c, quantity: 0, foils: [] });
     }
     const entries = Array.from(entriesMap.values());
     await setMultipleUserCardQuantities(userId, entries);

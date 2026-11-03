@@ -22,7 +22,7 @@ const zones: ZoneInfo[] = [
     id: 'combatant',
     title: 'Área Combatente / Herói',
     tag: 'Linha de Frente (Máx. 6)',
-    description: 'Máximo de 6 cartas na linha de frente. Aqui ficam seus Combatentes e seu Herói principal. Eles atacam os combatentes adversários e defendem o jogador diretamente.',
+    description: 'Máximo de 6 cartas na linha de frente. Aqui ficam seus Combatentes, seu Herói principal e Tokens invocados (Tokens ocupam espaço em campo, mas não declaram ataques, não possuem efeitos e não podem ser equipados).',
     type: 'combatant',
     color: 'bg-red-600',
     icon: Sword
@@ -83,9 +83,9 @@ const zones: ZoneInfo[] = [
   },
   {
     id: 'hero-deck',
-    title: 'Deck de Heróis',
-    tag: 'Identidade & Variantes',
-    description: 'Baralho à parte contendo apenas suas cartas de Herói. Usa-se apenas um Herói base por deck, porém com liberdade para incluir suas variantes alternativas.',
+    title: 'Deck de Heróis & Tokens',
+    tag: 'Heróis + Até 15 Tokens',
+    description: 'Baralho à parte contendo suas cartas de Herói (1 Herói base e suas variações) e até no máximo 15 Tokens (moldura amarela). Quando Heróis ou Tokens deixam o campo, eles voltam para o Deck de Heróis.',
     type: 'hero-deck',
     color: 'bg-amber-500 text-slate-900',
     icon: Crown

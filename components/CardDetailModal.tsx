@@ -294,6 +294,7 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card: initialC
     };
 
     const isEquipmentValid = (equipDesc: string, targetType?: string, targetName?: string): boolean => {
+      if (targetType === 'Token') return false;
       const desc = (equipDesc || "").toLowerCase();
       if (desc.includes('só pode ser equipada em heróis') || desc.includes('only equip to heroes')) {
         if (targetType !== 'Herói') return false;
@@ -1073,6 +1074,7 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card: initialC
                     <option value="Combatente">Combatente</option>
                     <option value="Equipamento">Equipamento</option>
                     <option value="Efeito">Efeito</option>
+                    <option value="Token">Token</option>
                  </select>
               ) : (
                  <span className="px-3 py-1 bg-slate-800 rounded text-slate-300 border border-slate-700">{card.type}</span>

@@ -1,6 +1,6 @@
 import { LucideIcon } from 'lucide-react';
 
-export type CardType = 'Herói' | 'Combatente' | 'Equipamento' | 'Efeito';
+export type CardType = 'Herói' | 'Combatente' | 'Equipamento' | 'Efeito' | 'Token';
 
 export const LEGADO_RARITIES = [
   'Legado Comum',

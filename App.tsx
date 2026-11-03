@@ -204,6 +204,11 @@ const TYPE_DEFINITIONS: Record<string, { text: string, colorName: string, colorC
     text: "As cartas de equipamentos alteram status, adicionam arquétipos ou geram algum efeito diferente ao combatente equipado. Elas se vinculam a um combatente/herói até que o mesmo deixe o campo, caso o equipado deixe o campo, equipamento vai para a Zona Morta, caso um herói seja substituído por outro, o equipamento passa para o novo herói, não há limites de equipamentos em um mesmo alvo, o que define a ordem de prioridade de efeito entre eles é a Categoria, quanto maior, mais prioridade.",
     colorName: "VERDE",
     colorClass: "text-green-500 border-green-500"
+  },
+  'Token': {
+    text: "Tokens são cartas vinculadas a cartas que se utilizam delas, tokens só podem ser afetadas por cartas que as afetam diretamente, elas ocupam espaço em campo mas não declaram ataques e nem possuem efeitos, tokens também não podem ser equipados. Os Tokens ficam no deck de heróis e você pode colocar no máximo 15, quando deixam o campo, elas voltam para o deck de heróis.",
+    colorName: "AMARELO",
+    colorClass: "text-yellow-400 border-yellow-400"
   }
 };
 
@@ -285,6 +290,7 @@ const ManualModal = ({ isOpen, onClose }: { isOpen: boolean, onClose: () => void
                     <ul className="space-y-3 text-slate-300 text-sm leading-relaxed">
                       <li><strong className="text-white">Deck:</strong> Composto por 30 a 35 cartas (contando com os heróis, se houver).</li>
                       <li><strong className="text-white">Restrições:</strong> Não é permitido cartas repetidas. O uso de Herói é opcional, mas se usar, apenas 1 Herói e suas variações no Deck (com exceções para heróis que interagem entre si).</li>
+                      <li><strong className="text-white">Tokens:</strong> Os Tokens ficam no Deck de Heróis (máximo de 15). Quando deixam o campo, voltam para o Deck de Heróis.</li>
                       <li><strong className="text-white">Opcionais:</strong> Campo físico, marcadores de status/vida/mana e dados D6/D20 para efeitos.</li>
                     </ul>
                   </div>
@@ -372,6 +378,14 @@ const ManualModal = ({ isOpen, onClose }: { isOpen: boolean, onClose: () => void
                       <p className="text-slate-300 text-sm">Cartas de uso único ou contínuo. Possuem custo e condições. Após o uso, vão para a Zona Morta.</p>
                     </div>
                   </div>
+
+                  <div className="flex gap-4 items-start bg-slate-900/50 p-4 rounded border-l-4 border-yellow-500">
+                    <div className="bg-yellow-900/20 p-3 rounded text-yellow-400"><Hexagon size={24}/></div>
+                    <div>
+                      <h4 className="font-bold text-yellow-400 text-lg">Token (Amarelo)</h4>
+                      <p className="text-slate-300 text-sm">Tokens são cartas vinculadas a cartas que se utilizam delas, só podem ser afetadas por cartas que as afetam diretamente, ocupam espaço em campo mas não declaram ataques, não possuem efeitos e não podem ser equipados. Ficam no Deck de Heróis (máximo de 15) e, quando deixam o campo, voltam para o Deck de Heróis.</p>
+                    </div>
+                  </div>
                 </div>
               </div>
             )}
@@ -453,6 +467,7 @@ const ManualModal = ({ isOpen, onClose }: { isOpen: boolean, onClose: () => void
                     <li className="flex items-start gap-2"><span className="text-purple-500">•</span> Vida (20) e Mana (12) podem ser ultrapassados por efeitos.</li>
                     <li className="flex items-start gap-2"><span className="text-purple-500">•</span> Arquétipos Lúmen/Darkus podem evoluir com cartas específicas.</li>
                     <li className="flex items-start gap-2"><span className="text-purple-500">•</span> Não há limite para cartas na mão.</li>
+                    <li className="flex items-start gap-2"><span className="text-yellow-400">•</span> Tokens ficam no Deck de Heróis (máximo 15), ocupam espaço em campo sem atacar ou receber equipamentos, e retornam ao Deck de Heróis ao deixar o campo.</li>
                   </ul>
                 </div>
 
@@ -1205,6 +1220,7 @@ const CatalogModal = ({
                 <option className="bg-purple-950" value="Combatente">Combatente</option>
                 <option className="bg-purple-950" value="Equipamento">Equipamento</option>
                 <option className="bg-purple-950" value="Efeito">Efeito</option>
+                <option className="bg-purple-950" value="Token">Token</option>
               </select>
             </div>
           </div>
@@ -1455,7 +1471,7 @@ export default function App() {
   const [scrolled, setScrolled] = useState(false);
   const [currentVideoIndex, setCurrentVideoIndex] = useState(0);
   const [showcaseCards, setShowcaseCards] = useState<CardData[]>(() => {
-    return readBrowserCache<CardData[]>('ld_cache_showcaseCards_v2') || [];
+    return readBrowserCache<CardData[]>('ld_cache_showcaseCards_v3') || [];
   });
   const [selectedProduct, setSelectedProduct] = useState<ExclusiveProduct | null>(null);
   const [selectedProductVariationIndex, setSelectedProductVariationIndex] = useState<number | undefined>(undefined);
@@ -1946,11 +1962,22 @@ export default function App() {
       const combatant = getModernByType('Combatente');
       const effect = getModernByType('Efeito');
       const equipment = getModernByType('Equipamento');
+      const tokenCard = getModernByType('Token') || {
+        code: 'LD-TOKEN-01',
+        name: 'Token',
+        type: 'Token' as CardType,
+        archetype: 'Vinculado',
+        collection: 'Deck de Heróis (Máx. 15)',
+        ct: 0,
+        frame: 'Moderno' as const,
+        description: 'Tokens são cartas vinculadas a cartas que se utilizam delas, só podem ser afetadas por cartas que as afetam diretamente, ocupam espaço em campo mas não declaram ataques e nem possuem efeitos, tokens também não podem ser equipados. Ficam no deck de heróis (máximo 15) e quando deixam o campo voltam para o deck de heróis.',
+        imageUrl: ''
+      };
 
       if (hero && combatant && effect && equipment) {
-        const nextShowcase = [hero, combatant, effect, equipment];
+        const nextShowcase = [hero, combatant, effect, equipment, tokenCard];
         setShowcaseCards(nextShowcase);
-        writeBrowserCache('ld_cache_showcaseCards_v2', nextShowcase);
+        writeBrowserCache('ld_cache_showcaseCards_v3', nextShowcase);
       }
     };
 
@@ -2707,7 +2734,7 @@ export default function App() {
               <div className="w-16 h-1 bg-purple-600 mx-auto mt-3 rounded-full"></div>
             </div>
 
-            <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-8 px-2 md:px-0">
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 md:gap-6 px-2 md:px-0">
               <AnimatePresence mode="wait">
                 {showcaseCards.map((card, idx) => (
                   <motion.div 

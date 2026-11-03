@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { X, Search, Save, Download, Trash2, Plus, Minus, AlertTriangle, CheckCircle, BarChart3, Copy, Eye, ChevronDown, ChevronUp, ChevronRight, ChevronLeft, Layers, Network, Cloud, Flame, Dices, Users, FileText } from 'lucide-react';
+import { X, Search, Save, Download, Trash2, Plus, Minus, AlertTriangle, CheckCircle, BarChart3, Copy, Eye, ChevronDown, ChevronUp, ChevronRight, ChevronLeft, Layers, Network, Cloud, Flame, Dices, Users, FileText, Image as ImageIcon, GitCompare } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import { CardData } from '../types';
 import { collectionsList, archetypesList } from '../data';
@@ -12,6 +12,8 @@ import { SavedDecksModal } from './SavedDecksModal';
 import { PopularCardsModal } from './PopularCardsModal';
 import { MulliganSimulator } from './MulliganSimulatorModal';
 import { CommunityDecksModal } from './CommunityDecksModal';
+import { DeckImageGeneratorModal } from './DeckImageGeneratorModal';
+import { DeckComparatorView } from './DeckComparatorModal';
 
 interface DeckBuilderModalProps {
   isOpen: boolean;
@@ -25,11 +27,12 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
   const [confirmClear, setConfirmClear] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [importCode, setImportCode] = useState("");
-  const [activeTab, setActiveTab] = useState<'build' | 'neural' | 'mulligan' | 'stats' | 'save'>('build');
+  const [activeTab, setActiveTab] = useState<'build' | 'neural' | 'mulligan' | 'compare' | 'stats' | 'save'>('build');
   const [inspectCard, setInspectCard] = useState<CardData | null>(null);
   const [showCloudDecksModal, setShowCloudDecksModal] = useState(false);
   const [showPopularModal, setShowPopularModal] = useState(false);
   const [showCommunityDecksModal, setShowCommunityDecksModal] = useState(false);
+  const [showDeckImageModal, setShowDeckImageModal] = useState(false);
   const [filters, setFilters] = useState({
     type: "Todos",
     archetype: "Todos",
@@ -43,113 +46,6 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
 
   const [isFiltersCollapsed, setIsFiltersCollapsed] = useState(false);
   const [isDeckCollapsed, setIsDeckCollapsed] = useState(false);
-  const [showTournamentPdfModal, setShowTournamentPdfModal] = useState(false);
-  const [pdfPlayerName, setPdfPlayerName] = useState('');
-  const [pdfDeckName, setPdfDeckName] = useState('');
-  const [pdfTournamentName, setPdfTournamentName] = useState('Torneio Oficial Light Dark TCG');
-
-  const exportTournamentDeckPdf = () => {
-    const docPdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-    const nowStr = new Date().toLocaleDateString('pt-BR');
-    const pName = pdfPlayerName.trim() || 'Duelista';
-    const dName = pdfDeckName.trim() || 'Deck Principal';
-    const tName = pdfTournamentName.trim() || 'Torneio Oficial Light Dark TCG';
-
-    // Header bar
-    docPdf.setFillColor(18, 18, 26);
-    docPdf.rect(0, 0, 210, 32, 'F');
-    docPdf.setTextColor(255, 255, 255);
-    docPdf.setFont('helvetica', 'bold');
-    docPdf.setFontSize(15);
-    docPdf.text('LIGHT DARK TCG - LISTA DE DECK PARA TORNEIO', 14, 13);
-
-    docPdf.setFontSize(9);
-    docPdf.setTextColor(210, 180, 255);
-    docPdf.text(`Torneio: ${tName}   |   Data: ${nowStr}`, 14, 20);
-    docPdf.text(
-      `Jogador: ${pName}   |   Deck: ${dName}   |   Principal: ${deck.length} cartas   |   Side: ${sideDeck.length} cartas`,
-      14,
-      26
-    );
-
-    let y = 40;
-
-    const addCategorySection = (title: string, list: CardData[]) => {
-      if (list.length === 0) return;
-      if (y > 265) {
-        docPdf.addPage();
-        y = 20;
-      }
-      docPdf.setFillColor(240, 240, 248);
-      docPdf.rect(14, y - 4.5, 182, 6.5, 'F');
-      docPdf.setFont('helvetica', 'bold');
-      docPdf.setFontSize(9.5);
-      docPdf.setTextColor(30, 20, 60);
-      docPdf.text(`${title} (${list.length})`, 16, y);
-      y += 5.5;
-
-      docPdf.setFont('helvetica', 'normal');
-      docPdf.setFontSize(8.2);
-      docPdf.setTextColor(25, 25, 25);
-
-      list.forEach((c, idx) => {
-        if (y > 276) {
-          docPdf.addPage();
-          y = 20;
-        }
-        const codeStr = cleanCardCode(c.code || '');
-        const statsStr =
-          c.type === 'Herói' || c.type === 'Combatente'
-            ? `ATK:${c.attack ?? 0} / VIDA:${c.defense ?? 0}`
-            : c.type;
-        const lineLeft = `[  ] ${String(idx + 1).padStart(2, '0')}. ${c.name}`;
-        const lineRight = `${codeStr}  |  CT ${c.ct ?? 0}  |  ${statsStr}  |  ${c.frame || 'Legado'}`;
-        docPdf.text(lineLeft, 16, y);
-        docPdf.text(lineRight, 118, y);
-        y += 4.6;
-      });
-      y += 3;
-    };
-
-    const heroes = deck.filter((c) => c.type === 'Herói');
-    const combatants = deck.filter((c) => c.type === 'Combatente');
-    const equipments = deck.filter((c) => c.type === 'Equipamento');
-    const effects = deck.filter((c) => c.type === 'Efeito');
-
-    addCategorySection('HEROIS', heroes);
-    addCategorySection('COMBATENTES', combatants);
-    addCategorySection('EQUIPAMENTOS', equipments);
-    addCategorySection('CARTAS DE EFEITO', effects);
-    addCategorySection('SIDE DECK (ATE 5 CARTAS)', sideDeck);
-
-    if (y > 250) {
-      docPdf.addPage();
-      y = 25;
-    } else {
-      y += 6;
-    }
-
-    docPdf.setDrawColor(160, 160, 175);
-    docPdf.line(14, y, 196, y);
-    y += 6;
-    docPdf.setFont('helvetica', 'bold');
-    docPdf.setFontSize(8.5);
-    docPdf.setTextColor(40, 40, 40);
-    docPdf.text(
-      `Status pelas Regras Oficiais: ${
-        isValidToSave ? 'DECK VALIDO PARA TORNEIO (30-35 Cartas, Singleton)' : 'DECK INCOMPLETO / FORA DO PADRAO'
-      }`,
-      14,
-      y
-    );
-    y += 12;
-    docPdf.setFont('helvetica', 'normal');
-    docPdf.text('Assinatura do Jogador: _______________________________', 14, y);
-    docPdf.text('Check-in Juiz / Staff: _______________________________', 115, y);
-
-    const safeFile = dName.toLowerCase().replace(/[^a-z0-9]+/g, '-') || 'decklist';
-    docPdf.save(`decklist-torneio-${safeFile}.pdf`);
-  };
 
   // Helper to determine Hero Identity
   const getIdentity = (name: string) => {
@@ -264,6 +160,7 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
       Combatente: 0,
       Equipamento: 0,
       Efeito: 0,
+      Token: 0,
       Total: deck.length
     };
     
@@ -279,6 +176,7 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
       else if (card.type === 'Combatente') counts.Combatente++;
       else if (card.type === 'Equipamento') counts.Equipamento++;
       else if (card.type === 'Efeito') counts.Efeito++;
+      else if (card.type === 'Token') counts.Token++;
 
       // Count CT
       let ct = card.ct || 0;
@@ -446,6 +344,15 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
         onSelectCard={(c) => setInspectCard(c)}
       />
 
+      {/* Deck Image Generator Modal (PNG) */}
+      <DeckImageGeneratorModal
+        isOpen={showDeckImageModal}
+        onClose={() => setShowDeckImageModal(false)}
+        deck={deck}
+        sideDeck={sideDeck}
+        isValidDeck={isValidToSave}
+      />
+
       {/* Inspect Modal (rendered after and with z-[180] so it always appears above PopularCardsModal) */}
       <CardDetailModal 
         card={inspectCard} 
@@ -481,6 +388,14 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
             >
               <Network size={14} className={activeTab === 'neural' ? 'text-cyan-300 animate-pulse' : 'text-cyan-400'} />
               <span>Mapa Neural</span>
+            </button>
+            <button 
+              onClick={() => setActiveTab('compare')}
+              className={`flex-1 md:flex-none px-2 md:px-3.5 py-1.5 rounded-md text-[10px] md:text-xs font-bold transition whitespace-nowrap flex items-center justify-center gap-1.5 ${activeTab === 'compare' ? 'bg-gradient-to-r from-cyan-600 to-blue-600 text-white shadow-lg shadow-cyan-950/50 border border-cyan-400/40' : 'text-cyan-300 hover:text-white'}`}
+              title="Comparar dois decks lado a lado (Cartas em comum, exclusivas e curva CT)"
+            >
+              <GitCompare size={14} className={activeTab === 'compare' ? 'text-white' : 'text-cyan-400'} />
+              <span>Comparar Decks</span>
             </button>
             <button 
               onClick={() => setActiveTab('stats')}
@@ -519,12 +434,12 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
               <span>Cartas Populares</span>
             </button>
             <button 
-              onClick={() => setShowTournamentPdfModal(true)}
+              onClick={() => setShowDeckImageModal(true)}
               className="flex-1 md:flex-none px-2 md:px-3 py-1.5 rounded-md text-[10px] md:text-xs font-bold transition whitespace-nowrap flex items-center justify-center gap-1.5 bg-gradient-to-r from-emerald-800 to-teal-800 text-emerald-100 hover:text-white border border-emerald-500/40 shadow-sm active:scale-95"
-              title="Gerar Ficha de Lista de Deck para Torneio em PDF"
+              title="Gerar Lista de Deck para Torneio + Imagem do Deck (PDF / PNG)"
             >
               <FileText size={13} className="text-emerald-300" />
-              <span>Lista p/ Torneio (PDF)</span>
+              <span>Lista & Imagem p/ Torneio (PDF)</span>
             </button>
           </div>
         </div>
@@ -606,6 +521,7 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
                       <option value="Combatente">Combatente</option>
                       <option value="Equipamento">Equipamento</option>
                       <option value="Efeito">Efeito</option>
+                      <option value="Token">Token</option>
                     </select>
 
                     <select 
@@ -818,6 +734,7 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
                                   card.type === 'Herói' ? 'bg-red-950/50 border-red-800' :
                                   card.type === 'Combatente' ? 'bg-blue-950/50 border-blue-800' :
                                   card.type === 'Equipamento' ? 'bg-green-950/50 border-green-800' :
+                                  card.type === 'Token' ? 'bg-yellow-950/50 border-yellow-600' :
                                   'bg-purple-950/50 border-purple-800'
                                 }`}>
                                   {card.imageUrl && (
@@ -871,6 +788,7 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
                                   card.type === 'Herói' ? 'bg-red-950/50 border-red-800' :
                                   card.type === 'Combatente' ? 'bg-blue-950/50 border-blue-800' :
                                   card.type === 'Equipamento' ? 'bg-green-950/50 border-green-800' :
+                                  card.type === 'Token' ? 'bg-yellow-950/50 border-yellow-600' :
                                   'bg-purple-950/50 border-purple-800'
                                 }`}>
                                   {card.imageUrl && (
@@ -933,6 +851,22 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
             </div>
           )}
 
+          {activeTab === 'compare' && (
+            <div className="w-full h-full min-h-0 flex-1 flex flex-col">
+              <DeckComparatorView
+                currentMainDeck={deck}
+                currentSideDeck={sideDeck}
+                allCards={allCards}
+                onInspectCard={(card) => setInspectCard(card)}
+                onLoadDeckIntoBuilder={(m, s) => {
+                  setDeck(m);
+                  setSideDeck(s);
+                  setActiveTab('build');
+                }}
+              />
+            </div>
+          )}
+
           {activeTab === 'stats' && (
             <div className="p-2 md:p-8 max-w-4xl mx-auto w-full overflow-y-auto">
               <h3 className="text-lg md:text-2xl font-bold text-white mb-4 md:mb-8 flex items-center gap-2">
@@ -950,6 +884,7 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
                         { label: 'Combatentes', count: stats.counts.Combatente, color: 'bg-blue-500' },
                         { label: 'Equipamentos', count: stats.counts.Equipamento, color: 'bg-green-500' },
                         { label: 'Efeitos', count: stats.counts.Efeito, color: 'bg-purple-500' },
+                        { label: 'Tokens', count: stats.counts.Token, color: 'bg-yellow-500' },
                       ].map((stat) => (
                         <div key={stat.label}>
                           <div className="flex justify-between text-xs md:text-sm mb-1">
@@ -1072,11 +1007,11 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
                             <span>Publicar no Mural</span>
                           </button>
                           <button 
-                            onClick={() => setShowTournamentPdfModal(true)}
+                            onClick={() => setShowDeckImageModal(true)}
                             className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs flex items-center justify-center gap-2 shadow-lg shadow-emerald-900/40 transition"
                           >
                             <FileText size={16} />
-                            <span>Lista p/ Torneio (PDF)</span>
+                            <span>Lista & Imagem p/ Torneio (PDF)</span>
                           </button>
                         </div>
                       </div>
@@ -1126,119 +1061,6 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
 
         </div>
       </div>
-
-      {/* Modal de Exportação de Lista de Deck para Torneio (PDF) */}
-      {showTournamentPdfModal && (
-        <div
-          className="fixed inset-0 z-[190] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150"
-          onClick={() => setShowTournamentPdfModal(false)}
-        >
-          <div
-            className="bg-slate-900 border border-emerald-500/40 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <div className="flex items-center gap-2.5">
-                <div className="p-2 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/40">
-                  <FileText size={20} />
-                </div>
-                <div>
-                  <h3 className="text-base font-black text-white uppercase tracking-wider">
-                    Lista de Deck para Torneio (PDF)
-                  </h3>
-                  <p className="text-xs text-slate-400">
-                    Gera a ficha oficial de check-in com todas as cartas do Deck Principal ({deck.length}) e Side Deck ({sideDeck.length}).
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowTournamentPdfModal(false)}
-                className="text-slate-400 hover:text-white p-1"
-              >
-                <X size={20} />
-              </button>
-            </div>
-
-            <div className="space-y-3">
-              <div>
-                <label className="text-xs font-bold text-slate-300 block mb-1">
-                  Nome do Jogador (Duelista)
-                </label>
-                <input
-                  type="text"
-                  value={pdfPlayerName}
-                  onChange={(e) => setPdfPlayerName(e.target.value)}
-                  placeholder="Digite seu nome completo ou nick..."
-                  className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-xs text-white font-bold"
-                />
-              </div>
-
-              <div>
-                <label className="text-xs font-bold text-slate-300 block mb-1">
-                  Nome do Deck
-                </label>
-                <input
-                  type="text"
-                  value={pdfDeckName}
-                  onChange={(e) => setPdfDeckName(e.target.value)}
-                  placeholder="Ex: Deck Criven Controle..."
-                  className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-xs text-white"
-                />
-              </div>
-
-              <div>
-                <label className="text-xs font-bold text-slate-300 block mb-1">
-                  Nome do Evento / Torneio
-                </label>
-                <input
-                  type="text"
-                  value={pdfTournamentName}
-                  onChange={(e) => setPdfTournamentName(e.target.value)}
-                  placeholder="Torneio Oficial Light Dark TCG"
-                  className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-xs text-white"
-                />
-              </div>
-            </div>
-
-            <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 text-xs text-slate-300 flex items-center justify-between">
-              <span>
-                Total: <strong className="text-white">{deck.length} Principal</strong> +{' '}
-                <strong className="text-white">{sideDeck.length} Side</strong>
-              </span>
-              <span
-                className={`font-bold ${
-                  isValidToSave ? 'text-emerald-400' : 'text-amber-400'
-                }`}
-              >
-                {isValidToSave ? '✓ Válido p/ Torneio' : '⚠ Deck em montagem'}
-              </span>
-            </div>
-
-            <div className="flex justify-end gap-2 pt-2">
-              <button
-                type="button"
-                onClick={() => setShowTournamentPdfModal(false)}
-                className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold"
-              >
-                Fechar
-              </button>
-              <button
-                type="button"
-                disabled={deck.length === 0 && sideDeck.length === 0}
-                onClick={() => {
-                  exportTournamentDeckPdf();
-                  setShowTournamentPdfModal(false);
-                }}
-                className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-black uppercase tracking-wider flex items-center gap-2 shadow-lg shadow-emerald-950/50"
-              >
-                <Download size={15} />
-                <span>Baixar PDF Oficial</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

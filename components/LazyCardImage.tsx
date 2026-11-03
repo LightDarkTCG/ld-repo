@@ -76,6 +76,8 @@ export const LazyCardImage: React.FC<LazyCardImageProps> = React.memo(({
         return { bg: 'from-green-950/60 to-slate-950', border: 'border-green-900/40', icon: <Scale size={32} className="text-green-500/40" /> };
       case 'Efeito':
         return { bg: 'from-purple-950/60 to-slate-950', border: 'border-purple-900/40', icon: <Sparkles size={32} className="text-purple-500/40" /> };
+      case 'Token':
+        return { bg: 'from-yellow-950/60 to-slate-950', border: 'border-yellow-700/40', icon: <Layers size={32} className="text-yellow-400/50" /> };
       default:
         return { bg: 'from-slate-900 to-slate-950', border: 'border-slate-800', icon: <Layers size={32} className="text-slate-600/40" /> };
     }
