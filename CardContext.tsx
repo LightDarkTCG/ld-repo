@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { CardData, ArchetypeData, CardVariationItem } from './types';
+import { CardData, ArchetypeData, CardVariationItem, RarePrintOwner, RarePrintVersionConfig } from './types';
 import { allCards as defaultCards, archetypesList as defaultArchetypes, collectionsList as defaultCollections } from './data';
 import { compareCardCodes } from './deckUtils';
 import { isUserAdmin } from './authService';
@@ -192,7 +192,8 @@ interface CardContextType {
   setCardRarePrintSettings: (
     cardOrCode: CardData | string,
     isRare: boolean,
-    maxCopies?: number
+    maxCopies?: number,
+    owners?: RarePrintOwner[]
   ) => Promise<void>;
   cleanAllCardSuffixes: () => Promise<{ updatedCount: number }>;
   migrateCodeDataToFirebase: () => Promise<{
@@ -629,7 +630,7 @@ export const CardProvider = ({ children }: { children: ReactNode }) => {
         const coverFrame = coverDoc?.catalogCoverFrame || undefined;
 
         // Mapa de Tiragem Rara por versão/imagem (NUNCA propaga para todas as versões!)
-        const mergedRareByImage: Record<string, { isRarePrint: boolean; maxPrintCopies: number }> = {};
+        const mergedRareByImage: Record<string, RarePrintVersionConfig> = {};
         let hasExplicitRareMap = false;
 
         group.forEach(c => {
@@ -639,7 +640,8 @@ export const CardProvider = ({ children }: { children: ReactNode }) => {
               if (val && typeof val === 'object') {
                 mergedRareByImage[k] = {
                   isRarePrint: Boolean(val.isRarePrint),
-                  maxPrintCopies: val.isRarePrint ? (Number(val.maxPrintCopies) || 1) : 0
+                  maxPrintCopies: val.isRarePrint ? (Number(val.maxPrintCopies) || 1) : 0,
+                  owners: Array.isArray(val.owners) ? val.owners : []
                 };
               }
             });
@@ -652,37 +654,50 @@ export const CardProvider = ({ children }: { children: ReactNode }) => {
           itemRare?: boolean,
           itemReqVer?: boolean,
           itemMaxCopies?: number,
-          itemRarity?: string
+          itemRarity?: string,
+          itemOwners?: RarePrintOwner[]
         ) => {
-          if (itemRarity === 'Moderno Macroversal' || itemRarity === 'Macroversal') {
-            return { isRarePrint: true, requiresAdminVerification: true, maxPrintCopies: 1 };
-          }
           const vKey = getVersionRareKey(imgUrl, frame);
           if (mergedRareByImage[vKey] !== undefined) {
             const entry = mergedRareByImage[vKey];
+            const isMacro = itemRarity === 'Moderno Macroversal' || itemRarity === 'Macroversal';
+            const isRare = Boolean(entry.isRarePrint || isMacro);
             return {
-              isRarePrint: entry.isRarePrint,
-              requiresAdminVerification: entry.isRarePrint,
-              maxPrintCopies: entry.isRarePrint ? (entry.maxPrintCopies || 1) : 0
+              isRarePrint: isRare,
+              requiresAdminVerification: isRare,
+              maxPrintCopies: isRare ? (entry.maxPrintCopies || 1) : 0,
+              rarePrintOwners: isRare ? (entry.owners || itemOwners || []) : []
             };
           }
           if (imgUrl && mergedRareByImage[imgUrl] !== undefined) {
             const entry = mergedRareByImage[imgUrl];
+            const isMacro = itemRarity === 'Moderno Macroversal' || itemRarity === 'Macroversal';
+            const isRare = Boolean(entry.isRarePrint || isMacro);
             return {
-              isRarePrint: entry.isRarePrint,
-              requiresAdminVerification: entry.isRarePrint,
-              maxPrintCopies: entry.isRarePrint ? (entry.maxPrintCopies || 1) : 0
+              isRarePrint: isRare,
+              requiresAdminVerification: isRare,
+              maxPrintCopies: isRare ? (entry.maxPrintCopies || 1) : 0,
+              rarePrintOwners: isRare ? (entry.owners || itemOwners || []) : []
+            };
+          }
+          if (itemRarity === 'Moderno Macroversal' || itemRarity === 'Macroversal') {
+            return {
+              isRarePrint: true,
+              requiresAdminVerification: true,
+              maxPrintCopies: 1,
+              rarePrintOwners: Array.isArray(itemOwners) ? itemOwners : []
             };
           }
           // Se o documento já usa mapa por imagem, qualquer imagem não listada como true é tiragem comum!
           if (hasExplicitRareMap) {
-            return { isRarePrint: false, requiresAdminVerification: false, maxPrintCopies: 0 };
+            return { isRarePrint: false, requiresAdminVerification: false, maxPrintCopies: 0, rarePrintOwners: [] };
           }
-          const explicit = Boolean(itemRare || itemReqVer);
+          const explicit = Boolean(itemRare || itemReqVer || (Array.isArray(itemOwners) && itemOwners.length > 0));
           return {
             isRarePrint: explicit,
             requiresAdminVerification: explicit,
-            maxPrintCopies: explicit ? (Number(itemMaxCopies) || 1) : 0
+            maxPrintCopies: explicit ? (Number(itemMaxCopies) || 1) : 0,
+            rarePrintOwners: explicit && Array.isArray(itemOwners) ? itemOwners : []
           };
         };
 
@@ -812,7 +827,8 @@ export const CardProvider = ({ children }: { children: ReactNode }) => {
             legacyCandidate.isRarePrint,
             legacyCandidate.requiresAdminVerification,
             legacyCandidate.maxPrintCopies,
-            legacyCandidate.rarity
+            legacyCandidate.rarity,
+            legacyCandidate.rarePrintOwners
           );
           allVariants.push({
             id: legacyCandidate.id || `var_${legacyCandidate.code || baseCode}_legado`,
@@ -826,7 +842,8 @@ export const CardProvider = ({ children }: { children: ReactNode }) => {
             isCatalogCover: Boolean(coverImageUrl && legacyCandidate.imageUrl === coverImageUrl),
             isRarePrint: legRare.isRarePrint,
             requiresAdminVerification: legRare.requiresAdminVerification,
-            maxPrintCopies: legRare.maxPrintCopies
+            maxPrintCopies: legRare.maxPrintCopies,
+            rarePrintOwners: legRare.rarePrintOwners
           });
         }
 
@@ -850,7 +867,8 @@ export const CardProvider = ({ children }: { children: ReactNode }) => {
                 v.isRarePrint,
                 v.requiresAdminVerification,
                 v.maxPrintCopies,
-                vRarity
+                vRarity,
+                v.rarePrintOwners
               );
               let vName = v.name;
               if (!vName) {
@@ -877,7 +895,8 @@ export const CardProvider = ({ children }: { children: ReactNode }) => {
                 isCatalogCover: Boolean(coverImageUrl && v.imageUrl === coverImageUrl),
                 isRarePrint: vRare.isRarePrint,
                 requiresAdminVerification: vRare.requiresAdminVerification,
-                maxPrintCopies: vRare.maxPrintCopies
+                maxPrintCopies: vRare.maxPrintCopies,
+                rarePrintOwners: vRare.rarePrintOwners
               });
             });
           }
@@ -892,7 +911,8 @@ export const CardProvider = ({ children }: { children: ReactNode }) => {
               item.isRarePrint,
               item.requiresAdminVerification,
               item.maxPrintCopies,
-              itemRarity
+              itemRarity,
+              item.rarePrintOwners
             );
             const cleanedItemCode = cleanCardCode(item.code) || cleanCardCode(baseCode);
             const isSkinCode = cleanedItemCode !== cleanCardCode(baseCode);
@@ -923,7 +943,8 @@ export const CardProvider = ({ children }: { children: ReactNode }) => {
               isCatalogCover: Boolean(coverImageUrl && item.imageUrl === coverImageUrl),
               isRarePrint: itemRare.isRarePrint,
               requiresAdminVerification: itemRare.requiresAdminVerification,
-              maxPrintCopies: itemRare.maxPrintCopies
+              maxPrintCopies: itemRare.maxPrintCopies,
+              rarePrintOwners: itemRare.rarePrintOwners
             });
           }
         });
@@ -938,7 +959,8 @@ export const CardProvider = ({ children }: { children: ReactNode }) => {
           chosenCard.isRarePrint,
           chosenCard.requiresAdminVerification,
           chosenCard.maxPrintCopies,
-          finalRarity
+          finalRarity,
+          chosenCard.rarePrintOwners || firestoreCard?.rarePrintOwners
         );
 
         const STALE_VEU_ARCHETYPES: Record<string, string> = {
@@ -984,6 +1006,7 @@ export const CardProvider = ({ children }: { children: ReactNode }) => {
           isRarePrint: chosenRare.isRarePrint,
           requiresAdminVerification: chosenRare.requiresAdminVerification,
           maxPrintCopies: chosenRare.maxPrintCopies,
+          rarePrintOwners: chosenRare.rarePrintOwners,
           rarePrintByImage: hasExplicitRareMap ? mergedRareByImage : undefined,
           variants: allVariants.length > 0 ? allVariants : undefined
         });
@@ -1276,7 +1299,8 @@ export const CardProvider = ({ children }: { children: ReactNode }) => {
   const setCardRarePrintSettings = async (
     cardOrCode: CardData | string,
     isRare: boolean,
-    maxCopies: number = 1
+    maxCopies: number = 1,
+    owners?: RarePrintOwner[]
   ) => {
     try {
       const rawCode = typeof cardOrCode === 'string' ? cardOrCode : (cardOrCode.parentCode || cardOrCode.code);
@@ -1295,18 +1319,27 @@ export const CardProvider = ({ children }: { children: ReactNode }) => {
 
       if (snap.exists()) {
         const existingData = snap.data() as CardData;
-        const existingMap: Record<string, { isRarePrint: boolean; maxPrintCopies: number }> = {
+        const existingMap: Record<string, RarePrintVersionConfig> = {
           ...(existingData.rarePrintByImage || {})
         };
 
+        const prevEntry = existingMap[versionKey] || (targetImageUrl ? existingMap[targetImageUrl] : undefined);
+        const resolvedOwners: RarePrintOwner[] = !isRare
+          ? []
+          : (owners !== undefined
+              ? owners
+              : (prevEntry?.owners || (typeof cardOrCode === 'object' && cardOrCode.rarePrintOwners) || []));
+
         existingMap[versionKey] = {
           isRarePrint: Boolean(isRare),
-          maxPrintCopies: effectiveCopies
+          maxPrintCopies: effectiveCopies,
+          owners: resolvedOwners
         };
         if (targetImageUrl && versionKey !== targetImageUrl) {
           existingMap[targetImageUrl] = {
             isRarePrint: Boolean(isRare),
-            maxPrintCopies: effectiveCopies
+            maxPrintCopies: effectiveCopies,
+            owners: resolvedOwners
           };
         }
 
@@ -1320,7 +1353,8 @@ export const CardProvider = ({ children }: { children: ReactNode }) => {
                   ...v,
                   isRarePrint: Boolean(isRare),
                   requiresAdminVerification: Boolean(isRare),
-                  maxPrintCopies: effectiveCopies
+                  maxPrintCopies: effectiveCopies,
+                  rarePrintOwners: resolvedOwners
                 };
               }
               const mapped = existingMap[vKey] || (v.imageUrl ? existingMap[v.imageUrl] : undefined);
@@ -1329,7 +1363,8 @@ export const CardProvider = ({ children }: { children: ReactNode }) => {
                 ...v,
                 isRarePrint: varRare,
                 requiresAdminVerification: varRare,
-                maxPrintCopies: varRare ? (mapped?.maxPrintCopies || 1) : 0
+                maxPrintCopies: varRare ? (mapped?.maxPrintCopies || 1) : 0,
+                rarePrintOwners: varRare ? (mapped?.owners || v.rarePrintOwners || []) : []
               };
             })
           : undefined;
@@ -1339,6 +1374,7 @@ export const CardProvider = ({ children }: { children: ReactNode }) => {
         const baseMapped = existingMap[baseOwnKey] || (existingData.imageUrl ? existingMap[existingData.imageUrl] : undefined);
         const baseIsRare = isBaseTarget ? Boolean(isRare) : Boolean(baseMapped?.isRarePrint);
         const baseMaxCopies = baseIsRare ? (isBaseTarget ? effectiveCopies : (baseMapped?.maxPrintCopies || 1)) : 0;
+        const baseOwners = baseIsRare ? (isBaseTarget ? resolvedOwners : (baseMapped?.owners || existingData.rarePrintOwners || [])) : [];
 
         await setDoc(baseRef, sanitizeForFirestore({
           code: existingData.code || cleanBase,
@@ -1346,21 +1382,28 @@ export const CardProvider = ({ children }: { children: ReactNode }) => {
           isRarePrint: baseIsRare,
           requiresAdminVerification: baseIsRare,
           maxPrintCopies: baseMaxCopies,
+          rarePrintOwners: baseOwners,
           deleted: false,
           ...(updatedVariants ? { variants: updatedVariants } : {})
         }), { merge: true });
       } else {
         const fullData: any = typeof cardOrCode === 'object' ? { ...(defaultMatch || {}), ...cardOrCode } : (defaultMatch || {});
-        const newMap: Record<string, { isRarePrint: boolean; maxPrintCopies: number }> = {
+        const resolvedOwners: RarePrintOwner[] = !isRare
+          ? []
+          : (owners !== undefined ? owners : (fullData.rarePrintOwners || []));
+
+        const newMap: Record<string, RarePrintVersionConfig> = {
           [versionKey]: {
             isRarePrint: Boolean(isRare),
-            maxPrintCopies: effectiveCopies
+            maxPrintCopies: effectiveCopies,
+            owners: resolvedOwners
           }
         };
         if (targetImageUrl && versionKey !== targetImageUrl) {
           newMap[targetImageUrl] = {
             isRarePrint: Boolean(isRare),
-            maxPrintCopies: effectiveCopies
+            maxPrintCopies: effectiveCopies,
+            owners: resolvedOwners
           };
         }
 
@@ -1371,7 +1414,8 @@ export const CardProvider = ({ children }: { children: ReactNode }) => {
                 ...v,
                 isRarePrint: isTargetVar ? Boolean(isRare) : false,
                 requiresAdminVerification: isTargetVar ? Boolean(isRare) : false,
-                maxPrintCopies: isTargetVar ? effectiveCopies : 0
+                maxPrintCopies: isTargetVar ? effectiveCopies : 0,
+                rarePrintOwners: isTargetVar ? resolvedOwners : []
               };
             })
           : undefined;
@@ -1387,6 +1431,7 @@ export const CardProvider = ({ children }: { children: ReactNode }) => {
           isRarePrint: isBaseTarget ? Boolean(isRare) : false,
           requiresAdminVerification: isBaseTarget ? Boolean(isRare) : false,
           maxPrintCopies: isBaseTarget ? effectiveCopies : 0,
+          rarePrintOwners: isBaseTarget ? resolvedOwners : [],
           deleted: false,
           ...(updatedVariants ? { variants: updatedVariants } : {})
         }), { merge: true });
@@ -1398,11 +1443,12 @@ export const CardProvider = ({ children }: { children: ReactNode }) => {
           const varDocRef = doc(db, 'customCards', cardOrCode.id);
           const varSnap = await getDoc(varDocRef);
           if (varSnap.exists()) {
-            await updateDoc(varDocRef, {
+            await updateDoc(varDocRef, sanitizeForFirestore({
               isRarePrint: Boolean(isRare),
               requiresAdminVerification: Boolean(isRare),
-              maxPrintCopies: effectiveCopies
-            });
+              maxPrintCopies: effectiveCopies,
+              rarePrintOwners: isRare ? (owners || []) : []
+            }));
           }
         } catch (e) {
           console.warn('Could not update specific variation doc for rare print:', e);

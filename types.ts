@@ -47,6 +47,15 @@ export interface RarityGuideItem {
 
 export type TierGuideItem = RarityGuideItem;
 
+export interface RarePrintOwner {
+  userId: string;
+  displayName: string;
+  email?: string;
+  photoURL?: string;
+  copies?: number;
+  assignedAt?: string;
+}
+
 export interface CardVariationItem {
   id: string;
   name: string;
@@ -60,11 +69,13 @@ export interface CardVariationItem {
   isRarePrint?: boolean;
   requiresAdminVerification?: boolean;
   maxPrintCopies?: number;
+  rarePrintOwners?: RarePrintOwner[];
 }
 
 export interface RarePrintVersionConfig {
   isRarePrint: boolean;
   maxPrintCopies: number;
+  owners?: RarePrintOwner[];
   updatedAt?: string;
 }
 
@@ -100,6 +111,7 @@ export interface CardData {
   isRarePrint?: boolean;
   maxPrintCopies?: number; // Ex: 1 cópia única
   requiresAdminVerification?: boolean;
+  rarePrintOwners?: RarePrintOwner[];
   rarePrintByImage?: Record<string, RarePrintVersionConfig>;
 }
 
@@ -294,6 +306,20 @@ export interface StoreCoupon {
   discountFixed?: number;
   minOrderValue?: number;
   isActive: boolean;
+  expiresAt?: string;
+  usageCount?: number;
+  createdAt?: string;
+}
+
+export interface CollaboratorProfile {
+  uid?: string;
+  email: string;
+  displayName: string;
+  roleTitle: string;
+  canEditLore: boolean;
+  canEditCardLore: boolean;
+  createdAt: string;
+  createdBy?: string;
 }
 
 export interface RegionalShippingRate {

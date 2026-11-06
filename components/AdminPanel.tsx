@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Settings, Lock, Plus, Trash2, X, Image as ImageIcon, Edit2, Check, Layout, Clock, Grid, Palette, ChevronRight, Layers, BookOpen, Database, Box, Upload, Film, Sparkles, Calendar, Loader2, LogIn, ShieldAlert, Copy, Search, Crown, ShoppingCart, Truck } from 'lucide-react';
+import { Settings, Lock, Plus, Trash2, X, Image as ImageIcon, Edit2, Check, Layout, Clock, Grid, Palette, ChevronRight, Layers, BookOpen, Database, Box, Upload, Film, Sparkles, Calendar, Loader2, LogIn, ShieldAlert, Copy, Search, Crown, ShoppingCart, Truck, Users } from 'lucide-react';
 import { signInWithEmailAndPassword, onAuthStateChanged, signOut } from 'firebase/auth';
 import { collection, getDocs, addDoc, deleteDoc, updateDoc, doc, setDoc, getDoc } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
@@ -9,7 +9,8 @@ import { ArchetypeData, LEGADO_RARITIES, MODERNO_RARITIES } from '../types';
 import { encodeDeckCode, parseDeckFromCode } from '../deckUtils';
 import { BatchImageMatcher } from './BatchImageMatcher';
 import { AdminStoreManager } from './AdminStoreManager';
-import { isUserAdmin, logout } from '../authService';
+import { CollaboratorsManager } from './CollaboratorsManager';
+import { isUserAdmin, isUserCollaborator, canUserEditLore, canUserEditCardLore, logout } from '../authService';
 
 export type AdminType = 'home' | 'catalog' | 'master' | 'store';
 
@@ -23,7 +24,7 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
   const [uploadingProductMedia, setUploadingProductMedia] = useState<string | null>(null);
   const [migrationStatusMsg, setMigrationStatusMsg] = useState<string | null>(null);
 
-  const [activeAdminTab, setActiveAdminTab] = useState<'settings' | 'products' | 'store_orders' | 'tabs' | 'items' | 'timeline' | 'archetypes' | 'collections' | 'cards' | 'batch_cards' | 'batch_images' | 'apendices' | 'add_card'>(() => {
+  const [activeAdminTab, setActiveAdminTab] = useState<'settings' | 'products' | 'store_orders' | 'collaborators' | 'tabs' | 'items' | 'timeline' | 'archetypes' | 'collections' | 'cards' | 'batch_cards' | 'batch_images' | 'apendices' | 'add_card'>(() => {
     if (adminType === 'store') return 'products';
     if (adminType === 'home') return 'settings';
     if (adminType === 'catalog') return 'add_card';
@@ -728,21 +729,21 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
                 </button>
               </form>
             </div>
-          ) : !isUserAdmin(user) ? (
+          ) : !isUserAdmin(user) && !(isUserCollaborator(user) && (adminType === 'master' || adminType === 'catalog')) ? (
             <div className="max-w-md mx-auto bg-slate-900 p-8 rounded-2xl border border-red-900/60 shadow-2xl text-center mt-10 space-y-4">
               <div className="w-14 h-14 rounded-full bg-red-950/80 border border-red-700 mx-auto flex items-center justify-center text-red-400">
                 <ShieldAlert size={28} />
               </div>
-              <h3 className="text-xl font-bold text-white">Acesso Restrito ao Administrador</h3>
+              <h3 className="text-xl font-bold text-white">Acesso Restrito ao Administrador / Colaborador</h3>
               <p className="text-xs text-slate-300 leading-relaxed">
-                A conta atualmente conectada <span className="font-mono text-purple-400 font-bold block mt-1">{user.email}</span> não possui permissão de administrador para alterar o conteúdo do site.
+                A conta atualmente conectada <span className="font-mono text-purple-400 font-bold block mt-1">{user.email}</span> não possui permissão para alterar este painel.
               </p>
               <div className="pt-3 flex flex-col gap-2">
                 <button 
                   onClick={() => logout().then(() => setUser(null)).catch(err => setError(err.message))}
                   className="w-full bg-purple-600 hover:bg-purple-500 text-white font-bold py-2.5 rounded-xl transition text-xs flex items-center justify-center gap-2 shadow-lg shadow-purple-900/40"
                 >
-                  <LogIn size={15} /> Sair e Entrar com Conta Admin
+                  <LogIn size={15} /> Sair e Entrar com Outra Conta
                 </button>
                 <button 
                   onClick={onClose}
@@ -756,7 +757,7 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
             <div className="flex flex-col md:flex-row gap-6">
               {/* Sidebar */}
               <div className="w-full md:w-56 shrink-0 flex flex-col gap-2">
-                {(adminType === 'home' || adminType === 'store' || adminType === 'master') && (
+                {isUserAdmin(user) && (adminType === 'home' || adminType === 'store' || adminType === 'master') && (
                   <>
                     <button onClick={() => { setActiveAdminTab('settings'); resetForm(); }} className={`text-left p-3 rounded font-bold transition flex items-center gap-2 ${activeAdminTab === 'settings' ? 'bg-purple-600 text-white shadow-md shadow-purple-950/40' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'}`}>
                       <Palette size={18}/> Aparência
@@ -769,9 +770,20 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
                     </button>
                   </>
                 )}
+
+                {isUserAdmin(user) && (
+                  <button onClick={() => { setActiveAdminTab('collaborators'); resetForm(); }} className={`text-left p-3 rounded font-bold transition flex items-center gap-2 ${activeAdminTab === 'collaborators' ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-950/40' : 'bg-slate-800 text-amber-300 hover:bg-slate-700 border border-amber-500/30'}`}>
+                    <Users size={18}/> Equipe / Colaboradores
+                  </button>
+                )}
                 
-                {adminType === 'master' && (
+                {(adminType === 'master' && canUserEditLore(user)) && (
                   <>
+                    {!isUserAdmin(user) && (
+                      <button onClick={() => { setActiveAdminTab('settings'); resetForm(); }} className={`text-left p-3 rounded font-bold transition flex items-center gap-2 ${activeAdminTab === 'settings' ? 'bg-purple-600 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'}`}>
+                        <Palette size={18}/> Config. Archivum
+                      </button>
+                    )}
                     <button onClick={() => { setActiveAdminTab('tabs'); resetForm(); }} className={`text-left p-3 rounded font-bold transition flex items-center gap-2 ${activeAdminTab === 'tabs' ? 'bg-purple-600 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}>
                       <Layout size={18}/> Gerenciar Abas
                     </button>
@@ -784,23 +796,32 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
                     <button onClick={() => { setActiveAdminTab('apendices'); resetForm(); }} className={`text-left p-3 rounded font-bold transition flex items-center gap-2 ${activeAdminTab === 'apendices' ? 'bg-purple-600 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}>
                       <BookOpen size={18}/> Apêndices
                     </button>
+                    {!isUserAdmin(user) && canUserEditCardLore(user) && (
+                      <button onClick={() => { setActiveAdminTab('cards'); resetForm(); }} className={`text-left p-3 rounded font-bold transition flex items-center gap-2 ${activeAdminTab === 'cards' || activeAdminTab === 'add_card' ? 'bg-purple-600 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}>
+                        <Database size={18}/> Lore & Dados de Cartas
+                      </button>
+                    )}
                   </>
                 )}
 
                 {adminType === 'catalog' && (
                   <>
                     <button onClick={() => { setActiveAdminTab('add_card'); resetForm(); }} className={`text-left p-3 rounded font-bold transition flex items-center gap-2 ${activeAdminTab === 'add_card' ? 'bg-purple-600 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}>
-                      <Plus size={18}/> Adicionar Cartas
+                      <Plus size={18}/> {isUserAdmin(user) ? 'Adicionar Cartas' : 'Editar Carta / Lore'}
                     </button>
-                    <button onClick={() => { setActiveAdminTab('batch_images'); resetForm(); }} className={`text-left p-3 rounded font-bold transition flex items-center gap-2 ${activeAdminTab === 'batch_images' ? 'bg-purple-600 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}>
-                      <Sparkles size={18} className="text-amber-400"/> Variações & Frames (Lote)
-                    </button>
-                    <button onClick={() => { setActiveAdminTab('batch_cards'); resetForm(); }} className={`text-left p-3 rounded font-bold transition flex items-center gap-2 ${activeAdminTab === 'batch_cards' ? 'bg-purple-600 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}>
-                      <Layers size={18}/> Adicionar Cartas em Lote
-                    </button>
-                    <button onClick={() => { setActiveAdminTab('collections'); resetForm(); }} className={`text-left p-3 rounded font-bold transition flex items-center gap-2 ${activeAdminTab === 'collections' ? 'bg-purple-600 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}>
-                      <Box size={18}/> Decks e Coleções
-                    </button>
+                    {isUserAdmin(user) && (
+                      <>
+                        <button onClick={() => { setActiveAdminTab('batch_images'); resetForm(); }} className={`text-left p-3 rounded font-bold transition flex items-center gap-2 ${activeAdminTab === 'batch_images' ? 'bg-purple-600 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}>
+                          <Sparkles size={18} className="text-amber-400"/> Variações & Frames (Lote)
+                        </button>
+                        <button onClick={() => { setActiveAdminTab('batch_cards'); resetForm(); }} className={`text-left p-3 rounded font-bold transition flex items-center gap-2 ${activeAdminTab === 'batch_cards' ? 'bg-purple-600 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}>
+                          <Layers size={18}/> Adicionar Cartas em Lote
+                        </button>
+                        <button onClick={() => { setActiveAdminTab('collections'); resetForm(); }} className={`text-left p-3 rounded font-bold transition flex items-center gap-2 ${activeAdminTab === 'collections' ? 'bg-purple-600 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}>
+                          <Box size={18}/> Decks e Coleções
+                        </button>
+                      </>
+                    )}
                     <button onClick={() => { setActiveAdminTab('cards'); resetForm(); }} className={`text-left p-3 rounded font-bold transition flex items-center gap-2 ${activeAdminTab === 'cards' ? 'bg-purple-600 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}>
                       <Database size={18}/> Cartas Firestore
                     </button>
@@ -818,8 +839,13 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
               <div className="flex-1 min-w-0 pb-12">
                 {error && <div className="bg-red-900/50 border border-red-500 text-red-200 p-3 rounded mb-4">{error}</div>}
 
+                {/* COLLABORATORS MANAGEMENT TAB */}
+                {activeAdminTab === 'collaborators' && isUserAdmin(user) && (
+                  <CollaboratorsManager />
+                )}
+
                 {/* STORE, ORDERS & SHIPPING TAB */}
-                {activeAdminTab === 'store_orders' && (
+                {activeAdminTab === 'store_orders' && isUserAdmin(user) && (
                   <AdminStoreManager />
                 )}
 

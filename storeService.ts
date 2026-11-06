@@ -19,7 +19,9 @@ import {
   MarketplaceSellerReview,
   OrderStatus,
   PaymentStatus,
+  RegionalShippingRate,
   ShippingOption,
+  StoreCoupon,
   StoreOrder,
   StoreProductCategory,
   StoreSettings
@@ -235,6 +237,38 @@ export function isValidCpf(cpf: string): boolean {
   rev = 11 - (sum % 11);
   if (rev === 10 || rev === 11) rev = 0;
   return rev === parseInt(clean.charAt(10), 10);
+}
+
+export function getCouponExpiryTimestamp(expiresAt?: string): number | null {
+  if (!expiresAt || !expiresAt.trim()) return null;
+  const trimmed = expiresAt.trim();
+  // Se for apenas data YYYY-MM-DD, considera válido até o final daquele dia (23:59:59)
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+    const dt = new Date(`${trimmed}T23:59:59`);
+    return Number.isNaN(dt.getTime()) ? null : dt.getTime();
+  }
+  const dt = new Date(trimmed);
+  return Number.isNaN(dt.getTime()) ? null : dt.getTime();
+}
+
+export function isCouponExpired(coupon?: StoreCoupon | null, nowMs: number = Date.now()): boolean {
+  if (!coupon) return true;
+  const expTs = getCouponExpiryTimestamp(coupon.expiresAt);
+  if (expTs === null) return false;
+  return nowMs > expTs;
+}
+
+export function formatCouponExpiry(expiresAt?: string): string {
+  const expTs = getCouponExpiryTimestamp(expiresAt);
+  if (expTs === null) return 'Sem prazo (Ilimitado)';
+  const d = new Date(expTs);
+  return d.toLocaleString('pt-BR', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  });
 }
 
 // --- CART MANAGEMENT ---

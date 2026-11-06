@@ -12,6 +12,24 @@ service cloud.firestore {
       );
     }
 
+    function isCollaborator() {
+      return request.auth != null && (
+        exists(/databases/$(database)/documents/collaborators/$(request.auth.uid)) ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isCollaborator == true)
+      );
+    }
+
+    function isAdminOrCollaborator() {
+      return isAdmin() || isCollaborator();
+    }
+
+    // --- EQUIPE DE COLABORADORES (LORE & DADOS) ---
+    match /collaborators/{collabId} {
+      allow read: if request.auth != null;
+      allow write: if isAdmin() || isOwner(collabId);
+    }
+
     // --- RECURSOS DO USUÁRIO (ÁLBUM E DECKS SALVOS) ---
     match /users/{userId} {
       // O usuário pode ler e gravar seu próprio perfil
@@ -78,20 +96,20 @@ service cloud.firestore {
       allow update, delete: if isAdmin();
     }
 
-    // --- CONTEÚDO PÚBLICO (SOMENTE ADMIN PODE EDITAR/CRIAR/DELETAR) ---
+    // --- CONTEÚDO PÚBLICO (ADMIN E COLABORADORES AUTORIZADOS EM LORE & DADOS) ---
     match /customCards/{document=**} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow write: if isAdminOrCollaborator();
     }
 
     match /customArchetypes/{document=**} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow write: if isAdminOrCollaborator();
     }
 
     match /customCollections/{document=**} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow write: if isAdminOrCollaborator();
     }
 
     match /homeSettings/{document=**} {
@@ -99,54 +117,54 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
-    match /appSettings/{document=**} {
+    match /appSettings/{docId} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow write: if isAdmin() || (docId == 'dailyQuiz' && isAdminOrCollaborator());
     }
 
     match /loreCategories/{categoryId} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow write: if isAdminOrCollaborator();
     }
 
     match /loreArticles/{articleId} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow write: if isAdminOrCollaborator();
     }
 
     match /loreUniverses/{universeId} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow write: if isAdminOrCollaborator();
     }
 
     match /loreCharacters/{characterId} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow write: if isAdminOrCollaborator();
     }
 
     match /wbSettings/{document=**} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow write: if isAdminOrCollaborator();
     }
 
     match /wbTabs/{document=**} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow write: if isAdminOrCollaborator();
     }
 
     match /wbItems/{document=**} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow write: if isAdminOrCollaborator();
     }
 
     match /wbTimelineEvents/{document=**} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow write: if isAdminOrCollaborator();
     }
 
     match /wbCosmicNodes/{document=**} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow write: if isAdminOrCollaborator();
     }
 
     // Pedidos do Mercado Light Dark TCG

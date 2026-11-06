@@ -61,6 +61,8 @@ import {
   getCartItems,
   getOfficialProductShareUrl,
   getStoreOrderById,
+  isCouponExpired,
+  formatCouponExpiry,
   isValidCpf,
   lookupCepAddress,
   parseBRLPrice,
@@ -472,7 +474,7 @@ export const StoreModal: React.FC<StoreModalProps> = ({
     const found = (storeSettings.coupons || []).find(
       (c) => c.isActive && c.code.toUpperCase() === appliedCoupon.toUpperCase()
     );
-    if (!found) return 0;
+    if (!found || isCouponExpired(found)) return 0;
     if (found.minOrderValue && subtotal < found.minOrderValue) return 0;
     if (found.discountPercent && found.discountPercent > 0) {
       return Number(((subtotal * found.discountPercent) / 100).toFixed(2));
@@ -517,7 +519,14 @@ export const StoreModal: React.FC<StoreModalProps> = ({
       (c) => c.isActive && c.code.toUpperCase() === code
     );
     if (!found) {
-      setCouponMessage({ type: 'err', text: 'Cupom inválido ou expirado.' });
+      setCouponMessage({ type: 'err', text: 'Cupom inválido ou inativo.' });
+      return;
+    }
+    if (isCouponExpired(found)) {
+      setCouponMessage({
+        type: 'err',
+        text: `Este cupom expirou em ${formatCouponExpiry(found.expiresAt)}.`
+      });
       return;
     }
     if (found.minOrderValue && subtotal < found.minOrderValue) {
@@ -531,7 +540,9 @@ export const StoreModal: React.FC<StoreModalProps> = ({
     setAppliedCoupon(found.code.toUpperCase());
     setCouponMessage({
       type: 'ok',
-      text: `Cupom ${found.code.toUpperCase()} aplicado com sucesso!`
+      text: `Cupom ${found.code.toUpperCase()} aplicado com sucesso!${
+        found.expiresAt ? ` (Válido até ${formatCouponExpiry(found.expiresAt)})` : ''
+      }`
     });
   };
 

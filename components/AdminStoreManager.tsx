@@ -14,7 +14,9 @@ import {
   DollarSign,
   Calendar,
   Save,
-  ExternalLink
+  ExternalLink,
+  Clock,
+  ShoppingBag
 } from 'lucide-react';
 import { OrderStatus, StoreCoupon, StoreOrder, StoreSettings } from '../types';
 import {
@@ -23,7 +25,9 @@ import {
   fetchStoreSettings,
   formatBRL,
   formatCep,
+  formatCouponExpiry,
   formatCpf,
+  isCouponExpired,
   ORDER_STATUS_LABELS,
   saveStoreSettings,
   subscribeAllStoreOrders,
@@ -68,6 +72,8 @@ export const AdminStoreManager: React.FC = () => {
   const [newCouponCode, setNewCouponCode] = useState('');
   const [newCouponPercent, setNewCouponPercent] = useState('10');
   const [newCouponMinVal, setNewCouponMinVal] = useState('0');
+  const [newCouponExpiresAt, setNewCouponExpiresAt] = useState('');
+  const [expandedCouponCode, setExpandedCouponCode] = useState<string | null>(null);
 
   useEffect(() => {
     fetchStoreSettings().then(setSettings);
@@ -120,6 +126,47 @@ export const AdminStoreManager: React.FC = () => {
       pendingShipment,
       preOrdersCount
     };
+  }, [orders]);
+
+  const couponUsageMap = useMemo(() => {
+    const map: Record<
+      string,
+      {
+        totalPurchases: number;
+        paidPurchases: number;
+        totalRevenue: number;
+        totalDiscountGiven: number;
+        ordersList: StoreOrder[];
+      }
+    > = {};
+
+    orders.forEach((ord) => {
+      if (!ord.couponCode || ord.orderStatus === 'cancelled') return;
+      const code = ord.couponCode.trim().toUpperCase();
+      if (!code) return;
+      if (!map[code]) {
+        map[code] = {
+          totalPurchases: 0,
+          paidPurchases: 0,
+          totalRevenue: 0,
+          totalDiscountGiven: 0,
+          ordersList: []
+        };
+      }
+      const isPaid =
+        ord.paymentStatus === 'approved' ||
+        ['paid', 'pre_order_reserved', 'preparing_shipment', 'shipped', 'delivered'].includes(ord.orderStatus);
+
+      map[code].totalPurchases += 1;
+      if (isPaid) {
+        map[code].paidPurchases += 1;
+        map[code].totalRevenue += ord.totalAmount || 0;
+      }
+      map[code].totalDiscountGiven += ord.discountAmount || 0;
+      map[code].ordersList.push(ord);
+    });
+
+    return map;
   }, [orders]);
 
   const filteredOrders = useMemo(() => {
@@ -238,21 +285,45 @@ export const AdminStoreManager: React.FC = () => {
     }
   };
 
-  const handleAddCoupon = () => {
+  const applyExpiryPresetHours = (hours: number | null) => {
+    if (hours === null) {
+      setNewCouponExpiresAt('');
+      return;
+    }
+    const d = new Date(Date.now() + hours * 3600 * 1000);
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const localIso = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    setNewCouponExpiresAt(localIso);
+  };
+
+  const handleAddCoupon = async () => {
     const cleanCode = newCouponCode.trim().toUpperCase();
     if (!cleanCode) return;
+    const existing = (settings.coupons || []).find((c) => c.code.toUpperCase() === cleanCode);
     const newC: StoreCoupon = {
       code: cleanCode,
       discountPercent: Math.max(1, Math.min(90, Number(newCouponPercent) || 5)),
       minOrderValue: Math.max(0, Number(newCouponMinVal) || 0),
-      isActive: true
+      isActive: true,
+      expiresAt: newCouponExpiresAt ? newCouponExpiresAt : undefined,
+      usageCount: existing?.usageCount || 0,
+      createdAt: existing?.createdAt || new Date().toISOString()
     };
     const filtered = (settings.coupons || []).filter((c) => c.code.toUpperCase() !== cleanCode);
-    setSettings({
+    const nextSettings: StoreSettings = {
       ...settings,
       coupons: [...filtered, newC]
-    });
+    };
+    setSettings(nextSettings);
     setNewCouponCode('');
+    setNewCouponExpiresAt('');
+    try {
+      await saveStoreSettings(nextSettings);
+      setSettingsSavedMsg(true);
+      setTimeout(() => setSettingsSavedMsg(false), 2500);
+    } catch {
+      // ignore
+    }
   };
 
   const buildWhatsAppLink = (ord: StoreOrder) => {
@@ -417,6 +488,13 @@ export const AdminStoreManager: React.FC = () => {
                         <span className="text-xs font-mono text-purple-300 bg-purple-950/60 border border-purple-800/50 px-2 py-0.5 rounded">
                           {ord.paymentMethod === 'pix' ? 'PIX' : 'Checkout Pro'} ({ord.paymentStatus})
                         </span>
+                        {ord.couponCode && (
+                          <span className="text-xs font-mono font-bold text-emerald-300 bg-emerald-950/70 border border-emerald-700/60 px-2.5 py-0.5 rounded flex items-center gap-1">
+                            <Tag size={11} />
+                            Cupom: {ord.couponCode}
+                            {ord.discountAmount ? ` (-${formatBRL(ord.discountAmount)})` : ''}
+                          </span>
+                        )}
                       </div>
 
                       <div className="flex flex-wrap items-center gap-2">
@@ -1231,76 +1309,322 @@ export const AdminStoreManager: React.FC = () => {
           </div>
 
           {/* Discount Coupons */}
-          <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-4">
-            <h4 className="text-sm font-bold text-white flex items-center gap-2">
-              <Tag size={15} className="text-purple-400" />
-              <span>Cupons de Desconto Ativos</span>
-            </h4>
-
-            <div className="flex flex-wrap gap-2">
-              {(settings.coupons || []).map((c, idx) => (
-                <div
-                  key={idx}
-                  className="flex items-center gap-2 bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-xs"
-                >
-                  <span className="font-mono font-bold text-emerald-400">{c.code}</span>
-                  <span className="text-slate-300">(-{c.discountPercent}%)</span>
-                  {c.minOrderValue ? (
-                    <span className="text-slate-500">Mín: {formatBRL(c.minOrderValue)}</span>
-                  ) : null}
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setSettings({
-                        ...settings,
-                        coupons: settings.coupons.filter((_, i) => i !== idx)
-                      })
-                    }
-                    className="text-red-400 hover:text-red-300 ml-1"
-                  >
-                    <Trash2 size={13} />
-                  </button>
-                </div>
-              ))}
+          <div className="p-5 rounded-xl bg-slate-950 border border-slate-800 space-y-5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-3">
+              <div>
+                <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                  <Tag size={16} className="text-purple-400" />
+                  <span>Cupons de Desconto, Tempo de Validade & Relatório de Compras</span>
+                </h4>
+                <p className="text-[11px] text-slate-400 mt-0.5">
+                  Configure prazo de validade (data/hora limite) e acompanhe em tempo real quantas compras foram feitas com cada cupom.
+                </p>
+              </div>
+              <div className="text-xs font-mono text-slate-300 bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-lg">
+                Total de cupons: <strong className="text-white">{(settings.coupons || []).length}</strong>
+              </div>
             </div>
 
-            <div className="flex flex-wrap items-end gap-3 pt-2 border-t border-slate-800">
-              <div>
-                <label className="text-[11px] text-slate-400 block mb-1">Código do Cupom</label>
-                <input
-                  type="text"
-                  value={newCouponCode}
-                  onChange={(e) => setNewCouponCode(e.target.value.toUpperCase())}
-                  placeholder="Ex: HALLOWEEN10"
-                  className="bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs text-white font-mono uppercase"
-                />
+            {/* Active / Configured Coupons List */}
+            {(settings.coupons || []).length === 0 ? (
+              <div className="text-center py-6 text-xs text-slate-500 bg-slate-900/40 rounded-xl border border-slate-800/80">
+                Nenhum cupom cadastrado no momento.
               </div>
-              <div>
-                <label className="text-[11px] text-slate-400 block mb-1">Desconto (%)</label>
-                <input
-                  type="number"
-                  value={newCouponPercent}
-                  onChange={(e) => setNewCouponPercent(e.target.value)}
-                  className="w-24 bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs text-white font-mono"
-                />
+            ) : (
+              <div className="grid grid-cols-1 gap-3">
+                {(settings.coupons || []).map((c, idx) => {
+                  const codeUpper = c.code.toUpperCase();
+                  const usage = couponUsageMap[codeUpper] || {
+                    totalPurchases: 0,
+                    paidPurchases: 0,
+                    totalRevenue: 0,
+                    totalDiscountGiven: 0,
+                    ordersList: []
+                  };
+                  const expired = isCouponExpired(c);
+                  const isExpanded = expandedCouponCode === codeUpper;
+                  const effectiveTotalPurchases = Math.max(usage.totalPurchases, c.usageCount || 0);
+
+                  return (
+                    <div
+                      key={c.code + idx}
+                      className={`rounded-xl border p-4 transition space-y-3 ${
+                        expired
+                          ? 'bg-red-950/15 border-red-900/50'
+                          : !c.isActive
+                          ? 'bg-slate-900/40 border-slate-800 opacity-75'
+                          : 'bg-slate-900/90 border-slate-700/80'
+                      }`}
+                    >
+                      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+                        {/* Left: Code, Discount, Status & Expiry badge */}
+                        <div className="flex flex-wrap items-center gap-2.5">
+                          <span className="font-mono font-black text-sm px-3 py-1 rounded-lg bg-slate-950 border border-emerald-500/40 text-emerald-400 tracking-wider">
+                            {c.code}
+                          </span>
+                          <span className="text-xs font-black px-2.5 py-1 rounded-md bg-purple-950/80 border border-purple-700/50 text-purple-200">
+                            -{c.discountPercent}% OFF
+                          </span>
+                          {c.minOrderValue ? (
+                            <span className="text-xs font-mono text-slate-300 bg-slate-950 px-2.5 py-1 rounded-md border border-slate-800">
+                              Mín: {formatBRL(c.minOrderValue)}
+                            </span>
+                          ) : (
+                            <span className="text-[11px] text-slate-500">Sem valor mínimo</span>
+                          )}
+
+                          {expired ? (
+                            <span className="text-[11px] font-black uppercase px-2.5 py-0.5 rounded-full bg-red-500/20 border border-red-500/40 text-red-300 flex items-center gap-1">
+                              <Clock size={11} /> EXPIRADO
+                            </span>
+                          ) : c.isActive ? (
+                            <span className="text-[11px] font-black uppercase px-2.5 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 flex items-center gap-1">
+                              <Check size={11} /> ATIVO
+                            </span>
+                          ) : (
+                            <span className="text-[11px] font-black uppercase px-2.5 py-0.5 rounded-full bg-slate-700/40 border border-slate-600 text-slate-300">
+                              PAUSADO
+                            </span>
+                          )}
+
+                          <span
+                            className={`text-xs font-mono px-2.5 py-1 rounded-md border flex items-center gap-1.5 ${
+                              expired
+                                ? 'bg-red-950/50 border-red-800/60 text-red-200'
+                                : c.expiresAt
+                                ? 'bg-amber-950/40 border-amber-700/50 text-amber-200'
+                                : 'bg-slate-950 border-slate-800 text-slate-400'
+                            }`}
+                          >
+                            <Clock size={12} />
+                            <span>
+                              {c.expiresAt
+                                ? `${expired ? 'Expirou em:' : 'Válido até:'} ${formatCouponExpiry(c.expiresAt)}`
+                                : 'Sem prazo de validade'}
+                            </span>
+                          </span>
+                        </div>
+
+                        {/* Right: Purchase Counter & Quick Actions */}
+                        <div className="flex flex-wrap items-center gap-2">
+                          <div className="flex items-center gap-2 bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-xs">
+                            <ShoppingBag size={14} className="text-emerald-400" />
+                            <div>
+                              <span className="font-black text-white">{effectiveTotalPurchases}</span>{' '}
+                              <span className="text-slate-300">
+                                {effectiveTotalPurchases === 1 ? 'compra feita' : 'compras feitas'}
+                              </span>
+                              <span className="text-emerald-400 font-bold ml-1.5">
+                                ({usage.paidPurchases} {usage.paidPurchases === 1 ? 'paga' : 'pagas'})
+                              </span>
+                            </div>
+                          </div>
+
+                          {usage.totalDiscountGiven > 0 && (
+                            <div className="text-[11px] font-mono bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-slate-300">
+                              Receita: <strong className="text-emerald-400">{formatBRL(usage.totalRevenue)}</strong> • Desc.:{' '}
+                              <strong className="text-amber-300">-{formatBRL(usage.totalDiscountGiven)}</strong>
+                            </div>
+                          )}
+
+                          {usage.ordersList.length > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => setExpandedCouponCode(isExpanded ? null : codeUpper)}
+                              className="px-2.5 py-1.5 rounded-lg bg-purple-950/70 hover:bg-purple-900/80 border border-purple-700/50 text-purple-200 text-xs font-bold transition"
+                            >
+                              {isExpanded ? 'Ocultar Compras' : `Ver Compras (${usage.ordersList.length})`}
+                            </button>
+                          )}
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const nextCoupons = settings.coupons.map((item, i) =>
+                                i === idx ? { ...item, isActive: !item.isActive } : item
+                              );
+                              setSettings({ ...settings, coupons: nextCoupons });
+                            }}
+                            className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold border border-slate-700 transition"
+                          >
+                            {c.isActive ? 'Pausar' : 'Ativar'}
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setSettings({
+                                ...settings,
+                                coupons: settings.coupons.filter((_, i) => i !== idx)
+                              })
+                            }
+                            className="p-1.5 rounded-lg bg-red-950/60 hover:bg-red-900/80 border border-red-800/50 text-red-300 transition"
+                            title="Remover cupom"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Inline Expiry Date Editor */}
+                      <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-800/80 text-xs">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-[11px] text-slate-400 font-semibold">Alterar Validade:</span>
+                          <input
+                            type="datetime-local"
+                            value={c.expiresAt ? c.expiresAt.slice(0, 16) : ''}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              const nextCoupons = settings.coupons.map((item, i) =>
+                                i === idx ? { ...item, expiresAt: val ? val : undefined } : item
+                              );
+                              setSettings({ ...settings, coupons: nextCoupons });
+                            }}
+                            className="bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1 text-xs text-white font-mono"
+                          />
+                          {c.expiresAt && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const nextCoupons = settings.coupons.map((item, i) =>
+                                  i === idx ? { ...item, expiresAt: undefined } : item
+                                );
+                                setSettings({ ...settings, coupons: nextCoupons });
+                              }}
+                              className="text-[11px] text-amber-300 hover:text-amber-200 underline"
+                            >
+                              Deixar sem validade
+                            </button>
+                          )}
+                        </div>
+                        <span className="text-[11px] text-slate-500">
+                          Clique em &ldquo;Salvar Configurações de Frete &amp; Loja&rdquo; após editar um cupom existente.
+                        </span>
+                      </div>
+
+                      {/* Expandable Orders List for this Coupon */}
+                      {isExpanded && usage.ordersList.length > 0 && (
+                        <div className="pt-2 border-t border-slate-800 space-y-1.5">
+                          <div className="text-[11px] font-bold uppercase tracking-wider text-purple-300">
+                            Histórico de Pedidos com o cupom {c.code}:
+                          </div>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                            {usage.ordersList.map((ord) => {
+                              const st = ORDER_STATUS_LABELS[ord.orderStatus] || ORDER_STATUS_LABELS.awaiting_payment;
+                              return (
+                                <div
+                                  key={ord.id}
+                                  className="bg-slate-950 border border-slate-800 rounded-lg p-2.5 flex items-center justify-between gap-2 text-xs"
+                                >
+                                  <div>
+                                    <div className="font-bold text-white flex items-center gap-2">
+                                      <span className="font-mono text-purple-300">#{ord.id}</span>
+                                      <span>{ord.customerName}</span>
+                                    </div>
+                                    <div className="text-[11px] text-slate-400">
+                                      {new Date(ord.createdAt).toLocaleString('pt-BR')} • {st.label}
+                                    </div>
+                                  </div>
+                                  <div className="text-right font-mono">
+                                    <div className="font-bold text-emerald-400">{formatBRL(ord.totalAmount)}</div>
+                                    {ord.discountAmount ? (
+                                      <div className="text-[10px] text-amber-300">
+                                        Desc: -{formatBRL(ord.discountAmount)}
+                                      </div>
+                                    ) : null}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
-              <div>
-                <label className="text-[11px] text-slate-400 block mb-1">Pedido Mínimo (R$)</label>
-                <input
-                  type="number"
-                  value={newCouponMinVal}
-                  onChange={(e) => setNewCouponMinVal(e.target.value)}
-                  className="w-28 bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs text-white font-mono"
-                />
+            )}
+
+            {/* Add / Update Coupon Form */}
+            <div className="p-4 rounded-xl bg-slate-900/70 border border-slate-800 space-y-3">
+              <div className="text-xs font-bold text-purple-300 uppercase tracking-wider">
+                Criar Novo Cupom ou Atualizar Cupom Existente
               </div>
-              <button
-                type="button"
-                onClick={handleAddCoupon}
-                className="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold border border-slate-700 transition flex items-center gap-1.5"
-              >
-                <Plus size={14} />
-                <span>Adicionar Cupom</span>
-              </button>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 items-end">
+                <div>
+                  <label className="text-[11px] text-slate-400 block mb-1">Código do Cupom</label>
+                  <input
+                    type="text"
+                    value={newCouponCode}
+                    onChange={(e) => setNewCouponCode(e.target.value.toUpperCase())}
+                    placeholder="Ex: MACROVERSO15"
+                    className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-xs text-white font-mono uppercase"
+                  />
+                </div>
+                <div>
+                  <label className="text-[11px] text-slate-400 block mb-1">Desconto (%)</label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="90"
+                    value={newCouponPercent}
+                    onChange={(e) => setNewCouponPercent(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-xs text-white font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="text-[11px] text-slate-400 block mb-1">Pedido Mínimo (R$)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={newCouponMinVal}
+                    onChange={(e) => setNewCouponMinVal(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-xs text-white font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="text-[11px] text-amber-300 block mb-1 font-semibold">
+                    Tempo de Validade (Opcional)
+                  </label>
+                  <input
+                    type="datetime-local"
+                    value={newCouponExpiresAt}
+                    onChange={(e) => setNewCouponExpiresAt(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-xs text-white font-mono"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={handleAddCoupon}
+                  className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition flex items-center justify-center gap-1.5 h-[34px]"
+                >
+                  <Plus size={14} />
+                  <span>Salvar Cupom</span>
+                </button>
+              </div>
+
+              {/* Quick Duration Presets */}
+              <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                <span className="text-[11px] text-slate-400 mr-1">Atalhos de Validade:</span>
+                {[
+                  { label: 'Sem Prazo', hours: null },
+                  { label: '+24 Horas', hours: 24 },
+                  { label: '+3 Dias', hours: 72 },
+                  { label: '+7 Dias', hours: 24 * 7 },
+                  { label: '+15 Dias', hours: 24 * 15 },
+                  { label: '+30 Dias', hours: 24 * 30 }
+                ].map((preset) => (
+                  <button
+                    key={preset.label}
+                    type="button"
+                    onClick={() => applyExpiryPresetHours(preset.hours)}
+                    className="px-2.5 py-1 rounded-md bg-slate-950 hover:bg-slate-800 border border-slate-700/80 text-[11px] text-slate-300 font-semibold transition"
+                  >
+                    {preset.label}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
 

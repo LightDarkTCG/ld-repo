@@ -23,9 +23,11 @@ import {
   SlidersHorizontal,
   BarChart2,
   ShoppingCart,
-  Copy
+  Copy,
+  ShieldAlert,
+  UserCheck
 } from 'lucide-react';
-import { CardData, MarketplaceListing } from '../types';
+import { CardData, MarketplaceListing, RarePrintOwner } from '../types';
 import { useCards, cleanCardCode, getBaseCardCode, getCardDisplayPriority, resolveModernFrameOnly } from '../CardContext';
 import { useAuth, isUserAdmin } from '../authService';
 import { useUserAlbum, normalizeAlbumKey, FOIL_TYPES, FoilTypeInfo } from '../albumService';
@@ -34,7 +36,15 @@ import { syncUserCollectorStats, getCatalogueUniverse } from '../collectorsServi
 import { useUserWishlist } from '../wishlistService';
 import { subscribeMarketplaceListings } from '../storeService';
 import { allCards as defaultCards } from '../data';
-import { isCardRarePrint } from '../rarePrintService';
+import {
+  isCardRarePrint,
+  fetchRegisteredUsers,
+  RegisteredSiteUser,
+  syncRarePrintOwnershipAcrossAlbums,
+  getCardRarePrintOwners,
+  hasAssignedRarePrintOwners,
+  isUserOfficialRarePrintOwner
+} from '../rarePrintService';
 import { VerificationRequestModal } from './VerificationRequestModal';
 
 interface AlbumModalProps {
@@ -175,7 +185,7 @@ export const isSpecialCard = (c: CardData): boolean => {
 
 export const AlbumModal: React.FC<AlbumModalProps> = ({ isOpen, onClose, onSelectCard, onOpenAuth, onOpenRanking, onOpenWishlist }) => {
   const { user } = useAuth();
-  const { cards: allCards } = useCards();
+  const { cards: allCards, setCardRarePrintSettings } = useCards();
   const { 
     album,
     getQuantity, 
@@ -254,6 +264,18 @@ export const AlbumModal: React.FC<AlbumModalProps> = ({ isOpen, onClose, onSelec
   // Modal para solicitação de tiragem rara ao tentar adicionar ao álbum
   const [rareVerificationCard, setRareVerificationCard] = useState<CardData | null>(null);
 
+  // Modal do Administrador para definir Tiragem Limitada & Dono Oficial direto pelo Álbum
+  const [cardForRareOwnerModal, setCardForRareOwnerModal] = useState<CardData | null>(null);
+  const [registeredUsers, setRegisteredUsers] = useState<RegisteredSiteUser[]>([]);
+  const [ownerSearchTerm, setOwnerSearchTerm] = useState('');
+  const [isSavingOwner, setIsSavingOwner] = useState(false);
+
+  React.useEffect(() => {
+    if (isOpen && isUserAdmin(user)) {
+      fetchRegisteredUsers().then(setRegisteredUsers);
+    }
+  }, [isOpen, user]);
+
   // Estados exclusivos para a interface mobile compacta
   const [showMobileFilters, setShowMobileFilters] = useState(false);
   const [showMobileStats, setShowMobileStats] = useState(false);
@@ -279,6 +301,70 @@ export const AlbumModal: React.FC<AlbumModalProps> = ({ isOpen, onClose, onSelec
     }
     return [...pool].sort((a, b) => compareCardCodes(a.code, b.code));
   }, [allCards, albumEdition]);
+
+  // Auto-remoção automática no álbum caso o usuário possua alguma carta de tiragem limitada cujo dono oficial seja outra pessoa
+  React.useEffect(() => {
+    if (!user || !user.uid || !album || Object.keys(album).length === 0 || allCards.length === 0) return;
+    const universe = getCatalogueUniverse(allCards);
+    const unauthorizedCards = universe.cardsList.filter(c =>
+      hasAssignedRarePrintOwners(c) &&
+      !isUserOfficialRarePrintOwner(c, user.uid) &&
+      getQuantity(c) > 0
+    );
+    if (unauthorizedCards.length > 0) {
+      removeCollectionCards(unauthorizedCards).then(() => {
+        setToastMessage(
+          `${unauthorizedCards.length} carta(s) de tiragem limitada com dono oficial registrado foram removidas automaticamente do seu álbum.`
+        );
+        setTimeout(() => setToastMessage(null), 5000);
+      });
+    }
+  }, [user?.uid, album, allCards]);
+
+  const handleSaveAlbumCardRareSettings = async (
+    targetCard: CardData,
+    isRare: boolean,
+    maxCopies: number,
+    owners: RarePrintOwner[]
+  ) => {
+    try {
+      setIsSavingOwner(true);
+      const effectiveOwners = isRare ? owners : [];
+      const baseCode = getBaseCardCode(targetCard.code, targetCard.parentCode);
+      const payload: CardData = {
+        ...targetCard,
+        parentCode: baseCode || targetCard.parentCode,
+        isRarePrint: isRare,
+        requiresAdminVerification: isRare,
+        maxPrintCopies: isRare ? maxCopies : 0,
+        rarePrintOwners: effectiveOwners
+      };
+      await setCardRarePrintSettings(payload, isRare, maxCopies, effectiveOwners);
+
+      let extraMsg = '';
+      if (isRare && effectiveOwners.length > 0) {
+        const res = await syncRarePrintOwnershipAcrossAlbums(payload, effectiveOwners);
+        const names = effectiveOwners.map(o => o.displayName).join(', ');
+        if (res.removedFromUsersCount > 0) {
+          extraMsg = ` Dono: ${names} (removida automaticamente de ${res.removedFromUsersCount} outro(s) álbum(ns))!`;
+        } else {
+          extraMsg = ` Dono: ${names} (adicionada ao álbum do dono e bloqueada para outros)!`;
+        }
+      }
+
+      setCardForRareOwnerModal(payload);
+      setToastMessage(
+        isRare
+          ? `Tiragem limitada (${maxCopies}x) salva para "${targetCard.name}"!${extraMsg}`
+          : `Tiragem padrão restaurada para "${targetCard.name}"!`
+      );
+      setTimeout(() => setToastMessage(null), 5000);
+    } catch (err) {
+      console.error('Erro ao salvar dono da carta limitada:', err);
+    } finally {
+      setIsSavingOwner(false);
+    }
+  };
 
   // Lista estruturada de coleções disponíveis com contagem de posse baseada nas cartas do álbum ativo
   const collectionsSummary = useMemo(() => {
@@ -1591,7 +1677,46 @@ export const AlbumModal: React.FC<AlbumModalProps> = ({ isOpen, onClose, onSelec
                         <span>{card.code}</span>
                         <span className="text-purple-400 truncate max-w-[85px]" title={card.collection}>{card.collection}</span>
                       </div>
+
+                      {/* BADGE DE DONO OFICIAL DE TIRAGEM LIMITADA */}
+                      {hasAssignedRarePrintOwners(card) && (
+                        <div className="mt-1 px-2 py-0.5 rounded-md bg-amber-950/90 border border-amber-500/60 text-amber-200 text-[10px] font-black flex items-center gap-1 truncate" title={`Dono Oficial: ${getCardRarePrintOwners(card).map(o => o.displayName).join(', ')}`}>
+                          <Crown size={10} className="text-amber-400 fill-amber-400 shrink-0" />
+                          <span className="truncate">
+                            Dono: {getCardRarePrintOwners(card).map(o => o.displayName).join(', ')}
+                          </span>
+                        </div>
+                      )}
                     </div>
+
+                    {/* BOTÃO DO ADMIN PARA DEFINIR TIRAGEM LIMITADA & DONO OFICIAL */}
+                    {isUserAdmin(user) && (
+                      <div className="w-full mt-1.5">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setOwnerSearchTerm('');
+                            setCardForRareOwnerModal(card);
+                          }}
+                          className={`w-full py-1 px-1.5 rounded-lg text-[10px] font-black transition flex items-center justify-center gap-1 border ${
+                            isCardRarePrint(card)
+                              ? 'bg-amber-500/20 hover:bg-amber-500/30 border-amber-400/70 text-amber-300'
+                              : 'bg-slate-900/90 hover:bg-amber-950/50 border-slate-800 hover:border-amber-500/50 text-slate-400 hover:text-amber-300'
+                          }`}
+                          title="Definir Tiragem Limitada e escolher o Dono da Carta no banco de cadastros"
+                        >
+                          <Crown size={10} className={isCardRarePrint(card) ? 'text-amber-400 fill-amber-400' : 'text-amber-400'} />
+                          <span className="truncate">
+                            {hasAssignedRarePrintOwners(card)
+                              ? `Dono: ${getCardRarePrintOwners(card)[0].displayName}`
+                              : isCardRarePrint(card)
+                              ? `Tiragem (${card.maxPrintCopies || 1}) • Definir Dono`
+                              : 'Tiragem Limitada / Dono'}
+                          </span>
+                        </button>
+                      </div>
+                    )}
 
                     {/* SELETOR E STATUS DE FOIL */}
                     <div className="w-full mt-1.5 pt-1.5 border-t border-slate-800/70">
@@ -1627,44 +1752,53 @@ export const AlbumModal: React.FC<AlbumModalProps> = ({ isOpen, onClose, onSelec
 
                     {/* CONTROLES DE QUANTIDADE (+ / -) */}
                     <div className="w-full mt-1.5 pt-1.5 border-t border-slate-800/70 flex items-center justify-between gap-1">
-                      <button
-                        onClick={() => decrementCard(card)}
-                        disabled={qty <= 0}
-                        className={`flex-1 py-2 sm:py-1 min-h-[36px] sm:min-h-0 rounded-lg flex items-center justify-center transition text-xs font-bold active:scale-95 ${
-                          qty > 0 
-                            ? 'bg-slate-800 hover:bg-red-950/80 hover:text-red-400 text-slate-300 border border-slate-700/60' 
-                            : 'bg-slate-900/40 text-slate-600 cursor-not-allowed border border-transparent'
-                        }`}
-                        title="Diminuir quantidade"
-                      >
-                        <Minus size={14} />
-                      </button>
+                      {hasAssignedRarePrintOwners(card) && !isUserOfficialRarePrintOwner(card, user?.uid) && !isUserAdmin(user) ? (
+                        <div className="w-full py-1.5 px-2 rounded-lg bg-amber-950/50 border border-amber-500/40 text-amber-300 text-[10px] font-bold flex items-center justify-center gap-1 truncate">
+                          <Crown size={11} className="fill-current shrink-0" />
+                          <span className="truncate">Exclusiva do Dono</span>
+                        </div>
+                      ) : (
+                        <>
+                          <button
+                            onClick={() => decrementCard(card)}
+                            disabled={qty <= 0}
+                            className={`flex-1 py-2 sm:py-1 min-h-[36px] sm:min-h-0 rounded-lg flex items-center justify-center transition text-xs font-bold active:scale-95 ${
+                              qty > 0 
+                                ? 'bg-slate-800 hover:bg-red-950/80 hover:text-red-400 text-slate-300 border border-slate-700/60' 
+                                : 'bg-slate-900/40 text-slate-600 cursor-not-allowed border border-transparent'
+                            }`}
+                            title="Diminuir quantidade"
+                          >
+                            <Minus size={14} />
+                          </button>
 
-                      <span className="px-2 font-mono font-bold text-xs text-slate-200">
-                        {qty}
-                      </span>
+                          <span className="px-2 font-mono font-bold text-xs text-slate-200">
+                            {qty}
+                          </span>
 
-                      <button
-                        onClick={() => {
-                          if (!user) {
-                            if (onOpenAuth) onOpenAuth();
-                            return;
-                          }
-                          if (isCardRarePrint(card) && !isUserAdmin(user)) {
-                            setRareVerificationCard(card);
-                            return;
-                          }
-                          incrementCard(card);
-                        }}
-                        className={`flex-1 py-2 sm:py-1 min-h-[36px] sm:min-h-0 rounded-lg flex items-center justify-center transition text-xs font-bold active:scale-95 ${
-                          isCardRarePrint(card) && !isUserAdmin(user)
-                            ? 'bg-amber-600 hover:bg-amber-500 text-slate-950 font-black'
-                            : 'bg-purple-950/70 hover:bg-purple-800 text-purple-200 border border-purple-700/50'
-                        }`}
-                        title={isCardRarePrint(card) && !isUserAdmin(user) ? 'Solicitar verificação de posse' : 'Aumentar quantidade'}
-                      >
-                        <Plus size={14} />
-                      </button>
+                          <button
+                            onClick={() => {
+                              if (!user) {
+                                if (onOpenAuth) onOpenAuth();
+                                return;
+                              }
+                              if (isCardRarePrint(card) && !isUserAdmin(user)) {
+                                setRareVerificationCard(card);
+                                return;
+                              }
+                              incrementCard(card);
+                            }}
+                            className={`flex-1 py-2 sm:py-1 min-h-[36px] sm:min-h-0 rounded-lg flex items-center justify-center transition text-xs font-bold active:scale-95 ${
+                              isCardRarePrint(card) && !isUserAdmin(user)
+                                ? 'bg-amber-600 hover:bg-amber-500 text-slate-950 font-black'
+                                : 'bg-purple-950/70 hover:bg-purple-800 text-purple-200 border border-purple-700/50'
+                            }`}
+                            title={isCardRarePrint(card) && !isUserAdmin(user) ? 'Solicitar verificação de posse' : 'Aumentar quantidade'}
+                          >
+                            <Plus size={14} />
+                          </button>
+                        </>
+                      )}
                     </div>
                   </div>
                 );
@@ -2438,6 +2572,335 @@ export const AlbumModal: React.FC<AlbumModalProps> = ({ isOpen, onClose, onSelec
                 type="button"
                 onClick={() => setCardForFoilModal(null)}
                 className="px-5 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold transition shadow-md"
+              >
+                Concluir
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL DO ADMINISTRADOR: DEFINIR TIRAGEM LIMITADA & DONO DA CARTA (DIRETO NO ÁLBUM) */}
+      {cardForRareOwnerModal && isUserAdmin(user) && (
+        <div
+          className="fixed inset-0 z-[185] bg-black/90 backdrop-blur-md flex items-center justify-center p-3 animate-in fade-in duration-200"
+          onClick={() => setCardForRareOwnerModal(null)}
+        >
+          <div
+            className="bg-[#0e111c] border border-amber-500/60 w-full max-w-lg max-h-[90vh] rounded-2xl sm:rounded-3xl shadow-2xl flex flex-col overflow-hidden text-white"
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="p-4 sm:p-5 border-b border-amber-900/40 bg-gradient-to-r from-amber-950/70 via-slate-950 to-slate-950 flex items-center justify-between gap-3 shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-400 to-yellow-600 flex items-center justify-center text-slate-950 shadow-lg shrink-0">
+                  <Crown size={20} className="fill-current" />
+                </div>
+                <div>
+                  <h3 className="text-base sm:text-lg font-black text-white">
+                    Tiragem Limitada & Dono Oficial
+                  </h3>
+                  <p className="text-xs text-amber-300/90 mt-0.5">
+                    {cardForRareOwnerModal.name} <span className="font-mono text-slate-400">({cardForRareOwnerModal.code})</span>
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setCardForRareOwnerModal(null)}
+                className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="p-4 sm:p-5 flex-1 overflow-y-auto custom-scrollbar space-y-4">
+              {/* Resumo da Carta */}
+              <div className="p-3 bg-slate-900/90 border border-slate-800 rounded-2xl flex items-center gap-3">
+                <div className="w-12 h-16 bg-slate-950 rounded-lg overflow-hidden shrink-0 border border-amber-500/40">
+                  {cardForRareOwnerModal.imageUrl ? (
+                    <img src={cardForRareOwnerModal.imageUrl} alt={cardForRareOwnerModal.name} className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-[9px] font-bold">LDT</div>
+                  )}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <span className="text-sm font-black text-white block truncate">{cardForRareOwnerModal.name}</span>
+                  <span className="text-xs text-slate-400 block">
+                    {cardForRareOwnerModal.variationType || cardForRareOwnerModal.frame || 'Moderno'} • {cardForRareOwnerModal.collection}
+                  </span>
+                  <div className="flex items-center gap-2 mt-1">
+                    {isCardRarePrint(cardForRareOwnerModal) ? (
+                      <span className="text-[10px] font-black px-2 py-0.5 rounded bg-amber-500 text-slate-950 flex items-center gap-1">
+                        <ShieldAlert size={11} />
+                        Tiragem Limitada ({cardForRareOwnerModal.maxPrintCopies || 1} cópia(s))
+                      </span>
+                    ) : (
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-800 text-slate-400">
+                        Tiragem Comum
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Ativar / Quantidade de Cópias */}
+              <div className="p-3.5 bg-slate-900/70 border border-slate-800 rounded-2xl space-y-3">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <label className="flex items-center gap-2 cursor-pointer text-xs font-black text-amber-300">
+                    <input
+                      type="checkbox"
+                      checked={isCardRarePrint(cardForRareOwnerModal)}
+                      disabled={isSavingOwner}
+                      onChange={(e) => {
+                        const checked = e.target.checked;
+                        handleSaveAlbumCardRareSettings(
+                          cardForRareOwnerModal,
+                          checked,
+                          cardForRareOwnerModal.maxPrintCopies || 1,
+                          checked ? getCardRarePrintOwners(cardForRareOwnerModal) : []
+                        );
+                      }}
+                      className="w-4 h-4 accent-amber-500 rounded cursor-pointer"
+                    />
+                    <span>Ativar Tiragem Limitada / Rara nesta versão</span>
+                  </label>
+
+                  {isCardRarePrint(cardForRareOwnerModal) && (
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs text-slate-400 font-bold">Máx. Cópias:</span>
+                      <input
+                        type="number"
+                        min="1"
+                        max="999"
+                        disabled={isSavingOwner}
+                        value={cardForRareOwnerModal.maxPrintCopies || 1}
+                        onChange={(e) => {
+                          const val = Math.max(1, parseInt(e.target.value) || 1);
+                          handleSaveAlbumCardRareSettings(
+                            cardForRareOwnerModal,
+                            true,
+                            val,
+                            getCardRarePrintOwners(cardForRareOwnerModal)
+                          );
+                        }}
+                        className="w-16 bg-slate-950 border border-amber-500/50 rounded-lg p-1 text-center font-mono font-black text-xs text-amber-300 outline-none"
+                      />
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    disabled={isSavingOwner}
+                    onClick={() =>
+                      handleSaveAlbumCardRareSettings(
+                        cardForRareOwnerModal,
+                        true,
+                        1,
+                        getCardRarePrintOwners(cardForRareOwnerModal).slice(0, 1)
+                      )
+                    }
+                    className={`flex-1 py-1.5 px-2.5 rounded-xl text-xs font-black transition border ${
+                      isCardRarePrint(cardForRareOwnerModal) && (cardForRareOwnerModal.maxPrintCopies || 1) === 1
+                        ? 'bg-amber-500 text-slate-950 border-amber-300 shadow'
+                        : 'bg-slate-950 text-amber-300 border-amber-500/30 hover:border-amber-400'
+                    }`}
+                  >
+                    1/1 Tiragem Única
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isSavingOwner}
+                    onClick={() =>
+                      handleSaveAlbumCardRareSettings(
+                        cardForRareOwnerModal,
+                        true,
+                        5,
+                        getCardRarePrintOwners(cardForRareOwnerModal)
+                      )
+                    }
+                    className={`flex-1 py-1.5 px-2.5 rounded-xl text-xs font-bold transition border ${
+                      isCardRarePrint(cardForRareOwnerModal) && cardForRareOwnerModal.maxPrintCopies === 5
+                        ? 'bg-amber-500 text-slate-950 border-amber-300 shadow'
+                        : 'bg-slate-950 text-slate-300 border-slate-800 hover:border-slate-700'
+                    }`}
+                  >
+                    5 Cópias
+                  </button>
+                  {isCardRarePrint(cardForRareOwnerModal) && (
+                    <button
+                      type="button"
+                      disabled={isSavingOwner}
+                      onClick={() => handleSaveAlbumCardRareSettings(cardForRareOwnerModal, false, 0, [])}
+                      className="py-1.5 px-3 rounded-xl text-xs font-bold text-red-300 bg-red-950/40 hover:bg-red-900/60 border border-red-800/50 transition"
+                    >
+                      Remover
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Seleção do Dono Oficial no Banco de Cadastros */}
+              <div className="p-3.5 bg-amber-950/20 border border-amber-500/40 rounded-2xl space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-black text-amber-300 flex items-center gap-1.5">
+                    <UserCheck size={15} className="text-amber-400" />
+                    Dono(s) Oficial(is) da Carta (Banco de Cadastros)
+                  </span>
+                  <span className="text-[11px] font-mono text-amber-300/80">
+                    {getCardRarePrintOwners(cardForRareOwnerModal).length}/{cardForRareOwnerModal.maxPrintCopies || 1}
+                  </span>
+                </div>
+
+                {/* Donos atualmente selecionados */}
+                {getCardRarePrintOwners(cardForRareOwnerModal).length > 0 ? (
+                  <div className="space-y-1.5">
+                    {getCardRarePrintOwners(cardForRareOwnerModal).map(owner => (
+                      <div
+                        key={owner.userId}
+                        className="flex items-center justify-between gap-2 bg-amber-950/60 border border-amber-500/50 rounded-xl px-3 py-2"
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <div className="w-7 h-7 rounded-full bg-amber-500 text-slate-950 flex items-center justify-center font-black shrink-0">
+                            <Crown size={14} className="fill-current" />
+                          </div>
+                          <div className="min-w-0">
+                            <span className="text-xs font-black text-white block truncate">{owner.displayName}</span>
+                            {owner.email && (
+                              <span className="text-[10px] text-amber-300/80 font-mono block truncate">{owner.email}</span>
+                            )}
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          disabled={isSavingOwner}
+                          onClick={() => {
+                            const remaining = getCardRarePrintOwners(cardForRareOwnerModal).filter(
+                              o => o.userId !== owner.userId
+                            );
+                            handleSaveAlbumCardRareSettings(
+                              cardForRareOwnerModal,
+                              true,
+                              cardForRareOwnerModal.maxPrintCopies || 1,
+                              remaining
+                            );
+                          }}
+                          className="p-1.5 rounded-lg bg-red-950/70 hover:bg-red-900 text-red-300 hover:text-white transition shrink-0"
+                          title="Remover este dono"
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="p-2.5 rounded-xl bg-slate-950/80 border border-slate-800 text-xs text-slate-400">
+                    Nenhum jogador selecionado como dono ainda. Escolha abaixo um usuário cadastrado no site:
+                  </div>
+                )}
+
+                {/* Campo de Busca de Usuários Cadastrados */}
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 bg-slate-950 border border-amber-500/40 rounded-xl px-3 py-2 focus-within:border-amber-400">
+                    <Search size={14} className="text-amber-400 shrink-0" />
+                    <input
+                      type="text"
+                      value={ownerSearchTerm}
+                      onChange={(e) => setOwnerSearchTerm(e.target.value)}
+                      placeholder="Pesquisar usuário por nome ou e-mail..."
+                      className="w-full bg-transparent text-xs text-white placeholder-slate-500 outline-none"
+                    />
+                    {ownerSearchTerm && (
+                      <button
+                        type="button"
+                        onClick={() => setOwnerSearchTerm('')}
+                        className="text-slate-500 hover:text-white"
+                      >
+                        <X size={13} />
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="max-h-48 overflow-y-auto bg-slate-950 border border-slate-800 rounded-xl divide-y divide-slate-800/80 custom-scrollbar">
+                    {registeredUsers
+                      .filter(u => {
+                        const q = ownerSearchTerm.trim().toLowerCase();
+                        if (!q) return true;
+                        return (
+                          u.displayName.toLowerCase().includes(q) ||
+                          u.email.toLowerCase().includes(q)
+                        );
+                      })
+                      .map(regUser => {
+                        const currentOwners = getCardRarePrintOwners(cardForRareOwnerModal);
+                        const isAlreadyOwner = currentOwners.some(o => o.userId === regUser.userId);
+                        return (
+                          <button
+                            key={regUser.userId}
+                            type="button"
+                            disabled={isSavingOwner || isAlreadyOwner}
+                            onClick={() => {
+                              const maxCopies = cardForRareOwnerModal.maxPrintCopies || 1;
+                              const newOwner: RarePrintOwner = {
+                                userId: regUser.userId,
+                                displayName: regUser.displayName,
+                                email: regUser.email,
+                                photoURL: regUser.photoURL,
+                                copies: 1,
+                                assignedAt: new Date().toISOString()
+                              };
+                              const nextOwners = maxCopies <= 1
+                                ? [newOwner]
+                                : [...currentOwners.slice(0, maxCopies - 1), newOwner];
+                              handleSaveAlbumCardRareSettings(
+                                cardForRareOwnerModal,
+                                true,
+                                maxCopies,
+                                nextOwners
+                              );
+                            }}
+                            className={`w-full px-3 py-2.5 text-left flex items-center justify-between gap-2 transition ${
+                              isAlreadyOwner
+                                ? 'bg-amber-950/30 text-amber-300/60 cursor-default'
+                                : 'hover:bg-amber-500/20 text-slate-200 hover:text-white'
+                            }`}
+                          >
+                            <div className="min-w-0">
+                              <span className="text-xs font-bold block truncate">{regUser.displayName}</span>
+                              {regUser.email && (
+                                <span className="text-[10px] text-slate-400 font-mono block truncate">{regUser.email}</span>
+                              )}
+                            </div>
+                            <span className="px-2.5 py-1 rounded-lg text-[10px] font-black uppercase bg-amber-500 text-slate-950 shrink-0">
+                              {isAlreadyOwner ? 'Dono Atual' : 'Selecionar Dono'}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    {registeredUsers.length === 0 && (
+                      <div className="p-4 text-center text-xs text-slate-500">
+                        Nenhum usuário cadastrado encontrado.
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <p className="text-[11px] text-amber-200/90 leading-relaxed">
+                  ⚡ Ao selecionar o dono, a carta é <strong>creditada automaticamente no álbum dele</strong> e <strong>removida automaticamente do álbum de qualquer outro usuário</strong> que a tivesse marcada.
+                </p>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="p-3.5 bg-slate-950 border-t border-slate-800 flex items-center justify-between text-xs text-slate-400 shrink-0">
+              <span>{isSavingOwner ? 'Sincronizando álbuns...' : 'Sincronização automática ativa'}</span>
+              <button
+                type="button"
+                onClick={() => setCardForRareOwnerModal(null)}
+                className="px-5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black transition"
               >
                 Concluir
               </button>

@@ -91,7 +91,13 @@ export function getCatalogueUniverse(allCards: CardData[]): CatalogueStats {
       for (const v of card.variants) {
         if (!v.imageUrl || seenImages.has(v.imageUrl)) continue;
         const vFrame = v.frame || (isLegacyCard(card) ? 'Moderno' : 'Legado');
-        const varRare = Boolean(v.isRarePrint || v.requiresAdminVerification || v.rarity === 'Moderno Macroversal' || v.rarity === 'Macroversal');
+        const varRare = Boolean(
+          v.isRarePrint ||
+          v.requiresAdminVerification ||
+          v.rarity === 'Moderno Macroversal' ||
+          v.rarity === 'Macroversal' ||
+          (Array.isArray(v.rarePrintOwners) && v.rarePrintOwners.length > 0)
+        );
         const varCard: CardData = {
           ...card,
           id: v.id || `var_${v.code || card.code}`,
@@ -105,7 +111,8 @@ export function getCatalogueUniverse(allCards: CardData[]): CatalogueStats {
           isCatalogCover: Boolean(v.isCatalogCover),
           isRarePrint: varRare,
           requiresAdminVerification: varRare,
-          maxPrintCopies: varRare ? (v.maxPrintCopies || 1) : 0
+          maxPrintCopies: varRare ? (v.maxPrintCopies || 1) : 0,
+          rarePrintOwners: Array.isArray(v.rarePrintOwners) ? v.rarePrintOwners : undefined
         };
         let varKey = normalizeAlbumKey(varCard, vFrame);
         if (varKey && seen.has(varKey)) {
@@ -149,7 +156,8 @@ export function getCatalogueUniverse(allCards: CardData[]): CatalogueStats {
  */
 export function calculateCollectorStats(
   albumCards: UserAlbumMap,
-  allCards: CardData[]
+  allCards: CardData[],
+  userId?: string
 ): {
   uniqueCards: number;
   totalCopies: number;
@@ -171,6 +179,16 @@ export function calculateCollectorStats(
 
   // Itera por todas as cartas reais do catálogo do jogo
   for (const card of universe.cardsList) {
+    // Se a carta de tiragem limitada tem dono(s) oficial(is) e este usuário não é o dono, ignora-a
+    if (
+      userId &&
+      Array.isArray(card.rarePrintOwners) &&
+      card.rarePrintOwners.length > 0 &&
+      !card.rarePrintOwners.some(o => o.userId === userId)
+    ) {
+      continue;
+    }
+
     const key = normalizeAlbumKey(card);
     const entry = albumCards?.[key];
     const qty = entry?.quantity || 0;
@@ -220,7 +238,7 @@ export async function syncUserCollectorStats(
 ): Promise<CollectorRankEntry | null> {
   if (!userId || !user) return null;
 
-  const stats = calculateCollectorStats(albumCards, allCards);
+  const stats = calculateCollectorStats(albumCards, allCards, userId);
   const displayName = user.displayName?.trim() || user.email?.split('@')[0] || 'Colecionador';
 
   const rankEntry: CollectorRankEntry = {

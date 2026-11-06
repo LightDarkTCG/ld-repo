@@ -5,9 +5,10 @@ import { db, storage, readBrowserCache, writeBrowserCache } from '../firebase';
 import {
   X, Clock, Grid, Feather, ChevronRight, ChevronUp, ChevronDown, Compass, Edit3, Plus, Trash2,
   ArrowUp, ArrowDown, Upload, Film, Image as ImageIcon, Type, Quote, Layers, Check, Loader2, GitFork,
-  HelpCircle, Eye, EyeOff
+  HelpCircle, Eye, EyeOff, Users
 } from 'lucide-react';
 import { AdminPanel } from './AdminPanel';
+import { CollaboratorsManager } from './CollaboratorsManager';
 import {
   CosmicLoreMap,
   CosmicNodeData,
@@ -38,9 +39,11 @@ export interface Macroverse13Epoch {
 
 export const LoreView = ({ onClose }: { onClose: () => void }) => {
   const { cards, archetypes } = useCards();
-  const { isAdmin } = useAuth();
+  const { isAdmin: isMasterAdmin, isCollaborator, canEditLore, collaboratorProfile } = useAuth();
+  const isAdmin = canEditLore;
 
   const [isAdminOpen, setIsAdminOpen] = useState(false);
+  const [isCollaboratorsModalOpen, setIsCollaboratorsModalOpen] = useState(false);
   const [loading, setLoading] = useState(() => !readBrowserCache<any>('ld_cache_wbSettings_v2'));
   const [inspectedCard, setInspectedCard] = useState<CardData | null>(null);
 
@@ -642,8 +645,26 @@ export const LoreView = ({ onClose }: { onClose: () => void }) => {
               onClick={() => setIsAdminOpen(true)}
               className="hover:text-purple-300 text-purple-400 transition whitespace-nowrap ml-1 border border-purple-900/60 px-2.5 py-1 rounded"
             >
-              Área do Mestre
+              {isCollaborator && !isMasterAdmin ? 'Painel de Lore (Colaborador)' : 'Área do Mestre'}
             </button>
+
+            {isMasterAdmin && (
+              <button
+                type="button"
+                onClick={() => setIsCollaboratorsModalOpen(true)}
+                className="hover:text-amber-200 text-amber-300 bg-amber-950/40 transition whitespace-nowrap border border-amber-500/50 px-2.5 py-1 rounded flex items-center gap-1"
+                title="Criar e gerenciar usuários colaboradores para preencher Lore e dados"
+              >
+                <Users size={12} />
+                <span>Colaboradores</span>
+              </button>
+            )}
+
+            {isCollaborator && !isMasterAdmin && (
+              <span className="text-[10px] font-mono bg-emerald-950/60 border border-emerald-500/40 text-emerald-300 px-2 py-0.5 rounded whitespace-nowrap">
+                Colaborador: {collaboratorProfile?.displayName || 'Lore'}
+              </span>
+            )}
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
@@ -716,6 +737,13 @@ export const LoreView = ({ onClose }: { onClose: () => void }) => {
 
       <TopNav />
       {isAdminOpen && <AdminPanel adminType="master" onClose={() => setIsAdminOpen(false)} />}
+      {isCollaboratorsModalOpen && isMasterAdmin && (
+        <div className="fixed inset-0 z-[210] bg-black/90 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto">
+          <div className="w-full max-w-5xl max-h-[90vh] overflow-y-auto bg-slate-950 border border-purple-500/50 rounded-2xl p-6 shadow-2xl custom-scrollbar">
+            <CollaboratorsManager onClose={() => setIsCollaboratorsModalOpen(false)} />
+          </div>
+        </div>
+      )}
       {inspectedCard && (
         <CardDetailModal
           card={inspectedCard}
