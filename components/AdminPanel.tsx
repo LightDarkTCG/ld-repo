@@ -1165,7 +1165,14 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
                                           kits: 'Kits'
                                         };
                                         np[i].category = labels[val] || 'Decks';
-                                        if (val === 'pre_venda') np[i].isPreOrder = true;
+                                        if (val === 'pre_venda') {
+                                          np[i].isPreOrder = true;
+                                        } else {
+                                          np[i].isPreOrder = false;
+                                          if (np[i].buttonText && np[i].buttonText.toLowerCase().includes('pré-venda')) {
+                                            np[i].buttonText = 'Comprar Agora';
+                                          }
+                                        }
                                         if (val === 'promocoes') np[i].isPromotion = true;
                                         setHomeSettings({...homeSettings, exclusiveProducts: np});
                                       }}
@@ -1529,7 +1536,15 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
                                         checked={Boolean(prod.isPreOrder)}
                                         onChange={e => {
                                           const np = [...(homeSettings.exclusiveProducts || [])];
-                                          np[i].isPreOrder = e.target.checked;
+                                          const checked = e.target.checked;
+                                          np[i].isPreOrder = checked;
+                                          if (!checked && np[i].storeCategory === 'pre_venda') {
+                                            np[i].storeCategory = 'decks';
+                                            np[i].category = 'Decks';
+                                          }
+                                          if (!checked && np[i].buttonText && np[i].buttonText.toLowerCase().includes('pré-venda')) {
+                                            np[i].buttonText = 'Comprar Agora';
+                                          }
                                           setHomeSettings({ ...homeSettings, exclusiveProducts: np });
                                         }}
                                         className="accent-amber-500 w-4 h-4"

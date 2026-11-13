@@ -267,13 +267,13 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
     }).sort((a, b) => compareCardCodes(a.code, b.code));
   }, [allCards, searchTerm, filters]);
 
-  const [visibleCount, setVisibleCount] = useState(24);
+  const [visibleCount, setVisibleCount] = useState(60);
   const poolScrollContainerRef = useRef<HTMLDivElement>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
 
   // Reset pagination when search or filters change or when modal opens
   useEffect(() => {
-    setVisibleCount(24);
+    setVisibleCount(60);
     if (poolScrollContainerRef.current) {
       poolScrollContainerRef.current.scrollTop = 0;
     }
@@ -281,26 +281,26 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
 
   // Infinite scroll intersection observer for pool library
   useEffect(() => {
-    if (!isOpen || activeTab !== 'build') return;
+    if (!isOpen || activeTab !== 'build' || visibleCount >= filteredPool.length) return;
     const sentinel = sentinelRef.current;
     if (!sentinel) return;
 
     const observer = new IntersectionObserver(
       (entries) => {
-        if (entries[0].isIntersecting) {
-          setVisibleCount((prev) => Math.min(prev + 20, filteredPool.length));
+        if (entries[0]?.isIntersecting) {
+          setVisibleCount((prev) => Math.min(prev + 40, filteredPool.length));
         }
       },
       {
         root: poolScrollContainerRef.current,
-        rootMargin: '350px',
+        rootMargin: '450px',
         threshold: 0.01,
       }
     );
 
     observer.observe(sentinel);
     return () => observer.disconnect();
-  }, [isOpen, activeTab, filteredPool.length]);
+  }, [isOpen, activeTab, visibleCount, filteredPool.length]);
 
   const displayedPool = filteredPool.slice(0, visibleCount);
 
@@ -648,10 +648,14 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
 
               {visibleCount < filteredPool.length && (
                 <div ref={sentinelRef} className="h-16 w-full flex items-center justify-center pt-4 pb-2">
-                  <div className="flex items-center gap-2 text-xs font-mono text-purple-400/80 bg-slate-900/80 px-3 py-1 rounded-full border border-purple-900/30">
+                  <button
+                    type="button"
+                    onClick={() => setVisibleCount(filteredPool.length)}
+                    className="flex items-center gap-2 text-xs font-mono text-purple-300 hover:text-white bg-slate-900/90 px-3 py-1.5 rounded-full border border-purple-700/40 transition cursor-pointer"
+                  >
                     <div className="w-1.5 h-1.5 rounded-full bg-purple-500 animate-ping" />
-                    Carregando mais ({displayedPool.length} de {filteredPool.length})...
-                  </div>
+                    Carregando mais ({displayedPool.length} de {filteredPool.length}) — Mostrar todas
+                  </button>
                 </div>
               )}
             </div>

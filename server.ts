@@ -48,6 +48,46 @@ async function startServer() {
     });
   });
 
+  // Official Light Dark Spotify Artist Tracks Proxy
+  app.get('/api/spotify-tracks', async (_req, res) => {
+    try {
+      const upstream = await fetch(
+        'https://open.spotify.com/embed/artist/07k0ysslV4dERl0GGaFaji?utm_source=generator&theme=0',
+        {
+          headers: {
+            'User-Agent':
+              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36'
+          }
+        }
+      );
+      if (!upstream.ok) {
+        res.status(upstream.status).json({ tracks: [] });
+        return;
+      }
+      const html = await upstream.text();
+      const match = html.match(/<script id="__NEXT_DATA__" type="application\/json">([\s\S]*?)<\/script>/);
+      if (!match) {
+        res.json({ tracks: [] });
+        return;
+      }
+      const parsed = JSON.parse(match[1]);
+      const rawList = parsed?.props?.pageProps?.state?.data?.entity?.trackList || [];
+      const tracks = rawList
+        .filter((t: any) => t && t.title && t.audioPreview?.url)
+        .map((t: any) => ({
+          uri: t.uri || '',
+          title: String(t.title).replace(/\s*-\s*Toca do Salazar$/i, '').trim(),
+          fullTitle: String(t.title),
+          subtitle: t.subtitle || 'Salazar Dias',
+          audioUrl: t.audioPreview.url
+        }));
+      res.setHeader('Cache-Control', 'public, max-age=3600');
+      res.json({ tracks });
+    } catch {
+      res.json({ tracks: [] });
+    }
+  });
+
   // Card Image Proxy for Canvas / PDF generation (avoids Imgur Referer/CORS blocks)
   app.get('/api/image-proxy', async (req, res) => {
     const rawUrl = String(req.query.url || '').trim();
@@ -459,13 +499,13 @@ async function startServer() {
         forceReset: Boolean(forceReset)
       });
 
-      // Wait up to 4 seconds for QR code or pairing code to become ready
-      for (let i = 0; i < 8; i++) {
+      // Wait up to 8 seconds (32 * 250ms) for QR code or pairing code to become ready
+      for (let i = 0; i < 32; i++) {
         const current = getWhatsAppBotStatus();
         if (current.status === 'connected' || current.qrDataUrl || current.pairingCode || current.lastError) {
           break;
         }
-        await new Promise((r) => setTimeout(r, 500));
+        await new Promise((r) => setTimeout(r, 250));
       }
 
       res.json(getWhatsAppBotStatus());

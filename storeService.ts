@@ -326,11 +326,10 @@ export function buildCartItemFromProduct(
     imageUrl = firstImage?.url || product.mediaList[0]?.url || imageUrl;
   }
 
-  const isPreOrder = Boolean(
-    product.isPreOrder ||
-      (product.badge && product.badge.toLowerCase().includes('pré-venda')) ||
-      (product.buttonText && product.buttonText.toLowerCase().includes('pré-venda'))
-  );
+  const isPreOrder =
+    product.isPreOrder === false && product.storeCategory !== 'pre_venda'
+      ? false
+      : Boolean(product.isPreOrder || product.storeCategory === 'pre_venda');
 
   return {
     cartItemId,

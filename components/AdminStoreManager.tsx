@@ -97,6 +97,12 @@ export const AdminStoreManager: React.FC = () => {
 
   useEffect(() => {
     if (subTab !== 'shipping') return;
+    fetch('/api/whatsapp/status')
+      .then((r) => r.json())
+      .then((st) => {
+        if (st && st.status) setWaBotStatus(st);
+      })
+      .catch(() => {});
     const interval = setInterval(() => {
       fetch('/api/whatsapp/status')
         .then((r) => r.json())
@@ -104,7 +110,7 @@ export const AdminStoreManager: React.FC = () => {
           if (st && st.status) setWaBotStatus(st);
         })
         .catch(() => {});
-    }, 3000);
+    }, 1500);
     return () => clearInterval(interval);
   }, [subTab]);
 
@@ -118,7 +124,9 @@ export const AdminStoreManager: React.FC = () => {
     const pendingShipment = approved.filter(
       (o) => !['shipped', 'delivered', 'cancelled'].includes(o.orderStatus)
     ).length;
-    const preOrdersCount = approved.filter((o) => o.hasPreOrderItems).length;
+    const preOrdersCount = approved.filter(
+      (o) => o.orderStatus === 'pre_order_reserved'
+    ).length;
     return {
       totalOrders: orders.length,
       approvedCount: approved.length,
@@ -253,6 +261,7 @@ export const AdminStoreManager: React.FC = () => {
       }
       const updates: Partial<StoreOrder> = {
         orderStatus: nextStatus,
+        hasPreOrderItems: nextStatus === 'pre_order_reserved',
         ...(nextStatus === 'paid' || nextStatus === 'pre_order_reserved'
           ? { paymentStatus: 'approved' }
           : {})
@@ -954,6 +963,21 @@ export const AdminStoreManager: React.FC = () => {
                   )}
                 </div>
               </div>
+
+              {(loadingWaConnect || (waBotStatus.status === 'connecting' && !waBotStatus.qrDataUrl && !waBotStatus.pairingCode)) && (
+                <div className="p-3.5 rounded-xl bg-slate-900/90 border border-amber-500/40 flex items-center gap-3 text-xs text-amber-200">
+                  <RefreshCw size={16} className="animate-spin text-amber-400 shrink-0" />
+                  <span>
+                    Conectando ao servidor do WhatsApp e gerando o QR Code... aguarde alguns segundos.
+                  </span>
+                </div>
+              )}
+
+              {waBotStatus.lastError && waBotStatus.status !== 'connected' && !waBotStatus.qrDataUrl && (
+                <div className="p-3 rounded-xl bg-rose-950/60 border border-rose-500/50 text-xs text-rose-200 font-semibold">
+                  ⚠️ {waBotStatus.lastError}
+                </div>
+              )}
 
               {waBotStatus.qrDataUrl && waBotStatus.status !== 'connected' && (
                 <div className="flex flex-col sm:flex-row items-center gap-4 pt-2 border-t border-slate-800">

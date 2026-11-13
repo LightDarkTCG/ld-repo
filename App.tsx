@@ -36,6 +36,7 @@ import { StoreModal } from './components/StoreModal';
 import { addToCart, getCartItems, toProductSlug } from './storeService';
 import { DuelBotModal } from './duel-bot/DuelBotModal';
 import { BoosterOpenerModal } from './components/BoosterOpenerModal';
+import { NavbarSpotifyMicroPlayer } from './components/SpotifySoundtrackSection';
 import { downloadPresentationGuidePdf } from './utils/presentationPdfGenerator';
 
 // --- SUB-COMPONENTS ---
@@ -653,14 +654,14 @@ const CatalogModal = ({
     sortBy: "code-asc"
   });
 
-  const [visibleCount, setVisibleCount] = useState(24);
+  const [visibleCount, setVisibleCount] = useState(60);
   const [expandVariations, setExpandVariations] = useState(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
 
   // Reset pagination when search or filters change or when modal opens
   useEffect(() => {
-    setVisibleCount(24);
+    setVisibleCount(60);
     if (scrollContainerRef.current) {
       scrollContainerRef.current.scrollTop = 0;
     }
@@ -1037,26 +1038,34 @@ const CatalogModal = ({
 
   // Infinite scroll intersection observer for ultra-fast progressive card loading
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen || visibleCount >= activeGridCards.length) return;
     const sentinel = sentinelRef.current;
     if (!sentinel) return;
 
     const observer = new IntersectionObserver(
       (entries) => {
-        if (entries[0].isIntersecting) {
-          setVisibleCount((prev) => Math.min(prev + 20, activeGridCards.length));
+        if (entries[0]?.isIntersecting) {
+          setVisibleCount((prev) => Math.min(prev + 40, activeGridCards.length));
         }
       },
       {
         root: scrollContainerRef.current,
-        rootMargin: '400px',
+        rootMargin: '500px',
         threshold: 0.01,
       }
     );
 
     observer.observe(sentinel);
     return () => observer.disconnect();
-  }, [isOpen, activeGridCards.length]);
+  }, [isOpen, visibleCount, activeGridCards.length]);
+
+  const handleCatalogScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    if (visibleCount >= activeGridCards.length) return;
+    const el = e.currentTarget;
+    if (el.scrollTop + el.clientHeight >= el.scrollHeight - 600) {
+      setVisibleCount((prev) => Math.min(prev + 40, activeGridCards.length));
+    }
+  };
 
   const displayedCards = activeGridCards.slice(0, visibleCount);
 
@@ -1295,7 +1304,11 @@ const CatalogModal = ({
         </div>
       </div>
 
-      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-4 md:p-8 bg-[#0a0a0c]">
+      <div
+        ref={scrollContainerRef}
+        onScroll={handleCatalogScroll}
+        className="flex-1 overflow-y-auto p-4 md:p-8 bg-[#0a0a0c]"
+      >
         {activeGridCards.length > 0 ? (
           <>
             <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-2 md:gap-8 justify-items-center">
@@ -1308,10 +1321,14 @@ const CatalogModal = ({
 
             {visibleCount < activeGridCards.length && (
               <div ref={sentinelRef} className="h-20 w-full flex items-center justify-center pt-8 pb-4">
-                <div className="flex items-center gap-2 text-xs font-mono text-purple-400/80 bg-slate-900/80 px-4 py-1.5 rounded-full border border-purple-900/30">
+                <button
+                  type="button"
+                  onClick={() => setVisibleCount(activeGridCards.length)}
+                  className="flex items-center gap-2 text-xs font-mono text-purple-300 hover:text-white bg-slate-900/90 hover:bg-purple-950/80 px-4 py-2 rounded-full border border-purple-700/40 transition cursor-pointer"
+                >
                   <div className="w-2 h-2 rounded-full bg-purple-500 animate-ping" />
-                  Carregando mais cartas ({displayedCards.length} de {activeGridCards.length})...
-                </div>
+                  Carregando mais cartas ({displayedCards.length} de {activeGridCards.length}) — Clique para mostrar todas
+                </button>
               </div>
             )}
           </>
@@ -2146,6 +2163,7 @@ export default function App() {
           </div>
 
           <div className="hidden md:flex items-center gap-1.5 lg:gap-2">
+            <NavbarSpotifyMicroPlayer />
             <button 
               type="button"
               onClick={() => {
@@ -2793,7 +2811,7 @@ export default function App() {
               <Mail size={24} />
               <span className="sr-only">Email</span>
             </a>
-            <a href="https://open.spotify.com/intl-pt/artist/07k0ysslV4dERl0GGaFaji?si=j7I8AFYUTBGct3rb28od3g" target="_blank" rel="noopener noreferrer" className="text-slate-400 hover:text-green-400 transition">
+            <a href="https://open.spotify.com/intl-pt/artist/07k0ysslV4dERl0GGaFaji?si=Lou5gJwLT96skytMqWVokw" target="_blank" rel="noopener noreferrer" className="text-slate-400 hover:text-green-400 transition">
               <Music size={24} />
               <span className="sr-only">Spotify</span>
             </a>

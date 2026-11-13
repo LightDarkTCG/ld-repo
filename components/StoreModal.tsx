@@ -130,13 +130,10 @@ export function matchesStoreCategory(prod: ExclusiveProduct, filter: StoreCatego
   const explicit = (prod.storeCategory || '').toLowerCase().trim();
   const catText = `${prod.category || ''} ${prod.title || ''} ${prod.badge || ''} ${prod.description || ''}`.toLowerCase();
 
-  const isPreOrderProduct = Boolean(
-    prod.isPreOrder ||
-      explicit === 'pre_venda' ||
-      catText.includes('pré-venda') ||
-      catText.includes('pre-venda') ||
-      catText.includes('pré venda')
-  );
+  const isPreOrderProduct =
+    prod.isPreOrder === false && explicit !== 'pre_venda'
+      ? false
+      : Boolean(prod.isPreOrder || explicit === 'pre_venda');
 
   const rawPrice = parseBRLPrice(prod.price || '0');
   const rawOriginal = parseBRLPrice(prod.originalPrice || '0');
@@ -430,9 +427,19 @@ export const StoreModal: React.FC<StoreModalProps> = ({
     return cart.reduce((acc, item) => acc + item.quantity, 0);
   }, [cart]);
 
+  const isCartItemCurrentlyPreOrder = (item: CartItem): boolean => {
+    const liveProd = activeProducts.find(
+      (p) => (p.id && p.id === item.productId) || p.title === item.title
+    );
+    if (liveProd) {
+      return matchesStoreCategory(liveProd, 'pre_venda');
+    }
+    return Boolean(item.isPreOrder);
+  };
+
   const hasPreOrderItems = useMemo(() => {
-    return cart.some((item) => item.isPreOrder);
-  }, [cart]);
+    return cart.some((item) => isCartItemCurrentlyPreOrder(item));
+  }, [cart, activeProducts]);
 
   const shippingOptions: ShippingOption[] = useMemo(() => {
     const clean = cep.replace(/\D/g, '');
@@ -583,7 +590,11 @@ export const StoreModal: React.FC<StoreModalProps> = ({
     try {
       const orderId = generateOrderId();
       const nowIso = new Date().toISOString();
-      const preOrderNotes = cart
+      const normalizedCartItems: CartItem[] = cart.map((item) => ({
+        ...item,
+        isPreOrder: isCartItemCurrentlyPreOrder(item)
+      }));
+      const preOrderNotes = normalizedCartItems
         .filter((i) => i.isPreOrder && i.preOrderReleaseDate)
         .map((i) => `${i.title}: ${i.preOrderReleaseDate}`)
         .join(' | ');
@@ -604,7 +615,7 @@ export const StoreModal: React.FC<StoreModalProps> = ({
           city: city.trim(),
           state: stateUf.trim().toUpperCase()
         },
-        items: cart,
+        items: normalizedCartItems,
         subtotal: Number(subtotal.toFixed(2)),
         shippingMethodId: selectedShipping.id,
         shippingMethodName: selectedShipping.name,
