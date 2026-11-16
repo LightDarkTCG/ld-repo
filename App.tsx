@@ -2010,6 +2010,27 @@ export default function App() {
     return <GameBoard onClose={() => window.close()} />;
   }
 
+  const isOnHomePage = !(
+    isManualOpen ||
+    isBuyModalOpen ||
+    isCatalogOpen ||
+    isLoreOpen ||
+    isDeckBuilderOpen ||
+    isAlbumOpen ||
+    isSavedDecksOpen ||
+    isPopularCardsOpen ||
+    isCollectorsRankingOpen ||
+    isGameOpen ||
+    isDuelBotOpen ||
+    isBoosterOpenerOpen ||
+    isTournamentOpen ||
+    isChampionshipHistoryOpen ||
+    isUserProfileOpen ||
+    adminMode !== 'none' ||
+    selectedType !== null ||
+    selectedProduct !== null
+  );
+
   return (
     <div className="min-h-screen bg-[#0a0a0c] text-slate-200 font-sans selection:bg-purple-500 selection:text-white overflow-x-hidden">
       
@@ -2163,7 +2184,7 @@ export default function App() {
           </div>
 
           <div className="hidden md:flex items-center gap-1.5 lg:gap-2">
-            <NavbarSpotifyMicroPlayer />
+            <NavbarSpotifyMicroPlayer isHomePage={isOnHomePage} />
             <button 
               type="button"
               onClick={() => {

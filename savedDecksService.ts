@@ -15,6 +15,7 @@ export interface UserSavedDeck {
   id: string;
   name: string;
   heroName?: string;
+  deckMode?: 'normal' | 'mesao';
   mainDeckCodes: string[];
   sideDeckCodes: string[];
   cardCount: number;
@@ -29,6 +30,7 @@ export const saveUserDeckToFirestore = async (
     id?: string;
     name: string;
     heroName?: string;
+    deckMode?: 'normal' | 'mesao';
     mainDeckCodes: string[];
     sideDeckCodes: string[];
     coverImageUrl?: string;
@@ -47,10 +49,14 @@ export const saveUserDeckToFirestore = async (
     currentUser.email.includes('@')
   );
 
+  const inferredMode: 'normal' | 'mesao' =
+    deckData.deckMode || ((deckData.mainDeckCodes || []).length > 35 ? 'mesao' : 'normal');
+
   const payload: UserSavedDeck & { isEmailAccount?: boolean; userEmail?: string } = {
     id: deckId,
     name: (deckData.name || 'Meu Deck').trim(),
     heroName: deckData.heroName || '',
+    deckMode: inferredMode,
     mainDeckCodes: deckData.mainDeckCodes || [],
     sideDeckCodes: deckData.sideDeckCodes || [],
     cardCount: (deckData.mainDeckCodes || []).length,
@@ -146,7 +152,7 @@ export const useSavedDecks = (userId?: string | null) => {
   return {
     decks,
     loading,
-    saveDeck: (deckData: { id?: string; name: string; heroName?: string; mainDeckCodes: string[]; sideDeckCodes: string[]; coverImageUrl?: string; }) => 
+    saveDeck: (deckData: { id?: string; name: string; heroName?: string; deckMode?: 'normal' | 'mesao'; mainDeckCodes: string[]; sideDeckCodes: string[]; coverImageUrl?: string; }) => 
       saveUserDeckToFirestore(userId!, deckData),
     deleteDeck: (deckId: string) => deleteUserDeckFromFirestore(userId!, deckId)
   };

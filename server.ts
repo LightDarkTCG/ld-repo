@@ -487,11 +487,13 @@ async function startServer() {
 
   // 5. Self-Hosted Direct WhatsApp Connection (QR Code / Pairing Code)
   app.get('/api/whatsapp/status', (_req, res) => {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
     res.json(getWhatsAppBotStatus());
   });
 
   app.post('/api/whatsapp/connect', async (req, res) => {
     try {
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
       const { usePairingCode, phoneNumber, forceReset } = req.body || {};
       await startWhatsAppBot({
         usePairingCode: Boolean(usePairingCode),
@@ -515,6 +517,7 @@ async function startServer() {
   });
 
   app.post('/api/whatsapp/disconnect', async (_req, res) => {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
     await disconnectWhatsAppBot(true);
     res.json(getWhatsAppBotStatus());
   });

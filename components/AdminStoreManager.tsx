@@ -77,10 +77,22 @@ export const AdminStoreManager: React.FC = () => {
 
   useEffect(() => {
     fetchStoreSettings().then(setSettings);
-    fetch('/api/whatsapp/status')
+    fetch(`/api/whatsapp/status?t=${Date.now()}`, { cache: 'no-store' })
       .then((r) => r.json())
       .then((st) => {
-        if (st && st.status) setWaBotStatus(st);
+        if (st && st.status) {
+          setWaBotStatus((prev) => {
+            if (st.status === 'connected') return st;
+            const keptQr = st.qrDataUrl || prev.qrDataUrl || null;
+            const keptPairing = st.pairingCode || prev.pairingCode || null;
+            return {
+              ...st,
+              status: keptQr ? 'qr_ready' : keptPairing ? 'pairing_ready' : st.status,
+              qrDataUrl: keptQr,
+              pairingCode: keptPairing,
+            };
+          });
+        }
       })
       .catch(() => {});
     const unsub = subscribeAllStoreOrders(
@@ -97,22 +109,31 @@ export const AdminStoreManager: React.FC = () => {
 
   useEffect(() => {
     if (subTab !== 'shipping') return;
-    fetch('/api/whatsapp/status')
-      .then((r) => r.json())
-      .then((st) => {
-        if (st && st.status) setWaBotStatus(st);
-      })
-      .catch(() => {});
-    const interval = setInterval(() => {
-      fetch('/api/whatsapp/status')
+    const pollWaStatus = () => {
+      if (loadingWaConnect) return;
+      fetch(`/api/whatsapp/status?t=${Date.now()}`, { cache: 'no-store' })
         .then((r) => r.json())
         .then((st) => {
-          if (st && st.status) setWaBotStatus(st);
+          if (st && st.status) {
+            setWaBotStatus((prev) => {
+              if (st.status === 'connected') return st;
+              const keptQr = st.qrDataUrl || prev.qrDataUrl || null;
+              const keptPairing = st.pairingCode || prev.pairingCode || null;
+              return {
+                ...st,
+                status: keptQr ? 'qr_ready' : keptPairing ? 'pairing_ready' : st.status,
+                qrDataUrl: keptQr,
+                pairingCode: keptPairing,
+              };
+            });
+          }
         })
         .catch(() => {});
-    }, 1500);
+    };
+    pollWaStatus();
+    const interval = setInterval(pollWaStatus, 2500);
     return () => clearInterval(interval);
-  }, [subTab]);
+  }, [subTab, loadingWaConnect]);
 
   const stats = useMemo(() => {
     const approved = orders.filter(

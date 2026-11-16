@@ -38,6 +38,7 @@ export interface PublicCommunityDeck {
   name: string;
   heroName?: string;
   archetype?: string;
+  deckMode?: 'normal' | 'mesao';
   strategyGuide?: string;
   deckCode?: string;
   mainDeckCodes: string[];
@@ -61,7 +62,8 @@ interface CommunityDecksModalProps {
   allCards: CardData[];
   currentMainDeck?: CardData[];
   currentSideDeck?: CardData[];
-  onLoadDeck?: (mainDeck: CardData[], sideDeck: CardData[]) => void;
+  currentDeckMode?: 'normal' | 'mesao';
+  onLoadDeck?: (mainDeck: CardData[], sideDeck: CardData[], deckMode?: 'normal' | 'mesao') => void;
   onOpenAuth?: () => void;
 }
 
@@ -71,6 +73,7 @@ export const CommunityDecksModal: React.FC<CommunityDecksModalProps> = ({
   allCards,
   currentMainDeck = [],
   currentSideDeck = [],
+  currentDeckMode = 'normal',
   onLoadDeck,
   onOpenAuth
 }) => {
@@ -260,11 +263,15 @@ export const CommunityDecksModal: React.FC<CommunityDecksModalProps> = ({
 
     setIsPublishing(true);
     try {
+      const inferredDeckMode: 'normal' | 'mesao' =
+        targetMain.length > 35 ? 'mesao' : currentDeckMode;
+
       const payload: PublicCommunityDeck = {
         id,
         name: deckName.trim(),
         heroName: heroCard?.name || '',
         archetype: deckArchetype.trim() || heroCard?.archetype || 'Misto',
+        deckMode: inferredDeckMode,
         strategyGuide:
           strategyGuide.trim() ||
           'Decklist compartilhada no Mural da Comunidade Light Dark TCG.',

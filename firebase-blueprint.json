@@ -148,6 +148,21 @@
         "createdAt": { "type": "string", "description": "ISO creation timestamp" }
       },
       "required": ["id", "sellerId", "buyerId", "buyerName", "rating", "comment", "createdAt"]
+    },
+    "DuelRoom": {
+      "title": "Online Duel Room",
+      "description": "Real-time online duel room for 2-player Normal or 4-player Mesão mode.",
+      "type": "object",
+      "properties": {
+        "roomCode": { "type": "string", "description": "Short alphanumeric room code" },
+        "duelMode": { "type": "string", "description": "normal or mesao" },
+        "matchFormat": { "type": "number", "description": "MD1, MD3, or MD5" },
+        "rounds": { "type": "number", "description": "Current round number" },
+        "turns": { "type": "number", "description": "Current turn index in round" },
+        "activePlayer": { "type": "number", "description": "Active player slot (1 to 4)" },
+        "updatedAt": { "type": "number", "description": "Timestamp in ms" }
+      },
+      "required": ["roomCode", "duelMode", "rounds", "turns", "activePlayer"]
     }
   },
   "firestore": {
@@ -186,6 +201,10 @@
     "marketplaceSellerReviews": {
       "schema": { "$ref": "#/entities/MarketplaceSellerReview" },
       "description": "Buyer reviews and star ratings for community sellers."
+    },
+    "duelRooms": {
+      "schema": { "$ref": "#/entities/DuelRoom" },
+      "description": "Real-time online duel rooms for the Duel Assistant."
     }
   }
 }

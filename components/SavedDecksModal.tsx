@@ -25,7 +25,8 @@ interface SavedDecksModalProps {
   onClose: () => void;
   currentMainDeck?: CardData[];
   currentSideDeck?: CardData[];
-  onLoadDeck: (mainDeck: CardData[], sideDeck: CardData[]) => void;
+  currentDeckMode?: 'normal' | 'mesao';
+  onLoadDeck: (mainDeck: CardData[], sideDeck: CardData[], deckMode?: 'normal' | 'mesao') => void;
   allCards: CardData[];
   onOpenAuth?: () => void;
 }
@@ -35,6 +36,7 @@ export const SavedDecksModal: React.FC<SavedDecksModalProps> = ({
   onClose,
   currentMainDeck = [],
   currentSideDeck = [],
+  currentDeckMode = 'normal',
   onLoadDeck,
   allCards,
   onOpenAuth
@@ -69,6 +71,7 @@ export const SavedDecksModal: React.FC<SavedDecksModalProps> = ({
       await saveDeck({
         name,
         heroName: detectedHero?.name || '',
+        deckMode: currentDeckMode,
         mainDeckCodes: currentMainDeck.map(c => cleanCardCode(c.code)),
         sideDeckCodes: currentSideDeck.map(c => cleanCardCode(c.code)),
         coverImageUrl: detectedHero?.imageUrl || ''
@@ -110,7 +113,7 @@ export const SavedDecksModal: React.FC<SavedDecksModalProps> = ({
     mainList.sort((a, b) => compareCardCodes(a.code, b.code));
     sideList.sort((a, b) => compareCardCodes(a.code, b.code));
 
-    onLoadDeck(mainList, sideList);
+    onLoadDeck(mainList, sideList, savedDeck.deckMode);
     onClose();
   };
 

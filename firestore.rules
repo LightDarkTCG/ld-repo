@@ -215,6 +215,11 @@ service cloud.firestore {
                     && request.resource.data.question.size() > 0;
       allow update, delete: if isAdmin() || request.auth != null;
     }
+
+    // Salas Online do Assistente de Duelo (sincronização em tempo real entre celulares)
+    match /duelRooms/{roomId} {
+      allow read, create, update, delete: if true;
+    }
   }
 }
 

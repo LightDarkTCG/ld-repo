@@ -90,8 +90,14 @@ function extractTimestampMs(ts: any): number {
  * 1. "as cartas populares sao baseadas nos ultimos 30 dias"
  * 2. "atualmente resete a lista, deixe ela vazia até usuários com conta com email e senha registrado montem seus decks"
  */
-export async function fetchCommunityDecks(): Promise<{ mainDeckCodes: string[]; sideDeckCodes?: string[] }[]> {
-  const decksList: { mainDeckCodes: string[]; sideDeckCodes?: string[] }[] = [];
+export interface CommunityDeckForPopular {
+  mainDeckCodes: string[];
+  sideDeckCodes?: string[];
+  deckMode: 'normal' | 'mesao';
+}
+
+export async function fetchCommunityDecks(): Promise<CommunityDeckForPopular[]> {
+  const decksList: CommunityDeckForPopular[] = [];
   const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
   const now = Date.now();
 
@@ -111,6 +117,13 @@ export async function fetchCommunityDecks(): Promise<{ mainDeckCodes: string[]; 
     );
   };
 
+  const resolveDeckMode = (data: any): 'normal' | 'mesao' => {
+    if (data.deckMode === 'mesao') return 'mesao';
+    if (data.deckMode === 'normal') return 'normal';
+    if (Array.isArray(data.mainDeckCodes) && data.mainDeckCodes.length > 35) return 'mesao';
+    return 'normal';
+  };
+
   // 1. Tentar ler da coleção pública de decks comunitários espelhados
   try {
     const communitySnap = await getDocs(collection(db, 'communityDecks'));
@@ -124,7 +137,8 @@ export async function fetchCommunityDecks(): Promise<{ mainDeckCodes: string[]; 
       ) {
         decksList.push({
           mainDeckCodes: data.mainDeckCodes,
-          sideDeckCodes: data.sideDeckCodes || []
+          sideDeckCodes: data.sideDeckCodes || [],
+          deckMode: resolveDeckMode(data)
         });
       }
     });
@@ -150,7 +164,8 @@ export async function fetchCommunityDecks(): Promise<{ mainDeckCodes: string[]; 
         if (!exists) {
           decksList.push({
             mainDeckCodes: data.mainDeckCodes,
-            sideDeckCodes: data.sideDeckCodes || []
+            sideDeckCodes: data.sideDeckCodes || [],
+            deckMode: resolveDeckMode(data)
           });
         }
       }

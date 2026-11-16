@@ -43,7 +43,9 @@ export const PopularCardsModal: React.FC<PopularCardsModalProps> = ({
   onOpenDeckBuilder
 }) => {
   const [activeTab, setActiveTab] = useState<TabType>('overview');
-  const [report, setReport] = useState<PopularCardsReport | null>(null);
+  const [popularMode, setPopularMode] = useState<'normal' | 'mesao'>('normal');
+  const [normalReport, setNormalReport] = useState<PopularCardsReport | null>(null);
+  const [mesaoReport, setMesaoReport] = useState<PopularCardsReport | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
@@ -55,14 +57,18 @@ export const PopularCardsModal: React.FC<PopularCardsModalProps> = ({
     setIsLoading(true);
     try {
       const decks = await fetchCommunityDecks();
-      const calculated = computePopularCards(decks, allCardsRef.current || []);
-      setReport(calculated);
+      const normalDecks = decks.filter(d => d.deckMode !== 'mesao');
+      const mesaoDecks = decks.filter(d => d.deckMode === 'mesao');
+      setNormalReport(computePopularCards(normalDecks, allCardsRef.current || []));
+      setMesaoReport(computePopularCards(mesaoDecks, allCardsRef.current || []));
     } catch (err) {
       console.error('Erro ao calcular cartas populares:', err);
     } finally {
       setIsLoading(false);
     }
   }, []);
+
+  const report = popularMode === 'mesao' ? mesaoReport : normalReport;
 
   useEffect(() => {
     if (isOpen) {
@@ -102,21 +108,47 @@ export const PopularCardsModal: React.FC<PopularCardsModalProps> = ({
               <Flame size={26} className="animate-pulse" />
             </div>
             <div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <h2 className="text-lg sm:text-2xl font-black tracking-tight text-white flex items-center gap-2">
-                  Cartas Populares
+                  Cartas Populares — {popularMode === 'mesao' ? 'Modo Mesão' : 'Modo Normal'}
                 </h2>
                 <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-red-950/80 border border-red-500/50 text-red-300">
                   Últimos 30 Dias
                 </span>
               </div>
               <p className="text-xs sm:text-sm text-slate-400 mt-0.5">
-                Top 10 cartas dos decks de contas com e-mail nos últimos 30 dias (priorizando Moldura Moderna)
+                Top 10 cartas dos decks {popularMode === 'mesao' ? 'de Mesão (35-40 cartas)' : 'Normais (30-35 cartas)'} nos últimos 30 dias
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* Divisão: Cartas Populares Normais vs Mesão */}
+            <div className="flex bg-slate-900 rounded-xl p-1 border border-slate-700">
+              <button
+                type="button"
+                onClick={() => setPopularMode('normal')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-black transition whitespace-nowrap ${
+                  popularMode === 'normal'
+                    ? 'bg-purple-600 text-white shadow'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                Modo Normal
+              </button>
+              <button
+                type="button"
+                onClick={() => setPopularMode('mesao')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-black transition whitespace-nowrap ${
+                  popularMode === 'mesao'
+                    ? 'bg-amber-600 text-slate-950 shadow'
+                    : 'text-amber-300/80 hover:text-amber-200'
+                }`}
+              >
+                Modo Mesão
+              </button>
+            </div>
+
             <button
               onClick={loadData}
               disabled={isLoading}
@@ -141,7 +173,7 @@ export const PopularCardsModal: React.FC<PopularCardsModalProps> = ({
           <div className="flex items-center gap-3 sm:gap-6 flex-wrap">
             <div className="flex items-center gap-2 text-slate-300">
               <BarChart3 size={15} className="text-purple-400" />
-              <span>Decks Analisados:</span>
+              <span>Decks {popularMode === 'mesao' ? 'Mesão' : 'Normais'} Analisados:</span>
               <strong className="text-white font-mono bg-purple-950/80 px-2 py-0.5 rounded border border-purple-500/40">
                 {report ? report.totalDecksAnalyzed : '...'}
               </strong>
@@ -150,7 +182,7 @@ export const PopularCardsModal: React.FC<PopularCardsModalProps> = ({
             {report?.topOverallCard && (
               <div className="hidden md:flex items-center gap-2 text-slate-300">
                 <Crown size={15} className="text-amber-400" />
-                <span>#1 Mais Usada do Meta:</span>
+                <span>#1 Mais Usada ({popularMode === 'mesao' ? 'Mesão' : 'Normal'}):</span>
                 <span className="text-amber-300 font-bold">
                   {report.topOverallCard.card.name}
                 </span>

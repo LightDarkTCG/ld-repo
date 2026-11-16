@@ -1,135 +1,274 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Play, Pause, SkipBack, SkipForward } from 'lucide-react';
 
-export interface SpotifyMicroTrack {
-  uri: string;
+export interface FullMicroTrack {
+  youtubeId: string;
   title: string;
-  fullTitle?: string;
-  subtitle?: string;
-  audioUrl: string;
+  fullTitle: string;
+  durationLabel: string;
 }
 
-const DEFAULT_VOLUME = 0.4; // 40%
+const DEFAULT_VOLUME_PERCENT = 40; // 40%
 
-const DEFAULT_LIGHT_DARK_TRACKS: SpotifyMicroTrack[] = [
+// Todas as faixas completas oficiais de Salazar Dias (YouTube Music / Topic)
+const FULL_LIGHT_DARK_TRACKS: FullMicroTrack[] = [
   {
-    uri: 'spotify:track:3MH4UlLaUUNZB8kN6viikE',
+    youtubeId: 'OD4j3ot0l8U',
     title: 'The Dragon and Elf',
-    fullTitle: 'The Dragon and Elf - Toca do Salazar',
-    subtitle: 'Salazar Dias',
-    audioUrl: 'https://p.scdn.co/mp3-preview/f2b9e5e26c89584a789b4b19c3198929a5c851a6'
+    fullTitle: 'The Dragon and Elf (Toca do Salazar) — Salazar Dias',
+    durationLabel: '3:52'
   },
   {
-    uri: 'spotify:track:3e20V5QWeXMRPppedi7fNK',
+    youtubeId: 'b_75bsZrbJk',
     title: 'The Blank Sheet',
-    fullTitle: 'The Blank Sheet',
-    subtitle: 'Salazar Dias',
-    audioUrl: 'https://p.scdn.co/mp3-preview/80f0c2110955b7aa90e557968f1fce83cbdbc13b'
+    fullTitle: 'The Blank Sheet — Salazar Dias',
+    durationLabel: '5:31'
   },
   {
-    uri: 'spotify:track:1oSPZW7lRR5x9yBhWBbbBt',
+    youtubeId: '7YRvEWN6h_8',
     title: 'My Moon',
-    fullTitle: 'My Moon',
-    subtitle: 'Salazar Dias',
-    audioUrl: 'https://p.scdn.co/mp3-preview/3faa2e89a7e9755adf397b928cd714ba324de686'
+    fullTitle: 'My Moon — Salazar Dias',
+    durationLabel: '4:46'
   },
   {
-    uri: 'spotify:track:1otCDbpd6mICT1WS88sGxr',
+    youtubeId: 'JmiLjKTZV64',
     title: 'Blood Soldier',
-    fullTitle: 'Blood Soldier',
-    subtitle: 'Salazar Dias',
-    audioUrl: 'https://p.scdn.co/mp3-preview/b8af4b514ecdecc8b30a509bfd28fa60a0a2093e'
+    fullTitle: 'Blood Soldier — Salazar Dias',
+    durationLabel: '3:35'
   },
   {
-    uri: 'spotify:track:2js6YWjhK6QkAaIj3cUSKs',
+    youtubeId: 'zhNRyugrM8A',
     title: 'Broken Doll',
-    fullTitle: 'Broken Doll',
-    subtitle: 'Salazar Dias',
-    audioUrl: 'https://p.scdn.co/mp3-preview/2be42858fb7bb0423b234b95192c19e5677441a9'
+    fullTitle: 'Broken Doll — Salazar Dias',
+    durationLabel: '2:46'
   },
   {
-    uri: 'spotify:track:3lWY3WzFeME63AG2jC3aBm',
+    youtubeId: 'O50KYgW7bm0',
     title: 'Heir of Chaos',
-    fullTitle: 'Heir of Chaos',
-    subtitle: 'Salazar Dias',
-    audioUrl: 'https://p.scdn.co/mp3-preview/b0e5dcff0000fdc2fd559b271c05480022c88fb9'
+    fullTitle: 'Heir of Chaos — Salazar Dias',
+    durationLabel: '5:48'
   },
   {
-    uri: 'spotify:track:1d61pZDCw0eBiiVlKW1Vh0',
+    youtubeId: 'kZrh7MLjAvg',
     title: 'ACROSS THE MACROVERSE',
-    fullTitle: 'ACROSS THE MACROVERSE',
-    subtitle: 'Salazar Dias',
-    audioUrl: 'https://p.scdn.co/mp3-preview/a081434bcc2bf760d50bfcd21c124b62c285f206'
+    fullTitle: 'ACROSS THE MACROVERSE — Salazar Dias',
+    durationLabel: '4:50'
   },
   {
-    uri: 'spotify:track:1LkjBgo46JIXCDVXk71y4B',
+    youtubeId: 'oFDJASwEdgI',
     title: 'Shadows of Arkham',
-    fullTitle: 'Shadows of Arkham - Toca do Salazar',
-    subtitle: 'Salazar Dias',
-    audioUrl: 'https://p.scdn.co/mp3-preview/91a0e0e7e5de3b9abc6b445812a3553602c38f9e'
+    fullTitle: 'Shadows of Arkham (Toca do Salazar) — Salazar Dias',
+    durationLabel: '4:50'
   },
   {
-    uri: 'spotify:track:5abCNFS7VTwopkr5TPzyx2',
+    youtubeId: 'drgKwlW7ME0',
     title: 'Last Drink',
-    fullTitle: 'Last Drink',
-    subtitle: 'Salazar Dias',
-    audioUrl: 'https://p.scdn.co/mp3-preview/40ad69f0d5013a9e14aa23c148ccb25726da0e76'
+    fullTitle: 'Last Drink — Salazar Dias',
+    durationLabel: '4:55'
   },
   {
-    uri: 'spotify:track:3ekaZG1HtoG0JIIEm1Zrqu',
+    youtubeId: 'aS-X3uLN2bo',
     title: 'Sacrifice',
-    fullTitle: 'Sacrifice',
-    subtitle: 'Salazar Dias',
-    audioUrl: 'https://p.scdn.co/mp3-preview/9c3fa1f9d9d85bc8e3105c62b5e0e98fb8b624fe'
+    fullTitle: 'Sacrifice — Salazar Dias',
+    durationLabel: '4:20'
+  },
+  {
+    youtubeId: 'rN_nGWQHpMo',
+    title: 'Fall of Macroverse',
+    fullTitle: 'Fall of Macroverse — Salazar Dias',
+    durationLabel: '5:20'
+  },
+  {
+    youtubeId: 'UGBUoXlg5Qs',
+    title: 'The Lady of Time',
+    fullTitle: 'The Lady of Time (Toca do Salazar) — Salazar Dias',
+    durationLabel: '4:32'
+  },
+  {
+    youtubeId: 'gddLujQfsVE',
+    title: 'Reverse Universe',
+    fullTitle: 'Reverse Universe — Salazar Dias',
+    durationLabel: '3:24'
+  },
+  {
+    youtubeId: 'dCgDGlHDZ9o',
+    title: 'For The Glory',
+    fullTitle: 'For The Glory — Salazar Dias',
+    durationLabel: '5:32'
+  },
+  {
+    youtubeId: 'yoeXf9-W9IA',
+    title: "The night's true light!",
+    fullTitle: "The night's true light! — Salazar Dias",
+    durationLabel: '4:31'
+  },
+  {
+    youtubeId: 'OosH6HzKzX0',
+    title: 'I Promisse',
+    fullTitle: 'I Promisse — Salazar Dias',
+    durationLabel: '5:18'
+  },
+  {
+    youtubeId: 'n7bOOcFaPcc',
+    title: 'I Dare You',
+    fullTitle: 'I Dare You — Salazar Dias',
+    durationLabel: '4:12'
+  },
+  {
+    youtubeId: 'go5Gekjpe2c',
+    title: 'Destino',
+    fullTitle: 'Destino — Salazar Dias',
+    durationLabel: '4:50'
+  },
+  {
+    youtubeId: '5lUBZv6TQhs',
+    title: 'The Chosen',
+    fullTitle: 'The Chosen — Salazar Dias',
+    durationLabel: '4:25'
+  },
+  {
+    youtubeId: 'FcBWUaV5lH0',
+    title: 'Madness is Clarity',
+    fullTitle: 'Madness is Clarity — Salazar Dias',
+    durationLabel: '4:05'
+  },
+  {
+    youtubeId: 'y7xSgnIEkoo',
+    title: 'My Lady',
+    fullTitle: 'My Lady — Salazar Dias',
+    durationLabel: '5:28'
+  },
+  {
+    youtubeId: 'MZnW-9tzF_8',
+    title: 'Never be like you.',
+    fullTitle: 'Never be like you. — Salazar Dias',
+    durationLabel: '6:32'
   }
 ];
 
-export const NavbarSpotifyMicroPlayer: React.FC = () => {
-  const [tracks, setTracks] = useState<SpotifyMicroTrack[]>(DEFAULT_LIGHT_DARK_TRACKS);
+declare global {
+  interface Window {
+    YT?: any;
+    onYouTubeIframeAPIReady?: () => void;
+  }
+}
+
+interface NavbarSpotifyMicroPlayerProps {
+  isHomePage?: boolean;
+}
+
+export const NavbarSpotifyMicroPlayer: React.FC<NavbarSpotifyMicroPlayerProps> = ({
+  isHomePage = true,
+}) => {
+  const [tracks] = useState<FullMicroTrack[]>(FULL_LIGHT_DARK_TRACKS);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(true);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const playerRef = useRef<any>(null);
+  const playerReadyRef = useRef(false);
   const userPausedRef = useRef(false);
+  const isHomePageRef = useRef(isHomePage);
+  const currentIndexRef = useRef(0);
+  const containerIdRef = useRef(`yt_micro_player_${Math.random().toString(36).slice(2, 8)}`);
 
-  useEffect(() => {
-    let mounted = true;
-    fetch('/api/spotify-tracks')
-      .then((r) => r.json())
-      .then((data) => {
-        if (mounted && Array.isArray(data?.tracks) && data.tracks.length > 0) {
-          setTracks(data.tracks);
+  isHomePageRef.current = isHomePage;
+  currentIndexRef.current = currentIndex;
+  const currentTrack = tracks[currentIndex] || tracks[0];
+
+  const isAllowedToPlay = () => {
+    const isTabVisible = typeof document !== 'undefined' ? !document.hidden && document.visibilityState !== 'hidden' : true;
+    return isHomePageRef.current && isTabVisible && !userPausedRef.current;
+  };
+
+  const pausePlayerSilently = () => {
+    if (playerRef.current && playerReadyRef.current) {
+      try {
+        playerRef.current.pauseVideo?.();
+      } catch {
+        // ignore
+      }
+    }
+    setIsPlaying(false);
+  };
+
+  const resumePlayerIfAllowed = () => {
+    if (!isAllowedToPlay() || !playerRef.current || !playerReadyRef.current) return;
+    try {
+      playerRef.current.unMute?.();
+      playerRef.current.setVolume?.(DEFAULT_VOLUME_PERCENT);
+      playerRef.current.playVideo?.();
+      setIsPlaying(true);
+    } catch {
+      // ignore
+    }
+  };
+
+  const advanceToNextTrack = () => {
+    setCurrentIndex((prev) => {
+      const next = (prev + 1) % tracks.length;
+      if (playerRef.current && playerReadyRef.current) {
+        try {
+          playerRef.current.setVolume(DEFAULT_VOLUME_PERCENT);
+          if (isAllowedToPlay()) {
+            playerRef.current.loadVideoById(tracks[next].youtubeId);
+            playerRef.current.playVideo();
+            setIsPlaying(true);
+          } else {
+            playerRef.current.cueVideoById(tracks[next].youtubeId);
+            setIsPlaying(false);
+          }
+        } catch {
+          // ignore
         }
-      })
-      .catch(() => {});
+      }
+      return next;
+    });
+  };
+
+  // Pause immediately when leaving the home page; resume when returning to the home page (if not manually paused)
+  useEffect(() => {
+    isHomePageRef.current = isHomePage;
+    if (!isHomePage) {
+      pausePlayerSilently();
+    } else {
+      resumePlayerIfAllowed();
+    }
+  }, [isHomePage]);
+
+  // Pause immediately when switching browser tabs; resume when returning to the tab on the home page
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.hidden || document.visibilityState === 'hidden') {
+        pausePlayerSilently();
+      } else {
+        resumePlayerIfAllowed();
+      }
+    };
+
+    const handlePageHide = () => {
+      pausePlayerSilently();
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('pagehide', handlePageHide);
+
     return () => {
-      mounted = false;
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('pagehide', handlePageHide);
     };
   }, []);
 
-  const currentTrack = tracks[currentIndex] || tracks[0];
-
-  // Auto-play on initial load at 40% volume, with instant fallback on first user interaction if browser blocks autoplay
   useEffect(() => {
-    const audio = audioRef.current;
-    if (!audio || !currentTrack) return;
+    let isMounted = true;
 
-    audio.volume = DEFAULT_VOLUME;
-    if (audio.src !== currentTrack.audioUrl) {
-      audio.src = currentTrack.audioUrl;
-    }
-
-    const attemptAutoPlay = () => {
-      if (userPausedRef.current || !audioRef.current) return;
-      audioRef.current.volume = DEFAULT_VOLUME;
-      audioRef.current
-        .play()
-        .then(() => {
-          setIsPlaying(true);
-          cleanupListeners();
-        })
-        .catch(() => {
-          // Keeps visual state ready and waits for first pointer/key gesture
-        });
+    const tryPlayCurrent = () => {
+      if (!isAllowedToPlay() || !playerRef.current || !playerReadyRef.current) return;
+      try {
+        playerRef.current.unMute?.();
+        playerRef.current.setVolume?.(DEFAULT_VOLUME_PERCENT);
+        playerRef.current.playVideo?.();
+      } catch {
+        // ignore
+      }
     };
 
     const handleFirstInteraction = (e: Event) => {
@@ -137,12 +276,23 @@ export const NavbarSpotifyMicroPlayer: React.FC = () => {
         cleanupListeners();
         return;
       }
+      if (!isAllowedToPlay()) return;
       const target = e.target as HTMLElement | null;
       if (target?.closest('[data-spotify-micro-toggle="true"]')) {
         cleanupListeners();
         return;
       }
-      attemptAutoPlay();
+      if (!playerRef.current || !playerReadyRef.current) return;
+      try {
+        const state = playerRef.current.getPlayerState?.();
+        if (state !== 1) {
+          tryPlayCurrent();
+        } else {
+          cleanupListeners();
+        }
+      } catch {
+        tryPlayCurrent();
+      }
     };
 
     const cleanupListeners = () => {
@@ -151,64 +301,173 @@ export const NavbarSpotifyMicroPlayer: React.FC = () => {
       window.removeEventListener('touchstart', handleFirstInteraction);
     };
 
-    if (!userPausedRef.current) {
-      attemptAutoPlay();
-      window.addEventListener('pointerdown', handleFirstInteraction, { passive: true });
-      window.addEventListener('keydown', handleFirstInteraction, { passive: true });
-      window.addEventListener('touchstart', handleFirstInteraction, { passive: true });
+    const initPlayer = () => {
+      if (!isMounted || !window.YT || !window.YT.Player) return;
+      if (playerRef.current) return;
+
+      playerRef.current = new window.YT.Player(containerIdRef.current, {
+        height: '1',
+        width: '1',
+        videoId: tracks[currentIndexRef.current].youtubeId,
+        playerVars: {
+          autoplay: isAllowedToPlay() ? 1 : 0,
+          controls: 0,
+          disablekb: 1,
+          fs: 0,
+          modestbranding: 1,
+          playsinline: 1,
+          rel: 0
+        },
+        events: {
+          onReady: (event: any) => {
+            if (!isMounted) return;
+            playerReadyRef.current = true;
+            try {
+              event.target.unMute();
+              event.target.setVolume(DEFAULT_VOLUME_PERCENT);
+              if (isAllowedToPlay()) {
+                event.target.playVideo();
+              } else {
+                event.target.pauseVideo();
+                setIsPlaying(false);
+              }
+            } catch {
+              // ignore
+            }
+          },
+          onStateChange: (event: any) => {
+            if (!isMounted) return;
+            // YT.PlayerState: ENDED = 0, PLAYING = 1, PAUSED = 2
+            if (event.data === 0) {
+              advanceToNextTrack();
+            } else if (event.data === 1) {
+              // Guard: if not on home page or tab is hidden, force pause immediately
+              const isTabVisible = !document.hidden && document.visibilityState !== 'hidden';
+              if (!isHomePageRef.current || !isTabVisible || userPausedRef.current) {
+                try {
+                  event.target.pauseVideo();
+                } catch {
+                  // ignore
+                }
+                setIsPlaying(false);
+                return;
+              }
+              try {
+                event.target.unMute();
+                event.target.setVolume(DEFAULT_VOLUME_PERCENT);
+              } catch {
+                // ignore
+              }
+              setIsPlaying(true);
+              cleanupListeners();
+            } else if (event.data === 2) {
+              setIsPlaying(false);
+            }
+          },
+          onError: () => {
+            if (!isMounted) return;
+            advanceToNextTrack();
+          }
+        }
+      });
+    };
+
+    if (window.YT && window.YT.Player) {
+      initPlayer();
+    } else {
+      const existingScript = document.querySelector('script[src="https://www.youtube.com/iframe_api"]');
+      if (!existingScript) {
+        const tag = document.createElement('script');
+        tag.src = 'https://www.youtube.com/iframe_api';
+        document.head.appendChild(tag);
+      }
+      const prevCallback = window.onYouTubeIframeAPIReady;
+      window.onYouTubeIframeAPIReady = () => {
+        if (prevCallback) prevCallback();
+        initPlayer();
+      };
     }
 
-    return cleanupListeners;
-  }, [currentIndex, currentTrack?.audioUrl]);
+    window.addEventListener('pointerdown', handleFirstInteraction, { passive: true });
+    window.addEventListener('keydown', handleFirstInteraction, { passive: true });
+    window.addEventListener('touchstart', handleFirstInteraction, { passive: true });
+
+    return () => {
+      isMounted = false;
+      cleanupListeners();
+      if (playerRef.current && playerRef.current.destroy) {
+        try {
+          playerRef.current.destroy();
+        } catch {
+          // ignore
+        }
+        playerRef.current = null;
+        playerReadyRef.current = false;
+      }
+    };
+  }, []);
 
   const togglePlay = () => {
-    const audio = audioRef.current;
-    if (!audio) return;
-    audio.volume = DEFAULT_VOLUME;
+    const p = playerRef.current;
+    if (!p || !playerReadyRef.current) return;
 
-    if (!audio.paused) {
-      userPausedRef.current = true;
-      audio.pause();
-      setIsPlaying(false);
-    } else {
-      userPausedRef.current = false;
-      audio
-        .play()
-        .then(() => setIsPlaying(true))
-        .catch(() => setIsPlaying(false));
+    try {
+      const state = p.getPlayerState?.();
+      if (state === 1 || isPlaying) {
+        userPausedRef.current = true;
+        p.pauseVideo();
+        setIsPlaying(false);
+      } else {
+        userPausedRef.current = false;
+        if (!isHomePageRef.current || document.hidden) return;
+        p.unMute?.();
+        p.setVolume?.(DEFAULT_VOLUME_PERCENT);
+        p.playVideo();
+        setIsPlaying(true);
+      }
+    } catch {
+      // ignore
     }
   };
 
   const handlePrev = () => {
     userPausedRef.current = false;
-    setCurrentIndex((prev) => (prev - 1 + tracks.length) % tracks.length);
-    setIsPlaying(true);
+    setCurrentIndex((prev) => {
+      const next = (prev - 1 + tracks.length) % tracks.length;
+      if (playerRef.current && playerReadyRef.current) {
+        try {
+          playerRef.current.unMute?.();
+          playerRef.current.setVolume?.(DEFAULT_VOLUME_PERCENT);
+          if (isAllowedToPlay()) {
+            playerRef.current.loadVideoById(tracks[next].youtubeId);
+            playerRef.current.playVideo();
+            setIsPlaying(true);
+          } else {
+            playerRef.current.cueVideoById(tracks[next].youtubeId);
+            setIsPlaying(false);
+          }
+        } catch {
+          // ignore
+        }
+      }
+      return next;
+    });
   };
 
   const handleNext = () => {
     userPausedRef.current = false;
-    setCurrentIndex((prev) => (prev + 1) % tracks.length);
-    setIsPlaying(true);
+    advanceToNextTrack();
   };
 
   return (
     <div
-      className="flex items-center gap-1 bg-slate-950/90 border border-slate-800 rounded-lg px-2 py-1 h-[30px] shrink-0"
-      title={`Spotify Light Dark (Vol 40%): ${currentTrack?.fullTitle || currentTrack?.title || ''}`}
+      className="flex items-center gap-1 bg-slate-950/90 border border-slate-800 rounded-lg px-2 py-1 h-[30px] shrink-0 relative"
+      title={`${currentTrack.fullTitle} (${currentTrack.durationLabel}) • Volume 40%`}
     >
-      <audio
-        ref={audioRef}
-        preload="auto"
-        autoPlay
-        onEnded={handleNext}
-        onPause={() => {
-          if (userPausedRef.current) setIsPlaying(false);
-        }}
-        onPlay={() => {
-          if (audioRef.current) audioRef.current.volume = DEFAULT_VOLUME;
-          setIsPlaying(true);
-        }}
-      />
+      {/* Hidden 1x1 YouTube Music / Topic Player for Full-Length Tracks */}
+      <div className="w-0 h-0 overflow-hidden opacity-0 pointer-events-none absolute">
+        <div id={containerIdRef.current} />
+      </div>
 
       <button
         type="button"
@@ -243,7 +502,7 @@ export const NavbarSpotifyMicroPlayer: React.FC = () => {
       </button>
 
       <span className="text-[10px] font-medium text-slate-300 max-w-[85px] xl:max-w-[110px] truncate select-none ml-0.5">
-        {currentTrack?.title}
+        {currentTrack.title}
       </span>
     </div>
   );

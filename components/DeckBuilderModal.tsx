@@ -46,6 +46,17 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
 
   const [isFiltersCollapsed, setIsFiltersCollapsed] = useState(false);
   const [isDeckCollapsed, setIsDeckCollapsed] = useState(false);
+  const [deckMode, setDeckMode] = useState<'normal' | 'mesao'>('normal');
+  const [hasSelectedMode, setHasSelectedMode] = useState<boolean>(false);
+
+  const minMainCards = deckMode === 'mesao' ? 35 : 30;
+  const maxMainCards = deckMode === 'mesao' ? 40 : 35;
+
+  useEffect(() => {
+    if (isOpen) {
+      setHasSelectedMode(false);
+    }
+  }, [isOpen]);
 
   // Helper to determine Hero Identity
   const getIdentity = (name: string) => {
@@ -62,9 +73,9 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
   // --- Logic ---
 
   const addToDeck = (card: CardData, isSide: boolean = false) => {
-    // Deck size limit (max 35 cards in main deck, max 5 cards in side deck)
-    if (!isSide && deck.length >= 35) {
-      alert("O deck principal já atingiu o limite máximo de 35 cartas.");
+    // Deck size limit (max 35 cards in normal main deck or 40 in mesao, max 5 cards in side deck)
+    if (!isSide && deck.length >= maxMainCards) {
+      alert(`O deck principal já atingiu o limite máximo de ${maxMainCards} cartas (${deckMode === 'mesao' ? 'Deck Mesão' : 'Deck Normal'}).`);
       return;
     }
     if (isSide && sideDeck.length >= 5) {
@@ -117,7 +128,7 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
   // --- Import / Export ---
 
   const isValidToSave = useMemo(() => {
-    const hasValidSize = deck.length >= 30 && deck.length <= 35 && sideDeck.length <= 5;
+    const hasValidSize = deck.length >= minMainCards && deck.length <= maxMainCards && sideDeck.length <= 5;
     const mainHeroes = deck.filter(c => c.type === 'Herói');
     
     const hasSingleHeroIdentity = isHeroGroupValid(mainHeroes);
@@ -127,7 +138,7 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
     const hasNoDuplicates = uniqueNames.size === allCards.length;
 
     return hasValidSize && hasSingleHeroIdentity && hasNoDuplicates;
-  }, [deck, sideDeck]);
+  }, [deck, sideDeck, minMainCards, maxMainCards]);
 
   const generateDeckCode = () => {
     if (!isValidToSave) return "";
@@ -142,6 +153,9 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
         return;
       }
 
+      if (decoded.main.length > 35) {
+        setDeckMode('mesao');
+      }
       setDeck(decoded.main);
       setSideDeck(decoded.side);
       setImportCode("");
@@ -187,7 +201,7 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
     return { counts, ctDistribution };
   }, [deck]);
 
-  const isValidDeckSize = deck.length >= 30 && deck.length <= 35 && sideDeck.length <= 5;
+  const isValidDeckSize = deck.length >= minMainCards && deck.length <= maxMainCards && sideDeck.length <= 5;
 
   // --- Filtered Pool ---
   const filteredPool = useMemo(() => {
@@ -309,15 +323,96 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
   return (
     <div className="fixed inset-0 z-[100] flex flex-col bg-[#0a0a0c] animate-in fade-in zoom-in duration-200">
       
+      {/* Tela Inicial de Escolha do Formato: Deck Normal ou Deck Mesão */}
+      {!hasSelectedMode && (
+        <div className="absolute inset-0 z-[200] bg-black/90 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-slate-900 border-2 border-purple-500/40 rounded-3xl max-w-lg w-full p-6 sm:p-8 shadow-[0_0_50px_rgba(168,85,247,0.25)] relative">
+            <button
+              onClick={onClose}
+              className="absolute top-4 right-4 p-2 rounded-full text-slate-400 hover:text-white hover:bg-slate-800 transition"
+              title="Fechar"
+            >
+              <X size={20} />
+            </button>
+
+            <div className="text-center mb-6">
+              <div className="w-12 h-12 rounded-2xl bg-purple-600/20 border border-purple-500/40 flex items-center justify-center text-purple-400 mx-auto mb-3">
+                <Layers size={26} />
+              </div>
+              <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight">
+                ESCOLHA O MODO DE DECK
+              </h2>
+              <p className="text-xs sm:text-sm text-slate-400 mt-1">
+                Selecione qual formato de deck você deseja montar agora:
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+              <button
+                type="button"
+                onClick={() => {
+                  setDeckMode('normal');
+                  setHasSelectedMode(true);
+                }}
+                className="p-5 rounded-2xl bg-slate-950 hover:bg-purple-950/40 border-2 border-purple-500/50 hover:border-purple-400 text-left transition-all group shadow-lg hover:scale-[1.02] active:scale-95 flex flex-col justify-between gap-3"
+              >
+                <div>
+                  <span className="inline-block px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-purple-600 text-white mb-2">
+                    1v1 Oficial
+                  </span>
+                  <h3 className="text-lg font-black text-white group-hover:text-purple-300 transition">
+                    Deck Normal
+                  </h3>
+                  <p className="text-xs text-slate-400 mt-1 leading-relaxed">
+                    De <strong>30 a 35 cartas</strong> no Deck Principal (contando com Heróis) + até 5 no Side Deck.
+                  </p>
+                </div>
+                <span className="text-xs font-bold text-purple-400 group-hover:text-purple-300 flex items-center gap-1">
+                  Montar Deck Normal →
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setDeckMode('mesao');
+                  setHasSelectedMode(true);
+                }}
+                className="p-5 rounded-2xl bg-slate-950 hover:bg-amber-950/30 border-2 border-amber-500/50 hover:border-amber-400 text-left transition-all group shadow-lg hover:scale-[1.02] active:scale-95 flex flex-col justify-between gap-3"
+              >
+                <div>
+                  <span className="inline-block px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-amber-500 text-slate-950 mb-2">
+                    4 Jogadores
+                  </span>
+                  <h3 className="text-lg font-black text-white group-hover:text-amber-300 transition">
+                    Deck Mesão
+                  </h3>
+                  <p className="text-xs text-slate-400 mt-1 leading-relaxed">
+                    De <strong>35 a 40 cartas</strong> no Deck Principal (contando com Heróis) + até 5 no Side Deck.
+                  </p>
+                </div>
+                <span className="text-xs font-bold text-amber-400 group-hover:text-amber-300 flex items-center gap-1">
+                  Montar Deck Mesão →
+                </span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Cloud Decks Modal */}
       <SavedDecksModal
         isOpen={showCloudDecksModal}
         onClose={() => setShowCloudDecksModal(false)}
         currentMainDeck={deck}
         currentSideDeck={sideDeck}
-        onLoadDeck={(m, s) => {
+        currentDeckMode={deckMode}
+        onLoadDeck={(m, s, mode) => {
+          if (mode === 'mesao' || m.length > 35) setDeckMode('mesao');
+          else if (mode === 'normal') setDeckMode('normal');
           setDeck(m);
           setSideDeck(s);
+          setHasSelectedMode(true);
         }}
         allCards={allCards}
       />
@@ -328,9 +423,13 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
         onClose={() => setShowCommunityDecksModal(false)}
         currentMainDeck={deck}
         currentSideDeck={sideDeck}
-        onLoadDeck={(m, s) => {
+        currentDeckMode={deckMode}
+        onLoadDeck={(m, s, mode) => {
+          if (mode === 'mesao' || m.length > 35) setDeckMode('mesao');
+          else if (mode === 'normal') setDeckMode('normal');
           setDeck(m);
           setSideDeck(s);
+          setHasSelectedMode(true);
           setActiveTab('build');
         }}
         allCards={allCards}
@@ -444,10 +543,38 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
           </div>
         </div>
         
-        <div className="flex items-center gap-2 md:gap-4 w-full md:w-auto justify-between md:justify-end">
+        <div className="flex items-center gap-2 md:gap-3 w-full md:w-auto justify-between md:justify-end">
+          {/* Seletor de Formato de Deck: Normal (30-35) vs Mesão (35-40) */}
+          <div className="flex bg-slate-800 rounded-lg p-0.5 border border-slate-700">
+            <button
+              type="button"
+              onClick={() => setDeckMode('normal')}
+              className={`px-2 md:px-2.5 py-1 rounded-md text-[10px] md:text-xs font-bold transition whitespace-nowrap ${
+                deckMode === 'normal'
+                  ? 'bg-purple-600 text-white shadow'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+              title="Deck Normal: 30 a 35 cartas no Deck Principal (contando com Heróis)"
+            >
+              Deck Normal
+            </button>
+            <button
+              type="button"
+              onClick={() => setDeckMode('mesao')}
+              className={`px-2 md:px-2.5 py-1 rounded-md text-[10px] md:text-xs font-bold transition whitespace-nowrap ${
+                deckMode === 'mesao'
+                  ? 'bg-amber-600 text-slate-950 shadow'
+                  : 'text-amber-300/80 hover:text-amber-200'
+              }`}
+              title="Deck Mesão: 35 a 40 cartas no Deck Principal (contando com Heróis)"
+            >
+              Deck Mesão
+            </button>
+          </div>
+
           <div className={`px-2 md:px-3 py-1 rounded border flex items-center gap-2 ${isValidDeckSize ? 'bg-green-900/30 border-green-500 text-green-400' : 'bg-red-900/30 border-red-500 text-red-400'}`}>
             <span className="font-mono font-bold text-sm md:text-lg">{deck.length}</span>
-            <span className="text-[10px] md:text-xs uppercase">/ 30-35 Cartas</span>
+            <span className="text-[10px] md:text-xs uppercase">/ {minMainCards}-{maxMainCards} Cartas</span>
           </div>
           <button onClick={onClose} className="p-2 hover:bg-slate-800 rounded-full text-slate-400 hover:text-white transition">
             <X size={20} />
@@ -707,8 +834,8 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
                       {/* Main Deck */}
                       <div>
                         <h4 className="text-white font-bold mb-3 border-b border-slate-700 pb-1 flex justify-between items-center">
-                          <span>Deck Principal</span>
-                          <span className={`text-xs px-2 py-0.5 rounded ${deck.length >= 30 && deck.length <= 35 ? 'bg-green-900/50 text-green-400' : 'bg-red-900/50 text-red-400'}`}>{deck.length} / 30-35</span>
+                          <span>Deck Principal ({deckMode === 'mesao' ? 'Modo Mesão' : 'Modo Normal'})</span>
+                          <span className={`text-xs px-2 py-0.5 rounded ${deck.length >= minMainCards && deck.length <= maxMainCards ? 'bg-green-900/50 text-green-400' : 'bg-red-900/50 text-red-400'}`}>{deck.length} / {minMainCards}-{maxMainCards}</span>
                         </h4>
                         {deck.length === 0 ? (
                           <div className="text-slate-500 text-sm italic">Vazio</div>
@@ -863,6 +990,7 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
                 allCards={allCards}
                 onInspectCard={(card) => setInspectCard(card)}
                 onLoadDeckIntoBuilder={(m, s) => {
+                  if (m.length > 35) setDeckMode('mesao');
                   setDeck(m);
                   setSideDeck(s);
                   setActiveTab('build');
@@ -910,13 +1038,13 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
                   <div className="bg-slate-900 border border-slate-800 rounded-xl p-3 md:p-6">
                     <h4 className="text-sm md:text-lg font-bold text-slate-300 mb-2 md:mb-4">Validação</h4>
                     <div className="space-y-2 md:space-y-3">
-                      <div className={`flex items-center gap-2 md:gap-3 p-2 md:p-3 rounded border ${deck.length >= 30 ? 'bg-green-900/20 border-green-800 text-green-400' : 'bg-red-900/20 border-red-800 text-red-400'}`}>
-                        {deck.length >= 30 ? <CheckCircle size={16} className="md:w-5 md:h-5" /> : <AlertTriangle size={16} className="md:w-5 md:h-5" />}
-                        <span className="text-xs md:text-base">Mínimo 30 cartas no Principal ({deck.length})</span>
+                      <div className={`flex items-center gap-2 md:gap-3 p-2 md:p-3 rounded border ${deck.length >= minMainCards ? 'bg-green-900/20 border-green-800 text-green-400' : 'bg-red-900/20 border-red-800 text-red-400'}`}>
+                        {deck.length >= minMainCards ? <CheckCircle size={16} className="md:w-5 md:h-5" /> : <AlertTriangle size={16} className="md:w-5 md:h-5" />}
+                        <span className="text-xs md:text-base">Mínimo {minMainCards} cartas no Principal ({deck.length})</span>
                       </div>
-                      <div className={`flex items-center gap-2 md:gap-3 p-2 md:p-3 rounded border ${deck.length <= 35 ? 'bg-green-900/20 border-green-800 text-green-400' : 'bg-red-900/20 border-red-800 text-red-400'}`}>
-                        {deck.length <= 35 ? <CheckCircle size={16} className="md:w-5 md:h-5" /> : <AlertTriangle size={16} className="md:w-5 md:h-5" />}
-                        <span className="text-xs md:text-base">Máximo 35 cartas no Principal ({deck.length})</span>
+                      <div className={`flex items-center gap-2 md:gap-3 p-2 md:p-3 rounded border ${deck.length <= maxMainCards ? 'bg-green-900/20 border-green-800 text-green-400' : 'bg-red-900/20 border-red-800 text-red-400'}`}>
+                        {deck.length <= maxMainCards ? <CheckCircle size={16} className="md:w-5 md:h-5" /> : <AlertTriangle size={16} className="md:w-5 md:h-5" />}
+                        <span className="text-xs md:text-base">Máximo {maxMainCards} cartas no Principal ({deck.length})</span>
                       </div>
                       <div className={`flex items-center gap-2 md:gap-3 p-2 md:p-3 rounded border ${sideDeck.length <= 5 ? 'bg-green-900/20 border-green-800 text-green-400' : 'bg-red-900/20 border-red-800 text-red-400'}`}>
                         {sideDeck.length <= 5 ? <CheckCircle size={16} className="md:w-5 md:h-5" /> : <AlertTriangle size={16} className="md:w-5 md:h-5" />}
@@ -1022,8 +1150,8 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
                     ) : (
                       <div className="text-red-500 bg-red-900/20 p-4 rounded border border-red-800 text-left text-sm space-y-2">
                         <p className="font-bold mb-2">O deck não cumpre as regras de montagem e não pode ser salvo:</p>
-                        {deck.length < 30 && <p>• O deck principal precisa ter no mínimo 30 cartas. (Atual: {deck.length})</p>}
-                        {deck.length > 35 && <p>• O deck principal pode ter no máximo 35 cartas. (Atual: {deck.length})</p>}
+                        {deck.length < minMainCards && <p>• O deck principal ({deckMode === 'mesao' ? 'Deck Mesão' : 'Deck Normal'}) precisa ter no mínimo {minMainCards} cartas. (Atual: {deck.length})</p>}
+                        {deck.length > maxMainCards && <p>• O deck principal ({deckMode === 'mesao' ? 'Deck Mesão' : 'Deck Normal'}) pode ter no máximo {maxMainCards} cartas. (Atual: {deck.length})</p>}
                         {sideDeck.length > 5 && <p>• O Side Deck pode ter no máximo 5 cartas. (Atual: {sideDeck.length})</p>}
                         {deck.filter(c => c.type === 'Herói').length > 1 && !deck.filter(c => c.type === 'Herói').every(h => getIdentity(h.name) === getIdentity(deck.filter(c => c.type === 'Herói')[0].name)) && <p>• O deck principal só pode ter Heróis de um único tipo/identidade.</p>}
                         {new Set([...deck, ...sideDeck].map(c => c.name)).size !== deck.length + sideDeck.length && <p>• Você tem cartas com nomes repetidos.</p>}

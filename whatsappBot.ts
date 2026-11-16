@@ -63,9 +63,9 @@ export async function startWhatsAppBot(options?: {
 
   const sessionId = ++currentSessionId;
   botState = {
-    status: 'connecting',
-    qrDataUrl: null,
-    pairingCode: null,
+    status: botState.qrDataUrl && !options?.forceReset ? 'qr_ready' : 'connecting',
+    qrDataUrl: options?.forceReset ? null : botState.qrDataUrl,
+    pairingCode: options?.forceReset ? null : botState.pairingCode,
     connectedPhone: null,
     lastError: null
   };
@@ -80,12 +80,12 @@ export async function startWhatsAppBot(options?: {
       return getWhatsAppBotStatus();
     }
 
-    let version: [number, number, number] = cachedVersion || [2, 3000, 1015901307];
+    let version: [number, number, number] = cachedVersion || [2, 3000, 1043857760];
     if (!cachedVersion) {
       try {
         const vRes = await Promise.race([
           fetchLatestBaileysVersion(),
-          new Promise<null>((resolve) => setTimeout(() => resolve(null), 1500))
+          new Promise<null>((resolve) => setTimeout(() => resolve(null), 2000))
         ]);
         if (vRes?.version) {
           cachedVersion = vRes.version;

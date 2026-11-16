@@ -3,7 +3,7 @@ import {
   BookOpen, Clock, Layers, Scale, Sparkles, ChevronDown, ChevronUp, 
   Info, Sword, Crown, Zap, CheckCircle, Ghost, FileText, 
   Edit2, Save, X, Plus, Trash2, AlertCircle, Eye, EyeOff, Check, Search, Grid,
-  Trophy, Award, Upload, Loader2, Image as ImageIcon, Flame, Filter, Hexagon
+  Trophy, Award, Upload, Loader2, Image as ImageIcon, Flame, Filter, Hexagon, Users
 } from 'lucide-react';
 import { doc, getDoc, setDoc, onSnapshot } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
@@ -182,6 +182,311 @@ export interface PatchNoteItem {
   example?: string;
 }
 
+export interface MesaoTopicItem {
+  id: string;
+  title: string;
+  description: string;
+  example?: string;
+  imageUrl?: string;
+}
+
+export interface MesaoSectionItem {
+  id: string;
+  sectionNumber: string;
+  title: string;
+  badge?: string;
+  subtitle?: string;
+  content: string;
+  items: MesaoTopicItem[];
+}
+
+export const defaultMesaoSections: MesaoSectionItem[] = [
+  {
+    id: 'sec01',
+    sectionNumber: 'Seção 01',
+    title: 'PATCH ATUAL',
+    badge: 'Data: 24/10/2026',
+    subtitle: 'Patch Atual - Balanceamento & Regras Oficiais — Diretrizes oficiais vigentes e esclarecimento de interações no formato competitivo e casual.',
+    content: 'Novas diretrizes de Dano Primordial, Correntes e Limite de Reações atualizadas!',
+    items: [
+      {
+        id: 'sec01_1',
+        title: '1. Reações Limitadas',
+        description: 'Apenas uma carta de reação a uma ação (desde que tenha mana suficiente).'
+      },
+      {
+        id: 'sec01_2',
+        title: '2. Correntes Inquebráveis',
+        description: 'Não é permitido quebrar a corrente de efeitos de cartas após ser iniciada.'
+      },
+      {
+        id: 'sec01_3',
+        title: '3. Ordem de Autoridade',
+        description: 'Efeitos com "A Qualquer Momento" (exceto Macroversal) > Dano Primordial > Arquétipo > Efeitos de começo de rodada > Efeitos de começo de turno > Efeitos normais (efeitos condicionais não se aplicam nessa ordem e devem seguir suas condições).',
+        example: 'Exemplo: se a carta causar 5 de dano no começo da rodada, e tiver um Conceito, ele recupera as 5 de vida antes.'
+      },
+      {
+        id: 'sec01_4',
+        title: '4. Remoção de Alvo',
+        description: 'Remover um alvo de um ataque durante o combate nega o ataque do atacante; ele não poderá atacar novamente nesse mesmo turno.'
+      },
+      {
+        id: 'sec01_5',
+        title: '5. Invocação de Heróis',
+        description: 'Heróis só podem ser invocados por outras cartas de invocação caso não possuam condições de invocação próprias na carta de herói. Nesses casos, deve-se cumprir estritamente a condição de invocação.'
+      },
+      {
+        id: 'sec01_6',
+        title: '6. Dano Primordial',
+        description: 'O Dano Primordial se aplica a todas as cartas do jogador inimigo (Deck, mão ou Zonas) e deve ser aplicado quando o Herói ou Combatente é invocado, reduzindo sua vida. Caso ela seja zerada, a carta é enviada diretamente à Zona Morta, ignorando arquétipos e efeitos de campo. Se não morrer, entra em campo com vida reduzida. Cartas mortas pelo Dano Primordial não disparam efeitos de campo nem de eliminação em combate.'
+      },
+      {
+        id: 'sec01_7',
+        title: '7. Equipamentos no Inimigo',
+        description: 'Equipamentos podem ser colocados no campo inimigo equipando um combatente dele (exceto se a própria carta especificar o contrário).'
+      },
+      {
+        id: 'sec01_8',
+        title: '8. Sinergia de Heróis',
+        description: 'Heróis cujo efeito interaja diretamente com outro herói que possua nome diferente podem ser colocados no mesmo deck (exemplo: Otto e Asmonious).'
+      },
+      {
+        id: 'sec01_9',
+        title: '9. Efeitos em Combate',
+        description: 'Somente efeitos de combatentes condicionais ou com "A Qualquer Momento" podem ser usados durante o combate.',
+        example: 'Ex: "Durante o combate esse combatente recebe 8 de ataque" ou "A qualquer momento, retire 3 de ataque deste combatente e remova uma carta".'
+      },
+      {
+        id: 'sec01_10',
+        title: '10. Invocação Negada',
+        description: 'Quando um Herói (do tipo que se invoca pelo próprio efeito) tem sua invocação negada, ele fica impossibilitado de ser invocado novamente até a rodada seguinte.'
+      },
+      {
+        id: 'sec01_11',
+        title: '11. Resoluções Automáticas',
+        description: 'Não é possível responder a cartas que não foram ativadas por escolha do jogador (exemplo: resolução automática disparada por ação inimiga).'
+      },
+      {
+        id: 'sec01_12',
+        title: '12. Efeitos Negados e Invocações',
+        description: 'Cartas com "nega o efeito de carta" não podem negar invocação. Combatentes com efeitos negados perdem todos os efeitos em campo. Cartas com "nega uma carta usada" podem ser usadas para negar invocações.'
+      }
+    ]
+  },
+  {
+    id: 'sec02',
+    sectionNumber: 'Seção 02',
+    title: 'BÁSICO',
+    badge: 'Construção, Status & Estrutura',
+    subtitle: 'Construção & Requisitos do Deck, Status Essenciais do Jogo e Estrutura & Dinâmica da Partida.',
+    content: [
+      'CONSTRUÇÃO & REQUISITOS DO DECK:',
+      '• Deck Composto por 30 a 35 cartas (contando com os heróis, se houver).',
+      '• Não é permitido cartas repetidas em todo o deck.',
+      '• O uso de Herói é opcional, mas se usar, apenas 1 Herói e suas variações no Deck (com exceções para heróis que interagem entre si).',
+      '• Tokens: Os Tokens ficam no Deck de Heróis e você pode colocar no máximo 15. Quando deixam o campo, voltam para o Deck de Heróis.',
+      '• Opcionais: Campo físico, marcadores de status/vida/mana e dados D6/D20 para efeitos.'
+    ].join('\n'),
+    items: [
+      {
+        id: 'sec02_status_1',
+        title: 'Vida Padrão',
+        description: '20 pontos. Se chegar a 0, você perde o duelo.'
+      },
+      {
+        id: 'sec02_status_2',
+        title: 'Mana Padrão',
+        description: '12 pontos por rodada. Se renova no começo de cada rodada.'
+      },
+      {
+        id: 'sec02_status_3',
+        title: 'Runas & Recursos',
+        description: 'Recursos especiais gerados para ativação de efeitos poderosos.'
+      },
+      {
+        id: 'sec02_struct_1',
+        title: 'Objetivo da Vitória & Formato',
+        description: 'Objetivo da Vitória: Reduzir a vida do oponente a 0.\nFormato: Melhor de 3 jogos (1x1 ou 2x2 cooperativo).'
+      },
+      {
+        id: 'sec02_struct_2',
+        title: 'Rodadas & Início de Jogo',
+        description: 'Rodadas: Cada rodada possui 2 turnos (Ataque e Defesa) para cada jogador alternadamente.\nInício de Jogo: Pedra, Papel e Tesoura ou rolagem de Dado para decidir quem começa atacando.'
+      },
+      {
+        id: 'sec02_struct_3',
+        title: 'Regra de Mulligan & Nota de Equilíbrio',
+        description: 'Ambos os jogadores compram 5 cartas. Cada um pode retornar todas e comprar 5 novas uma única vez.',
+        example: 'Nota de Equilíbrio: Na primeira rodada completa de abertura, nenhum combatente causa dano de combate direto.'
+      }
+    ]
+  },
+  {
+    id: 'sec03',
+    sectionNumber: 'Seção 03',
+    title: 'CARTAS',
+    badge: 'Anatomia & 5 Categorias',
+    subtitle: 'Anatomia & Estrutura das Cartas e as 5 Categorias Oficiais.',
+    content: [
+      'ANATOMIA & ESTRUTURA DAS CARTAS:',
+      '• Categoria (CT): Custo em Cristais de Mana para invocação ou uso da carta.',
+      '• Status: Ataque (Dano físico/mágico) e Vida (apenas Combatentes e Heróis).',
+      '• Arquétipo: Afiliações e títulos que concedem habilidades sinérgicas extras.',
+      '• Tipo: Ícone identificador e moldura cromática correspondente.'
+    ].join('\n'),
+    items: [
+      {
+        id: 'sec03_cat_1',
+        title: 'Combatente (Moldura Azul)',
+        description: 'Os "monstros" comuns e auxiliares de cada deck. Não são classificados como Heróis a não ser por efeitos únicos. Lutam na linha de frente e atacam os inimigos.'
+      },
+      {
+        id: 'sec03_cat_2',
+        title: 'Herói (Moldura Vermelha)',
+        description: 'Foco principal do deck. Inicialmente ficam fora do deck principal, em sua Zona de Herói dedicada, necessitando de condições específicas para serem invocados. Limite de 1 Herói em campo por jogador (salvo exceções).'
+      },
+      {
+        id: 'sec03_cat_3',
+        title: 'Equipamento (Moldura Verde)',
+        description: 'Alteram status, adicionam arquétipos ou concedem habilidades únicas ao combatente equipado. Ficam vinculados ao alvo até que ele saia de campo. Caso o herói seja substituído, o equipamento é herdado pelo novo herói.'
+      },
+      {
+        id: 'sec03_cat_4',
+        title: 'Efeito (Moldura Roxa)',
+        description: 'Cartas de intervenção imediata, feitiços de uso único ou contínuos que alteram o rumo do jogo. Possuem custo em Mana e condições de ativação. Ao terminarem, são enviadas à Zona Morta.'
+      },
+      {
+        id: 'sec03_cat_5',
+        title: 'Token (Moldura Amarela • Deck de Heróis Máx. 15)',
+        description: 'Tokens são cartas vinculadas a cartas que se utilizam delas, tokens só podem ser afetadas por cartas que as afetam diretamente, elas ocupam espaço em campo mas não declaram ataques e nem possuem efeitos, tokens também não podem ser equipados. Os Tokens ficam no deck de heróis e você pode colocar no máximo 15, quando deixam o campo, elas voltam para o deck de heróis.'
+      }
+    ]
+  },
+  {
+    id: 'sec04',
+    sectionNumber: 'Seção 04',
+    title: 'TURNOS',
+    badge: 'Fases da Rodada & Combate',
+    subtitle: 'Estrutura da Rodada: Ação e Reação & Regras e Cálculos de Combate.',
+    content: [
+      'ESTRUTURA DA RODADA: AÇÃO E REAÇÃO:',
+      'O jogo opera em formato dinâmico de Ação e Reação. Sempre que o jogador atacante realiza uma jogada, o defensor tem direito imediato à Reação com suas cartas disponíveis. Declarar ataque consome a ação de combate. Todas as cartas usadas consomem Mana de acordo com sua Categoria (CT).',
+      '',
+      'REGRAS & CÁLCULOS DE COMBATE:',
+      '• Em seu turno de ataque, o jogador pode declarar ataques contra alvos válidos.',
+      '• Cada combatente em campo pode atacar 1 vez por rodada por padrão (exceto por efeitos de ataque duplo).',
+      '• Alvos Primários: Combatentes ou Heróis na linha de frente inimiga.',
+      '• Ataque Direto ao Jogador: Permitido apenas se o campo inimigo estiver desprovido de combatentes e heróis ativos.',
+      '• Cálculo de Combate: O Atacante aplica seu ATAQUE contra a VIDA atual do alvo. O alvo deduz sua vida no montante equivalente ao dano.',
+      '• Morte por Combate: Quando a vida de um combatente atinge 0, ele é enviado imediatamente à Zona Morta.',
+      '• Múltiplos Ataques: Um mesmo combatente inimigo pode ser alvo concentrado de vários ataques no mesmo turno.',
+      '• Invocação Pós-Ataque: Combatentes invocados após o início da fase de ataque não podem atacar na mesma rodada (exceto Heróis com invocação rápida).'
+    ].join('\n'),
+    items: [
+      {
+        id: 'sec04_phase_1',
+        title: '1. Início de Rodada',
+        description: 'Ambos os jogadores recuperam Mana para 12. Cada jogador compra 1 carta. Efeitos contínuos de início de rodada ativam em prioridade.'
+      },
+      {
+        id: 'sec04_phase_2',
+        title: '2. Turno de Ataque (Jogador 1)',
+        description: 'Jogador 1 gasta Mana em cartas -> Declara Ataques -> Jogador 2 Reage com cartas -> Resolução de combate -> J1 Encerra seu turno.'
+      },
+      {
+        id: 'sec04_phase_3',
+        title: '3. Turno de Ataque (Jogador 2)',
+        description: 'Jogador 2 gasta Mana em cartas -> Declara Ataques -> Jogador 1 Reage com cartas -> Resolução de combate -> J2 Encerra seu turno.'
+      },
+      {
+        id: 'sec04_phase_4',
+        title: '4. Fim da Rodada',
+        description: 'Efeitos de fim de rodada encerram. Se nenhum jogador foi derrotado, inicia-se uma nova rodada e os 12 Cristais de Mana são renovados.'
+      }
+    ]
+  },
+  {
+    id: 'sec05',
+    sectionNumber: 'Seção 05',
+    title: 'REGRAS',
+    badge: 'Correntes, Deck Out & Observações',
+    subtitle: 'Resolução em Corrente (Chains), Esgotamento de Deck (Deck Out) e Observações Estratégicas Fundamentais.',
+    content: [
+      'OBSERVAÇÕES ESTRATÉGICAS FUNDAMENTAIS:',
+      '• O uso de Herói é opcional, mas caso utilize, o limite máximo é de 1 Herói no deck (salvo cartas com texto que autorizem interação mútua).',
+      '• Vida reduzida a 0 nem sempre decreta o fim de jogo imediato caso existam cartas ou efeitos de imortalidade/ressurreição em campo.',
+      '• Sempre que uma carta for buscada, selecionada ou retornada ao Deck, este deve ser obrigatoriamente reembaralhado.',
+      '• Heróis destruídos ou devolvidos retornam para a Zona do Deck de Heróis, e jamais para o Deck Principal.',
+      '• Tanto a Vida (20) quanto a Mana (12) podem ultrapassar seus limites iniciais por meio de bônus e feitiços.',
+      '• Arquétipos especiais como Lúmen e Darkus possuem linhagens de evolução ativadas por cartas específicas.',
+      '• Não existe limite máximo para cartas acumuladas na mão do jogador.',
+      '• Tokens ficam no Deck de Heróis (máximo de 15), ocupam espaço em campo sem declarar ataques, sem efeitos e sem poderem ser equipados; ao deixarem o campo, retornam para o Deck de Heróis.'
+    ].join('\n'),
+    items: [
+      {
+        id: 'sec05_chains',
+        title: 'Resolução em Corrente (Chains)',
+        description: 'Sequência de cartas jogadas em resposta umas às outras. A ordem de resolução obedece à regra LIFO (Last In, First Out — a última carta jogada resolve primeiro). A Reação resolve antes da Ação inicial.',
+        example: 'Precedência por CT: Se duas cartas possuírem exatamente o mesmo gatilho temporal, a Categoria (CT) determina a precedência: cartas de CT maior têm prioridade de ativação sobre cartas de menor custo.'
+      },
+      {
+        id: 'sec05_deckout',
+        title: 'Esgotamento de Deck (Deck Out)',
+        description: 'Caso o deck principal de um jogador chegue ao fim (0 cartas), ele NÃO é derrotado instantaneamente. Em vez disso, sempre que tiver a obrigação de comprar uma carta e seu deck estiver vazio, ele perde 3 pontos de Vida diretamente.'
+      }
+    ]
+  },
+  {
+    id: 'sec06',
+    sectionNumber: 'Seção 06',
+    title: 'ARQUÉTIPOS',
+    badge: 'Classificações & Linhagens',
+    subtitle: 'Pesquise e consulte as habilidades intrínsecas de cada classe do Macroverso.',
+    content: 'Todas as classificações e linhagens de arquétipos registradas no jogo. Você pode editar ou acrescentar observações exclusivas para os arquétipos no Modo Mesão.',
+    items: []
+  },
+  {
+    id: 'sec07',
+    sectionNumber: 'Seção 07',
+    title: 'CAMPOS',
+    badge: 'Tabuleiro Tático Interativo',
+    subtitle: 'Disposição Oficial do Tabuleiro (Playmat) — Clique em qualquer setor abaixo para explorar a função das zonas de combate, heróis, retaguarda, cemitério e mana.',
+    content: 'Explore abaixo as zonas táticas do campo de batalha e o tabuleiro interativo oficial.',
+    items: [
+      {
+        id: 'sec07_zone_1',
+        title: '1. Zona de Combatentes (5 Espaços)',
+        description: 'Linha de frente onde até 5 Combatentes ativos são posicionados para declarar ataques e proteger o jogador.'
+      },
+      {
+        id: 'sec07_zone_2',
+        title: '2. Zona de Herói (1 Espaço)',
+        description: 'Espaço central dedicado ao Herói principal quando invocado em campo.'
+      },
+      {
+        id: 'sec07_zone_3',
+        title: '3. Zona de Equipamentos e Efeitos (5 Espaços)',
+        description: 'Retaguarda de suporte para posicionar Equipamentos e Cartas de Efeito ativas.'
+      },
+      {
+        id: 'sec07_zone_4',
+        title: '4. Deck Principal & Deck de Herói / Tokens',
+        description: 'Deck Principal (30 a 35 cartas sem cópias repetidas) e Deck de Heróis separado (Herói + até 15 Tokens).'
+      },
+      {
+        id: 'sec07_zone_5',
+        title: '5. Zona Morta & Zona Apagada',
+        description: 'Zona Morta para cartas destruídas/usadas e Zona Apagada para cartas banidas permanentemente da partida.'
+      },
+      {
+        id: 'sec07_zone_6',
+        title: '6. Cristais de Mana (12 por Rodada) & Vida (20 PV)',
+        description: 'Reserva de Mana renovada para 12 no início de cada rodada e marcador de Pontos de Vida do jogador.'
+      }
+    ]
+  }
+];
+
 export interface GameManualData {
   patchTitle: string;
   patchDate: string;
@@ -223,6 +528,30 @@ export interface GameManualData {
     observations: string[];
   };
 
+  campos?: {
+    title: string;
+    subtitle: string;
+    badgeText: string;
+    extraNotes?: string;
+  };
+
+  mesaoTitle?: string;
+  mesaoSubtitle?: string;
+  mesaoSections?: MesaoSectionItem[];
+  mesaoManual?: {
+    patchTitle: string;
+    patchDate: string;
+    noveltyMessage: string;
+    isNoveltyActive: boolean;
+    patchNotes: PatchNoteItem[];
+    basico: GameManualData['basico'];
+    cartas: GameManualData['cartas'];
+    turnos: GameManualData['turnos'];
+    regras: GameManualData['regras'];
+    campos?: GameManualData['campos'];
+    archetypes?: ArchetypeData[];
+  };
+
   lastUpdated?: string;
 }
 
@@ -231,6 +560,15 @@ export const defaultManualData: GameManualData = {
   patchDate: '24/10/2026',
   noveltyMessage: 'Novas diretrizes de Dano Primordial, Correntes e Limite de Reações atualizadas!',
   isNoveltyActive: true,
+  mesaoTitle: 'MANUAL E REGRAS — MODO MESÃO',
+  mesaoSubtitle: 'Consulte todas as diretrizes oficiais do Modo Mesão, fases de turno, regras avançadas, arquétipos e layout do campo em seções retráteis.',
+  mesaoSections: defaultMesaoSections,
+  campos: {
+    title: 'Topologia & Zonas do Tabuleiro',
+    subtitle: 'Clique em qualquer setor abaixo para explorar a função das zonas de combate, heróis, retaguarda, cemitério e mana.',
+    badgeText: 'Toque nas zonas para detalhes',
+    extraNotes: ''
+  },
   patchNotes: [
     {
       title: '1. Reações Limitadas',
@@ -357,6 +695,62 @@ export const defaultManualData: GameManualData = {
   }
 };
 
+export function resolveMesaoManualData(
+  source: GameManualData,
+  normalArchetypes: ArchetypeData[] = []
+): NonNullable<GameManualData['mesaoManual']> & { archetypes: ArchetypeData[] } {
+  const m = source.mesaoManual;
+  const baseCampos = source.campos || defaultManualData.campos!;
+
+  const mergedArchetypes: ArchetypeData[] = (() => {
+    if (!m?.archetypes || m.archetypes.length === 0) {
+      return JSON.parse(JSON.stringify(normalArchetypes));
+    }
+    const copy: ArchetypeData[] = JSON.parse(JSON.stringify(m.archetypes));
+    // Ensure any new archetype from normal mode is also present in Modo Mesão
+    normalArchetypes.forEach(na => {
+      if (!copy.some(ca => ca.name.toLowerCase() === na.name.toLowerCase())) {
+        copy.push(JSON.parse(JSON.stringify(na)));
+      }
+    });
+    return copy;
+  })();
+
+  return {
+    patchTitle: m?.patchTitle || source.patchTitle || defaultManualData.patchTitle,
+    patchDate: m?.patchDate || source.patchDate || defaultManualData.patchDate,
+    noveltyMessage: m?.noveltyMessage ?? source.noveltyMessage ?? defaultManualData.noveltyMessage,
+    isNoveltyActive: m?.isNoveltyActive ?? source.isNoveltyActive ?? true,
+    patchNotes:
+      m?.patchNotes && m.patchNotes.length > 0
+        ? m.patchNotes
+        : JSON.parse(JSON.stringify(source.patchNotes || defaultManualData.patchNotes)),
+    basico: m?.basico
+      ? { ... JSON.parse(JSON.stringify(source.basico || defaultManualData.basico)), ...m.basico }
+      : JSON.parse(JSON.stringify(source.basico || defaultManualData.basico)),
+    cartas: m?.cartas
+      ? {
+          ...JSON.parse(JSON.stringify(source.cartas || defaultManualData.cartas)),
+          ...m.cartas,
+          structureItems:
+            m.cartas.structureItems && m.cartas.structureItems.length > 0
+              ? m.cartas.structureItems
+              : JSON.parse(JSON.stringify(source.cartas?.structureItems || defaultManualData.cartas.structureItems))
+        }
+      : JSON.parse(JSON.stringify(source.cartas || defaultManualData.cartas)),
+    turnos: m?.turnos
+      ? { ...JSON.parse(JSON.stringify(source.turnos || defaultManualData.turnos)), ...m.turnos }
+      : JSON.parse(JSON.stringify(source.turnos || defaultManualData.turnos)),
+    regras: m?.regras
+      ? { ...JSON.parse(JSON.stringify(source.regras || defaultManualData.regras)), ...m.regras }
+      : JSON.parse(JSON.stringify(source.regras || defaultManualData.regras)),
+    campos: m?.campos
+      ? { ...baseCampos, ...m.campos }
+      : { ...baseCampos },
+    archetypes: mergedArchetypes
+  };
+}
+
 interface GameGuideSectionsProps {
   archetypes: ArchetypeData[];
   onSelectArchetype?: (name: string) => void;
@@ -376,9 +770,12 @@ export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
   const [data, setData] = useState<GameManualData>(() => readBrowserCache<GameManualData>('ld_cache_gameManual_v3') || defaultManualData);
   const [isLoading, setIsLoading] = useState(true);
   const [isEditorOpen, setIsEditorOpen] = useState(false);
+  const [editorInitialTab, setEditorInitialTab] = useState<'patch' | 'basico' | 'cartas' | 'turnos' | 'regras' | 'arquetipos' | 'campos'>('patch');
   const [archetypeSearch, setArchetypeSearch] = useState('');
+  const [isMesaoMode, setIsMesaoMode] = useState(false);
+  const [mesaoFeedback, setMesaoFeedback] = useState<string | null>(null);
 
-  // Collapsible state for each of the 8 sections
+  // Collapsible state for each of the sections
   // 1: PATCH ATUAL, 2: BASICO, 3: CARTAS, 4: TURNOS, 5: REGRAS, 6: ARQUÉTIPOS, 7: CAMPOS, 8: RARIDADES
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
     patch: true,
@@ -414,6 +811,10 @@ export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
   const [isSavingArchetype, setIsSavingArchetype] = useState(false);
   const [archetypeFeedback, setArchetypeFeedback] = useState<string | null>(null);
 
+  const mesaoResolved = resolveMesaoManualData(data, archetypes);
+  const activeManual = isMesaoMode ? mesaoResolved : data;
+  const activeArchetypes = isMesaoMode ? mesaoResolved.archetypes : archetypes;
+
   const handleUploadArchetypeIcon = async (file: File) => {
     if (!file || !editingArchetype) return;
     try {
@@ -438,14 +839,38 @@ export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
     if (!editingArchetype || !editingArchetype.name.trim()) return;
     try {
       setIsSavingArchetype(true);
-      await saveArchetype({
+      const updatedArch: ArchetypeData = {
         name: editingArchetype.name.trim(),
         imageUrl: editingArchetype.imageUrl.trim(),
         description: editingArchetype.description,
         patchDate: editingArchetype.patchDate.trim() || new Date().toLocaleDateString('pt-BR'),
         isNew: editingArchetype.isNew
-      });
-      setArchetypeFeedback(`Arquétipo "${editingArchetype.name.trim()}" salvo com sucesso!`);
+      };
+
+      if (isMesaoMode) {
+        const currentList = [...mesaoResolved.archetypes];
+        const existingIdx = currentList.findIndex(a => a.name.toLowerCase() === updatedArch.name.toLowerCase());
+        if (existingIdx >= 0) {
+          currentList[existingIdx] = updatedArch;
+        } else {
+          currentList.unshift(updatedArch);
+        }
+        const updatedManual: GameManualData = {
+          ...data,
+          mesaoManual: {
+            ...mesaoResolved,
+            archetypes: currentList
+          },
+          lastUpdated: new Date().toISOString()
+        };
+        await setDoc(doc(db, 'homeSettings', 'gameManual'), sanitizeForFirestore(updatedManual), { merge: true });
+        setData(updatedManual);
+        writeBrowserCache('ld_cache_gameManual_v3', updatedManual);
+        setArchetypeFeedback(`Arquétipo "${updatedArch.name}" salvo no Modo Mesão!`);
+      } else {
+        await saveArchetype(updatedArch);
+        setArchetypeFeedback(`Arquétipo "${updatedArch.name}" salvo com sucesso!`);
+      }
       setEditingArchetype(null);
       setTimeout(() => setArchetypeFeedback(null), 3500);
     } catch (err) {
@@ -458,13 +883,32 @@ export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
 
   const handleToggleArchetypeNew = async (arch: ArchetypeData) => {
     try {
-      await saveArchetype({
+      const updatedArch: ArchetypeData = {
         name: arch.name,
         imageUrl: arch.imageUrl || '',
         description: arch.description || '',
         patchDate: arch.patchDate || new Date().toLocaleDateString('pt-BR'),
         isNew: !arch.isNew
-      });
+      };
+
+      if (isMesaoMode) {
+        const currentList = mesaoResolved.archetypes.map(a =>
+          a.name === arch.name ? updatedArch : a
+        );
+        const updatedManual: GameManualData = {
+          ...data,
+          mesaoManual: {
+            ...mesaoResolved,
+            archetypes: currentList
+          },
+          lastUpdated: new Date().toISOString()
+        };
+        await setDoc(doc(db, 'homeSettings', 'gameManual'), sanitizeForFirestore(updatedManual), { merge: true });
+        setData(updatedManual);
+        writeBrowserCache('ld_cache_gameManual_v3', updatedManual);
+      } else {
+        await saveArchetype(updatedArch);
+      }
       setArchetypeFeedback(
         !arch.isNew
           ? `"${arch.name}" marcado como NOVO!`
@@ -484,6 +928,8 @@ export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
         const nextManual: GameManualData = {
           ...defaultManualData,
           ...remoteData,
+          mesaoTitle: remoteData.mesaoTitle || defaultManualData.mesaoTitle,
+          mesaoSubtitle: remoteData.mesaoSubtitle || defaultManualData.mesaoSubtitle,
           patchNotes: remoteData.patchNotes && remoteData.patchNotes.length > 0 
             ? remoteData.patchNotes 
             : defaultManualData.patchNotes,
@@ -498,7 +944,9 @@ export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
               : defaultManualData.cartas.structureItems
           },
           turnos: { ...defaultManualData.turnos, ...(remoteData.turnos || {}) },
-          regras: { ...defaultManualData.regras, ...(remoteData.regras || {}) }
+          regras: { ...defaultManualData.regras, ...(remoteData.regras || {}) },
+          campos: { ...defaultManualData.campos!, ...(remoteData.campos || {}) },
+          mesaoManual: remoteData.mesaoManual
         };
         setData(nextManual);
         writeBrowserCache('ld_cache_gameManual_v3', nextManual);
@@ -519,11 +967,10 @@ export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
           return;
         }
       }
-      // Check legacy tierSettings if raritySettings is empty
       getDoc(doc(db, 'homeSettings', 'tierSettings')).then(tierSnap => {
         if (tierSnap.exists()) {
           const td = tierSnap.data();
-          if (Array.isArray(td.items) && Array.isArray(td.items) && td.items.length > 0) {
+          if (Array.isArray(td.items) && td.items.length > 0) {
             setRarityItems(td.items);
             writeBrowserCache('ld_cache_rarities_v2', td.items);
           }
@@ -538,6 +985,33 @@ export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
       unsubRarities();
     };
   }, []);
+
+  const handleCopyNormalToMesao = async () => {
+    const freshCopy = resolveMesaoManualData(
+      { ...data, mesaoManual: undefined },
+      archetypes
+    );
+    const updatedManual: GameManualData = {
+      ...data,
+      mesaoManual: freshCopy,
+      lastUpdated: new Date().toISOString()
+    };
+    setData(updatedManual);
+    writeBrowserCache('ld_cache_gameManual_v3', updatedManual);
+    if (isAdmin) {
+      try {
+        await setDoc(
+          doc(db, 'homeSettings', 'gameManual'),
+          sanitizeForFirestore(updatedManual),
+          { merge: true }
+        );
+      } catch (err) {
+        console.error('Erro ao copiar dados do normal para o mesão:', err);
+      }
+    }
+    setMesaoFeedback('Todos os dados e a disposição da Seção 01 até a Seção 07 do Modo Normal foram copiados para o Modo Mesão!');
+    setTimeout(() => setMesaoFeedback(null), 3500);
+  };
 
   const handleUploadRarityIcon = async (rarityId: string, file: File) => {
     if (!file) return;
@@ -636,6 +1110,11 @@ export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
     setOpenSections(prev => ({ ...prev, [key]: !prev[key] }));
   };
 
+  const openEditorAtTab = (tab: 'patch' | 'basico' | 'cartas' | 'turnos' | 'regras' | 'arquetipos' | 'campos') => {
+    setEditorInitialTab(tab);
+    setIsEditorOpen(true);
+  };
+
   const expandAll = () => {
     setOpenSections({
       patch: true,
@@ -664,7 +1143,7 @@ export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
     });
   };
 
-  const filteredArchetypes = archetypes.filter(arch => 
+  const filteredArchetypes = activeArchetypes.filter(arch => 
     arch.name.toLowerCase().includes(archetypeSearch.toLowerCase()) ||
     (arch.description && arch.description.toLowerCase().includes(archetypeSearch.toLowerCase()))
   );
@@ -673,8 +1152,15 @@ export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
     <section id="manual-regras" className="py-16 md:py-24 bg-[#0a0a0c] relative border-b border-purple-900/20 text-slate-200">
       <div className="container mx-auto px-4 sm:px-6 max-w-5xl">
 
+        {/* TIPOS DE CARTAS (ACIMA DE PATCH ATUAL) */}
+        {cardTypesShowcase && (
+          <div className="mb-12">
+            {cardTypesShowcase}
+          </div>
+        )}
+
         {/* Novelty Alert Banner (Mensagem de novidade com a data do patch) */}
-        {data.isNoveltyActive && (
+        {activeManual.isNoveltyActive && (
           <div className="mb-10 p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-purple-950/80 via-indigo-950/70 to-slate-900/90 border border-purple-500/40 shadow-xl shadow-purple-950/30 relative overflow-hidden backdrop-blur-md">
             <div className="absolute top-0 right-0 -mr-16 -mt-16 w-44 h-44 bg-purple-600/20 rounded-full blur-2xl pointer-events-none"></div>
             <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 relative z-10">
@@ -685,14 +1171,14 @@ export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
                 <div>
                   <div className="flex items-center gap-2 flex-wrap mb-1">
                     <span className="text-[11px] font-black uppercase tracking-widest px-2.5 py-0.5 rounded-full bg-purple-500/30 text-purple-200 border border-purple-400/50">
-                      Novidade do Patch
+                      Novidade do Patch {isMesaoMode ? '(Modo Mesão)' : ''}
                     </span>
                     <span className="text-xs font-mono font-bold text-amber-400 bg-amber-950/50 border border-amber-600/40 px-2 py-0.5 rounded">
-                      {data.patchDate || 'Patch Recente'}
+                      {activeManual.patchDate || 'Patch Recente'}
                     </span>
                   </div>
                   <h4 className="text-sm sm:text-base font-bold text-white leading-tight">
-                    {data.noveltyMessage || 'O jogo foi atualizado com novos esclarecimentos e regras de combate!'}
+                    {activeManual.noveltyMessage || 'O jogo foi atualizado com novos esclarecimentos e regras de combate!'}
                   </h4>
                 </div>
               </div>
@@ -714,49 +1200,109 @@ export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
         )}
 
         {/* Section Header */}
-        <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-10 pb-6 border-b border-slate-800">
-          <div>
-            <div className="flex items-center gap-2 text-xs font-mono uppercase tracking-widest text-purple-400 mb-2">
-              <BookOpen size={15} /> Compêndio Geral do Jogador
+        <div className={`flex flex-col lg:flex-row lg:items-end justify-between gap-5 mb-10 pb-6 border-b ${isMesaoMode ? 'border-emerald-500/40' : 'border-slate-800'}`}>
+          <div className="flex-1 min-w-0">
+            <div className={`flex items-center gap-2 text-xs font-mono uppercase tracking-widest mb-2 ${isMesaoMode ? 'text-emerald-400' : 'text-purple-400'}`}>
+              {isMesaoMode ? <Users size={15} className="shrink-0" /> : <BookOpen size={15} className="shrink-0" />}
+              <span>{isMesaoMode ? 'Formato Multijogador Oficial • Modo Mesão' : 'Compêndio Geral do Jogador'}</span>
             </div>
-            <h2 className="text-2xl sm:text-4xl font-black text-white uppercase tracking-tight flex flex-wrap items-center gap-3">
-              <span>MANUAL E REGRAS</span>
-              <span className="text-amber-400 text-lg sm:text-2xl font-mono">
-                (PATCH ATUAL: {data.patchDate || 'Atual'})
-              </span>
+            <h2 className="text-2xl sm:text-4xl font-black text-white uppercase tracking-tight flex flex-wrap items-baseline gap-x-3 gap-y-1">
+              {isMesaoMode ? (
+                <>
+                  <span className="text-emerald-400">{data.mesaoTitle || 'MANUAL E REGRAS — MODO MESÃO'}</span>
+                  <span className="text-amber-400 text-lg sm:text-2xl font-mono whitespace-nowrap">
+                    (PATCH ATUAL: {activeManual.patchDate || 'Atual'})
+                  </span>
+                </>
+              ) : (
+                <>
+                  <span>MANUAL E REGRAS</span>
+                  <span className="text-amber-400 text-lg sm:text-2xl font-mono whitespace-nowrap">
+                    (PATCH ATUAL: {activeManual.patchDate || 'Atual'})
+                  </span>
+                </>
+              )}
             </h2>
-            <p className="text-slate-400 text-sm mt-1 max-w-xl">
-              Consulte todas as diretrizes oficiais de jogo, fases de turno, regras avançadas, arquétipos e layout do campo em seções retráteis.
+            <p className="text-slate-400 text-sm mt-1.5 max-w-2xl leading-relaxed">
+              {isMesaoMode
+                ? (data.mesaoSubtitle || 'Consulte todas as diretrizes oficiais do Modo Mesão, fases de turno, regras avançadas, arquétipos e layout do campo em seções retráteis.')
+                : 'Consulte todas as diretrizes oficiais de jogo, fases de turno, regras avançadas, arquétipos e layout do campo em seções retráteis.'}
             </p>
           </div>
 
-          <div className="flex items-center gap-2.5 shrink-0 flex-wrap">
-            <button
-              onClick={expandAll}
-              className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 transition"
-            >
-              Expandir Todos
-            </button>
-            <button
-              onClick={collapseAll}
-              className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 transition"
-            >
-              Recolher Todos
-            </button>
-            
-            {isAdmin && (
+          <div className="flex flex-col sm:flex-row lg:flex-col items-start sm:items-center lg:items-end gap-2.5 shrink-0">
+            {/* Botões Normal e Modo Mesão lado a lado */}
+            <div className="inline-flex items-center p-1 rounded-xl bg-slate-900/95 border border-slate-700/80 shadow-lg gap-1">
               <button
-                onClick={() => setIsEditorOpen(true)}
-                className="text-xs font-bold px-3.5 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-white shadow-md shadow-purple-900/30 transition flex items-center gap-1.5 active:scale-95"
-                title="Editar todas as seções e patch do manual"
+                type="button"
+                onClick={() => {
+                  setIsMesaoMode(false);
+                  setEditingArchetype(null);
+                }}
+                className={`text-xs font-black px-3.5 py-2 rounded-lg transition-all flex items-center gap-1.5 whitespace-nowrap active:scale-95 ${
+                  !isMesaoMode
+                    ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-md shadow-purple-900/50 border border-purple-400/40'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-800/70 border border-transparent'
+                }`}
+                title="Exibir o Manual no Modo Normal"
               >
-                <Edit2 size={13} /> Editar Manual
+                <BookOpen size={14} />
+                <span>Normal</span>
               </button>
-            )}
+
+              <button
+                type="button"
+                onClick={() => {
+                  setIsMesaoMode(true);
+                  setEditingArchetype(null);
+                }}
+                className={`text-xs font-black px-3.5 py-2 rounded-lg transition-all flex items-center gap-1.5 whitespace-nowrap active:scale-95 ${
+                  isMesaoMode
+                    ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-slate-950 shadow-md shadow-emerald-900/50 border border-emerald-300'
+                    : 'text-slate-400 hover:text-emerald-300 hover:bg-slate-800/70 border border-transparent'
+                }`}
+                title="Exibir o Manual no Modo Mesão (Seção 01 até Seção 07 com mesma disposição)"
+              >
+                <Users size={14} />
+                <span>Modo Mesão</span>
+              </button>
+            </div>
+
+            <div className="flex items-center gap-2 flex-wrap">
+              <button
+                onClick={expandAll}
+                className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 transition whitespace-nowrap"
+              >
+                Expandir Todos
+              </button>
+              <button
+                onClick={collapseAll}
+                className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 transition whitespace-nowrap"
+              >
+                Recolher Todos
+              </button>
+              
+              {isAdmin && (
+                <button
+                  onClick={() => openEditorAtTab('patch')}
+                  className="text-xs font-bold px-3.5 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-white shadow-md shadow-purple-900/30 transition flex items-center gap-1.5 whitespace-nowrap active:scale-95"
+                  title={isMesaoMode ? 'Editar as seções 01 a 07 do Modo Mesão' : 'Editar todas as seções e patch do manual'}
+                >
+                  <Edit2 size={13} /> {isMesaoMode ? 'Editar Modo Mesão' : 'Editar Manual'}
+                </button>
+              )}
+            </div>
           </div>
         </div>
 
-        {/* Accordion Sections Ordered:
+        {mesaoFeedback && (
+          <div className="mb-6 p-3.5 rounded-xl bg-emerald-950/70 border border-emerald-500/50 text-emerald-300 text-xs font-bold flex items-center gap-2 animate-in fade-in">
+            <CheckCircle size={16} className="text-emerald-400 shrink-0" />
+            <span>{mesaoFeedback}</span>
+          </div>
+        )}
+
+        {/* Accordion Sections Ordered (Mesma Disposição para Normal e Modo Mesão):
             1. PATCH ATUAL
             2. BASICO
             3. CARTAS
@@ -769,11 +1315,12 @@ export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
 
           {/* 1. PATCH ATUAL */}
           <div id="section-patch" className="rounded-2xl border border-amber-600/30 bg-gradient-to-b from-amber-950/20 to-slate-950 overflow-hidden shadow-lg shadow-black/40 transition-all">
-            <button
-              onClick={() => toggleSection('patch')}
-              className="w-full flex items-center justify-between p-4 sm:p-5 text-left hover:bg-amber-950/30 transition group"
-            >
-              <div className="flex items-center gap-3 sm:gap-4 min-w-0">
+            <div className="w-full flex items-center justify-between p-4 sm:p-5 text-left hover:bg-amber-950/30 transition group">
+              <button
+                type="button"
+                onClick={() => toggleSection('patch')}
+                className="flex items-center gap-3 sm:gap-4 min-w-0 flex-1 text-left"
+              >
                 <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400 shrink-0 shadow-[0_0_15px_rgba(245,158,11,0.25)]">
                   <Scale size={20} />
                 </div>
@@ -783,18 +1330,38 @@ export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
                       Seção 01
                     </span>
                     <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40">
-                      Data: {data.patchDate || 'Atual'}
+                      Data: {activeManual.patchDate || 'Atual'}
                     </span>
+                    {isMesaoMode && (
+                      <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-emerald-950/80 text-emerald-300 border border-emerald-600/40">
+                        Modo Mesão
+                      </span>
+                    )}
                   </div>
                   <h3 className="text-lg sm:text-xl font-black text-white group-hover:text-amber-300 transition-colors tracking-wide">
                     PATCH ATUAL
                   </h3>
                 </div>
+              </button>
+              <div className="flex items-center gap-2 shrink-0 ml-2">
+                {isAdmin && (
+                  <button
+                    type="button"
+                    onClick={() => openEditorAtTab('patch')}
+                    className="px-2.5 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 text-xs font-bold flex items-center gap-1 transition"
+                  >
+                    <Edit2 size={12} /> <span className="hidden sm:inline">Editar</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => toggleSection('patch')}
+                  className="p-2 rounded-lg bg-slate-900/80 border border-slate-700/60 text-slate-300 group-hover:text-white"
+                >
+                  {openSections.patch ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+                </button>
               </div>
-              <div className="p-2 rounded-lg bg-slate-900/80 border border-slate-700/60 text-slate-300 group-hover:text-white shrink-0 ml-2">
-                {openSections.patch ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
-              </div>
-            </button>
+            </div>
 
             {openSections.patch && (
               <div className="p-4 sm:p-6 border-t border-amber-500/20 bg-slate-950/90 space-y-6 animate-in slide-in-from-top-2 duration-200">
@@ -802,20 +1369,20 @@ export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
                   <div>
                     <h4 className="font-bold text-white text-base sm:text-lg flex items-center gap-2">
                       <Sparkles size={18} className="text-amber-400" />
-                      {data.patchTitle}
+                      {activeManual.patchTitle}
                     </h4>
                     <p className="text-xs sm:text-sm text-slate-300 mt-0.5">
-                      Diretrizes oficiais vigentes e esclarecimento de interações no formato competitivo e casual.
+                      Diretrizes oficiais vigentes e esclarecimento de interações no formato {isMesaoMode ? 'Modo Mesão' : 'competitivo e casual'}.
                     </p>
                   </div>
                   <div className="text-right shrink-0">
                     <span className="text-xs text-slate-400 block font-mono">Última Revisão:</span>
-                    <span className="text-sm font-bold font-mono text-amber-400">{data.patchDate}</span>
+                    <span className="text-sm font-bold font-mono text-amber-400">{activeManual.patchDate}</span>
                   </div>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-                  {data.patchNotes.map((note, idx) => (
+                  {activeManual.patchNotes.map((note, idx) => (
                     <div 
                       key={idx} 
                       className="bg-slate-900/60 p-4 rounded-xl border border-slate-800 hover:border-amber-600/40 transition hover:bg-slate-900/90"
@@ -838,32 +1405,52 @@ export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
             )}
           </div>
 
-          {/* TIPOS DE CARTAS (SLIDESHOW) */}
-          {cardTypesShowcase}
-
           {/* 2. BASICO */}
           <div id="section-basico" className="rounded-2xl border border-slate-800 bg-slate-950 overflow-hidden shadow-lg shadow-black/40 transition-all hover:border-slate-700">
-            <button
-              onClick={() => toggleSection('basico')}
-              className="w-full flex items-center justify-between p-4 sm:p-5 text-left hover:bg-slate-900/50 transition group"
-            >
-              <div className="flex items-center gap-3 sm:gap-4 min-w-0">
+            <div className="w-full flex items-center justify-between p-4 sm:p-5 text-left hover:bg-slate-900/50 transition group">
+              <button
+                type="button"
+                onClick={() => toggleSection('basico')}
+                className="flex items-center gap-3 sm:gap-4 min-w-0 flex-1 text-left"
+              >
                 <div className="w-10 h-10 rounded-xl bg-purple-500/20 border border-purple-500/40 flex items-center justify-center text-purple-400 shrink-0">
                   <Info size={20} />
                 </div>
                 <div className="min-w-0">
-                  <span className="text-xs font-mono font-bold text-purple-400 uppercase tracking-wider block">
-                    Seção 02
-                  </span>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-xs font-mono font-bold text-purple-400 uppercase tracking-wider">
+                      Seção 02
+                    </span>
+                    {isMesaoMode && (
+                      <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-emerald-950/80 text-emerald-300 border border-emerald-600/40">
+                        Modo Mesão
+                      </span>
+                    )}
+                  </div>
                   <h3 className="text-lg sm:text-xl font-black text-white group-hover:text-purple-300 transition-colors tracking-wide">
                     BÁSICO
                   </h3>
                 </div>
+              </button>
+              <div className="flex items-center gap-2 shrink-0 ml-2">
+                {isAdmin && (
+                  <button
+                    type="button"
+                    onClick={() => openEditorAtTab('basico')}
+                    className="px-2.5 py-1.5 rounded-lg bg-purple-500/20 hover:bg-purple-500/30 border border-purple-500/40 text-purple-300 text-xs font-bold flex items-center gap-1 transition"
+                  >
+                    <Edit2 size={12} /> <span className="hidden sm:inline">Editar</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => toggleSection('basico')}
+                  className="p-2 rounded-lg bg-slate-900 border border-slate-700/60 text-slate-300 group-hover:text-white"
+                >
+                  {openSections.basico ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+                </button>
               </div>
-              <div className="p-2 rounded-lg bg-slate-900 border border-slate-700/60 text-slate-300 group-hover:text-white shrink-0 ml-2">
-                {openSections.basico ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
-              </div>
-            </button>
+            </div>
 
             {openSections.basico && (
               <div className="p-4 sm:p-6 border-t border-slate-800 bg-slate-950/90 space-y-6 animate-in slide-in-from-top-2 duration-200">
@@ -874,7 +1461,7 @@ export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
                       <CheckCircle size={18} /> Construção & Requisitos do Deck
                     </h4>
                     <ul className="space-y-2.5 text-xs sm:text-sm text-slate-300">
-                      {data.basico.deckRules.map((rule, idx) => (
+                      {activeManual.basico.deckRules.map((rule, idx) => (
                         <li key={idx} className="flex items-start gap-2 leading-relaxed">
                           <span className="text-purple-400 font-bold shrink-0 mt-0.5">•</span>
                           <span>{rule}</span>
@@ -889,7 +1476,7 @@ export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
                       <Info size={18} /> Status Essenciais do Jogo
                     </h4>
                     <div className="space-y-3">
-                      {data.basico.statusItems.map((item, idx) => (
+                      {activeManual.basico.statusItems.map((item, idx) => (
                         <div key={idx} className="bg-black/30 p-3 rounded-lg border border-slate-800/80">
                           <strong className="block text-white text-xs sm:text-sm mb-0.5">{item.label}</strong>
                           <span className="text-xs text-slate-400 leading-relaxed">{item.text}</span>
@@ -906,15 +1493,15 @@ export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
                   </h4>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs sm:text-sm text-slate-300">
                     <div className="space-y-2">
-                      <p><strong className="text-purple-400">Objetivo da Vitória:</strong> {data.basico.structureObjective}</p>
-                      <p><strong className="text-purple-400">Formato:</strong> {data.basico.structureDuel}</p>
-                      <p><strong className="text-purple-400">Rodadas:</strong> {data.basico.structureRounds}</p>
+                      <p><strong className="text-purple-400">Objetivo da Vitória:</strong> {activeManual.basico.structureObjective}</p>
+                      <p><strong className="text-purple-400">Formato:</strong> {activeManual.basico.structureDuel}</p>
+                      <p><strong className="text-purple-400">Rodadas:</strong> {activeManual.basico.structureRounds}</p>
                     </div>
                     <div className="space-y-2">
-                      <p><strong className="text-purple-400">Início de Jogo:</strong> {data.basico.structureStart}</p>
-                      <p><strong className="text-purple-400">Regra de Mulligan:</strong> {data.basico.structureMulligan}</p>
+                      <p><strong className="text-purple-400">Início de Jogo:</strong> {activeManual.basico.structureStart}</p>
+                      <p><strong className="text-purple-400">Regra de Mulligan:</strong> {activeManual.basico.structureMulligan}</p>
                       <p className="text-yellow-400/90 italic font-medium pt-1 border-t border-slate-800/80">
-                        {data.basico.firstRoundNote}
+                        {activeManual.basico.firstRoundNote}
                       </p>
                     </div>
                   </div>
@@ -925,37 +1512,60 @@ export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
 
           {/* 3. CARTAS */}
           <div id="section-cartas" className="rounded-2xl border border-slate-800 bg-slate-950 overflow-hidden shadow-lg shadow-black/40 transition-all hover:border-slate-700">
-            <button
-              onClick={() => toggleSection('cartas')}
-              className="w-full flex items-center justify-between p-4 sm:p-5 text-left hover:bg-slate-900/50 transition group"
-            >
-              <div className="flex items-center gap-3 sm:gap-4 min-w-0">
+            <div className="w-full flex items-center justify-between p-4 sm:p-5 text-left hover:bg-slate-900/50 transition group">
+              <button
+                type="button"
+                onClick={() => toggleSection('cartas')}
+                className="flex items-center gap-3 sm:gap-4 min-w-0 flex-1 text-left"
+              >
                 <div className="w-10 h-10 rounded-xl bg-blue-500/20 border border-blue-500/40 flex items-center justify-center text-blue-400 shrink-0">
                   <Layers size={20} />
                 </div>
                 <div className="min-w-0">
-                  <span className="text-xs font-mono font-bold text-blue-400 uppercase tracking-wider block">
-                    Seção 03
-                  </span>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-xs font-mono font-bold text-blue-400 uppercase tracking-wider">
+                      Seção 03
+                    </span>
+                    {isMesaoMode && (
+                      <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-emerald-950/80 text-emerald-300 border border-emerald-600/40">
+                        Modo Mesão
+                      </span>
+                    )}
+                  </div>
                   <h3 className="text-lg sm:text-xl font-black text-white group-hover:text-blue-300 transition-colors tracking-wide">
                     CARTAS
                   </h3>
                 </div>
+              </button>
+              <div className="flex items-center gap-2 shrink-0 ml-2">
+                {isAdmin && (
+                  <button
+                    type="button"
+                    onClick={() => openEditorAtTab('cartas')}
+                    className="px-2.5 py-1.5 rounded-lg bg-blue-500/20 hover:bg-blue-500/30 border border-blue-500/40 text-blue-300 text-xs font-bold flex items-center gap-1 transition"
+                  >
+                    <Edit2 size={12} /> <span className="hidden sm:inline">Editar</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => toggleSection('cartas')}
+                  className="p-2 rounded-lg bg-slate-900 border border-slate-700/60 text-slate-300 group-hover:text-white"
+                >
+                  {openSections.cartas ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+                </button>
               </div>
-              <div className="p-2 rounded-lg bg-slate-900 border border-slate-700/60 text-slate-300 group-hover:text-white shrink-0 ml-2">
-                {openSections.cartas ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
-              </div>
-            </button>
+            </div>
 
             {openSections.cartas && (
               <div className="p-4 sm:p-6 border-t border-slate-800 bg-slate-950/90 space-y-6 animate-in slide-in-from-top-2 duration-200">
                 {/* Anatomia da Carta */}
                 <div className="bg-slate-900/60 p-5 rounded-xl border border-slate-800">
                   <h4 className="text-base sm:text-lg font-bold text-white mb-3">
-                    {data.cartas.structureTitle || 'Anatomia & Estrutura das Cartas'}
+                    {activeManual.cartas.structureTitle || 'Anatomia & Estrutura das Cartas'}
                   </h4>
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
-                    {(data.cartas.structureItems || defaultManualData.cartas.structureItems).map((item, idx) => (
+                    {(activeManual.cartas.structureItems || defaultManualData.cartas.structureItems).map((item, idx) => (
                       <div key={idx} className="p-3 bg-black/40 rounded-lg border border-slate-800">
                         <strong className={`block ${item.color || 'text-amber-400'} mb-1 font-bold`}>{item.label}</strong>
                         <span className="text-slate-300 leading-snug">{item.text}</span>
@@ -977,7 +1587,7 @@ export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
                         <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded bg-blue-950 text-blue-300 border border-blue-800/50">MOLDURA AZUL</span>
                       </div>
                       <p className="text-xs sm:text-sm text-slate-300 leading-relaxed text-justify">
-                        {data.cartas.combatenteText}
+                        {activeManual.cartas.combatenteText}
                       </p>
                     </div>
                   </div>
@@ -993,7 +1603,7 @@ export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
                         <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded bg-red-950 text-red-300 border border-red-800/50">MOLDURA VERMELHA</span>
                       </div>
                       <p className="text-xs sm:text-sm text-slate-300 leading-relaxed text-justify">
-                        {data.cartas.heroiText}
+                        {activeManual.cartas.heroiText}
                       </p>
                     </div>
                   </div>
@@ -1009,7 +1619,7 @@ export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
                         <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded bg-green-950 text-green-300 border border-green-800/50">MOLDURA VERDE</span>
                       </div>
                       <p className="text-xs sm:text-sm text-slate-300 leading-relaxed text-justify">
-                        {data.cartas.equipamentoText}
+                        {activeManual.cartas.equipamentoText}
                       </p>
                     </div>
                   </div>
@@ -1025,7 +1635,7 @@ export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
                         <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded bg-purple-950 text-purple-300 border border-purple-800/50">MOLDURA ROXA</span>
                       </div>
                       <p className="text-xs sm:text-sm text-slate-300 leading-relaxed text-justify">
-                        {data.cartas.efeitoText}
+                        {activeManual.cartas.efeitoText}
                       </p>
                     </div>
                   </div>
@@ -1042,7 +1652,7 @@ export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
                         <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded bg-amber-950/60 text-amber-300 border border-amber-700/40">DECK DE HERÓIS • MÁX. 15</span>
                       </div>
                       <p className="text-xs sm:text-sm text-slate-300 leading-relaxed text-justify">
-                        {data.cartas.tokenText || defaultManualData.cartas.tokenText}
+                        {activeManual.cartas.tokenText || defaultManualData.cartas.tokenText}
                       </p>
                     </div>
                   </div>
@@ -1053,38 +1663,61 @@ export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
 
           {/* 4. TURNOS */}
           <div id="section-turnos" className="rounded-2xl border border-slate-800 bg-slate-950 overflow-hidden shadow-lg shadow-black/40 transition-all hover:border-slate-700">
-            <button
-              onClick={() => toggleSection('turnos')}
-              className="w-full flex items-center justify-between p-4 sm:p-5 text-left hover:bg-slate-900/50 transition group"
-            >
-              <div className="flex items-center gap-3 sm:gap-4 min-w-0">
+            <div className="w-full flex items-center justify-between p-4 sm:p-5 text-left hover:bg-slate-900/50 transition group">
+              <button
+                type="button"
+                onClick={() => toggleSection('turnos')}
+                className="flex items-center gap-3 sm:gap-4 min-w-0 flex-1 text-left"
+              >
                 <div className="w-10 h-10 rounded-xl bg-red-500/20 border border-red-500/40 flex items-center justify-center text-red-400 shrink-0">
                   <Clock size={20} />
                 </div>
                 <div className="min-w-0">
-                  <span className="text-xs font-mono font-bold text-red-400 uppercase tracking-wider block">
-                    Seção 04
-                  </span>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-xs font-mono font-bold text-red-400 uppercase tracking-wider">
+                      Seção 04
+                    </span>
+                    {isMesaoMode && (
+                      <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-emerald-950/80 text-emerald-300 border border-emerald-600/40">
+                        Modo Mesão
+                      </span>
+                    )}
+                  </div>
                   <h3 className="text-lg sm:text-xl font-black text-white group-hover:text-red-300 transition-colors tracking-wide">
                     TURNOS
                   </h3>
                 </div>
+              </button>
+              <div className="flex items-center gap-2 shrink-0 ml-2">
+                {isAdmin && (
+                  <button
+                    type="button"
+                    onClick={() => openEditorAtTab('turnos')}
+                    className="px-2.5 py-1.5 rounded-lg bg-red-500/20 hover:bg-red-500/30 border border-red-500/40 text-red-300 text-xs font-bold flex items-center gap-1 transition"
+                  >
+                    <Edit2 size={12} /> <span className="hidden sm:inline">Editar</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => toggleSection('turnos')}
+                  className="p-2 rounded-lg bg-slate-900 border border-slate-700/60 text-slate-300 group-hover:text-white"
+                >
+                  {openSections.turnos ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+                </button>
               </div>
-              <div className="p-2 rounded-lg bg-slate-900 border border-slate-700/60 text-slate-300 group-hover:text-white shrink-0 ml-2">
-                {openSections.turnos ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
-              </div>
-            </button>
+            </div>
 
             {openSections.turnos && (
               <div className="p-4 sm:p-6 border-t border-slate-800 bg-slate-950/90 space-y-6 animate-in slide-in-from-top-2 duration-200">
                 <div className="bg-slate-900/60 p-5 rounded-xl border border-slate-800">
                   <h4 className="text-base sm:text-lg font-bold text-white mb-2">Estrutura da Rodada: Ação e Reação</h4>
                   <p className="text-xs sm:text-sm text-slate-300 leading-relaxed mb-6">
-                    {data.turnos.roundOverview}
+                    {activeManual.turnos.roundOverview}
                   </p>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                    {data.turnos.phases.map((phase, idx) => (
+                    {activeManual.turnos.phases.map((phase, idx) => (
                       <div key={idx} className={`p-4 rounded-xl border ${phase.color} bg-slate-950/80 flex flex-col justify-between`}>
                         <div>
                           <div className="w-7 h-7 rounded-full bg-slate-900 flex items-center justify-center text-xs font-black text-white mb-2 border border-slate-700">
@@ -1103,7 +1736,7 @@ export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
                     <Sword size={18} /> Regras & Cálculos de Combate
                   </h4>
                   <ul className="space-y-2 text-xs sm:text-sm text-slate-300 leading-relaxed">
-                    {data.turnos.combatRules.map((rule, idx) => (
+                    {activeManual.turnos.combatRules.map((rule, idx) => (
                       <li key={idx} className="flex items-start gap-2">
                         <span className="text-red-400 font-bold shrink-0 mt-0.5">•</span>
                         <span>{rule}</span>
@@ -1117,27 +1750,50 @@ export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
 
           {/* 5. REGRAS */}
           <div id="section-regras" className="rounded-2xl border border-slate-800 bg-slate-950 overflow-hidden shadow-lg shadow-black/40 transition-all hover:border-slate-700">
-            <button
-              onClick={() => toggleSection('regras')}
-              className="w-full flex items-center justify-between p-4 sm:p-5 text-left hover:bg-slate-900/50 transition group"
-            >
-              <div className="flex items-center gap-3 sm:gap-4 min-w-0">
+            <div className="w-full flex items-center justify-between p-4 sm:p-5 text-left hover:bg-slate-900/50 transition group">
+              <button
+                type="button"
+                onClick={() => toggleSection('regras')}
+                className="flex items-center gap-3 sm:gap-4 min-w-0 flex-1 text-left"
+              >
                 <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 shrink-0">
                   <Scale size={20} />
                 </div>
                 <div className="min-w-0">
-                  <span className="text-xs font-mono font-bold text-emerald-400 uppercase tracking-wider block">
-                    Seção 05
-                  </span>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-xs font-mono font-bold text-emerald-400 uppercase tracking-wider">
+                      Seção 05
+                    </span>
+                    {isMesaoMode && (
+                      <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-emerald-950/80 text-emerald-300 border border-emerald-600/40">
+                        Modo Mesão
+                      </span>
+                    )}
+                  </div>
                   <h3 className="text-lg sm:text-xl font-black text-white group-hover:text-emerald-300 transition-colors tracking-wide">
                     REGRAS
                   </h3>
                 </div>
+              </button>
+              <div className="flex items-center gap-2 shrink-0 ml-2">
+                {isAdmin && (
+                  <button
+                    type="button"
+                    onClick={() => openEditorAtTab('regras')}
+                    className="px-2.5 py-1.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-300 text-xs font-bold flex items-center gap-1 transition"
+                  >
+                    <Edit2 size={12} /> <span className="hidden sm:inline">Editar</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => toggleSection('regras')}
+                  className="p-2 rounded-lg bg-slate-900 border border-slate-700/60 text-slate-300 group-hover:text-white"
+                >
+                  {openSections.regras ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+                </button>
               </div>
-              <div className="p-2 rounded-lg bg-slate-900 border border-slate-700/60 text-slate-300 group-hover:text-white shrink-0 ml-2">
-                {openSections.regras ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
-              </div>
-            </button>
+            </div>
 
             {openSections.regras && (
               <div className="p-4 sm:p-6 border-t border-slate-800 bg-slate-950/90 space-y-6 animate-in slide-in-from-top-2 duration-200">
@@ -1148,11 +1804,11 @@ export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
                       <Layers size={18} /> Resolução em Corrente (Chains)
                     </h4>
                     <p className="text-xs sm:text-sm text-slate-300 leading-relaxed text-justify mb-3">
-                      {data.regras.chainsText}
+                      {activeManual.regras.chainsText}
                     </p>
                     <div className="p-3 bg-black/40 rounded-lg border border-slate-800 text-xs text-slate-400 leading-relaxed">
                       <strong className="text-white block mb-0.5">Precedência por CT:</strong>
-                      {data.regras.chainsPriorityText}
+                      {activeManual.regras.chainsPriorityText}
                     </div>
                   </div>
 
@@ -1162,7 +1818,7 @@ export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
                       <Ghost size={18} /> Esgotamento de Deck (Deck Out)
                     </h4>
                     <p className="text-xs sm:text-sm text-slate-300 leading-relaxed text-justify">
-                      {data.regras.deckOutText}
+                      {activeManual.regras.deckOutText}
                     </p>
                   </div>
                 </div>
@@ -1173,7 +1829,7 @@ export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
                     <FileText size={18} /> Observações Estratégicas Fundamentais
                   </h4>
                   <ul className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs sm:text-sm text-slate-300">
-                    {data.regras.observations.map((obs, idx) => (
+                    {activeManual.regras.observations.map((obs, idx) => (
                       <li key={idx} className="flex items-start gap-2 bg-black/20 p-2.5 rounded-lg border border-slate-800/80">
                         <span className="text-purple-400 font-bold shrink-0 mt-0.5">•</span>
                         <span className="leading-relaxed">{obs}</span>
@@ -1185,13 +1841,14 @@ export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
             )}
           </div>
 
-          {/* 6. ARQUÉTIPOS */}
+          {/* 6. ARQUÉTIPOS (EXATAMENTE A MESMA DISPOSIÇÃO EM AMBOS OS MODOS) */}
           <div id="section-arquetipos" className="rounded-2xl border border-purple-800/40 bg-slate-950 overflow-hidden shadow-lg shadow-black/40 transition-all hover:border-purple-600/60">
-            <button
-              onClick={() => toggleSection('arquetipos')}
-              className="w-full flex items-center justify-between p-4 sm:p-5 text-left hover:bg-slate-900/50 transition group"
-            >
-              <div className="flex items-center gap-3 sm:gap-4 min-w-0">
+            <div className="w-full flex items-center justify-between p-4 sm:p-5 text-left hover:bg-slate-900/50 transition group">
+              <button
+                type="button"
+                onClick={() => toggleSection('arquetipos')}
+                className="flex items-center gap-3 sm:gap-4 min-w-0 flex-1 text-left"
+              >
                 <div className="w-10 h-10 rounded-xl bg-purple-600/20 border border-purple-500/40 flex items-center justify-center text-purple-400 shrink-0">
                   <Crown size={20} />
                 </div>
@@ -1201,18 +1858,38 @@ export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
                       Seção 06
                     </span>
                     <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-purple-950 text-purple-300 border border-purple-800/50">
-                      {archetypes.length} Arquétipos Registrados
+                      {activeArchetypes.length} Arquétipos Registrados
                     </span>
+                    {isMesaoMode && (
+                      <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-emerald-950/80 text-emerald-300 border border-emerald-600/40">
+                        Modo Mesão
+                      </span>
+                    )}
                   </div>
                   <h3 className="text-lg sm:text-xl font-black text-white group-hover:text-purple-300 transition-colors tracking-wide">
                     ARQUÉTIPOS
                   </h3>
                 </div>
+              </button>
+              <div className="flex items-center gap-2 shrink-0 ml-2">
+                {isAdmin && (
+                  <button
+                    type="button"
+                    onClick={() => openEditorAtTab('arquetipos')}
+                    className="px-2.5 py-1.5 rounded-lg bg-purple-500/20 hover:bg-purple-500/30 border border-purple-500/40 text-purple-300 text-xs font-bold flex items-center gap-1 transition"
+                  >
+                    <Edit2 size={12} /> <span className="hidden sm:inline">Editar</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => toggleSection('arquetipos')}
+                  className="p-2 rounded-lg bg-slate-900 border border-slate-700/60 text-slate-300 group-hover:text-white"
+                >
+                  {openSections.arquetipos ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+                </button>
               </div>
-              <div className="p-2 rounded-lg bg-slate-900 border border-slate-700/60 text-slate-300 group-hover:text-white shrink-0 ml-2">
-                {openSections.arquetipos ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
-              </div>
-            </button>
+            </div>
 
             {openSections.arquetipos && (
               <div className="p-4 sm:p-6 border-t border-purple-800/30 bg-slate-950/90 space-y-6 animate-in slide-in-from-top-2 duration-200">
@@ -1220,7 +1897,7 @@ export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
                   <div>
                     <h4 className="font-bold text-white text-base">Classificações & Linhagens</h4>
                     <p className="text-xs text-slate-400">
-                      Pesquise e consulte as habilidades intrínsecas de cada classe do Macroverso.
+                      Pesquise e consulte as habilidades intrínsecas de cada classe do Macroverso {isMesaoMode ? 'no Modo Mesão' : ''}.
                     </p>
                   </div>
                   <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 w-full sm:w-auto">
@@ -1271,6 +1948,11 @@ export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
                       <h5 className="font-black text-white text-sm sm:text-base flex items-center gap-2">
                         <Crown size={18} className="text-purple-400" />
                         {editingArchetype.isCreating ? 'Criar Novo Arquétipo' : `Editar Arquétipo: ${editingArchetype.name}`}
+                        {isMesaoMode && (
+                          <span className="text-xs font-mono px-2 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-600/40">
+                            Modo Mesão
+                          </span>
+                        )}
                       </h5>
                       <button
                         type="button"
@@ -1439,11 +2121,12 @@ export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
 
           {/* 7. CAMPOS */}
           <div id="section-campos" className="rounded-2xl border border-cyan-800/40 bg-slate-950 overflow-hidden shadow-lg shadow-black/40 transition-all hover:border-cyan-600/60">
-            <button
-              onClick={() => toggleSection('campos')}
-              className="w-full flex items-center justify-between p-4 sm:p-5 text-left hover:bg-slate-900/50 transition group"
-            >
-              <div className="flex items-center gap-3 sm:gap-4 min-w-0">
+            <div className="w-full flex items-center justify-between p-4 sm:p-5 text-left hover:bg-slate-900/50 transition group">
+              <button
+                type="button"
+                onClick={() => toggleSection('campos')}
+                className="flex items-center gap-3 sm:gap-4 min-w-0 flex-1 text-left"
+              >
                 <div className="w-10 h-10 rounded-xl bg-cyan-600/20 border border-cyan-500/40 flex items-center justify-center text-cyan-400 shrink-0">
                   <Grid size={20} />
                 </div>
@@ -1455,30 +2138,58 @@ export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
                     <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-cyan-950 text-cyan-300 border border-cyan-800/50">
                       Playmat Interativo
                     </span>
+                    {isMesaoMode && (
+                      <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-emerald-950/80 text-emerald-300 border border-emerald-600/40">
+                        Modo Mesão
+                      </span>
+                    )}
                   </div>
                   <h3 className="text-lg sm:text-xl font-black text-white group-hover:text-cyan-300 transition-colors tracking-wide">
                     CAMPOS
                   </h3>
                 </div>
+              </button>
+              <div className="flex items-center gap-2 shrink-0 ml-2">
+                {isAdmin && (
+                  <button
+                    type="button"
+                    onClick={() => openEditorAtTab('campos')}
+                    className="px-2.5 py-1.5 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/40 text-cyan-300 text-xs font-bold flex items-center gap-1 transition"
+                  >
+                    <Edit2 size={12} /> <span className="hidden sm:inline">Editar</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => toggleSection('campos')}
+                  className="p-2 rounded-lg bg-slate-900 border border-slate-700/60 text-slate-300 group-hover:text-white"
+                >
+                  {openSections.campos ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+                </button>
               </div>
-              <div className="p-2 rounded-lg bg-slate-900 border border-slate-700/60 text-slate-300 group-hover:text-white shrink-0 ml-2">
-                {openSections.campos ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
-              </div>
-            </button>
+            </div>
 
             {openSections.campos && (
               <div className="p-4 sm:p-6 border-t border-cyan-800/30 bg-slate-950/90 space-y-6 animate-in slide-in-from-top-2 duration-200">
                 <div className="bg-slate-900/60 p-4 rounded-xl border border-slate-800 text-center sm:text-left flex flex-col sm:flex-row items-center justify-between gap-3">
                   <div>
-                    <h4 className="font-bold text-white text-base">Topologia & Zonas do Tabuleiro</h4>
+                    <h4 className="font-bold text-white text-base">
+                      {activeManual.campos?.title || 'Topologia & Zonas do Tabuleiro'}
+                    </h4>
                     <p className="text-xs text-slate-400">
-                      Clique em qualquer setor abaixo para explorar a função das zonas de combate, heróis, retaguarda, cemitério e mana.
+                      {activeManual.campos?.subtitle || 'Clique em qualquer setor abaixo para explorar a função das zonas de combate, heróis, retaguarda, cemitério e mana.'}
                     </p>
                   </div>
                   <span className="text-[11px] font-mono px-3 py-1 rounded bg-slate-950 border border-slate-800 text-cyan-400">
-                    Toque nas zonas para detalhes
+                    {activeManual.campos?.badgeText || 'Toque nas zonas para detalhes'}
                   </span>
                 </div>
+
+                {activeManual.campos?.extraNotes && activeManual.campos.extraNotes.trim() && (
+                  <div className="bg-slate-900/60 p-4 rounded-xl border border-cyan-500/30 text-xs sm:text-sm text-slate-200 whitespace-pre-line leading-relaxed">
+                    {activeManual.campos.extraNotes}
+                  </div>
+                )}
 
                 <div className="w-full overflow-x-auto pb-4 -mx-2 px-2 sm:mx-0 sm:px-0">
                   <div className="min-w-[650px] md:min-w-0 w-full">
@@ -1915,6 +2626,8 @@ export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
       {isEditorOpen && isAdmin && (
         <ManualEditModal
           data={data}
+          isMesaoMode={isMesaoMode}
+          initialTab={editorInitialTab}
           onClose={() => setIsEditorOpen(false)}
           onSave={async (updatedData) => {
             await setDoc(doc(db, 'homeSettings', 'gameManual'), sanitizeForFirestore({
@@ -1933,13 +2646,18 @@ export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
 // Admin Editor Component
 const ManualEditModal: React.FC<{
   data: GameManualData;
+  isMesaoMode: boolean;
+  initialTab?: 'patch' | 'basico' | 'cartas' | 'turnos' | 'regras' | 'arquetipos' | 'campos';
   onClose: () => void;
   onSave: (data: GameManualData) => Promise<void>;
-}> = ({ data, onClose, onSave }) => {
-  const [form, setForm] = useState<GameManualData>(() => {
+}> = ({ data, isMesaoMode, initialTab = 'patch', onClose, onSave }) => {
+  const { archetypes, saveArchetype } = useCards();
+  const [editingMesao, setEditingMesao] = useState<boolean>(isMesaoMode);
+
+  const [rootForm, setRootForm] = useState<GameManualData>(() => {
     const cloned: GameManualData = JSON.parse(JSON.stringify(data));
     if (!cloned.cartas) {
-      cloned.cartas = { ...defaultManualData.cartas };
+      cloned.cartas = JSON.parse(JSON.stringify(defaultManualData.cartas));
     }
     if (!cloned.cartas.structureTitle) {
       cloned.cartas.structureTitle = defaultManualData.cartas.structureTitle || 'Anatomia & Estrutura das Cartas';
@@ -1947,12 +2665,45 @@ const ManualEditModal: React.FC<{
     if (!cloned.cartas.structureItems || cloned.cartas.structureItems.length === 0) {
       cloned.cartas.structureItems = JSON.parse(JSON.stringify(defaultManualData.cartas.structureItems));
     }
+    if (!cloned.campos) {
+      cloned.campos = JSON.parse(JSON.stringify(defaultManualData.campos));
+    }
+    if (!cloned.mesaoTitle) cloned.mesaoTitle = defaultManualData.mesaoTitle;
+    if (!cloned.mesaoSubtitle) cloned.mesaoSubtitle = defaultManualData.mesaoSubtitle;
+    cloned.mesaoManual = resolveMesaoManualData(cloned, archetypes);
     return cloned;
   });
-  const [activeTab, setActiveTab] = useState<'patch' | 'basico' | 'cartas' | 'turnos' | 'regras' | 'arquetipos'>('patch');
+
+  // Ensure mesaoManual is always populated
+  const mesaoData = rootForm.mesaoManual || resolveMesaoManualData(rootForm, archetypes);
+  const form = editingMesao ? mesaoData : rootForm;
+
+  const setForm = (updater: (prev: typeof form) => typeof form) => {
+    setRootForm(prevRoot => {
+      if (editingMesao) {
+        const currentMesao = prevRoot.mesaoManual || resolveMesaoManualData(prevRoot, archetypes);
+        const updatedMesao = updater(currentMesao);
+        return {
+          ...prevRoot,
+          mesaoManual: {
+            ...currentMesao,
+            ...updatedMesao,
+            archetypes: (updatedMesao as any).archetypes || currentMesao.archetypes
+          }
+        };
+      } else {
+        const updatedNormal = updater(prevRoot);
+        return {
+          ...prevRoot,
+          ...updatedNormal
+        };
+      }
+    });
+  };
+
+  const [activeTab, setActiveTab] = useState<'patch' | 'basico' | 'cartas' | 'turnos' | 'regras' | 'arquetipos' | 'campos'>(initialTab);
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
-  const { archetypes, saveArchetype } = useCards();
   const [modalArchSearch, setModalArchSearch] = useState('');
   const [modalEditingArch, setModalEditingArch] = useState<{
     isCreating: boolean;
@@ -1979,10 +2730,17 @@ const ManualEditModal: React.FC<{
     });
   };
 
+  const handleCopyAllFromNormalToMesao = () => {
+    setRootForm(prev => ({
+      ...prev,
+      mesaoManual: resolveMesaoManualData({ ...prev, mesaoManual: undefined }, archetypes)
+    }));
+  };
+
   const handleSave = async () => {
     setIsSaving(true);
     try {
-      await onSave(form);
+      await onSave(rootForm);
       setSaveSuccess(true);
       setTimeout(() => {
         setSaveSuccess(false);
@@ -2024,49 +2782,131 @@ const ManualEditModal: React.FC<{
     });
   };
 
+  const activeModalArchetypes: ArchetypeData[] = editingMesao
+    ? (rootForm.mesaoManual?.archetypes || archetypes)
+    : archetypes;
+
+  const handleSaveModalArchetype = async (archData: ArchetypeData) => {
+    if (editingMesao) {
+      setRootForm(prev => {
+        const currentMesao = prev.mesaoManual || resolveMesaoManualData(prev, archetypes);
+        const list = [...(currentMesao.archetypes || [])];
+        const idx = list.findIndex(a => a.name.toLowerCase() === archData.name.toLowerCase());
+        if (idx >= 0) {
+          list[idx] = { ...list[idx], ...archData };
+        } else {
+          list.push(archData);
+        }
+        return {
+          ...prev,
+          mesaoManual: {
+            ...currentMesao,
+            archetypes: list
+          }
+        };
+      });
+    } else {
+      await saveArchetype(archData);
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-[120] flex items-center justify-center p-3 sm:p-6 bg-black/85 backdrop-blur-md animate-in fade-in duration-200">
       <div className="bg-[#0e0e12] border border-purple-500/40 rounded-2xl max-w-4xl w-full h-[90vh] flex flex-col shadow-2xl overflow-hidden">
         
         {/* Modal Header */}
-        <div className="p-4 sm:p-5 bg-slate-900 border-b border-slate-800 flex items-center justify-between shrink-0">
+        <div className="p-4 sm:p-5 bg-slate-900 border-b border-slate-800 flex items-center justify-between flex-wrap gap-3 shrink-0">
           <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-purple-600/20 text-purple-400 border border-purple-500/40">
+            <div className={`p-2 rounded-lg border ${editingMesao ? 'bg-amber-500/20 text-amber-400 border-amber-500/40' : 'bg-purple-600/20 text-purple-400 border-purple-500/40'}`}>
               <Edit2 size={18} />
             </div>
             <div>
-              <h3 className="font-black text-white text-base sm:text-lg">
-                Editar Manual, Regras & Patch
+              <h3 className="font-black text-white text-base sm:text-lg flex items-center gap-2">
+                <span>Editar Manual ({editingMesao ? 'Modo Mesão' : 'Modo Normal'})</span>
               </h3>
               <p className="text-xs text-slate-400">
-                Altere os textos oficiais exibidos na homepage. As mudanças são salvas em tempo real no Firestore.
+                Mesma disposição da Seção 01 até Seção 07. Alterne abaixo qual modo deseja editar.
               </p>
             </div>
           </div>
-          <button
-            onClick={onClose}
-            className="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
-          >
-            <X size={20} />
-          </button>
+
+          <div className="flex items-center gap-2">
+            {/* Mode Switcher inside Modal */}
+            <div className="inline-flex items-center p-1 rounded-xl bg-slate-950 border border-slate-800 gap-1">
+              <button
+                type="button"
+                onClick={() => setEditingMesao(false)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-black uppercase tracking-wider flex items-center gap-1.5 transition ${
+                  !editingMesao
+                    ? 'bg-purple-600 text-white shadow'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <BookOpen size={13} /> Normal
+              </button>
+              <button
+                type="button"
+                onClick={() => setEditingMesao(true)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-black uppercase tracking-wider flex items-center gap-1.5 transition ${
+                  editingMesao
+                    ? 'bg-amber-500 text-slate-950 shadow'
+                    : 'text-amber-300/80 hover:text-amber-200'
+                }`}
+              >
+                <Users size={13} /> Modo Mesão
+              </button>
+            </div>
+
+            <button
+              onClick={onClose}
+              className="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
+            >
+              <X size={20} />
+            </button>
+          </div>
         </div>
 
-        {/* Modal Tabs */}
+        {/* Mesão Header Bar when editing Modo Mesão */}
+        {editingMesao && (
+          <div className="px-4 py-2.5 bg-amber-950/30 border-b border-amber-500/30 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 shrink-0">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 flex-1">
+              <input
+                type="text"
+                value={rootForm.mesaoTitle || ''}
+                onChange={e => setRootForm(prev => ({ ...prev, mesaoTitle: e.target.value }))}
+                placeholder="Título do Modo Mesão (Ex: Manual Oficial: Modo Mesão)"
+                className="bg-slate-950 border border-amber-500/40 rounded-lg px-3 py-1.5 text-xs text-white font-bold focus:outline-none focus:border-amber-400"
+              />
+              <input
+                type="text"
+                value={rootForm.mesaoSubtitle || ''}
+                onChange={e => setRootForm(prev => ({ ...prev, mesaoSubtitle: e.target.value }))}
+                placeholder="Subtítulo do Modo Mesão..."
+                className="bg-slate-950 border border-amber-500/40 rounded-lg px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-amber-400"
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Modal Tabs (Seção 01 até Seção 07) */}
         <div className="flex border-b border-slate-800 bg-slate-950 px-4 shrink-0 overflow-x-auto gap-2 py-2">
           {[
-            { id: 'patch', label: '1. Patch Atual & Alerta', icon: Scale },
+            { id: 'patch', label: '1. Patch Atual', icon: Scale },
             { id: 'basico', label: '2. Básico', icon: Info },
             { id: 'cartas', label: '3. Cartas', icon: Layers },
             { id: 'turnos', label: '4. Turnos & Combate', icon: Clock },
-            { id: 'regras', label: '5. Regras Avançadas', icon: Sparkles },
-            { id: 'arquetipos', label: '6. Arquétipos', icon: Crown }
+            { id: 'regras', label: '5. Regras', icon: Sparkles },
+            { id: 'arquetipos', label: '6. Arquétipos', icon: Crown },
+            { id: 'campos', label: '7. Campos', icon: Shield }
           ].map(tab => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id as any)}
               className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-bold transition whitespace-nowrap ${
                 activeTab === tab.id
-                  ? 'bg-purple-600 text-white shadow-md shadow-purple-900/50'
+                  ? editingMesao
+                    ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-900/50 font-black'
+                    : 'bg-purple-600 text-white shadow-md shadow-purple-900/50'
                   : 'text-slate-400 hover:text-white hover:bg-slate-900'
               }`}
             >
@@ -2084,7 +2924,7 @@ const ManualEditModal: React.FC<{
             <div className="space-y-6 animate-in fade-in">
               <div className="bg-slate-900/60 p-4 rounded-xl border border-slate-800 space-y-4">
                 <h4 className="font-bold text-amber-400 text-sm flex items-center gap-2">
-                  <Sparkles size={16} /> Configurações Gerais do Patch & Novidade
+                  <Sparkles size={16} /> Seção 01 — Configurações do Patch & Novidade ({editingMesao ? 'Modo Mesão' : 'Modo Normal'})
                 </h4>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -2201,7 +3041,7 @@ const ManualEditModal: React.FC<{
           {activeTab === 'basico' && (
             <div className="space-y-6 animate-in fade-in">
               <div className="bg-slate-900/60 p-4 rounded-xl border border-slate-800 space-y-4">
-                <h4 className="font-bold text-purple-400 text-sm">Regras de Deck (Uma por linha)</h4>
+                <h4 className="font-bold text-purple-400 text-sm">Seção 02 — Regras de Deck (Uma por linha)</h4>
                 <textarea
                   rows={4}
                   value={form.basico.deckRules.join('\n')}
@@ -2296,7 +3136,7 @@ const ManualEditModal: React.FC<{
               <div className="bg-slate-900/60 p-4 sm:p-5 rounded-xl border border-purple-500/30 space-y-4">
                 <div className="border-b border-slate-800 pb-3">
                   <h4 className="font-bold text-amber-400 text-sm flex items-center gap-2">
-                    <Layers size={16} /> Anatomia & Estrutura das Cartas
+                    <Layers size={16} /> Seção 03 — Anatomia & Estrutura das Cartas
                   </h4>
                   <p className="text-xs text-slate-400 mt-1">
                     Edite o título da seção e os 4 campos explicativos da anatomia das cartas (Categoria, Status, Arquétipo, Tipo).
@@ -2428,7 +3268,7 @@ const ManualEditModal: React.FC<{
           {activeTab === 'turnos' && (
             <div className="space-y-4 animate-in fade-in">
               <div className="bg-slate-900/60 p-4 rounded-xl border border-slate-800 space-y-3">
-                <h4 className="font-bold text-white text-sm">Visão Geral da Rodada (Ação e Reação)</h4>
+                <h4 className="font-bold text-white text-sm">Seção 04 — Visão Geral da Rodada (Ação e Reação)</h4>
                 <textarea
                   rows={3}
                   value={form.turnos.roundOverview}
@@ -2462,7 +3302,7 @@ const ManualEditModal: React.FC<{
           {activeTab === 'regras' && (
             <div className="space-y-4 animate-in fade-in">
               <div className="bg-slate-900/60 p-4 rounded-xl border border-slate-800 space-y-3">
-                <h4 className="font-bold text-yellow-400 text-sm">Correntes (Chains - LIFO)</h4>
+                <h4 className="font-bold text-yellow-400 text-sm">Seção 05 — Correntes (Chains - LIFO)</h4>
                 <textarea
                   rows={3}
                   value={form.regras.chainsText}
@@ -2521,10 +3361,10 @@ const ManualEditModal: React.FC<{
               <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-slate-900/60 p-4 rounded-xl border border-slate-800">
                 <div>
                   <h4 className="font-bold text-white text-sm flex items-center gap-2">
-                    <Crown size={16} className="text-purple-400" /> Gerenciar Arquétipos do Manual
+                    <Crown size={16} className="text-purple-400" /> Seção 06 — Gerenciar Arquétipos ({editingMesao ? 'Modo Mesão' : 'Modo Normal'})
                   </h4>
                   <p className="text-xs text-slate-400">
-                    Crie ou edite ícones, descrições, datas de patch e destaque "Novo" dos arquétipos.
+                    Crie ou edite ícones, descrições, datas de patch e destaque "Novo" dos arquétipos com a mesma disposição visual.
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
@@ -2654,7 +3494,7 @@ const ManualEditModal: React.FC<{
                           if (!modalEditingArch) return;
                           try {
                             setModalSavingArch(true);
-                            await saveArchetype({
+                            await handleSaveModalArchetype({
                               name: modalEditingArch.name.trim(),
                               imageUrl: modalEditingArch.imageUrl.trim(),
                               description: modalEditingArch.description,
@@ -2676,7 +3516,7 @@ const ManualEditModal: React.FC<{
               )}
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {archetypes
+                {activeModalArchetypes
                   .filter(a => a.name.toLowerCase().includes(modalArchSearch.toLowerCase()) || (a.description || '').toLowerCase().includes(modalArchSearch.toLowerCase()))
                   .map(arch => (
                     <div key={arch.name} className="bg-slate-900/80 border border-slate-800 rounded-xl p-3.5 flex flex-col justify-between gap-2">
@@ -2705,7 +3545,7 @@ const ManualEditModal: React.FC<{
                         <div className="flex items-center gap-1.5">
                           <button
                             type="button"
-                            onClick={() => saveArchetype({ ...arch, isNew: !arch.isNew })}
+                            onClick={() => handleSaveModalArchetype({ ...arch, isNew: !arch.isNew })}
                             className={`px-2 py-1 rounded text-[10px] font-bold border ${
                               arch.isNew
                                 ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
@@ -2732,6 +3572,74 @@ const ManualEditModal: React.FC<{
                       </div>
                     </div>
                   ))}
+              </div>
+            </div>
+          )}
+
+          {/* TAB 7: CAMPOS */}
+          {activeTab === 'campos' && (
+            <div className="space-y-4 animate-in fade-in">
+              <div className="bg-slate-900/60 p-4 rounded-xl border border-slate-800 space-y-4">
+                <h4 className="font-bold text-indigo-400 text-sm flex items-center gap-2">
+                  <Shield size={16} /> Seção 07 — Campos, Zonas & Tabuleiro ({editingMesao ? 'Modo Mesão' : 'Modo Normal'})
+                </h4>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">Título da Seção 07</label>
+                    <input
+                      type="text"
+                      value={form.campos?.title || '7. CAMPOS'}
+                      onChange={e => setForm(prev => ({
+                        ...prev,
+                        campos: { ...(prev.campos || defaultManualData.campos!), title: e.target.value }
+                      }))}
+                      className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">Badge Lateral</label>
+                    <input
+                      type="text"
+                      value={form.campos?.badgeText || 'Tabuleiro Interativo'}
+                      onChange={e => setForm(prev => ({
+                        ...prev,
+                        campos: { ...(prev.campos || defaultManualData.campos!), badgeText: e.target.value }
+                      }))}
+                      className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">Subtítulo Descritivo</label>
+                    <input
+                      type="text"
+                      value={form.campos?.subtitle || 'Zonas de jogo, posicionamento de cartas e estrutura do campo'}
+                      onChange={e => setForm(prev => ({
+                        ...prev,
+                        campos: { ...(prev.campos || defaultManualData.campos!), subtitle: e.target.value }
+                      }))}
+                      className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-500"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">
+                    Regras / Notas de Campo e Posicionamento (Uma por linha)
+                  </label>
+                  <textarea
+                    rows={6}
+                    value={form.campos?.extraNotes || ''}
+                    onChange={e => {
+                      const val = e.target.value;
+                      setForm(prev => ({
+                        ...prev,
+                        campos: { ...(prev.campos || defaultManualData.campos!), extraNotes: val }
+                      }));
+                    }}
+                    placeholder="Digite notas ou regras adicionais do campo..."
+                    className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 text-xs text-white font-mono leading-relaxed focus:outline-none focus:border-purple-500"
+                  />
+                </div>
               </div>
             </div>
           )}
@@ -2771,3 +3679,4 @@ const ManualEditModal: React.FC<{
     </div>
   );
 };
+
