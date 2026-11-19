@@ -54,14 +54,7 @@ import {
 } from '../wishlistService';
 import { CardData, AlbumVerificationRequest, StoreOrder } from '../types';
 import {
-  fetchCustomerOrders,
-  formatBRL,
-  formatCep,
-  getCarrierTrackingUrl,
-  getStoreOrderById,
-  ORDER_STATUS_LABELS,
-  syncOrderPaymentStatus,
-  updateStoreOrderFields
+  subscribeCustomerOrders
 } from '../storeService';
 import { 
   subscribePendingVerificationRequests, 
@@ -72,6 +65,7 @@ import {
   deleteVerificationRequest 
 } from '../rarePrintService';
 import { LazyCardImage } from './LazyCardImage';
+import { CustomerOrdersArea } from './CustomerOrdersArea';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 
@@ -125,81 +119,20 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
 
   // Meus Pedidos & Rastreio (exclusivo no Perfil de Usuário)
   const [myOrders, setMyOrders] = useState<StoreOrder[]>([]);
-  const [loadingOrders, setLoadingOrders] = useState(false);
-  const [orderSearchInput, setOrderSearchInput] = useState('');
-  const [isCheckingPayment, setIsCheckingPayment] = useState(false);
-  const [copiedTracking, setCopiedTracking] = useState<string | null>(null);
-  const [copiedOrderPix, setCopiedOrderPix] = useState<string | null>(null);
-
-  const loadMyOrders = async () => {
-    setLoadingOrders(true);
-    try {
-      const list = await fetchCustomerOrders(currentUser?.uid, currentUser?.email || undefined);
-      setMyOrders(list);
-    } catch (e) {
-      console.error('Erro ao carregar pedidos do perfil:', e);
-    } finally {
-      setLoadingOrders(false);
-    }
-  };
 
   useEffect(() => {
-    if (isOpen && isMe) {
-      loadMyOrders();
-    }
+    if (!isOpen || !isMe) return;
+    const unsub = subscribeCustomerOrders(
+      {
+        userId: currentUser?.uid,
+        userEmail: currentUser?.email || undefined
+      },
+      (list) => {
+        setMyOrders(list);
+      }
+    );
+    return () => unsub();
   }, [isOpen, isMe, currentUser?.uid, currentUser?.email]);
-
-  const handleManualVerifyPayment = async (ord: StoreOrder) => {
-    setIsCheckingPayment(true);
-    try {
-      const synced = await syncOrderPaymentStatus(ord);
-      if (synced.orderStatus === 'cancelled' || synced.paymentStatus === 'cancelled') {
-        setMyOrders((prev) => prev.filter((o) => o.id !== synced.id));
-      } else {
-        setMyOrders((prev) => prev.map((o) => (o.id === synced.id ? synced : o)));
-      }
-    } finally {
-      setIsCheckingPayment(false);
-    }
-  };
-
-  const handleCancelMyOrder = async (ord: StoreOrder) => {
-    setIsCheckingPayment(true);
-    try {
-      await updateStoreOrderFields(ord.id, {
-        orderStatus: 'cancelled',
-        paymentStatus: 'cancelled'
-      });
-      setMyOrders((prev) => prev.filter((o) => o.id !== ord.id));
-    } finally {
-      setIsCheckingPayment(false);
-    }
-  };
-
-  const handleSearchOrderByCode = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!orderSearchInput.trim()) return;
-    setLoadingOrders(true);
-    try {
-      const cleanId = orderSearchInput.trim().replace(/^#/, '');
-      const found = await getStoreOrderById(cleanId);
-      if (found) {
-        const synced = await syncOrderPaymentStatus(found);
-        if (synced.orderStatus === 'cancelled' || synced.paymentStatus === 'cancelled') {
-          setMyOrders((prev) => prev.filter((o) => o.id !== synced.id));
-        } else {
-          setMyOrders((prev) => {
-            const filtered = prev.filter((o) => o.id !== synced.id);
-            return [synced, ...filtered];
-          });
-        }
-      }
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoadingOrders(false);
-    }
-  };
 
   // Verificações de Tiragem Rara (Admin e Jogador)
   const [adminPendingRequests, setAdminPendingRequests] = useState<AlbumVerificationRequest[]>([]);
@@ -1749,235 +1682,10 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
 
           {/* TAB 4: MEUS PEDIDOS & RASTREIO (EXCLUSIVO NO PERFIL DO USUÁRIO) */}
           {activeTab === 'orders' && isMe && (
-            <div className="space-y-5">
-              {/* Top Search & Info Bar */}
-              <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 sm:p-5 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4">
-                <div>
-                  <h3 className="text-base sm:text-lg font-bold text-white flex items-center gap-2">
-                    <Truck size={19} className="text-emerald-400" />
-                    <span>Meus Pedidos & Rastreio de Envio</span>
-                  </h3>
-                  <p className="text-xs text-slate-400 mt-0.5">
-                    Acompanhe seus pedidos da Loja Oficial, reservas de Pré-Venda e rastreie sua entrega via Correios, Jadlog ou Loggi.
-                  </p>
-                </div>
-
-                <form onSubmit={handleSearchOrderByCode} className="flex gap-2">
-                  <input
-                    type="text"
-                    value={orderSearchInput}
-                    onChange={(e) => setOrderSearchInput(e.target.value.toUpperCase())}
-                    placeholder="Código do Pedido (ex: LD-2026...)"
-                    className="bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2 text-xs text-white font-mono outline-none focus:border-emerald-500 w-full sm:w-56"
-                  />
-                  <button
-                    type="submit"
-                    className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition flex items-center gap-1.5 shrink-0 cursor-pointer"
-                  >
-                    <Search size={14} />
-                    <span>Buscar</span>
-                  </button>
-                </form>
-              </div>
-
-              {loadingOrders ? (
-                <div className="text-center py-12 text-slate-400 text-sm flex items-center justify-center gap-2">
-                  <RefreshCw size={18} className="animate-spin text-emerald-400" />
-                  <span>Carregando seus pedidos...</span>
-                </div>
-              ) : myOrders.length === 0 ? (
-                <div className="text-center py-14 bg-slate-900/40 rounded-2xl border border-slate-800 p-8 space-y-3">
-                  <Package size={44} className="mx-auto text-slate-500" />
-                  <div>
-                    <h4 className="text-base font-bold text-white mb-1">
-                      Você ainda não possui pedidos registrados neste perfil
-                    </h4>
-                    <p className="text-xs text-slate-400 max-w-md mx-auto">
-                      Caso tenha feito um pedido sem estar logado ou com outro e-mail, digite o código do pedido (`LD-...`) no campo de busca acima para vinculá-lo e acompanhá-lo.
-                    </p>
-                  </div>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {myOrders.map((ord) => {
-                    const st = ORDER_STATUS_LABELS[ord.orderStatus] || ORDER_STATUS_LABELS.awaiting_payment;
-                    const carrierLabel = ord.trackingCarrier || (ord.shippingMethodName?.toLowerCase().includes('loggi') ? 'Loggi' : ord.shippingMethodName?.toLowerCase().includes('jadlog') ? 'Jadlog' : 'Correios');
-                    return (
-                      <div
-                        key={ord.id}
-                        className="bg-slate-900/95 border border-slate-800 rounded-2xl p-4 sm:p-5 space-y-4"
-                      >
-                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-3">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span className="font-mono font-black text-xs sm:text-sm text-white bg-slate-950 border border-slate-800 px-3 py-1 rounded-lg">
-                              #{ord.id}
-                            </span>
-                            <span className={`text-xs font-bold px-2.5 py-1 rounded-md border ${st.color}`}>
-                              {st.label}
-                            </span>
-                            {ord.hasPreOrderItems && (
-                              <span className="text-xs font-bold px-2.5 py-1 rounded-md bg-amber-950/80 border border-amber-700/60 text-amber-300">
-                                Lote Pré-Venda
-                              </span>
-                            )}
-                            <span className="text-xs text-slate-400 font-mono">
-                              {new Date(ord.createdAt).toLocaleDateString('pt-BR')}
-                            </span>
-                          </div>
-
-                          <div className="flex items-center gap-2.5">
-                            <span className="text-base font-black font-mono text-emerald-400 tabular-nums">
-                              {formatBRL(ord.totalAmount)}
-                            </span>
-
-                            {ord.paymentStatus !== 'approved' && ord.orderStatus !== 'cancelled' && (
-                              <>
-                                {ord.mpPixQrCode && (
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      navigator.clipboard.writeText(ord.mpPixQrCode || '');
-                                      setCopiedOrderPix(ord.id);
-                                      setTimeout(() => setCopiedOrderPix(null), 2500);
-                                    }}
-                                    className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition flex items-center gap-1 cursor-pointer"
-                                  >
-                                    {copiedOrderPix === ord.id ? <Check size={13} /> : <QrCode size={13} />}
-                                    <span>{copiedOrderPix === ord.id ? 'PIX Copiado!' : 'Copiar PIX'}</span>
-                                  </button>
-                                )}
-                                {ord.mpInitPoint && (
-                                  <a
-                                    href={ord.mpInitPoint}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition flex items-center gap-1"
-                                  >
-                                    <CreditCard size={13} />
-                                    <span>Pagar no MP</span>
-                                  </a>
-                                )}
-                                {onOpenOrderPayment && (
-                                  <button
-                                    type="button"
-                                    onClick={() => onOpenOrderPayment(ord.id)}
-                                    className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold transition cursor-pointer"
-                                  >
-                                    Abrir Pagamento
-                                  </button>
-                                )}
-                                <button
-                                  type="button"
-                                  disabled={isCheckingPayment}
-                                  onClick={() => handleCancelMyOrder(ord)}
-                                  className="px-2.5 py-1.5 rounded-lg bg-red-950/80 hover:bg-red-900 text-red-200 border border-red-700/60 text-xs font-bold transition cursor-pointer flex items-center gap-1"
-                                  title="Cancelar pedido e removê-lo da lista"
-                                >
-                                  <Trash2 size={12} />
-                                  <span>Cancelar</span>
-                                </button>
-                              </>
-                            )}
-
-                            <button
-                              type="button"
-                              onClick={() => handleManualVerifyPayment(ord)}
-                              className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition cursor-pointer"
-                              title="Atualizar status do pagamento"
-                            >
-                              <RefreshCw size={14} className={isCheckingPayment ? 'animate-spin' : ''} />
-                            </button>
-                          </div>
-                        </div>
-
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
-                          <div className="space-y-1.5">
-                            <div className="text-slate-400 font-semibold uppercase tracking-wider text-[11px]">
-                              Itens do Pedido
-                            </div>
-                            {ord.items.map((item, i) => (
-                              <div key={i} className="flex justify-between text-slate-200">
-                                <span>
-                                  {item.quantity}x {item.title}
-                                  {item.variationName ? ` (${item.variationName})` : ''}
-                                </span>
-                                <span className="font-mono tabular-nums text-slate-400">
-                                  {formatBRL(item.unitPrice * item.quantity)}
-                                </span>
-                              </div>
-                            ))}
-                            <div className="flex justify-between text-slate-400 pt-1 border-t border-slate-800/70">
-                              <span>Frete ({ord.shippingMethodName}):</span>
-                              <span className="font-mono tabular-nums">
-                                {ord.shippingCost === 0 ? 'GRÁTIS' : formatBRL(ord.shippingCost)}
-                              </span>
-                            </div>
-                          </div>
-
-                          <div className="space-y-1.5">
-                            <div className="text-slate-400 font-semibold uppercase tracking-wider text-[11px]">
-                              Endereço e Rastreio de Entrega
-                            </div>
-                            <div className="text-slate-200">
-                              {ord.shippingAddress.street}, {ord.shippingAddress.number}
-                              {ord.shippingAddress.complement ? ` - ${ord.shippingAddress.complement}` : ''}
-                            </div>
-                            <div className="text-slate-400">
-                              {ord.shippingAddress.neighborhood} · {ord.shippingAddress.city}/{ord.shippingAddress.state} · CEP {formatCep(ord.shippingAddress.cep)}
-                            </div>
-
-                            {ord.trackingCode ? (
-                              <div className="mt-2.5 p-3 rounded-xl bg-blue-950/60 border border-blue-500/40 flex flex-wrap items-center justify-between gap-2">
-                                <div>
-                                  <span className="text-[10px] text-blue-300 uppercase font-bold block">
-                                    Código de Rastreio ({carrierLabel}):
-                                  </span>
-                                  <span className="font-mono font-black text-sm text-white">
-                                    {ord.trackingCode}
-                                  </span>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      navigator.clipboard.writeText(ord.trackingCode || '');
-                                      setCopiedTracking(ord.id);
-                                      setTimeout(() => setCopiedTracking(null), 2000);
-                                    }}
-                                    className="px-2.5 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-xs text-slate-200 font-bold flex items-center gap-1 border border-slate-700 cursor-pointer"
-                                  >
-                                    {copiedTracking === ord.id ? <Check size={12} /> : <Copy size={12} />}
-                                    <span>{copiedTracking === ord.id ? 'Copiado' : 'Copiar'}</span>
-                                  </button>
-                                  <a
-                                    href={getCarrierTrackingUrl(
-                                      ord.trackingCode,
-                                      ord.trackingCarrier || ord.shippingMethodName
-                                    )}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold flex items-center gap-1"
-                                  >
-                                    <span>Rastrear ({carrierLabel})</span>
-                                    <ExternalLink size={12} />
-                                  </a>
-                                </div>
-                              </div>
-                            ) : (
-                              <div className="text-[11px] text-slate-500 pt-1">
-                                {ord.hasPreOrderItems
-                                  ? 'O código de rastreio será exibido aqui assim que o lote de Pré-Venda for despachado.'
-                                  : 'O código de rastreio será exibido aqui assim que a encomenda for postada.'}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
+            <CustomerOrdersArea
+              user={currentUser}
+              onOpenOrderPayment={onOpenOrderPayment}
+            />
           )}
         </div>
 

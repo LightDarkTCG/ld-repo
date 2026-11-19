@@ -5,7 +5,7 @@ import { db, storage, readBrowserCache, writeBrowserCache } from '../firebase';
 import {
   X, Clock, Grid, Feather, ChevronRight, ChevronUp, ChevronDown, Compass, Edit3, Plus, Trash2,
   ArrowUp, ArrowDown, Upload, Film, Image as ImageIcon, Type, Quote, Layers, Check, Loader2, GitFork,
-  HelpCircle, Eye, EyeOff, Users
+  HelpCircle, Eye, EyeOff, Users, Music
 } from 'lucide-react';
 import { AdminPanel } from './AdminPanel';
 import { CollaboratorsManager } from './CollaboratorsManager';
@@ -21,6 +21,7 @@ import {
 } from './CosmicLoreMap';
 import { CharacterRelationsTree } from './CharacterRelationsTree';
 import { DailyQuizSection } from './DailyQuizSection';
+import { LoreMusicSection } from './LoreMusicSection';
 import { useCards, sanitizeForFirestore } from '../CardContext';
 import { useAuth } from '../authService';
 import { CardDetailModal } from './CardDetailModal';
@@ -69,8 +70,8 @@ export const LoreView = ({ onClose }: { onClose: () => void }) => {
   // Macroverso Switcher ('macroverso_13' holds 90% of LD lore + the Retractable Map Timeline; 'macroverso_1' has its own tab)
   const [selectedMacroverse, setSelectedMacroverse] = useState<'macroverso_13' | 'macroverso_1'>('macroverso_13');
 
-  // Navigation State ('cosmic_map', 'relations_tree', 'daily_quiz' alongside 'home', 'tab_view', 'item_detail')
-  const [currentView, setCurrentView] = useState<'home' | 'cosmic_map' | 'relations_tree' | 'daily_quiz' | 'tab_view' | 'item_detail'>('home');
+  // Navigation State ('cosmic_map', 'relations_tree', 'daily_quiz', 'music' alongside 'home', 'tab_view', 'item_detail')
+  const [currentView, setCurrentView] = useState<'home' | 'cosmic_map' | 'relations_tree' | 'daily_quiz' | 'music' | 'tab_view' | 'item_detail'>('home');
   const [isTopNavCollapsed, setIsTopNavCollapsed] = useState<boolean>(false);
   const [activeTabId, setActiveTabId] = useState<string>('');
   const [selectedItem, setSelectedItem] = useState<any>(null);
@@ -631,6 +632,20 @@ export const LoreView = ({ onClose }: { onClose: () => void }) => {
               <HelpCircle size={13} /> Quiz do Macroverso
             </button>
 
+            <button
+              onClick={() => {
+                setSelectedItem(null);
+                setCurrentView('music');
+              }}
+              className={`flex items-center gap-1.5 hover:text-white transition whitespace-nowrap px-2.5 py-1 rounded border ${
+                currentView === 'music'
+                  ? 'bg-emerald-500/20 text-emerald-300 border-emerald-400'
+                  : 'border-emerald-500/40 text-emerald-300 hover:bg-emerald-950/30'
+              }`}
+            >
+              <Music size={13} /> Músicas
+            </button>
+
             {wbTabs.map(t => (
               <button
                 key={t.id}
@@ -688,7 +703,8 @@ export const LoreView = ({ onClose }: { onClose: () => void }) => {
                 currentView === 'tab_view' ||
                 currentView === 'cosmic_map' ||
                 currentView === 'relations_tree' ||
-                currentView === 'daily_quiz'
+                currentView === 'daily_quiz' ||
+                currentView === 'music'
               ) {
                 setCurrentView('home');
               } else {
@@ -1211,6 +1227,15 @@ export const LoreView = ({ onClose }: { onClose: () => void }) => {
             </div>
           )}
 
+          {/* MÚSICAS, LETRAS SINCRONIZADAS (ORIGINAL + TRADUÇÃO) & CONTEXTO DE LORE */}
+          {currentView === 'music' && (
+            <LoreMusicSection
+              isAdmin={isAdmin}
+              cards={cards}
+              onInspectCard={(card) => setInspectedCard(card)}
+            />
+          )}
+
           {/* HOME VIEW */}
           {currentView === 'home' && (
             <div className="flex flex-col items-center justify-center min-h-[85vh] px-4 text-center relative overflow-hidden">
@@ -1276,6 +1301,13 @@ export const LoreView = ({ onClose }: { onClose: () => void }) => {
                   className="font-cinzel border-2 border-amber-500/70 bg-amber-950/35 hover:bg-amber-900/50 text-amber-100 px-7 py-4 tracking-widest uppercase text-sm font-bold transition duration-300 shadow-[0_0_25px_rgba(245,158,11,0.25)] flex items-center gap-3"
                 >
                   <HelpCircle size={18} className="text-amber-400" /> Quiz Diário do Macroverso
+                </button>
+
+                <button
+                  onClick={() => setCurrentView('music')}
+                  className="font-cinzel border-2 border-emerald-500/70 bg-emerald-950/35 hover:bg-emerald-900/50 text-emerald-100 px-7 py-4 tracking-widest uppercase text-sm font-bold transition duration-300 shadow-[0_0_25px_rgba(16,185,129,0.25)] flex items-center gap-3"
+                >
+                  <Music size={18} className="text-emerald-400" /> Músicas
                 </button>
 
                 {wbTabs.length > 0 ? (

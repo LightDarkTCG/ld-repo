@@ -71,6 +71,7 @@ import {
   updateCartItemQuantity
 } from '../storeService';
 import { CommunityMarketplaceView } from './CommunityMarketplaceView';
+import { CustomerOrdersArea } from './CustomerOrdersArea';
 
 export type StoreCategoryFilter = 'all' | StoreProductCategory;
 
@@ -194,7 +195,7 @@ interface StoreModalProps {
   onClose: () => void;
   products: ExclusiveProduct[];
   allCards?: CardData[];
-  initialTab?: 'vitrine' | 'carrinho';
+  initialTab?: 'vitrine' | 'carrinho' | 'pedidos';
   initialOrderId?: string | null;
   initialListingId?: string | null;
   initialVariationIdx?: number;
@@ -222,9 +223,9 @@ export const StoreModal: React.FC<StoreModalProps> = ({
   onOpenAuth,
   onOpenUserOrders
 }) => {
-  // Store Mode: Official Products vs Community Player Listings
-  const [marketSection, setMarketSection] = useState<'official' | 'community'>(() =>
-    initialListingId ? 'community' : 'official'
+  // Store Mode: Official Products vs Community Player Listings vs Customer Area
+  const [marketSection, setMarketSection] = useState<'official' | 'community' | 'customer_area'>(() =>
+    initialListingId ? 'community' : initialTab === 'pedidos' ? 'customer_area' : 'official'
   );
   const [communityListings, setCommunityListings] = useState<MarketplaceListing[]>([]);
   const [openSellTrigger, setOpenSellTrigger] = useState(0);
@@ -232,8 +233,10 @@ export const StoreModal: React.FC<StoreModalProps> = ({
   useEffect(() => {
     if (initialListingId) {
       setMarketSection('community');
+    } else if (initialTab === 'pedidos') {
+      setMarketSection('customer_area');
     }
-  }, [initialListingId]);
+  }, [initialListingId, initialTab]);
 
   // Store Filter & Search States
   const [selectedCategory, setSelectedCategory] = useState<StoreCategoryFilter>('all');
@@ -815,7 +818,7 @@ export const StoreModal: React.FC<StoreModalProps> = ({
             </div>
           </div>
 
-          {/* Center: Mode Switcher (Produtos Oficiais vs Cartas & Coleções de Usuários) */}
+          {/* Center: Mode Switcher (Produtos Oficiais vs Cartas & Coleções de Usuários vs Área do Cliente) */}
           <div className="order-3 md:order-2 w-full md:w-auto flex flex-wrap items-center gap-2 bg-slate-950 p-1.5 rounded-2xl border border-slate-800">
             <button
               type="button"
@@ -845,6 +848,20 @@ export const StoreModal: React.FC<StoreModalProps> = ({
                 {communityListings.filter((l) => l.status === 'active' && l.stockQuantity > 0).length}
                 )
               </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setMarketSection('customer_area')}
+              className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer ${
+                marketSection === 'customer_area'
+                  ? 'bg-cyan-600 text-white shadow-md shadow-cyan-950/50'
+                  : 'text-cyan-300 hover:text-white hover:bg-slate-900'
+              }`}
+              title="Acompanhar minhas compras, etapas de separação e códigos de rastreio"
+            >
+              <Truck size={15} />
+              <span>Área do Cliente (Minhas Compras)</span>
             </button>
           </div>
 
@@ -971,7 +988,23 @@ export const StoreModal: React.FC<StoreModalProps> = ({
       {/* ================= MAIN FULL-PAGE STORE BODY ================= */}
       <div className="flex-1 overflow-y-auto custom-scrollbar">
         <div className="max-w-7xl mx-auto px-4 sm:px-8 py-6 sm:py-8">
-          {marketSection === 'community' ? (
+          {marketSection === 'customer_area' ? (
+            <CustomerOrdersArea
+              user={user}
+              onContinueShopping={() => setMarketSection('official')}
+              onOpenOrderPayment={(orderId) => {
+                getStoreOrderById(orderId).then((ord) => {
+                  if (ord) {
+                    syncOrderPaymentStatus(ord).then((synced) => {
+                      setActiveOrder(synced);
+                      setCartStep('payment');
+                      setIsCartDrawerOpen(true);
+                    });
+                  }
+                });
+              }}
+            />
+          ) : marketSection === 'community' ? (
             <CommunityMarketplaceView
               listings={communityListings}
               allCards={allCards}
@@ -2118,22 +2151,20 @@ export const StoreModal: React.FC<StoreModalProps> = ({
                         Pedido #{activeOrder.id} Confirmado!
                       </h3>
                       <p className="text-xs text-slate-300 max-w-md mx-auto leading-relaxed">
-                        Recebemos seu pagamento! Você pode acompanhar a separação e o código de rastreio (Correios, Jadlog ou Loggi) diretamente no seu <strong>Perfil de Usuário</strong>.
+                        Recebemos seu pagamento! Você pode acompanhar a separação, as atualizações e o código de rastreio (Correios, Jadlog ou Loggi) diretamente na <strong>Área do Cliente</strong>.
                       </p>
 
-                      {onOpenUserOrders && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setIsCartDrawerOpen(false);
-                            onOpenUserOrders();
-                          }}
-                          className="px-6 py-3 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs transition inline-flex items-center gap-2 cursor-pointer"
-                        >
-                          <UserIcon size={15} />
-                          <span>Ir para Meu Perfil &gt; Meus Pedidos</span>
-                        </button>
-                      )}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsCartDrawerOpen(false);
+                          setMarketSection('customer_area');
+                        }}
+                        className="px-6 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition inline-flex items-center gap-2 cursor-pointer"
+                      >
+                        <Truck size={15} />
+                        <span>Acompanhar Compra na Área do Cliente</span>
+                      </button>
                     </div>
                   ) : (
                     <>
@@ -2269,20 +2300,18 @@ export const StoreModal: React.FC<StoreModalProps> = ({
                         </div>
                       )}
 
-                      {onOpenUserOrders && (
-                        <div className="pt-3 border-t border-slate-800 text-center">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setIsCartDrawerOpen(false);
-                              onOpenUserOrders();
-                            }}
-                            className="text-xs text-slate-400 hover:text-white underline cursor-pointer"
-                          >
-                            Acompanhar meus pedidos e rastreio no Meu Perfil
-                          </button>
-                        </div>
-                      )}
+                      <div className="pt-3 border-t border-slate-800 text-center">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsCartDrawerOpen(false);
+                            setMarketSection('customer_area');
+                          }}
+                          className="text-xs text-emerald-400 hover:text-emerald-300 font-bold underline cursor-pointer"
+                        >
+                          Ir para a Área do Cliente (Acompanhar Minhas Compras)
+                        </button>
+                      </div>
                     </>
                   )}
                 </div>

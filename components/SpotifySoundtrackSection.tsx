@@ -11,7 +11,7 @@ export interface FullMicroTrack {
 const DEFAULT_VOLUME_PERCENT = 40; // 40%
 
 // Todas as faixas completas oficiais de Salazar Dias (YouTube Music / Topic)
-const FULL_LIGHT_DARK_TRACKS: FullMicroTrack[] = [
+export const FULL_LIGHT_DARK_TRACKS: FullMicroTrack[] = [
   {
     youtubeId: 'OD4j3ot0l8U',
     title: 'The Dragon and Elf',

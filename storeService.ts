@@ -754,7 +754,7 @@ export async function updateStoreOrderFields(
 }
 
 export async function getStoreOrderById(orderId: string): Promise<StoreOrder | null> {
-  const cleanId = orderId.trim().toUpperCase();
+  const cleanId = orderId.trim().replace(/^#/, '').toUpperCase();
   const path = `storeOrders/${cleanId}`;
   try {
     const snap = await getDoc(doc(db, 'storeOrders', cleanId));
@@ -765,6 +765,127 @@ export async function getStoreOrderById(orderId: string): Promise<StoreOrder | n
   } catch (err) {
     handleFirestoreError(err, OperationType.GET, path);
   }
+}
+
+const CUSTOMER_LOOKUP_STORAGE_KEY = 'ld_customer_lookup_v1';
+
+export function getSavedCustomerLookup(): { cpf?: string; email?: string } {
+  try {
+    const raw = localStorage.getItem(CUSTOMER_LOOKUP_STORAGE_KEY);
+    if (!raw) return {};
+    return JSON.parse(raw) || {};
+  } catch {
+    return {};
+  }
+}
+
+export function saveCustomerLookup(data: { cpf?: string; email?: string }): void {
+  try {
+    const current = getSavedCustomerLookup();
+    const next = { ...current, ...data };
+    localStorage.setItem(CUSTOMER_LOOKUP_STORAGE_KEY, JSON.stringify(next));
+  } catch {
+    // ignore
+  }
+}
+
+export async function searchAndLinkCustomerOrders(rawInput: string): Promise<StoreOrder[]> {
+  const trimmed = rawInput.trim();
+  if (!trimmed) return [];
+
+  const matched: StoreOrder[] = [];
+  const cleanCode = trimmed.replace(/^#/, '').toUpperCase();
+  const digitsOnly = trimmed.replace(/\D/g, '');
+  const isEmail = trimmed.includes('@');
+
+  try {
+    if (cleanCode.startsWith('LD-')) {
+      const byId = await getStoreOrderById(cleanCode);
+      if (byId && byId.orderStatus !== 'cancelled' && byId.paymentStatus !== 'cancelled') {
+        saveLocalOrderId(byId.id);
+        matched.push(byId);
+      }
+      return matched;
+    }
+
+    const snap = await getDocs(collection(db, 'storeOrders'));
+    snap.docs.forEach((d) => {
+      const ord = d.data() as StoreOrder;
+      if (ord.orderStatus === 'cancelled' || ord.paymentStatus === 'cancelled') return;
+
+      const ordIdMatch = ord.id.toUpperCase() === cleanCode;
+      const ordEmailMatch =
+        isEmail && (ord.userEmail || '').trim().toLowerCase() === trimmed.toLowerCase();
+      const ordCpfMatch =
+        digitsOnly.length === 11 && (ord.customerCpf || '').replace(/\D/g, '') === digitsOnly;
+
+      if (ordIdMatch || ordEmailMatch || ordCpfMatch) {
+        saveLocalOrderId(ord.id);
+        matched.push(ord);
+      }
+    });
+
+    if (isEmail) {
+      saveCustomerLookup({ email: trimmed.toLowerCase() });
+    } else if (digitsOnly.length === 11) {
+      saveCustomerLookup({ cpf: digitsOnly });
+    }
+  } catch (err) {
+    console.warn('Erro ao buscar pedidos do cliente:', err);
+  }
+
+  matched.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  return matched;
+}
+
+export function subscribeCustomerOrders(
+  params: { userId?: string; userEmail?: string },
+  onOrders: (orders: StoreOrder[]) => void,
+  onError?: (err: unknown) => void
+) {
+  const path = 'storeOrders';
+  return onSnapshot(
+    collection(db, path),
+    (snap) => {
+      const localIds = new Set(getLocalOrderIds().map((id) => id.toUpperCase()));
+      const savedLookup = getSavedCustomerLookup();
+      const targetEmail = (params.userEmail || savedLookup.email || '').trim().toLowerCase();
+      const targetCpf = (savedLookup.cpf || '').replace(/\D/g, '');
+
+      const matched: StoreOrder[] = [];
+      for (const docSnap of snap.docs) {
+        const ord = docSnap.data() as StoreOrder;
+        if (!ord || !ord.id) continue;
+
+        if (ord.orderStatus === 'cancelled' || ord.paymentStatus === 'cancelled') {
+          removeLocalOrderId(ord.id);
+          continue;
+        }
+
+        const matchUid = Boolean(params.userId && ord.userId && ord.userId === params.userId);
+        const matchEmail = Boolean(
+          targetEmail && (ord.userEmail || '').trim().toLowerCase() === targetEmail
+        );
+        const matchCpf = Boolean(
+          targetCpf &&
+            targetCpf.length === 11 &&
+            (ord.customerCpf || '').replace(/\D/g, '') === targetCpf
+        );
+        const matchLocal = localIds.has(ord.id.toUpperCase());
+
+        if (matchUid || matchEmail || matchCpf || matchLocal) {
+          matched.push(ord);
+        }
+      }
+
+      matched.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      onOrders(matched);
+    },
+    (err) => {
+      if (onError) onError(err);
+      console.warn('Erro na assinatura de pedidos do cliente:', err);
+    }
+  );
 }
 
 export async function fetchCustomerOrders(userId?: string, userEmail?: string): Promise<StoreOrder[]> {

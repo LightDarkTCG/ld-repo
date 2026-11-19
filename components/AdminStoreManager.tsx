@@ -45,7 +45,9 @@ export const AdminStoreManager: React.FC = () => {
   const [copiedLabelId, setCopiedLabelId] = useState<string | null>(null);
   const [trackingInputs, setTrackingInputs] = useState<Record<string, string>>({});
   const [carrierInputs, setCarrierInputs] = useState<Record<string, string>>({});
+  const [adminNoteInputs, setAdminNoteInputs] = useState<Record<string, string>>({});
   const [savingOrderId, setSavingOrderId] = useState<string | null>(null);
+  const [savedFeedbackOrderId, setSavedFeedbackOrderId] = useState<string | null>(null);
 
   // Store Settings State
   const [settings, setSettings] = useState<StoreSettings>(DEFAULT_STORE_SETTINGS);
@@ -259,14 +261,32 @@ export const AdminStoreManager: React.FC = () => {
   const handleSaveTrackingAndShip = async (ord: StoreOrder) => {
     const code = (trackingInputs[ord.id] ?? ord.trackingCode ?? '').trim().toUpperCase();
     const carrier = carrierInputs[ord.id] ?? getDefaultCarrierForOrder(ord);
+    const note = (adminNoteInputs[ord.id] ?? ord.adminNotes ?? '').trim();
     setSavingOrderId(ord.id);
     try {
       await updateStoreOrderFields(ord.id, {
         trackingCode: code,
         trackingCarrier: carrier,
+        adminNotes: note,
         orderStatus: code ? 'shipped' : ord.orderStatus,
         ...(code && !ord.shippedAt ? { shippedAt: new Date().toISOString() } : {})
       });
+      setSavedFeedbackOrderId(ord.id);
+      setTimeout(() => setSavedFeedbackOrderId(null), 2500);
+    } finally {
+      setSavingOrderId(null);
+    }
+  };
+
+  const handleSaveAdminNote = async (ord: StoreOrder) => {
+    const note = (adminNoteInputs[ord.id] ?? ord.adminNotes ?? '').trim();
+    setSavingOrderId(ord.id);
+    try {
+      await updateStoreOrderFields(ord.id, {
+        adminNotes: note
+      });
+      setSavedFeedbackOrderId(ord.id);
+      setTimeout(() => setSavedFeedbackOrderId(null), 2500);
     } finally {
       setSavingOrderId(null);
     }
@@ -288,6 +308,8 @@ export const AdminStoreManager: React.FC = () => {
           : {})
       };
       await updateStoreOrderFields(ord.id, updates);
+      setSavedFeedbackOrderId(ord.id);
+      setTimeout(() => setSavedFeedbackOrderId(null), 2500);
     } finally {
       setSavingOrderId(null);
     }
@@ -577,28 +599,28 @@ export const AdminStoreManager: React.FC = () => {
                     {/* Three Columns: Customer/Address | Items | Tracking & Actions */}
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 text-xs">
                       {/* Col 1: Buyer & Address */}
-                      <div className="bg-slate-950/70 border border-slate-800 rounded-xl p-3.5 space-y-2">
-                        <div className="flex items-center justify-between">
+                      <div className="bg-slate-950/70 border border-slate-800 rounded-xl p-3.5 space-y-2 min-w-0 overflow-hidden">
+                        <div className="flex items-center justify-between gap-2 flex-wrap">
                           <span className="font-bold text-slate-300 uppercase tracking-wider text-[11px]">
                             Cliente & Endereço de Envio
                           </span>
                           <button
                             type="button"
                             onClick={() => handleCopyShippingLabel(ord)}
-                            className="text-[11px] font-bold text-purple-400 hover:text-purple-300 flex items-center gap-1"
+                            className="text-[11px] font-bold text-purple-400 hover:text-purple-300 flex items-center gap-1 shrink-0"
                           >
                             {copiedLabelId === ord.id ? <Check size={12} /> : <Copy size={12} />}
                             <span>{copiedLabelId === ord.id ? 'Copiado!' : 'Copiar p/ Etiqueta'}</span>
                           </button>
                         </div>
 
-                        <div className="text-white font-bold">{ord.customerName}</div>
-                        <div className="text-slate-400 font-mono">
+                        <div className="text-white font-bold truncate">{ord.customerName}</div>
+                        <div className="text-slate-400 font-mono break-words">
                           CPF: {formatCpf(ord.customerCpf)} · Tel: {ord.customerPhone}
                         </div>
-                        <div className="text-slate-400">{ord.userEmail}</div>
+                        <div className="text-slate-400 truncate">{ord.userEmail}</div>
 
-                        <div className="pt-1.5 border-t border-slate-800/80 text-slate-200">
+                        <div className="pt-1.5 border-t border-slate-800/80 text-slate-200 break-words">
                           <div>
                             {ord.shippingAddress.street}, Nº {ord.shippingAddress.number}
                             {ord.shippingAddress.complement ? ` (${ord.shippingAddress.complement})` : ''}
@@ -612,14 +634,14 @@ export const AdminStoreManager: React.FC = () => {
                         </div>
 
                         {ord.customerNotes && (
-                          <div className="p-2 rounded bg-amber-950/40 border border-amber-800/40 text-amber-200 text-[11px]">
+                          <div className="p-2 rounded bg-amber-950/40 border border-amber-800/40 text-amber-200 text-[11px] break-words">
                             <strong>Obs. do Cliente:</strong> {ord.customerNotes}
                           </div>
                         )}
                       </div>
 
                       {/* Col 2: Items & Totals */}
-                      <div className="bg-slate-950/70 border border-slate-800 rounded-xl p-3.5 space-y-2">
+                      <div className="bg-slate-950/70 border border-slate-800 rounded-xl p-3.5 space-y-2 min-w-0 overflow-hidden">
                         <span className="font-bold text-slate-300 uppercase tracking-wider text-[11px] block">
                           Produtos Comprados
                         </span>
@@ -630,8 +652,8 @@ export const AdminStoreManager: React.FC = () => {
                               key={idx}
                               className="flex items-start justify-between gap-2 pb-1.5 border-b border-slate-900 last:border-0"
                             >
-                              <div>
-                                <span className="font-bold text-white">
+                              <div className="min-w-0">
+                                <span className="font-bold text-white break-words">
                                   {item.quantity}x {item.title}
                                 </span>
                                 {item.variationName && (
@@ -672,51 +694,95 @@ export const AdminStoreManager: React.FC = () => {
                         </div>
                       </div>
 
-                      {/* Col 3: Tracking Code & WhatsApp Notification */}
-                      <div className="bg-slate-950/70 border border-slate-800 rounded-xl p-3.5 flex flex-col justify-between gap-3">
-                        <div className="space-y-2">
-                          <span className="font-bold text-slate-300 uppercase tracking-wider text-[11px] block">
-                            Rastreamento (Correios / Jadlog / Loggi) & Contato
-                          </span>
+                      {/* Col 3: Customer Area Update Note, Tracking Code & WhatsApp Notification */}
+                      <div className="bg-slate-950/70 border border-slate-800 rounded-xl p-3.5 flex flex-col justify-between gap-3 min-w-0 overflow-hidden">
+                        <div className="space-y-3 min-w-0">
+                          <div className="flex items-center justify-between gap-2 flex-wrap">
+                            <span className="font-bold text-slate-300 uppercase tracking-wider text-[11px] block">
+                              Atualização na Área do Cliente & Rastreio
+                            </span>
+                            {savedFeedbackOrderId === ord.id && (
+                              <span className="text-[10px] font-bold text-emerald-400 flex items-center gap-1 shrink-0">
+                                <Check size={12} />
+                                <span>Atualizado p/ o Cliente!</span>
+                              </span>
+                            )}
+                          </div>
 
-                          <div>
-                            <label className="text-[11px] text-slate-400 block mb-1">
-                              Transportadora e Código de Rastreio
+                          {/* Live Status Message for Customer Area */}
+                          <div className="space-y-1.5 min-w-0">
+                            <label className="text-[11px] text-amber-300 font-semibold block">
+                              Mensagem / Atualização visível na Área do Cliente
                             </label>
-                            <div className="flex flex-col sm:flex-row gap-2">
-                              <select
-                                value={carrierInputs[ord.id] ?? getDefaultCarrierForOrder(ord)}
+                            <div className="flex flex-col gap-1.5 min-w-0">
+                              <input
+                                type="text"
+                                value={
+                                  adminNoteInputs[ord.id] !== undefined
+                                    ? adminNoteInputs[ord.id]
+                                    : ord.adminNotes || ''
+                                }
                                 onChange={(e) =>
-                                  setCarrierInputs((prev) => ({
+                                  setAdminNoteInputs((prev) => ({
                                     ...prev,
                                     [ord.id]: e.target.value
                                   }))
                                 }
-                                className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-white font-bold outline-none focus:border-purple-500"
-                              >
-                                <option value="Correios">Correios</option>
-                                <option value="Jadlog">Jadlog</option>
-                                <option value="Loggi">Loggi</option>
-                              </select>
-                              <input
-                                type="text"
-                                value={currentTrackingVal}
-                                onChange={(e) =>
-                                  setTrackingInputs((prev) => ({
-                                    ...prev,
-                                    [ord.id]: e.target.value.toUpperCase()
-                                  }))
-                                }
-                                placeholder="Código de rastreio..."
-                                className="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white font-mono uppercase outline-none focus:border-purple-500"
+                                placeholder="Ex: Pedido em separação, postagem amanhã às 14h..."
+                                className="w-full min-w-0 bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white outline-none focus:border-amber-500"
                               />
                               <button
                                 type="button"
                                 disabled={savingOrderId === ord.id}
-                                onClick={() => handleSaveTrackingAndShip(ord)}
-                                className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs transition shrink-0"
+                                onClick={() => handleSaveAdminNote(ord)}
+                                className="w-full py-1.5 px-3 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs transition cursor-pointer"
+                                title="Salvar mensagem na Área do Cliente"
                               >
-                                Salvar & Enviar
+                                Atualizar Aviso na Área do Cliente
+                              </button>
+                            </div>
+                          </div>
+
+                          <div className="space-y-1.5 min-w-0">
+                            <label className="text-[11px] text-slate-400 block">
+                              Transportadora e Código de Rastreio
+                            </label>
+                            <div className="flex flex-col gap-1.5 min-w-0">
+                              <div className="flex items-center gap-2 min-w-0">
+                                <select
+                                  value={carrierInputs[ord.id] ?? getDefaultCarrierForOrder(ord)}
+                                  onChange={(e) =>
+                                    setCarrierInputs((prev) => ({
+                                      ...prev,
+                                      [ord.id]: e.target.value
+                                    }))
+                                  }
+                                  className="shrink-0 bg-slate-900 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-white font-bold outline-none focus:border-purple-500"
+                                >
+                                  <option value="Correios">Correios</option>
+                                  <option value="Jadlog">Jadlog</option>
+                                  <option value="Loggi">Loggi</option>
+                                </select>
+                                <input
+                                  type="text"
+                                  value={currentTrackingVal}
+                                  onChange={(e) =>
+                                    setTrackingInputs((prev) => ({
+                                      ...prev,
+                                      [ord.id]: e.target.value.toUpperCase()
+                                    }))
+                                  }
+                                  placeholder="Código de rastreio..."
+                                  className="flex-1 min-w-0 w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white font-mono uppercase outline-none focus:border-purple-500"
+                                />
+                              </div>
+                              <button
+                                type="button"
+                                disabled={savingOrderId === ord.id}
+                                onClick={() => handleSaveTrackingAndShip(ord)}
+                                className="w-full py-1.5 px-3 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs transition cursor-pointer"
+                              >
+                                Salvar & Enviar Rastreio
                               </button>
                             </div>
                           </div>
