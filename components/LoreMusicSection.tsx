@@ -94,10 +94,19 @@ function formatSecondsShort(sec: number | null | undefined): string {
 }
 
 function parseTimeInput(str: string): number | null {
-  const clean = str.trim();
+  const clean = str.trim().replace(/^\[|\]$/g, '');
   if (!clean || clean === '--:--') return null;
-  // Aceita mm:ss.xx ou mm:ss ou segundos puros
+
+  // Aceita hh:mm:ss.xxx, mm:ss.xx, mm:ss ou segundos puros
   const parts = clean.split(':');
+  if (parts.length === 3) {
+    const hrs = parseInt(parts[0], 10);
+    const mins = parseInt(parts[1], 10);
+    const secs = parseFloat(parts[2].replace(',', '.'));
+    if (!isNaN(hrs) && !isNaN(mins) && !isNaN(secs)) {
+      return Math.max(0, Math.round((hrs * 3600 + mins * 60 + secs) * 10) / 10);
+    }
+  }
   if (parts.length === 2) {
     const mins = parseInt(parts[0], 10);
     const secs = parseFloat(parts[1].replace(',', '.'));
@@ -108,6 +117,134 @@ function parseTimeInput(str: string): number | null {
   const direct = parseFloat(clean.replace(',', '.'));
   if (!isNaN(direct)) return Math.max(0, Math.round(direct * 10) / 10);
   return null;
+}
+
+/**
+ * Interpreta texto de legendas sincronizadas do YouTube Studio (.sbv, .srt, .vtt,
+ * transcrição copiada do YouTube com tempos, ou LRC [mm:ss.xx]).
+ */
+function parseYouTubeSubtitleText(
+  rawText: string,
+  bilingualSameBlock = false
+): Array<{ time: number | null; text: string; secondLine?: string }> {
+  const normalized = rawText.replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim();
+  if (!normalized) return [];
+
+  const rawLines = normalized.split('\n');
+  const results: Array<{ time: number | null; text: string; secondLine?: string }> = [];
+
+  // Regex para identificar um token de tempo isolado: ex: 0:00:12.340, 00:12,340, 0:14, 00:14.5
+  const timeTokenPattern = '(?:\\d{1,2}:)?\\d{1,2}:\\d{2}(?:[.,]\\d{1,3})?';
+
+  // 1) Linha de intervalo de legenda (SBV: "0:00:12.340,0:00:16.500" | SRT/VTT: "00:00:12,340 --> 00:00:16,500" | YT Studio: "0:12 - 0:16")
+  const rangeLineRegex = new RegExp(
+    `^\\s*\\[?(${timeTokenPattern})\\]?\\s*(?:-->|,|\\s+-\\s+|\\s+–\\s+)\\s*\\[?(${timeTokenPattern})\\]?(?:\\s+.*)?$`
+  );
+
+  // 2) Linha contendo APENAS um código de tempo (ex: "0:14" ou "0:00:14.200" ou "[00:14.20]")
+  const standaloneTimeRegex = new RegExp(`^\\s*\\[?(${timeTokenPattern})\\]?\\s*$`);
+
+  // 3) Linha com tempo no início seguido do verso na mesma linha (ex: "[00:14.20] Verso" ou "0:14 Verso" ou "0:00:14.200 Verso")
+  const inlineTimeAndTextRegex = new RegExp(
+    `^\\s*(?:\\[?(${timeTokenPattern})\\]?(?:\\s*(?:-->|,|-)\\s*\\[?${timeTokenPattern}\\]?)?)\\s+(.+)$`
+  );
+
+  const isSrtIndexLine = (lineIdx: number): boolean => {
+    const l = rawLines[lineIdx]?.trim() || '';
+    if (!/^\d+$/.test(l)) return false;
+    const nextL = rawLines[lineIdx + 1]?.trim() || '';
+    return rangeLineRegex.test(nextL) || standaloneTimeRegex.test(nextL);
+  };
+
+  let i = 0;
+  while (i < rawLines.length) {
+    const line = rawLines[i].trim();
+
+    // Ignora cabeçalhos VTT ou linhas em branco
+    if (!line || /^WEBVTT($|\s)/i.test(line) || /^NOTE($|\s)/i.test(line)) {
+      i++;
+      continue;
+    }
+
+    // Ignora número sequencial de legenda SRT (ex: "1", "2", "3" antes de uma linha de tempo)
+    if (isSrtIndexLine(i)) {
+      i++;
+      continue;
+    }
+
+    // Caso A: Linha de intervalo de tempo (.sbv, .srt, .vtt, "0:12 - 0:16") ou tempo isolado ("0:12")
+    const rangeMatch = line.match(rangeLineRegex);
+    const standaloneMatch = !rangeMatch ? line.match(standaloneTimeRegex) : null;
+
+    if (rangeMatch || standaloneMatch) {
+      const startToken = rangeMatch ? rangeMatch[1] : standaloneMatch![1];
+      const parsedTime = parseTimeInput(startToken);
+      i++;
+
+      const cueLines: string[] = [];
+      while (i < rawLines.length) {
+        const nextLine = rawLines[i].trim();
+        if (!nextLine) {
+          i++;
+          break;
+        }
+        if (
+          isSrtIndexLine(i) ||
+          rangeLineRegex.test(nextLine) ||
+          standaloneTimeRegex.test(nextLine)
+        ) {
+          break;
+        }
+        // Remove tags HTML de legendas (<c>, <i>, etc.)
+        const cleanCue = nextLine.replace(/<[^>]+>/g, '').trim();
+        if (cleanCue) cueLines.push(cleanCue);
+        i++;
+      }
+
+      if (cueLines.length > 0) {
+        if (bilingualSameBlock && cueLines.length >= 2) {
+          results.push({
+            time: parsedTime,
+            text: cueLines[0],
+            secondLine: cueLines.slice(1).join(' ')
+          });
+        } else {
+          results.push({
+            time: parsedTime,
+            text: cueLines.join(' ')
+          });
+        }
+      }
+      continue;
+    }
+
+    // Caso B: Tempo e texto na mesma linha (ex: "0:14 In the shadows..." ou "[00:14.2] In the shadows...")
+    const inlineMatch = line.match(inlineTimeAndTextRegex);
+    if (inlineMatch) {
+      const parsedTime = parseTimeInput(inlineMatch[1]);
+      const cleanText = inlineMatch[2].replace(/<[^>]+>/g, '').trim();
+      if (cleanText) {
+        results.push({
+          time: parsedTime,
+          text: cleanText
+        });
+      }
+      i++;
+      continue;
+    }
+
+    // Caso C: Linha de texto comum sem código de tempo
+    const cleanPlain = line.replace(/<[^>]+>/g, '').trim();
+    if (cleanPlain) {
+      results.push({
+        time: null,
+        text: cleanPlain
+      });
+    }
+    i++;
+  }
+
+  return results;
 }
 
 function extractYouTubeId(input: string): string {
@@ -189,9 +326,16 @@ export const LoreMusicSection: React.FC<LoreMusicSectionProps> = ({
   const [saving, setSaving] = useState(false);
   const [saveFeedback, setSaveFeedback] = useState<string | null>(null);
 
-  // Campos de Edição em Lote (Original + Tradução)
+  // Campos de Edição em Lote (Original + Tradução) e Importação de Legenda do YouTube
+  const [bulkImportTab, setBulkImportTab] = useState<'plain' | 'yt_captions'>('plain');
   const [bulkOriginalText, setBulkOriginalText] = useState('');
   const [bulkTranslationText, setBulkTranslationText] = useState('');
+  const [ytCaptionOriginalText, setYtCaptionOriginalText] = useState('');
+  const [ytCaptionTranslationText, setYtCaptionTranslationText] = useState('');
+  const [ytBilingualSingleBlock, setYtBilingualSingleBlock] = useState(false);
+
+  // Rascunho de digitação manual de tempo por linha (evita travar o cursor ao digitar mm:ss.d)
+  const [timeInputDrafts, setTimeInputDrafts] = useState<Record<string, string>>({});
 
   // Cursor de linha no Sincronizador ao Vivo (Tap Sync)
   const [syncCursorIndex, setSyncCursorIndex] = useState(0);
@@ -287,9 +431,18 @@ export const LoreMusicSection: React.FC<LoreMusicSectionProps> = ({
     setDraftRelatedCardIds(selectedSong.relatedCardIds || []);
     setBulkOriginalText((selectedSong.lyrics || []).map((l) => l.original).join('\n'));
     setBulkTranslationText((selectedSong.lyrics || []).map((l) => l.translation).join('\n'));
+    setTimeInputDrafts({});
     setSyncCursorIndex(0);
     setCurrentTime(0);
   }, [selectedSong?.id]);
+
+  // Sempre que abrir a aba bulk_lyrics, atualiza o texto com todos os versos atuais (incluindo versos inseridos manualmente)
+  useEffect(() => {
+    if (adminMode === 'bulk_lyrics' && selectedSong) {
+      setBulkOriginalText((selectedSong.lyrics || []).map((l) => l.original).join('\n'));
+      setBulkTranslationText((selectedSong.lyrics || []).map((l) => l.translation).join('\n'));
+    }
+  }, [adminMode]);
 
   // Inicializa YouTube IFrame API para o player dedicado da Lore
   useEffect(() => {
@@ -586,38 +739,61 @@ export const LoreMusicSection: React.FC<LoreMusicSectionProps> = ({
   // Processar letras coladas em lote (Original + Tradução lado a lado)
   const handleApplyBulkLyrics = async () => {
     if (!selectedSong) return;
-    const origLines = bulkOriginalText.split('\n');
-    const transLines = bulkTranslationText.split('\n');
-    const maxLen = Math.max(origLines.length, transLines.length);
 
-    const nextLyrics: LyricLineItem[] = [];
-    for (let i = 0; i < maxLen; i++) {
-      let rawOrig = (origLines[i] ?? '').trim();
-      let rawTrans = (transLines[i] ?? '').trim();
+    // Se ambos os lados contiverem blocos de legenda do YouTube (.sbv / .srt / .vtt / tempos em linhas separadas), usa o parser de legendas
+    const origParsed = parseYouTubeSubtitleText(bulkOriginalText, false);
+    const transParsed = parseYouTubeSubtitleText(bulkTranslationText, false);
+    const hasDetectedTimestampsInOrig = origParsed.some((item) => item.time !== null);
 
-      // Ignora linhas vazias duplas no final se ambas estiverem em branco
-      if (!rawOrig && !rawTrans) continue;
+    let nextLyrics: LyricLineItem[] = [];
 
-      // Suporte opcional a tags [mm:ss.xx] coladas junto com a letra original
-      let parsedTime: number | null = selectedSong.lyrics?.[i]?.time ?? null;
-      const lrcMatch = rawOrig.match(/^\[(\d{1,2}:\d{2}(?:[.,]\d{1,3})?)\]\s*(.*)$/);
-      if (lrcMatch) {
-        const t = parseTimeInput(lrcMatch[1]);
-        if (t !== null) parsedTime = t;
-        rawOrig = lrcMatch[2].trim();
+    if (hasDetectedTimestampsInOrig) {
+      const maxLen = Math.max(origParsed.length, transParsed.length);
+      for (let i = 0; i < maxLen; i++) {
+        const origItem = origParsed[i];
+        const transItem = transParsed[i];
+        const rawOrig = origItem?.text?.trim() || '';
+        const rawTrans = transItem?.text?.trim() || '';
+        if (!rawOrig && !rawTrans) continue;
+
+        nextLyrics.push({
+          id: selectedSong.lyrics?.[i]?.id || `line_${Date.now()}_${i}`,
+          time: origItem?.time ?? selectedSong.lyrics?.[i]?.time ?? null,
+          original: rawOrig,
+          translation: rawTrans
+        });
       }
+    } else {
+      const origLines = bulkOriginalText.split('\n');
+      const transLines = bulkTranslationText.split('\n');
+      const maxLen = Math.max(origLines.length, transLines.length);
 
-      const lrcTransMatch = rawTrans.match(/^\[(\d{1,2}:\d{2}(?:[.,]\d{1,3})?)\]\s*(.*)$/);
-      if (lrcTransMatch) {
-        rawTrans = lrcTransMatch[2].trim();
+      for (let i = 0; i < maxLen; i++) {
+        let rawOrig = (origLines[i] ?? '').trim();
+        let rawTrans = (transLines[i] ?? '').trim();
+
+        if (!rawOrig && !rawTrans) continue;
+
+        let parsedTime: number | null = selectedSong.lyrics?.[i]?.time ?? null;
+        const lrcMatch = rawOrig.match(/^\[(\d{1,2}:\d{2}(?:[.,]\d{1,3})?)\]\s*(.*)$/);
+        if (lrcMatch) {
+          const t = parseTimeInput(lrcMatch[1]);
+          if (t !== null) parsedTime = t;
+          rawOrig = lrcMatch[2].trim();
+        }
+
+        const lrcTransMatch = rawTrans.match(/^\[(\d{1,2}:\d{2}(?:[.,]\d{1,3})?)\]\s*(.*)$/);
+        if (lrcTransMatch) {
+          rawTrans = lrcTransMatch[2].trim();
+        }
+
+        nextLyrics.push({
+          id: selectedSong.lyrics?.[i]?.id || `line_${Date.now()}_${i}`,
+          time: parsedTime,
+          original: rawOrig,
+          translation: rawTrans
+        });
       }
-
-      nextLyrics.push({
-        id: selectedSong.lyrics?.[i]?.id || `line_${Date.now()}_${i}`,
-        time: parsedTime,
-        original: rawOrig,
-        translation: rawTrans
-      });
     }
 
     const updatedSongs = songs.map((s) =>
@@ -626,15 +802,64 @@ export const LoreMusicSection: React.FC<LoreMusicSectionProps> = ({
         : s
     );
 
-    await persistSongsToFirestore(updatedSongs, 'Letras (Original + Tradução) salvas! Agora você pode sincronizar.');
+    await persistSongsToFirestore(
+      updatedSongs,
+      hasDetectedTimestampsInOrig
+        ? `Letras e tempos importados (${nextLyrics.length} versos)!`
+        : 'Letras (Original + Tradução) salvas! Agora você pode sincronizar.'
+    );
     setAdminMode('sync_studio');
     setSyncCursorIndex(0);
   };
 
-  // Marcar tempo da linha atual no Sincronizador Ao Vivo (Tap Sync)
-  const handleStampCurrentLine = () => {
-    if (!selectedSong || !selectedSong.lyrics || selectedSong.lyrics.length === 0) return;
-    const targetIdx = Math.min(Math.max(0, syncCursorIndex), selectedSong.lyrics.length - 1);
+  // Prévia em tempo real da importação de legenda do YouTube
+  const ytCaptionPreviewItems = useMemo(() => {
+    const origCues = parseYouTubeSubtitleText(ytCaptionOriginalText, ytBilingualSingleBlock);
+    const transCues = ytBilingualSingleBlock
+      ? []
+      : parseYouTubeSubtitleText(ytCaptionTranslationText, false);
+
+    return origCues.map((cue, idx) => ({
+      time: cue.time,
+      original: cue.text,
+      translation: ytBilingualSingleBlock
+        ? cue.secondLine || ''
+        : transCues[idx]?.text || ''
+    }));
+  }, [ytCaptionOriginalText, ytCaptionTranslationText, ytBilingualSingleBlock]);
+
+  // Aplicar importação de Legenda Sincronizada do YouTube (.sbv, .srt, .vtt, .txt do YT Studio)
+  const handleApplyYouTubeCaptions = async () => {
+    if (!selectedSong || ytCaptionPreviewItems.length === 0) return;
+
+    const nextLyrics: LyricLineItem[] = ytCaptionPreviewItems.map((item, idx) => ({
+      id: selectedSong.lyrics?.[idx]?.id || `line_${Date.now()}_${idx}`,
+      time: item.time,
+      original: item.original,
+      translation: item.translation || selectedSong.lyrics?.[idx]?.translation || ''
+    }));
+
+    const updatedSongs = songs.map((s) =>
+      s.id === selectedSong.id
+        ? { ...s, lyrics: nextLyrics, updatedAt: new Date().toISOString() }
+        : s
+    );
+
+    await persistSongsToFirestore(
+      updatedSongs,
+      `Legenda do YouTube importada com sucesso (${nextLyrics.length} versos sincronizados)!`
+    );
+    setBulkOriginalText(nextLyrics.map((l) => l.original).join('\n'));
+    setBulkTranslationText(nextLyrics.map((l) => l.translation).join('\n'));
+    setTimeInputDrafts({});
+    setAdminMode('sync_studio');
+    setSyncCursorIndex(0);
+  };
+
+  // Marcar tempo da linha atual (ou de um índice específico passado por parâmetro) no Sincronizador Ao Vivo
+  const handleStampCurrentLine = (overrideIdx?: number) => {
+    const activeSongId = selectedSongRef.current?.id || selectedSong?.id;
+    if (!activeSongId) return;
 
     const player = ytPlayerRef.current;
     let exactTime = currentTime;
@@ -650,20 +875,36 @@ export const LoreMusicSection: React.FC<LoreMusicSectionProps> = ({
     }
 
     const stampedTime = Math.max(0, Math.round(exactTime * 10) / 10);
+    const baseIdx = typeof overrideIdx === 'number' ? overrideIdx : syncCursorIndex;
 
-    const updatedLyrics = selectedSong.lyrics.map((line, idx) =>
-      idx === targetIdx ? { ...line, time: stampedTime } : line
+    let nextCursor = baseIdx;
+    let stampedLineId = '';
+
+    setSongs((prevSongs) =>
+      prevSongs.map((s) => {
+        if (s.id !== activeSongId) return s;
+        const list = s.lyrics || [];
+        if (list.length === 0) return s;
+        const targetIdx = Math.min(Math.max(0, baseIdx), list.length - 1);
+        stampedLineId = list[targetIdx]?.id || '';
+        nextCursor = targetIdx < list.length - 1 ? targetIdx + 1 : targetIdx;
+        const updatedLyrics = list.map((line, idx) =>
+          idx === targetIdx ? { ...line, time: stampedTime } : line
+        );
+        return { ...s, lyrics: updatedLyrics };
+      })
     );
 
-    const updatedSongs = songs.map((s) =>
-      s.id === selectedSong.id ? { ...s, lyrics: updatedLyrics } : s
-    );
-    setSongs(updatedSongs);
-
-    // Avança automaticamente para a próxima linha
-    if (targetIdx < selectedSong.lyrics.length - 1) {
-      setSyncCursorIndex(targetIdx + 1);
+    if (stampedLineId) {
+      setTimeInputDrafts((prev) => {
+        if (!(stampedLineId in prev)) return prev;
+        const copy = { ...prev };
+        delete copy[stampedLineId];
+        return copy;
+      });
     }
+
+    setSyncCursorIndex(nextCursor);
   };
 
   // Atalho de teclado Espaço no modo sync_studio para marcar o tempo sem tirar a mão
@@ -690,18 +931,32 @@ export const LoreMusicSection: React.FC<LoreMusicSectionProps> = ({
   }, [adminMode, syncCursorIndex, selectedSong, currentTime, songs]);
 
   const handleAdjustLineTime = (lineIdx: number, deltaSec: number) => {
-    if (!selectedSong) return;
-    const updatedLyrics = selectedSong.lyrics.map((line, idx) => {
-      if (idx !== lineIdx) return line;
-      const base = line.time ?? currentTime ?? 0;
-      return {
-        ...line,
-        time: Math.max(0, Math.round((base + deltaSec) * 10) / 10)
-      };
-    });
+    const activeSongId = selectedSong?.id;
+    if (!activeSongId) return;
+    let adjustedLineId = '';
     setSongs((prev) =>
-      prev.map((s) => (s.id === selectedSong.id ? { ...s, lyrics: updatedLyrics } : s))
+      prev.map((s) => {
+        if (s.id !== activeSongId) return s;
+        const updatedLyrics = s.lyrics.map((line, idx) => {
+          if (idx !== lineIdx) return line;
+          adjustedLineId = line.id;
+          const base = line.time ?? currentTime ?? 0;
+          return {
+            ...line,
+            time: Math.max(0, Math.round((base + deltaSec) * 10) / 10)
+          };
+        });
+        return { ...s, lyrics: updatedLyrics };
+      })
     );
+    if (adjustedLineId) {
+      setTimeInputDrafts((prev) => {
+        if (!(adjustedLineId in prev)) return prev;
+        const copy = { ...prev };
+        delete copy[adjustedLineId];
+        return copy;
+      });
+    }
   };
 
   const handleUpdateLineField = (
@@ -709,48 +964,72 @@ export const LoreMusicSection: React.FC<LoreMusicSectionProps> = ({
     field: 'original' | 'translation' | 'time',
     value: string | number | null
   ) => {
-    if (!selectedSong) return;
-    const updatedLyrics = selectedSong.lyrics.map((line, idx) =>
-      idx === lineIdx ? { ...line, [field]: value } : line
-    );
+    const activeSongId = selectedSong?.id;
+    if (!activeSongId) return;
     setSongs((prev) =>
-      prev.map((s) => (s.id === selectedSong.id ? { ...s, lyrics: updatedLyrics } : s))
+      prev.map((s) => {
+        if (s.id !== activeSongId) return s;
+        const updatedLyrics = s.lyrics.map((line, idx) =>
+          idx === lineIdx ? { ...line, [field]: value } : line
+        );
+        return { ...s, lyrics: updatedLyrics };
+      })
     );
   };
 
   const handleAddSingleLine = (afterIdx?: number) => {
-    if (!selectedSong) return;
+    const activeSongId = selectedSong?.id;
+    if (!activeSongId) return;
     const newLine: LyricLineItem = {
       id: `line_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-      time: Math.round(currentTime * 10) / 10,
+      time: null,
       original: '',
       translation: ''
     };
-    const currentList = [...(selectedSong.lyrics || [])];
-    if (afterIdx !== undefined && afterIdx >= 0 && afterIdx < currentList.length) {
-      currentList.splice(afterIdx + 1, 0, newLine);
-    } else {
-      currentList.push(newLine);
-    }
+
+    let insertedIndex = 0;
     setSongs((prev) =>
-      prev.map((s) => (s.id === selectedSong.id ? { ...s, lyrics: currentList } : s))
+      prev.map((s) => {
+        if (s.id !== activeSongId) return s;
+        const currentList = [...(s.lyrics || [])];
+        if (afterIdx !== undefined && afterIdx >= 0 && afterIdx < currentList.length) {
+          insertedIndex = afterIdx + 1;
+          currentList.splice(insertedIndex, 0, newLine);
+        } else {
+          insertedIndex = currentList.length;
+          currentList.push(newLine);
+        }
+        return { ...s, lyrics: currentList };
+      })
     );
+    // Posiciona o cursor do sincronizador diretamente no novo verso criado para que ele seja contabilizado e sincronizado imediatamente
+    setSyncCursorIndex(insertedIndex);
   };
 
   const handleRemoveSingleLine = (lineIdx: number) => {
-    if (!selectedSong) return;
-    const updatedLyrics = selectedSong.lyrics.filter((_, idx) => idx !== lineIdx);
+    const activeSongId = selectedSong?.id;
+    if (!activeSongId) return;
     setSongs((prev) =>
-      prev.map((s) => (s.id === selectedSong.id ? { ...s, lyrics: updatedLyrics } : s))
+      prev.map((s) => {
+        if (s.id !== activeSongId) return s;
+        const updatedLyrics = s.lyrics.filter((_, idx) => idx !== lineIdx);
+        return { ...s, lyrics: updatedLyrics };
+      })
     );
+    setSyncCursorIndex((prev) => Math.max(0, Math.min(prev, (selectedSong?.lyrics?.length || 2) - 2)));
   };
 
   const handleClearAllTimestamps = () => {
-    if (!selectedSong) return;
-    const cleared = selectedSong.lyrics.map((l) => ({ ...l, time: null }));
+    const activeSongId = selectedSong?.id;
+    if (!activeSongId) return;
     setSongs((prev) =>
-      prev.map((s) => (s.id === selectedSong.id ? { ...s, lyrics: cleared } : s))
+      prev.map((s) => {
+        if (s.id !== activeSongId) return s;
+        const cleared = s.lyrics.map((l) => ({ ...l, time: null }));
+        return { ...s, lyrics: cleared };
+      })
     );
+    setTimeInputDrafts({});
     setSyncCursorIndex(0);
   };
 
@@ -1512,16 +1791,16 @@ export const LoreMusicSection: React.FC<LoreMusicSectionProps> = ({
             </div>
           )}
 
-          {/* MODO ADMIN 1: COLAR / EDITAR LETRAS EM LOTE (ORIGINAL + TRADUÇÃO) */}
+          {/* MODO ADMIN 1: COLAR / EDITAR LETRAS EM LOTE OU IMPORTAR LEGENDA DO YOUTUBE */}
           {isAdmin && adminMode === 'bulk_lyrics' && selectedSong && (
             <div className="bg-[#0e0e18] border border-amber-500/50 rounded-2xl p-4 shadow-2xl space-y-4">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-2">
                 <div>
                   <h4 className="font-cinzel text-sm font-black uppercase tracking-wider text-amber-300 flex items-center gap-2">
-                    <FileText size={15} /> Colar Letra Original & Tradução (Linha por Linha)
+                    <FileText size={15} /> Letras & Importador de Legendas do YouTube
                   </h4>
                   <p className="text-[11px] text-slate-400 mt-0.5">
-                    Cole um verso por linha. A linha 1 da Letra Original será pareada automaticamente com a linha 1 da Tradução.
+                    Escolha entre colar os versos linha por linha ou colar direto o texto/arquivo de legenda sincronizada do YouTube.
                   </p>
                 </div>
                 <button
@@ -1533,55 +1812,198 @@ export const LoreMusicSection: React.FC<LoreMusicSectionProps> = ({
                 </button>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-[11px] font-bold uppercase text-amber-300 mb-1">
-                    Letra Original (1 verso por linha)
-                  </label>
-                  <textarea
-                    rows={12}
-                    value={bulkOriginalText}
-                    onChange={(e) => setBulkOriginalText(e.target.value)}
-                    placeholder={'In the shadows of the ancient stars...\nTwo souls bound by fire and steel...'}
-                    className="w-full bg-black/70 border border-white/15 rounded-xl p-3 text-xs text-white font-mono leading-relaxed"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[11px] font-bold uppercase text-cyan-300 mb-1">
-                    Letra Traduzida PT-BR (1 verso por linha)
-                  </label>
-                  <textarea
-                    rows={12}
-                    value={bulkTranslationText}
-                    onChange={(e) => setBulkTranslationText(e.target.value)}
-                    placeholder={'Nas sombras das estrelas ancestrais...\nDuas almas unidas pelo fogo e aço...'}
-                    className="w-full bg-black/70 border border-white/15 rounded-xl p-3 text-xs text-cyan-100 font-mono leading-relaxed"
-                  />
-                </div>
+              {/* Seletor de Aba: Colar Versos Linha por Linha vs Importar Legenda do YouTube (Com Tempos) */}
+              <div className="flex items-center gap-1.5 bg-black/60 border border-white/10 rounded-xl p-1">
+                <button
+                  type="button"
+                  onClick={() => setBulkImportTab('plain')}
+                  className={`flex-1 py-2 px-3 rounded-lg text-xs font-black uppercase tracking-wider transition ${
+                    bulkImportTab === 'plain'
+                      ? 'bg-amber-500 text-slate-950 shadow'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  1. Letra Linha por Linha
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setBulkImportTab('yt_captions')}
+                  className={`flex-1 py-2 px-3 rounded-lg text-xs font-black uppercase tracking-wider transition ${
+                    bulkImportTab === 'yt_captions'
+                      ? 'bg-emerald-500 text-slate-950 shadow'
+                      : 'text-emerald-300/80 hover:text-white'
+                  }`}
+                >
+                  2. Colar Sync de Legenda do YouTube (.txt / .sbv / .srt)
+                </button>
               </div>
 
-              <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-white/10">
-                <span className="text-[11px] text-slate-400">
-                  Dica: Você também pode colar no formato <code className="text-amber-300">[00:14.5] Verso</code> se já tiver os tempos.
-                </span>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setAdminMode('none')}
-                    className="px-3 py-1.5 rounded-lg border border-white/15 text-xs text-slate-300"
-                  >
-                    Cancelar
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleApplyBulkLyrics}
-                    disabled={saving}
-                    className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs uppercase tracking-wider flex items-center gap-1.5 shadow-lg"
-                  >
-                    <Save size={14} /> Salvar Versos & Ir para Sincronização
-                  </button>
+              {bulkImportTab === 'plain' ? (
+                <>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-bold uppercase text-amber-300 mb-1">
+                        Letra Original (1 verso por linha)
+                      </label>
+                      <textarea
+                        rows={12}
+                        value={bulkOriginalText}
+                        onChange={(e) => setBulkOriginalText(e.target.value)}
+                        placeholder={'In the shadows of the ancient stars...\nTwo souls bound by fire and steel...'}
+                        className="w-full bg-black/70 border border-white/15 rounded-xl p-3 text-xs text-white font-mono leading-relaxed"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold uppercase text-cyan-300 mb-1">
+                        Letra Traduzida PT-BR (1 verso por linha)
+                      </label>
+                      <textarea
+                        rows={12}
+                        value={bulkTranslationText}
+                        onChange={(e) => setBulkTranslationText(e.target.value)}
+                        placeholder={'Nas sombras das estrelas ancestrais...\nDuas almas unidas pelo fogo e aço...'}
+                        className="w-full bg-black/70 border border-white/15 rounded-xl p-3 text-xs text-cyan-100 font-mono leading-relaxed"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-white/10">
+                    <span className="text-[11px] text-slate-400">
+                      Dica: Se você já tiver a legenda com tempos do YouTube, clique na aba <strong className="text-emerald-300">&ldquo;2. Colar Sync de Legenda do YouTube&rdquo;</strong> acima!
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setAdminMode('none')}
+                        className="px-3 py-1.5 rounded-lg border border-white/15 text-xs text-slate-300"
+                      >
+                        Cancelar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleApplyBulkLyrics}
+                        disabled={saving}
+                        className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs uppercase tracking-wider flex items-center gap-1.5 shadow-lg"
+                      >
+                        <Save size={14} /> Salvar Versos & Ir para Sincronização
+                      </button>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                /* ABA 2: IMPORTADOR DE LEGENDA SINCRONIZADA DO YOUTUBE (.TXT / .SBV / .SRT / .VTT) */
+                <div className="space-y-3">
+                  <div className="p-3 rounded-xl bg-emerald-950/30 border border-emerald-500/30 text-xs text-slate-200 space-y-1">
+                    <p className="font-bold text-emerald-300">
+                      Compatível com qualquer formato de legenda manual do YouTube:
+                    </p>
+                    <p className="text-[11px] text-slate-300">
+                      • Arquivo/texto do YouTube Studio (<code>0:00:12.340,0:00:16.500</code> + verso abaixo)<br />
+                      • Formato SRT/VTT (<code>00:00:12,340 --&gt; 00:00:16,500</code>)<br />
+                      • Transcrição copiada do YouTube (<code>0:12</code> numa linha e o verso na linha seguinte, ou <code>0:12 Verso</code>)
+                    </p>
+                  </div>
+
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <label className="inline-flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={ytBilingualSingleBlock}
+                        onChange={(e) => setYtBilingualSingleBlock(e.target.checked)}
+                        className="accent-emerald-500 rounded"
+                      />
+                      <span>
+                        Minha legenda do YouTube já tem Original + Tradução juntos no mesmo bloco (1ª linha Original, 2ª linha Tradução)
+                      </span>
+                    </label>
+
+                    <label className="px-3 py-1 rounded-lg bg-white/5 hover:bg-white/10 border border-white/15 text-[11px] font-bold text-amber-300 cursor-pointer">
+                      Carregar arquivo (.txt / .sbv / .srt)
+                      <input
+                        type="file"
+                        accept=".txt,.sbv,.srt,.vtt,.lrc"
+                        className="hidden"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          const reader = new FileReader();
+                          reader.onload = () => {
+                            if (typeof reader.result === 'string') {
+                              setYtCaptionOriginalText(reader.result);
+                            }
+                          };
+                          reader.readAsText(file);
+                          e.target.value = '';
+                        }}
+                      />
+                    </label>
+                  </div>
+
+                  <div className={`grid grid-cols-1 ${ytBilingualSingleBlock ? '' : 'sm:grid-cols-2'} gap-3`}>
+                    <div>
+                      <label className="block text-[11px] font-bold uppercase text-emerald-300 mb-1">
+                        Texto / Sync de Legenda do YouTube (Com os Tempos)
+                      </label>
+                      <textarea
+                        rows={11}
+                        value={ytCaptionOriginalText}
+                        onChange={(e) => setYtCaptionOriginalText(e.target.value)}
+                        placeholder={'0:00:12.340,0:00:16.500\nIn the shadows of the ancient stars\n\n0:00:16.500,0:00:21.000\nTwo souls bound by fire and steel'}
+                        className="w-full bg-black/70 border border-emerald-500/40 rounded-xl p-3 text-xs text-white font-mono leading-relaxed"
+                      />
+                    </div>
+
+                    {!ytBilingualSingleBlock && (
+                      <div>
+                        <label className="block text-[11px] font-bold uppercase text-cyan-300 mb-1">
+                          Tradução PT-BR (Pode ser com tempos do YT ou só 1 verso por linha)
+                        </label>
+                        <textarea
+                          rows={11}
+                          value={ytCaptionTranslationText}
+                          onChange={(e) => setYtCaptionTranslationText(e.target.value)}
+                          placeholder={'Nas sombras das estrelas ancestrais\nDuas almas unidas pelo fogo e aço\n(Ou cole o .txt/.sbv traduzido com tempos)'}
+                          className="w-full bg-black/70 border border-cyan-500/30 rounded-xl p-3 text-xs text-cyan-100 font-mono leading-relaxed"
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Resumo / Prévia dos versos reconhecidos */}
+                  <div className="p-2.5 rounded-xl bg-black/50 border border-white/10 flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-xs text-slate-300">
+                      Versos reconhecidos:{' '}
+                      <strong className="text-emerald-400">
+                        {ytCaptionPreviewItems.length}
+                      </strong>{' '}
+                      ({ytCaptionPreviewItems.filter((i) => i.time !== null).length} com tempo sincronizado)
+                    </span>
+                    {ytCaptionPreviewItems.length > 0 && (
+                      <span className="text-[11px] font-mono text-amber-300 truncate max-w-xs">
+                        1º verso: [{formatSeconds(ytCaptionPreviewItems[0].time)}] {ytCaptionPreviewItems[0].original}
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="flex justify-end gap-2 pt-2 border-t border-white/10">
+                    <button
+                      type="button"
+                      onClick={() => setAdminMode('none')}
+                      className="px-3 py-1.5 rounded-lg border border-white/15 text-xs text-slate-300"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="button"
+                      disabled={saving || ytCaptionPreviewItems.length === 0}
+                      onClick={handleApplyYouTubeCaptions}
+                      className="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 disabled:opacity-40 text-slate-950 font-black text-xs uppercase tracking-wider flex items-center gap-1.5 shadow-lg"
+                    >
+                      <Save size={14} /> Importar Legenda Sincronizada ({ytCaptionPreviewItems.length} versos)
+                    </button>
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
           )}
 
@@ -1597,13 +2019,25 @@ export const LoreMusicSection: React.FC<LoreMusicSectionProps> = ({
                     Dê Play na música e clique no botão abaixo (ou aperte <kbd className="px-1.5 py-0.5 rounded bg-black/80 border border-white/20 text-amber-300 font-mono">Espaço</kbd>) exatamente quando cada verso começar a ser cantado!
                   </p>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setAdminMode('none')}
-                  className="text-slate-400 hover:text-white"
-                >
-                  <X size={16} />
-                </button>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setBulkImportTab('yt_captions');
+                      setAdminMode('bulk_lyrics');
+                    }}
+                    className="px-2.5 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-[10px] font-bold uppercase text-emerald-200"
+                  >
+                    Colar Legenda YT
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAdminMode('none')}
+                    className="text-slate-400 hover:text-white"
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
               </div>
 
               {selectedSong.lyrics.length === 0 ? (
@@ -1611,13 +2045,35 @@ export const LoreMusicSection: React.FC<LoreMusicSectionProps> = ({
                   <p className="text-xs text-slate-300">
                     Esta música ainda não tem versos cadastrados.
                   </p>
-                  <button
-                    type="button"
-                    onClick={() => setAdminMode('bulk_lyrics')}
-                    className="px-4 py-2 rounded-lg bg-amber-500 text-slate-950 font-black text-xs uppercase tracking-wider"
-                  >
-                    Colar Letra Original e Tradução Primeiro
-                  </button>
+                  <div className="flex flex-wrap justify-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setBulkImportTab('plain');
+                        setAdminMode('bulk_lyrics');
+                      }}
+                      className="px-4 py-2 rounded-lg bg-amber-500 text-slate-950 font-black text-xs uppercase tracking-wider"
+                    >
+                      Colar Letra Original e Tradução
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setBulkImportTab('yt_captions');
+                        setAdminMode('bulk_lyrics');
+                      }}
+                      className="px-4 py-2 rounded-lg bg-emerald-500 text-slate-950 font-black text-xs uppercase tracking-wider"
+                    >
+                      Colar Sync de Legenda do YouTube
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleAddSingleLine()}
+                      className="px-4 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-white font-bold text-xs uppercase tracking-wider"
+                    >
+                      + Criar 1º Verso Manualmente
+                    </button>
+                  </div>
                 </div>
               ) : (
                 <>
@@ -1625,14 +2081,14 @@ export const LoreMusicSection: React.FC<LoreMusicSectionProps> = ({
                   <div className="p-3 rounded-xl bg-black/60 border border-emerald-500/40">
                     <div className="flex items-center justify-between text-[11px] text-emerald-300 font-mono mb-1">
                       <span>
-                        VERSO ALVO #{syncCursorIndex + 1} DE {selectedSong.lyrics.length}
+                        VERSO ALVO #{Math.min(syncCursorIndex + 1, selectedSong.lyrics.length)} DE {selectedSong.lyrics.length}
                       </span>
                       <span>
                         Tempo atual do player: <strong>{formatSeconds(currentTime)}</strong>
                       </span>
                     </div>
                     <p className="text-sm font-bold text-white">
-                      {selectedSong.lyrics[syncCursorIndex]?.original || '(Verso original vazio)'}
+                      {selectedSong.lyrics[syncCursorIndex]?.original || '(Verso original vazio — digite abaixo)'}
                     </p>
                     <p className="text-xs text-cyan-300 mt-0.5">
                       {selectedSong.lyrics[syncCursorIndex]?.translation || '(Sem tradução)'}
@@ -1642,7 +2098,7 @@ export const LoreMusicSection: React.FC<LoreMusicSectionProps> = ({
                   <div className="flex flex-wrap items-center gap-2">
                     <button
                       type="button"
-                      onClick={handleStampCurrentLine}
+                      onClick={() => handleStampCurrentLine()}
                       className="flex-1 min-w-[220px] py-3 px-4 rounded-xl bg-emerald-500 hover:bg-emerald-400 active:scale-[0.99] text-slate-950 font-black text-xs sm:text-sm uppercase tracking-wider flex items-center justify-center gap-2 shadow-[0_0_25px_rgba(16,185,129,0.35)] transition"
                     >
                       <Clock size={17} />
@@ -1677,9 +2133,9 @@ export const LoreMusicSection: React.FC<LoreMusicSectionProps> = ({
                       <button
                         type="button"
                         onClick={() => handleAddSingleLine(syncCursorIndex)}
-                        className="px-2.5 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-[11px] font-bold text-slate-300 flex items-center gap-1"
+                        className="px-2.5 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-[11px] font-bold text-emerald-300 flex items-center gap-1"
                       >
-                        <Plus size={12} /> Inserir Verso Abaixo
+                        <Plus size={12} /> Inserir Verso Abaixo do Alvo (#{syncCursorIndex + 1})
                       </button>
                       <button
                         type="button"
@@ -1832,21 +2288,72 @@ export const LoreMusicSection: React.FC<LoreMusicSectionProps> = ({
                               onClick={(e) => e.stopPropagation()}
                             >
                               <div className="flex items-center gap-1.5 flex-wrap">
-                                <span className="text-[10px] font-mono text-slate-400 font-bold">
+                                <button
+                                  type="button"
+                                  onClick={() => setSyncCursorIndex(idx)}
+                                  className={`text-[10px] font-mono px-1.5 py-0.5 rounded font-bold transition ${
+                                    isSyncTarget
+                                      ? 'bg-emerald-500 text-slate-950'
+                                      : 'bg-white/5 text-slate-400 hover:text-white'
+                                  }`}
+                                  title="Selecionar este verso como alvo da sincronização"
+                                >
                                   #{idx + 1}
-                                </span>
+                                </button>
                                 <input
                                   type="text"
-                                  value={formatSeconds(line.time)}
-                                  onChange={(e) =>
-                                    handleUpdateLineField(
-                                      idx,
-                                      'time',
-                                      parseTimeInput(e.target.value)
-                                    )
+                                  placeholder="00:00.0"
+                                  value={
+                                    timeInputDrafts[line.id] !== undefined
+                                      ? timeInputDrafts[line.id]
+                                      : line.time !== null && line.time !== undefined
+                                      ? formatSeconds(line.time)
+                                      : ''
                                   }
-                                  className="w-20 bg-black/80 border border-white/20 rounded px-2 py-0.5 text-[11px] font-mono text-amber-300"
-                                  title="Tempo do verso (mm:ss.d)"
+                                  onFocus={() => {
+                                    setSyncCursorIndex(idx);
+                                    setTimeInputDrafts((prev) => ({
+                                      ...prev,
+                                      [line.id]:
+                                        line.time !== null && line.time !== undefined
+                                          ? formatSeconds(line.time)
+                                          : ''
+                                    }));
+                                  }}
+                                  onChange={(e) => {
+                                    const rawVal = e.target.value;
+                                    setTimeInputDrafts((prev) => ({
+                                      ...prev,
+                                      [line.id]: rawVal
+                                    }));
+                                    if (!rawVal.trim()) {
+                                      handleUpdateLineField(idx, 'time', null);
+                                    } else {
+                                      const parsed = parseTimeInput(rawVal);
+                                      if (parsed !== null) {
+                                        handleUpdateLineField(idx, 'time', parsed);
+                                      }
+                                    }
+                                  }}
+                                  onBlur={() => {
+                                    const rawVal = timeInputDrafts[line.id];
+                                    if (rawVal !== undefined) {
+                                      const parsed = rawVal.trim() ? parseTimeInput(rawVal) : null;
+                                      handleUpdateLineField(idx, 'time', parsed);
+                                      setTimeInputDrafts((prev) => {
+                                        const copy = { ...prev };
+                                        delete copy[line.id];
+                                        return copy;
+                                      });
+                                    }
+                                  }}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                      (e.target as HTMLInputElement).blur();
+                                    }
+                                  }}
+                                  className="w-24 bg-black/80 border border-amber-500/40 focus:border-amber-400 rounded px-2 py-0.5 text-[11px] font-mono text-amber-300 outline-none"
+                                  title="Digite o tempo manualmente (ex: 01:23.4 ou 83.4)"
                                 />
                                 <button
                                   type="button"
@@ -1864,11 +2371,9 @@ export const LoreMusicSection: React.FC<LoreMusicSectionProps> = ({
                                 </button>
                                 <button
                                   type="button"
-                                  onClick={() => {
-                                    setSyncCursorIndex(idx);
-                                    handleStampCurrentLine();
-                                  }}
+                                  onClick={() => handleStampCurrentLine(idx)}
                                   className="px-2 py-0.5 rounded bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-[10px] font-bold text-emerald-300"
+                                  title="Gravar o tempo atual do player neste verso e ir para o próximo"
                                 >
                                   Marcar Agora
                                 </button>
@@ -1881,6 +2386,14 @@ export const LoreMusicSection: React.FC<LoreMusicSectionProps> = ({
                                     Ouvir
                                   </button>
                                 )}
+                                <button
+                                  type="button"
+                                  onClick={() => handleAddSingleLine(idx)}
+                                  className="px-1.5 py-0.5 rounded bg-white/5 hover:bg-white/15 text-[10px] font-bold text-slate-300 flex items-center gap-0.5"
+                                  title="Inserir um novo verso imediatamente abaixo deste"
+                                >
+                                  <Plus size={11} /> Verso
+                                </button>
                                 <button
                                   type="button"
                                   onClick={() => handleRemoveSingleLine(idx)}
