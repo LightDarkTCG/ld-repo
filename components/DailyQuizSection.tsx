@@ -61,7 +61,7 @@ function getDayNumberSinceEpoch(): number {
   return Math.floor(utc / (1000 * 60 * 60 * 24));
 }
 
-export const DailyQuizSection: React.FC<{ isAdmin: boolean }> = ({ isAdmin }) => {
+export const DailyQuizSection: React.FC<{ isAdmin: boolean; onClose?: () => void }> = ({ isAdmin, onClose }) => {
   const { cards: allCards } = useCards();
   const { user } = useAuth();
 
@@ -406,10 +406,22 @@ export const DailyQuizSection: React.FC<{ isAdmin: boolean }> = ({ isAdmin }) =>
       {/* Section Header */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-8 border-b border-amber-500/20 pb-6">
         <div>
-          <div className="flex items-center gap-2 text-xs font-mono uppercase tracking-widest text-amber-400 mb-2">
-            <Calendar size={14} /> Desafio Diário do Archivum ({todayKey.split('-').reverse().join('/')})
+          <div className="flex items-center gap-3 flex-wrap mb-2">
+            {onClose && (
+              <button
+                type="button"
+                onClick={onClose}
+                className="cyber-arcane-btn px-3 py-1.5 bg-[#120e24] hover:bg-amber-500/20 border border-amber-500/45 text-amber-300 hover:text-white text-xs font-cinzel font-black uppercase tracking-wider flex items-center gap-1.5 transition"
+              >
+                <X size={14} />
+                <span>Voltar ao Archivum</span>
+              </button>
+            )}
+            <div className="flex items-center gap-2 text-xs font-mono uppercase tracking-widest text-amber-400">
+              <Calendar size={14} /> Desafio Diário do Archivum ({todayKey.split('-').reverse().join('/')})
+            </div>
           </div>
-          <h2 className="text-2xl sm:text-4xl font-black text-white uppercase tracking-tight">
+          <h2 className="text-2xl sm:text-4xl font-cinzel font-black text-white uppercase tracking-tight">
             QUIZ DIÁRIO DO MACROVERSO
           </h2>
           <p className="text-slate-400 text-sm mt-1 max-w-2xl">

@@ -1,10 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
-  Music,
   Play,
   Pause,
-  SkipBack,
-  SkipForward,
   Volume2,
   VolumeX,
   Plus,
@@ -16,20 +13,11 @@ import {
   Clock,
   BookOpen,
   Languages,
-  Sparkles,
-  RotateCcw,
-  ChevronRight,
-  Search,
-  Disc3,
-  Eye,
-  EyeOff,
-  Sliders,
-  FileText,
-  Users,
-  Wand2,
-  ArrowUp,
-  ArrowDown,
-  ListOrdered
+  Link2,
+  Unlink,
+  ZoomIn,
+  ZoomOut,
+  RotateCcw
 } from 'lucide-react';
 import { db } from '../firebase';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
@@ -38,9 +26,14 @@ import { FULL_LIGHT_DARK_TRACKS } from './SpotifySoundtrackSection';
 
 export interface LyricLineItem {
   id: string;
-  time: number | null; // Segundos (ex: 14.5). null = ainda não sincronizado
+  time: number | null;
   original: string;
   translation: string;
+}
+
+export interface SongTimelineConnection {
+  fromId: string;
+  toId: string;
 }
 
 export interface LoreSongData {
@@ -51,10 +44,13 @@ export interface LoreSongData {
   album: string;
   duration: string;
   coverUrl: string;
+  backgroundUrl?: string;
   loreTitle?: string;
   loreContext?: string;
   chronologicalOrder?: number;
   chronologicalEra?: string;
+  nodeX?: number;
+  nodeY?: number;
   relatedCharacters?: string[];
   relatedCardIds?: string[];
   lyrics: LyricLineItem[];
@@ -65,9 +61,11 @@ interface LoreMusicSectionProps {
   isAdmin: boolean;
   cards: CardData[];
   onInspectCard?: (card: CardData) => void;
+  onClose?: () => void;
 }
 
 const LORE_SONGS_CACHE_KEY = 'ld_cache_loreSongs_v1';
+const LORE_SONG_LINKS_CACHE_KEY = 'ld_cache_loreSongLinks_v1';
 
 declare global {
   interface Window {
@@ -97,7 +95,6 @@ function parseTimeInput(str: string): number | null {
   const clean = str.trim().replace(/^\[|\]$/g, '');
   if (!clean || clean === '--:--') return null;
 
-  // Aceita hh:mm:ss.xxx, mm:ss.xx, mm:ss ou segundos puros
   const parts = clean.split(':');
   if (parts.length === 3) {
     const hrs = parseInt(parts[0], 10);
@@ -133,18 +130,14 @@ function parseYouTubeSubtitleText(
   const rawLines = normalized.split('\n');
   const results: Array<{ time: number | null; text: string; secondLine?: string }> = [];
 
-  // Regex para identificar um token de tempo isolado: ex: 0:00:12.340, 00:12,340, 0:14, 00:14.5
   const timeTokenPattern = '(?:\\d{1,2}:)?\\d{1,2}:\\d{2}(?:[.,]\\d{1,3})?';
 
-  // 1) Linha de intervalo de legenda (SBV: "0:00:12.340,0:00:16.500" | SRT/VTT: "00:00:12,340 --> 00:00:16,500" | YT Studio: "0:12 - 0:16")
   const rangeLineRegex = new RegExp(
     `^\\s*\\[?(${timeTokenPattern})\\]?\\s*(?:-->|,|\\s+-\\s+|\\s+–\\s+)\\s*\\[?(${timeTokenPattern})\\]?(?:\\s+.*)?$`
   );
 
-  // 2) Linha contendo APENAS um código de tempo (ex: "0:14" ou "0:00:14.200" ou "[00:14.20]")
   const standaloneTimeRegex = new RegExp(`^\\s*\\[?(${timeTokenPattern})\\]?\\s*$`);
 
-  // 3) Linha com tempo no início seguido do verso na mesma linha (ex: "[00:14.20] Verso" ou "0:14 Verso" ou "0:00:14.200 Verso")
   const inlineTimeAndTextRegex = new RegExp(
     `^\\s*(?:\\[?(${timeTokenPattern})\\]?(?:\\s*(?:-->|,|-)\\s*\\[?${timeTokenPattern}\\]?)?)\\s+(.+)$`
   );
@@ -160,19 +153,16 @@ function parseYouTubeSubtitleText(
   while (i < rawLines.length) {
     const line = rawLines[i].trim();
 
-    // Ignora cabeçalhos VTT ou linhas em branco
     if (!line || /^WEBVTT($|\s)/i.test(line) || /^NOTE($|\s)/i.test(line)) {
       i++;
       continue;
     }
 
-    // Ignora número sequencial de legenda SRT (ex: "1", "2", "3" antes de uma linha de tempo)
     if (isSrtIndexLine(i)) {
       i++;
       continue;
     }
 
-    // Caso A: Linha de intervalo de tempo (.sbv, .srt, .vtt, "0:12 - 0:16") ou tempo isolado ("0:12")
     const rangeMatch = line.match(rangeLineRegex);
     const standaloneMatch = !rangeMatch ? line.match(standaloneTimeRegex) : null;
 
@@ -195,7 +185,6 @@ function parseYouTubeSubtitleText(
         ) {
           break;
         }
-        // Remove tags HTML de legendas (<c>, <i>, etc.)
         const cleanCue = nextLine.replace(/<[^>]+>/g, '').trim();
         if (cleanCue) cueLines.push(cleanCue);
         i++;
@@ -218,7 +207,6 @@ function parseYouTubeSubtitleText(
       continue;
     }
 
-    // Caso B: Tempo e texto na mesma linha (ex: "0:14 In the shadows..." ou "[00:14.2] In the shadows...")
     const inlineMatch = line.match(inlineTimeAndTextRegex);
     if (inlineMatch) {
       const parsedTime = parseTimeInput(inlineMatch[1]);
@@ -233,7 +221,6 @@ function parseYouTubeSubtitleText(
       continue;
     }
 
-    // Caso C: Linha de texto comum sem código de tempo
     const cleanPlain = line.replace(/<[^>]+>/g, '').trim();
     if (cleanPlain) {
       results.push({
@@ -260,29 +247,97 @@ function extractYouTubeId(input: string): string {
   return trimmed;
 }
 
-function buildDefaultLoreSongs(): LoreSongData[] {
-  return FULL_LIGHT_DARK_TRACKS.map((t, idx) => ({
-    id: `song_${t.youtubeId}`,
-    videoId: t.youtubeId,
-    title: t.title,
-    artist: 'Salazar Dias',
-    album: 'Light Dark Official Soundtrack',
-    duration: t.durationLabel,
-    coverUrl: `https://i.ytimg.com/vi/${t.youtubeId}/hqdefault.jpg`,
-    loreTitle: '',
-    loreContext: '',
-    chronologicalOrder: idx + 1,
-    chronologicalEra: '',
-    relatedCharacters: [],
-    relatedCardIds: [],
-    lyrics: []
-  }));
+// Gera posições iniciais estilo árvore/linha do tempo modular (como no rascunho)
+function getDefaultNodePosition(idx: number): { x: number; y: number } {
+  const colPattern = [
+    { x: 60, y: 120 },
+    { x: 240, y: 40 },
+    { x: 240, y: 200 },
+    { x: 430, y: 40 },
+    { x: 430, y: 200 },
+    { x: 610, y: 115 },
+    { x: 780, y: 195 },
+    { x: 930, y: 65 },
+    { x: 1090, y: 165 }
+  ];
+  if (idx < colPattern.length) {
+    return colPattern[idx];
+  }
+  const extraIdx = idx - colPattern.length;
+  const col = Math.floor(extraIdx / 2);
+  const row = extraIdx % 2;
+  return {
+    x: 1270 + col * 190,
+    y: row === 0 ? 55 : 195
+  };
 }
+
+function buildDefaultConnections(songsList: LoreSongData[]): SongTimelineConnection[] {
+  const conns: SongTimelineConnection[] = [];
+  if (songsList.length >= 9) {
+    // Ligações iniciais no formato do rascunho enviado
+    const pairs = [
+      [0, 1],
+      [0, 2],
+      [1, 3],
+      [2, 4],
+      [3, 5],
+      [4, 5],
+      [5, 6],
+      [6, 7],
+      [7, 8]
+    ];
+    pairs.forEach(([a, b]) => {
+      if (songsList[a] && songsList[b]) {
+        conns.push({ fromId: songsList[a].id, toId: songsList[b].id });
+      }
+    });
+    for (let i = 8; i < songsList.length - 1; i++) {
+      conns.push({ fromId: songsList[i].id, toId: songsList[i + 1].id });
+    }
+  } else {
+    for (let i = 0; i < songsList.length - 1; i++) {
+      conns.push({ fromId: songsList[i].id, toId: songsList[i + 1].id });
+    }
+  }
+  return conns;
+}
+
+function buildDefaultLoreSongs(): LoreSongData[] {
+  return FULL_LIGHT_DARK_TRACKS.map((t, idx) => {
+    const pos = getDefaultNodePosition(idx);
+    return {
+      id: `song_${t.youtubeId}`,
+      videoId: t.youtubeId,
+      title: t.title,
+      artist: 'Salazar Dias',
+      album: 'Light Dark Official Soundtrack',
+      duration: t.durationLabel,
+      coverUrl: `https://i.ytimg.com/vi/${t.youtubeId}/hqdefault.jpg`,
+      backgroundUrl: `https://i.ytimg.com/vi/${t.youtubeId}/maxresdefault.jpg`,
+      loreTitle: '',
+      loreContext: '',
+      chronologicalOrder: idx + 1,
+      chronologicalEra: '',
+      nodeX: pos.x,
+      nodeY: pos.y,
+      relatedCharacters: [],
+      relatedCardIds: [],
+      lyrics: []
+    };
+  });
+}
+
+const NODE_WIDTH = 122;
+const NODE_HEIGHT = 152;
+const MIN_TIMELINE_ZOOM = 0.45;
+const MAX_TIMELINE_ZOOM = 1.65;
 
 export const LoreMusicSection: React.FC<LoreMusicSectionProps> = ({
   isAdmin,
   cards,
-  onInspectCard
+  onInspectCard,
+  onClose
 }) => {
   const [songs, setSongs] = useState<LoreSongData[]>(() => {
     try {
@@ -290,7 +345,14 @@ export const LoreMusicSection: React.FC<LoreMusicSectionProps> = ({
       if (raw) {
         const parsed = JSON.parse(raw);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          return parsed;
+          return parsed.map((s: LoreSongData, idx: number) => {
+            const defPos = getDefaultNodePosition(idx);
+            return {
+              ...s,
+              nodeX: typeof s.nodeX === 'number' ? s.nodeX : defPos.x,
+              nodeY: typeof s.nodeY === 'number' ? s.nodeY : defPos.y
+            };
+          });
         }
       }
     } catch {
@@ -299,19 +361,40 @@ export const LoreMusicSection: React.FC<LoreMusicSectionProps> = ({
     return buildDefaultLoreSongs();
   });
 
+  const [connections, setConnections] = useState<SongTimelineConnection[]>(() => {
+    try {
+      const raw = localStorage.getItem(LORE_SONG_LINKS_CACHE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch {
+      // ignore
+    }
+    return buildDefaultConnections(buildDefaultLoreSongs());
+  });
+
   const [selectedSongId, setSelectedSongId] = useState<string>(() => {
     const initial = buildDefaultLoreSongs();
     return initial[0]?.id || '';
   });
 
-  const [searchQuery, setSearchQuery] = useState('');
-  const [filterWithLyricsOnly, setFilterWithLyricsOnly] = useState(false);
-  const [sortMode, setSortMode] = useState<'chronological' | 'alphabetical'>('chronological');
+  // Zoom da Linha do Tempo Modular
+  const [timelineZoom, setTimelineZoom] = useState<number>(1);
+  const timelineZoomRef = useRef<number>(1);
+  useEffect(() => {
+    timelineZoomRef.current = timelineZoom;
+  }, [timelineZoom]);
 
-  // Modos de visualização da letra para o leitor
-  const [lyricDisplayMode, setLyricDisplayMode] = useState<'both' | 'original' | 'translation'>('both');
-  const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);
-  const [showVideoFrame, setShowVideoFrame] = useState(false);
+  const handleAdjustTimelineZoom = (delta: number) => {
+    setTimelineZoom((prev) => {
+      const next = Math.round((prev + delta) * 100) / 100;
+      return Math.min(MAX_TIMELINE_ZOOM, Math.max(MIN_TIMELINE_ZOOM, next));
+    });
+  };
+
+  // Painel de "Curiosidades da Música" aberto quando a pessoa clica em uma música
+  const [curiositiesSongId, setCuriositiesSongId] = useState<string | null>(null);
 
   // Player YouTube state
   const [isPlaying, setIsPlaying] = useState(false);
@@ -321,10 +404,18 @@ export const LoreMusicSection: React.FC<LoreMusicSectionProps> = ({
   const [isMuted, setIsMuted] = useState(false);
   const [isPlayerReady, setIsPlayerReady] = useState(false);
 
-  // Estado de Edição / Sincronização (Admin / Colaborador)
-  const [adminMode, setAdminMode] = useState<'none' | 'bulk_lyrics' | 'sync_studio' | 'edit_lore' | 'add_song' | 'chronology'>('none');
+  // Modos exclusivos de Admin (invisíveis para visitantes)
+  const [adminMode, setAdminMode] = useState<
+    'none' | 'bulk_lyrics' | 'sync_studio' | 'edit_lore' | 'add_song'
+  >('none');
+  const [isLinkingMode, setIsLinkingMode] = useState(false);
+  const [linkSourceSongId, setLinkSourceSongId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveFeedback, setSaveFeedback] = useState<string | null>(null);
+
+  // Modos de exibição da letra dentro do editor/sincronizador
+  const [lyricDisplayMode, setLyricDisplayMode] = useState<'both' | 'original' | 'translation'>('both');
+  const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);
 
   // Campos de Edição em Lote (Original + Tradução) e Importação de Legenda do YouTube
   const [bulkImportTab, setBulkImportTab] = useState<'plain' | 'yt_captions'>('plain');
@@ -334,32 +425,60 @@ export const LoreMusicSection: React.FC<LoreMusicSectionProps> = ({
   const [ytCaptionTranslationText, setYtCaptionTranslationText] = useState('');
   const [ytBilingualSingleBlock, setYtBilingualSingleBlock] = useState(false);
 
-  // Rascunho de digitação manual de tempo por linha (evita travar o cursor ao digitar mm:ss.d)
+  // Rascunho de digitação manual de tempo por linha
   const [timeInputDrafts, setTimeInputDrafts] = useState<Record<string, string>>({});
 
-  // Cursor de linha no Sincronizador ao Vivo (Tap Sync)
+  // Cursor de linha no Sincronizador ao Vivo
   const [syncCursorIndex, setSyncCursorIndex] = useState(0);
+  const syncCursorRef = useRef(0);
 
-  // Campos de Edição de Lore e Contexto da Música
+  const updateSyncCursor = (nextIdx: number) => {
+    syncCursorRef.current = nextIdx;
+    setSyncCursorIndex(nextIdx);
+  };
+
+  // Campos de Edição de Curiosidades da Música
   const [draftLoreTitle, setDraftLoreTitle] = useState('');
   const [draftLoreContext, setDraftLoreContext] = useState('');
   const [draftSongTitle, setDraftSongTitle] = useState('');
-  const [draftSongArtist, setDraftSongArtist] = useState('');
+  const [draftSongDuration, setDraftSongDuration] = useState('');
+  const [draftCoverUrl, setDraftCoverUrl] = useState('');
+  const [draftBackgroundUrl, setDraftBackgroundUrl] = useState('');
   const [draftRelatedCardIds, setDraftRelatedCardIds] = useState<string[]>([]);
   const [cardSearchTerm, setCardSearchTerm] = useState('');
 
   // Campos para Adicionar Nova Música
   const [newSongYoutubeUrl, setNewSongYoutubeUrl] = useState('');
   const [newSongTitle, setNewSongTitle] = useState('');
-  const [newSongArtist, setNewSongArtist] = useState('Salazar Dias');
   const [newSongDuration, setNewSongDuration] = useState('3:30');
+
+  // Drag & Drop dos blocos na Linha do Tempo Modular
+  const [draggingSongId, setDraggingSongId] = useState<string | null>(null);
+  const dragOffsetRef = useRef<{ offsetX: number; offsetY: number; startX: number; startY: number; moved: boolean }>({
+    offsetX: 0,
+    offsetY: 0,
+    startX: 0,
+    startY: 0,
+    moved: false
+  });
+  const timelineCanvasRef = useRef<HTMLDivElement | null>(null);
+  const songsRef = useRef<LoreSongData[]>(songs);
+  const connectionsRef = useRef<SongTimelineConnection[]>(connections);
+
+  useEffect(() => {
+    songsRef.current = songs;
+  }, [songs]);
+
+  useEffect(() => {
+    connectionsRef.current = connections;
+  }, [connections]);
 
   const ytPlayerRef = useRef<any>(null);
   const selectedSongRef = useRef<LoreSongData | undefined>(undefined);
   const lyricsScrollContainerRef = useRef<HTMLDivElement | null>(null);
   const lineRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
-  // Carrega dados salvos do Firestore (wbSettings/loreSongs)
+  // Carrega músicas e conexões (traços) do Firestore (wbSettings/loreSongs)
   useEffect(() => {
     let mounted = true;
     const loadFromFirestore = async () => {
@@ -369,20 +488,21 @@ export const LoreMusicSection: React.FC<LoreMusicSectionProps> = ({
         if (snap.exists()) {
           const data = snap.data();
           if (Array.isArray(data.songs) && data.songs.length > 0) {
-            // Mescla com as 22 músicas oficiais para garantir que todas existam
             const savedSongs: LoreSongData[] = data.songs;
             const defaults = buildDefaultLoreSongs();
             const mergedMap = new Map<string, LoreSongData>();
             defaults.forEach((d) => mergedMap.set(d.id, d));
-            savedSongs.forEach((s) => {
+            savedSongs.forEach((s, idx) => {
               const existing = mergedMap.get(s.id);
+              const defPos = getDefaultNodePosition(idx);
               mergedMap.set(s.id, {
                 ...(existing || {}),
                 ...s,
+                nodeX: typeof s.nodeX === 'number' ? s.nodeX : existing?.nodeX ?? defPos.x,
+                nodeY: typeof s.nodeY === 'number' ? s.nodeY : existing?.nodeY ?? defPos.y,
                 lyrics: Array.isArray(s.lyrics) ? s.lyrics : []
               });
             });
-            // Mantém a ordem salva + quaisquer novas padrões
             const savedOrderIds = savedSongs.map((s) => s.id);
             const ordered: LoreSongData[] = [];
             savedOrderIds.forEach((id) => {
@@ -399,6 +519,15 @@ export const LoreMusicSection: React.FC<LoreMusicSectionProps> = ({
               localStorage.setItem(LORE_SONGS_CACHE_KEY, JSON.stringify(ordered));
             } catch {
               // ignore
+            }
+
+            if (Array.isArray(data.connections)) {
+              setConnections(data.connections);
+              try {
+                localStorage.setItem(LORE_SONG_LINKS_CACHE_KEY, JSON.stringify(data.connections));
+              } catch {
+                // ignore
+              }
             }
           }
         }
@@ -417,26 +546,31 @@ export const LoreMusicSection: React.FC<LoreMusicSectionProps> = ({
     [songs, selectedSongId]
   );
 
+  const curiositiesSong = useMemo(
+    () => (curiositiesSongId ? songs.find((s) => s.id === curiositiesSongId) || null : null),
+    [songs, curiositiesSongId]
+  );
+
   useEffect(() => {
     selectedSongRef.current = selectedSong;
   }, [selectedSong]);
 
-  // Sincroniza rascunhos quando troca de música
+  // Sincroniza rascunhos quando troca de música selecionada
   useEffect(() => {
     if (!selectedSong) return;
     setDraftLoreTitle(selectedSong.loreTitle || '');
     setDraftLoreContext(selectedSong.loreContext || '');
     setDraftSongTitle(selectedSong.title || '');
-    setDraftSongArtist(selectedSong.artist || '');
+    setDraftSongDuration(selectedSong.duration || '');
+    setDraftCoverUrl(selectedSong.coverUrl || '');
+    setDraftBackgroundUrl(selectedSong.backgroundUrl || '');
     setDraftRelatedCardIds(selectedSong.relatedCardIds || []);
     setBulkOriginalText((selectedSong.lyrics || []).map((l) => l.original).join('\n'));
     setBulkTranslationText((selectedSong.lyrics || []).map((l) => l.translation).join('\n'));
     setTimeInputDrafts({});
-    setSyncCursorIndex(0);
-    setCurrentTime(0);
+    updateSyncCursor(0);
   }, [selectedSong?.id]);
 
-  // Sempre que abrir a aba bulk_lyrics, atualiza o texto com todos os versos atuais (incluindo versos inseridos manualmente)
   useEffect(() => {
     if (adminMode === 'bulk_lyrics' && selectedSong) {
       setBulkOriginalText((selectedSong.lyrics || []).map((l) => l.original).join('\n'));
@@ -444,7 +578,7 @@ export const LoreMusicSection: React.FC<LoreMusicSectionProps> = ({
     }
   }, [adminMode]);
 
-  // Inicializa YouTube IFrame API para o player dedicado da Lore
+  // Inicializa YouTube IFrame API
   useEffect(() => {
     let isMounted = true;
 
@@ -455,15 +589,16 @@ export const LoreMusicSection: React.FC<LoreMusicSectionProps> = ({
       const containerEl = document.getElementById('yt-lore-music-player');
       if (!containerEl) return;
 
-      const initialVideoId = selectedSongRef.current?.videoId || FULL_LIGHT_DARK_TRACKS[0].youtubeId;
+      const initialVideoId =
+        selectedSongRef.current?.videoId || FULL_LIGHT_DARK_TRACKS[0].youtubeId;
 
       ytPlayerRef.current = new window.YT.Player('yt-lore-music-player', {
-        height: '200',
+        height: '180',
         width: '320',
         videoId: initialVideoId,
         playerVars: {
           autoplay: 0,
-          controls: 1,
+          controls: 0,
           disablekb: 1,
           fs: 0,
           modestbranding: 1,
@@ -489,7 +624,12 @@ export const LoreMusicSection: React.FC<LoreMusicSectionProps> = ({
               setIsPlaying(true);
               const dur = event.target?.getDuration?.() || 0;
               if (dur > 0) setDurationSec(dur);
-            } else if (event.data === 2 || event.data === 0 || event.data === -1 || event.data === 5) {
+            } else if (
+              event.data === 2 ||
+              event.data === 0 ||
+              event.data === -1 ||
+              event.data === 5
+            ) {
               setIsPlaying(false);
             }
           }
@@ -541,7 +681,7 @@ export const LoreMusicSection: React.FC<LoreMusicSectionProps> = ({
     };
   }, []);
 
-  // Atualiza o tempo atual (currentTime) a cada 100ms para sincronizar a letra com precisão
+  // Atualiza currentTime a cada 100ms
   useEffect(() => {
     const interval = setInterval(() => {
       const player = ytPlayerRef.current;
@@ -565,42 +705,192 @@ export const LoreMusicSection: React.FC<LoreMusicSectionProps> = ({
     return () => clearInterval(interval);
   }, []);
 
-  // Quando seleciona outra música, carrega no player
-  const handleSelectSong = (song: LoreSongData, autoPlay = false) => {
+  // Persistência no Firestore (músicas + conexões de traços)
+  const persistToFirestore = async (
+    updatedSongs: LoreSongData[],
+    updatedConnections: SongTimelineConnection[] = connectionsRef.current,
+    successMessage?: string
+  ) => {
+    setSongs(updatedSongs);
+    setConnections(updatedConnections);
+    try {
+      localStorage.setItem(LORE_SONGS_CACHE_KEY, JSON.stringify(updatedSongs));
+      localStorage.setItem(LORE_SONG_LINKS_CACHE_KEY, JSON.stringify(updatedConnections));
+    } catch {
+      // ignore
+    }
+    if (!isAdmin) return;
+    setSaving(true);
+    try {
+      await setDoc(
+        doc(db, 'wbSettings', 'loreSongs'),
+        {
+          songs: updatedSongs,
+          connections: updatedConnections,
+          updatedAt: new Date().toISOString()
+        },
+        { merge: true }
+      );
+      if (successMessage) {
+        setSaveFeedback(successMessage);
+        setTimeout(() => setSaveFeedback(null), 2800);
+      }
+    } catch (err) {
+      console.error('Erro ao salvar músicas da Lore no Firestore:', err);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Tocar ou pausar uma música específica
+  const handlePlayOrToggleSong = (song: LoreSongData) => {
+    const player = ytPlayerRef.current;
+    if (selectedSongId === song.id) {
+      if (!player || !isPlayerReady) return;
+      try {
+        const state = player.getPlayerState?.();
+        if (state === 1) {
+          player.pauseVideo();
+          setIsPlaying(false);
+        } else {
+          player.playVideo();
+          setIsPlaying(true);
+        }
+      } catch {
+        // ignore
+      }
+      return;
+    }
+
     setSelectedSongId(song.id);
     setCurrentTime(0);
-    const player = ytPlayerRef.current;
     if (player && isPlayerReady) {
       try {
-        if (autoPlay && typeof player.loadVideoById === 'function') {
-          player.loadVideoById(song.videoId);
-          setIsPlaying(true);
-        } else if (typeof player.cueVideoById === 'function') {
-          player.cueVideoById(song.videoId);
-          setIsPlaying(false);
-        }
+        player.loadVideoById(song.videoId);
+        setIsPlaying(true);
       } catch {
         // ignore
       }
     }
   };
 
-  const togglePlayPause = () => {
-    const player = ytPlayerRef.current;
-    if (!player || !isPlayerReady) return;
-    try {
-      const state = player.getPlayerState?.();
-      if (state === 1) {
-        player.pauseVideo();
-        setIsPlaying(false);
-      } else {
-        player.playVideo();
-        setIsPlaying(true);
+  // Clicar no bloco da música: seleciona/toca e abre "Curiosidades da Música" (ou linka com traço se estiver no modo Linkar)
+  const handleClickSongBlock = (song: LoreSongData) => {
+    if (isAdmin && isLinkingMode) {
+      if (!linkSourceSongId) {
+        setLinkSourceSongId(song.id);
+        return;
       }
-    } catch {
-      // ignore
+      if (linkSourceSongId === song.id) {
+        setLinkSourceSongId(null);
+        return;
+      }
+      // Verifica se já existe traço entre as duas músicas
+      const exists = connections.some(
+        (c) =>
+          (c.fromId === linkSourceSongId && c.toId === song.id) ||
+          (c.fromId === song.id && c.toId === linkSourceSongId)
+      );
+      const nextConns = exists
+        ? connections.filter(
+            (c) =>
+              !(
+                (c.fromId === linkSourceSongId && c.toId === song.id) ||
+                (c.fromId === song.id && c.toId === linkSourceSongId)
+              )
+          )
+        : [...connections, { fromId: linkSourceSongId, toId: song.id }];
+
+      setLinkSourceSongId(null);
+      persistToFirestore(
+        songsRef.current,
+        nextConns,
+        exists ? 'Traço removido!' : 'Traço conectado!'
+      );
+      return;
     }
+
+    if (selectedSongId !== song.id) {
+      setSelectedSongId(song.id);
+      setCurrentTime(0);
+      const player = ytPlayerRef.current;
+      if (player && isPlayerReady) {
+        try {
+          player.loadVideoById(song.videoId);
+          setIsPlaying(true);
+        } catch {
+          // ignore
+        }
+      }
+    }
+    setCuriositiesSongId(song.id);
   };
+
+  // Eventos de Arrastar Livremente (Drag & Drop) para o Admin na Linha do Tempo Modular (respeitando o Zoom)
+  const handleNodePointerDown = (e: React.PointerEvent, song: LoreSongData) => {
+    if (!isAdmin || isLinkingMode) return;
+    // Ignora se clicou direto no botão de Play
+    if ((e.target as HTMLElement).closest('[data-play-btn="true"]')) return;
+
+    const canvasEl = timelineCanvasRef.current;
+    if (!canvasEl) return;
+    const rect = canvasEl.getBoundingClientRect();
+    const zoom = timelineZoomRef.current || 1;
+    const pointerXInCanvas = (e.clientX - rect.left + canvasEl.scrollLeft) / zoom;
+    const pointerYInCanvas = (e.clientY - rect.top + canvasEl.scrollTop) / zoom;
+
+    dragOffsetRef.current = {
+      offsetX: pointerXInCanvas - (song.nodeX ?? 0),
+      offsetY: pointerYInCanvas - (song.nodeY ?? 0),
+      startX: e.clientX,
+      startY: e.clientY,
+      moved: false
+    };
+    setDraggingSongId(song.id);
+  };
+
+  useEffect(() => {
+    if (!draggingSongId) return;
+
+    const handlePointerMove = (e: PointerEvent) => {
+      const canvasEl = timelineCanvasRef.current;
+      if (!canvasEl) return;
+      const dx = Math.abs(e.clientX - dragOffsetRef.current.startX);
+      const dy = Math.abs(e.clientY - dragOffsetRef.current.startY);
+      if (dx > 5 || dy > 5) {
+        dragOffsetRef.current.moved = true;
+      }
+
+      const rect = canvasEl.getBoundingClientRect();
+      const zoom = timelineZoomRef.current || 1;
+      const pointerXInCanvas = (e.clientX - rect.left + canvasEl.scrollLeft) / zoom;
+      const pointerYInCanvas = (e.clientY - rect.top + canvasEl.scrollTop) / zoom;
+
+      const newX = Math.max(16, Math.round(pointerXInCanvas - dragOffsetRef.current.offsetX));
+      const newY = Math.max(16, Math.round(pointerYInCanvas - dragOffsetRef.current.offsetY));
+
+      setSongs((prev) =>
+        prev.map((s) =>
+          s.id === draggingSongId ? { ...s, nodeX: newX, nodeY: newY } : s
+        )
+      );
+    };
+
+    const handlePointerUp = () => {
+      const wasMoved = dragOffsetRef.current.moved;
+      setDraggingSongId(null);
+      if (wasMoved) {
+        persistToFirestore(songsRef.current, connectionsRef.current);
+      }
+    };
+
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+    return () => {
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+    };
+  }, [draggingSongId]);
 
   const seekToSeconds = (targetSec: number, playImmediately = false) => {
     const clamped = Math.max(0, targetSec);
@@ -669,26 +959,15 @@ export const LoreMusicSection: React.FC<LoreMusicSectionProps> = ({
     return bestIdx;
   }, [selectedSong, currentTime]);
 
-  // Auto-scroll suave até a linha ativa durante a reprodução
-  useEffect(() => {
-    if (!autoScrollEnabled || adminMode === 'sync_studio') return;
-    if (activeLyricIndex < 0 || !selectedSong?.lyrics?.[activeLyricIndex]) return;
-    const activeLineId = selectedSong.lyrics[activeLyricIndex].id;
-    const el = lineRefs.current[activeLineId];
-    const container = lyricsScrollContainerRef.current;
-    if (el && container) {
-      const containerRect = container.getBoundingClientRect();
-      const elRect = el.getBoundingClientRect();
-      const offsetInside = elRect.top - containerRect.top + container.scrollTop;
-      const targetScroll = offsetInside - container.clientHeight / 2 + el.clientHeight / 2;
-      container.scrollTo({
-        top: Math.max(0, targetScroll),
-        behavior: 'smooth'
-      });
+  const activeLyricLine = useMemo(() => {
+    if (!selectedSong?.lyrics || selectedSong.lyrics.length === 0) return null;
+    if (activeLyricIndex >= 0 && selectedSong.lyrics[activeLyricIndex]) {
+      return selectedSong.lyrics[activeLyricIndex];
     }
-  }, [activeLyricIndex, autoScrollEnabled, adminMode, selectedSong?.id]);
+    return selectedSong.lyrics[0];
+  }, [selectedSong, activeLyricIndex]);
 
-  // No modo sync_studio, rola automaticamente para a linha do cursor de sincronização
+  // Auto-scroll no modal de sincronização
   useEffect(() => {
     if (adminMode !== 'sync_studio' || !selectedSong?.lyrics?.[syncCursorIndex]) return;
     const targetId = selectedSong.lyrics[syncCursorIndex].id;
@@ -706,46 +985,15 @@ export const LoreMusicSection: React.FC<LoreMusicSectionProps> = ({
     }
   }, [syncCursorIndex, adminMode, selectedSong?.id]);
 
-  // Persistência no Firestore
-  const persistSongsToFirestore = async (updatedSongs: LoreSongData[], successMessage = 'Alterações salvas na Lore!') => {
-    setSongs(updatedSongs);
-    try {
-      localStorage.setItem(LORE_SONGS_CACHE_KEY, JSON.stringify(updatedSongs));
-    } catch {
-      // ignore
-    }
-    if (!isAdmin) return;
-    setSaving(true);
-    try {
-      await setDoc(
-        doc(db, 'wbSettings', 'loreSongs'),
-        {
-          songs: updatedSongs,
-          updatedAt: new Date().toISOString()
-        },
-        { merge: true }
-      );
-      setSaveFeedback(successMessage);
-      setTimeout(() => setSaveFeedback(null), 3200);
-    } catch (err) {
-      console.error('Erro ao salvar músicas da Lore no Firestore:', err);
-      setSaveFeedback('Erro ao salvar na nuvem (salvo localmente).');
-      setTimeout(() => setSaveFeedback(null), 4000);
-    } finally {
-      setSaving(false);
-    }
-  };
-
   // Processar letras coladas em lote (Original + Tradução lado a lado)
   const handleApplyBulkLyrics = async () => {
     if (!selectedSong) return;
 
-    // Se ambos os lados contiverem blocos de legenda do YouTube (.sbv / .srt / .vtt / tempos em linhas separadas), usa o parser de legendas
     const origParsed = parseYouTubeSubtitleText(bulkOriginalText, false);
     const transParsed = parseYouTubeSubtitleText(bulkTranslationText, false);
     const hasDetectedTimestampsInOrig = origParsed.some((item) => item.time !== null);
 
-    let nextLyrics: LyricLineItem[] = [];
+    const nextLyrics: LyricLineItem[] = [];
 
     if (hasDetectedTimestampsInOrig) {
       const maxLen = Math.max(origParsed.length, transParsed.length);
@@ -771,7 +1019,6 @@ export const LoreMusicSection: React.FC<LoreMusicSectionProps> = ({
       for (let i = 0; i < maxLen; i++) {
         let rawOrig = (origLines[i] ?? '').trim();
         let rawTrans = (transLines[i] ?? '').trim();
-
         if (!rawOrig && !rawTrans) continue;
 
         let parsedTime: number | null = selectedSong.lyrics?.[i]?.time ?? null;
@@ -802,17 +1049,15 @@ export const LoreMusicSection: React.FC<LoreMusicSectionProps> = ({
         : s
     );
 
-    await persistSongsToFirestore(
+    await persistToFirestore(
       updatedSongs,
-      hasDetectedTimestampsInOrig
-        ? `Letras e tempos importados (${nextLyrics.length} versos)!`
-        : 'Letras (Original + Tradução) salvas! Agora você pode sincronizar.'
+      connectionsRef.current,
+      'Letras salvas!'
     );
     setAdminMode('sync_studio');
-    setSyncCursorIndex(0);
+    updateSyncCursor(0);
   };
 
-  // Prévia em tempo real da importação de legenda do YouTube
   const ytCaptionPreviewItems = useMemo(() => {
     const origCues = parseYouTubeSubtitleText(ytCaptionOriginalText, ytBilingualSingleBlock);
     const transCues = ytBilingualSingleBlock
@@ -828,7 +1073,6 @@ export const LoreMusicSection: React.FC<LoreMusicSectionProps> = ({
     }));
   }, [ytCaptionOriginalText, ytCaptionTranslationText, ytBilingualSingleBlock]);
 
-  // Aplicar importação de Legenda Sincronizada do YouTube (.sbv, .srt, .vtt, .txt do YT Studio)
   const handleApplyYouTubeCaptions = async () => {
     if (!selectedSong || ytCaptionPreviewItems.length === 0) return;
 
@@ -845,21 +1089,24 @@ export const LoreMusicSection: React.FC<LoreMusicSectionProps> = ({
         : s
     );
 
-    await persistSongsToFirestore(
+    await persistToFirestore(
       updatedSongs,
-      `Legenda do YouTube importada com sucesso (${nextLyrics.length} versos sincronizados)!`
+      connectionsRef.current,
+      `Legenda importada (${nextLyrics.length} versos)!`
     );
     setBulkOriginalText(nextLyrics.map((l) => l.original).join('\n'));
     setBulkTranslationText(nextLyrics.map((l) => l.translation).join('\n'));
     setTimeInputDrafts({});
     setAdminMode('sync_studio');
-    setSyncCursorIndex(0);
+    updateSyncCursor(0);
   };
 
-  // Marcar tempo da linha atual (ou de um índice específico passado por parâmetro) no Sincronizador Ao Vivo
+  // Marcar tempo do verso atual e avançar para o próximo
   const handleStampCurrentLine = (overrideIdx?: number) => {
-    const activeSongId = selectedSongRef.current?.id || selectedSong?.id;
-    if (!activeSongId) return;
+    const currentSong = selectedSongRef.current || selectedSong;
+    if (!currentSong) return;
+    const list = currentSong.lyrics || [];
+    if (list.length === 0) return;
 
     const player = ytPlayerRef.current;
     let exactTime = currentTime;
@@ -875,24 +1122,19 @@ export const LoreMusicSection: React.FC<LoreMusicSectionProps> = ({
     }
 
     const stampedTime = Math.max(0, Math.round(exactTime * 10) / 10);
-    const baseIdx = typeof overrideIdx === 'number' ? overrideIdx : syncCursorIndex;
+    const baseIdx = typeof overrideIdx === 'number' ? overrideIdx : syncCursorRef.current;
+    const targetIdx = Math.min(Math.max(0, baseIdx), list.length - 1);
+    const stampedLineId = list[targetIdx]?.id || '';
+    const nextCursor = targetIdx < list.length - 1 ? targetIdx + 1 : targetIdx;
 
-    let nextCursor = baseIdx;
-    let stampedLineId = '';
+    const updatedLyrics = list.map((line, idx) =>
+      idx === targetIdx ? { ...line, time: stampedTime } : line
+    );
 
     setSongs((prevSongs) =>
-      prevSongs.map((s) => {
-        if (s.id !== activeSongId) return s;
-        const list = s.lyrics || [];
-        if (list.length === 0) return s;
-        const targetIdx = Math.min(Math.max(0, baseIdx), list.length - 1);
-        stampedLineId = list[targetIdx]?.id || '';
-        nextCursor = targetIdx < list.length - 1 ? targetIdx + 1 : targetIdx;
-        const updatedLyrics = list.map((line, idx) =>
-          idx === targetIdx ? { ...line, time: stampedTime } : line
-        );
-        return { ...s, lyrics: updatedLyrics };
-      })
+      prevSongs.map((s) =>
+        s.id === currentSong.id ? { ...s, lyrics: updatedLyrics } : s
+      )
     );
 
     if (stampedLineId) {
@@ -904,10 +1146,9 @@ export const LoreMusicSection: React.FC<LoreMusicSectionProps> = ({
       });
     }
 
-    setSyncCursorIndex(nextCursor);
+    updateSyncCursor(nextCursor);
   };
 
-  // Atalho de teclado Espaço no modo sync_studio para marcar o tempo sem tirar a mão
   useEffect(() => {
     if (adminMode !== 'sync_studio') return;
     const onKeyDown = (e: KeyboardEvent) => {
@@ -918,12 +1159,11 @@ export const LoreMusicSection: React.FC<LoreMusicSectionProps> = ({
         handleStampCurrentLine();
       } else if (e.code === 'ArrowDown') {
         e.preventDefault();
-        setSyncCursorIndex((prev) =>
-          Math.min((selectedSong?.lyrics?.length || 1) - 1, prev + 1)
-        );
+        const maxIdx = Math.max(0, (selectedSongRef.current?.lyrics?.length || 1) - 1);
+        updateSyncCursor(Math.min(maxIdx, syncCursorRef.current + 1));
       } else if (e.code === 'ArrowUp') {
         e.preventDefault();
-        setSyncCursorIndex((prev) => Math.max(0, prev - 1));
+        updateSyncCursor(Math.max(0, syncCursorRef.current - 1));
       }
     };
     window.addEventListener('keydown', onKeyDown);
@@ -931,15 +1171,14 @@ export const LoreMusicSection: React.FC<LoreMusicSectionProps> = ({
   }, [adminMode, syncCursorIndex, selectedSong, currentTime, songs]);
 
   const handleAdjustLineTime = (lineIdx: number, deltaSec: number) => {
-    const activeSongId = selectedSong?.id;
-    if (!activeSongId) return;
-    let adjustedLineId = '';
+    const currentSong = selectedSongRef.current || selectedSong;
+    if (!currentSong) return;
+    const adjustedLineId = currentSong.lyrics?.[lineIdx]?.id || '';
     setSongs((prev) =>
       prev.map((s) => {
-        if (s.id !== activeSongId) return s;
+        if (s.id !== currentSong.id) return s;
         const updatedLyrics = s.lyrics.map((line, idx) => {
           if (idx !== lineIdx) return line;
-          adjustedLineId = line.id;
           const base = line.time ?? currentTime ?? 0;
           return {
             ...line,
@@ -978,8 +1217,8 @@ export const LoreMusicSection: React.FC<LoreMusicSectionProps> = ({
   };
 
   const handleAddSingleLine = (afterIdx?: number) => {
-    const activeSongId = selectedSong?.id;
-    if (!activeSongId) return;
+    const currentSong = selectedSongRef.current || selectedSong;
+    if (!currentSong) return;
     const newLine: LyricLineItem = {
       id: `line_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
       time: null,
@@ -987,60 +1226,46 @@ export const LoreMusicSection: React.FC<LoreMusicSectionProps> = ({
       translation: ''
     };
 
-    let insertedIndex = 0;
+    const currentList = [...(currentSong.lyrics || [])];
+    const insertedIndex =
+      afterIdx !== undefined && afterIdx >= 0 && afterIdx < currentList.length
+        ? afterIdx + 1
+        : currentList.length;
+
+    currentList.splice(insertedIndex, 0, newLine);
+
     setSongs((prev) =>
-      prev.map((s) => {
-        if (s.id !== activeSongId) return s;
-        const currentList = [...(s.lyrics || [])];
-        if (afterIdx !== undefined && afterIdx >= 0 && afterIdx < currentList.length) {
-          insertedIndex = afterIdx + 1;
-          currentList.splice(insertedIndex, 0, newLine);
-        } else {
-          insertedIndex = currentList.length;
-          currentList.push(newLine);
-        }
-        return { ...s, lyrics: currentList };
-      })
+      prev.map((s) =>
+        s.id === currentSong.id ? { ...s, lyrics: currentList } : s
+      )
     );
-    // Posiciona o cursor do sincronizador diretamente no novo verso criado para que ele seja contabilizado e sincronizado imediatamente
-    setSyncCursorIndex(insertedIndex);
+    updateSyncCursor(insertedIndex);
   };
 
   const handleRemoveSingleLine = (lineIdx: number) => {
-    const activeSongId = selectedSong?.id;
-    if (!activeSongId) return;
+    const currentSong = selectedSongRef.current || selectedSong;
+    if (!currentSong) return;
+    const nextLen = Math.max(0, (currentSong.lyrics?.length || 1) - 1);
     setSongs((prev) =>
       prev.map((s) => {
-        if (s.id !== activeSongId) return s;
+        if (s.id !== currentSong.id) return s;
         const updatedLyrics = s.lyrics.filter((_, idx) => idx !== lineIdx);
         return { ...s, lyrics: updatedLyrics };
       })
     );
-    setSyncCursorIndex((prev) => Math.max(0, Math.min(prev, (selectedSong?.lyrics?.length || 2) - 2)));
+    updateSyncCursor(Math.max(0, Math.min(syncCursorRef.current, Math.max(0, nextLen - 1))));
   };
 
-  const handleClearAllTimestamps = () => {
-    const activeSongId = selectedSong?.id;
-    if (!activeSongId) return;
-    setSongs((prev) =>
-      prev.map((s) => {
-        if (s.id !== activeSongId) return s;
-        const cleared = s.lyrics.map((l) => ({ ...l, time: null }));
-        return { ...s, lyrics: cleared };
-      })
-    );
-    setTimeInputDrafts({});
-    setSyncCursorIndex(0);
-  };
-
-  const handleSaveLoreAndContext = async () => {
+  const handleSaveCuriosities = async () => {
     if (!selectedSong) return;
     const updatedSongs = songs.map((s) =>
       s.id === selectedSong.id
         ? {
             ...s,
             title: draftSongTitle.trim() || s.title,
-            artist: draftSongArtist.trim() || s.artist,
+            duration: draftSongDuration.trim() || s.duration,
+            coverUrl: draftCoverUrl.trim() || s.coverUrl,
+            backgroundUrl: draftBackgroundUrl.trim() || s.backgroundUrl,
             loreTitle: draftLoreTitle.trim(),
             loreContext: draftLoreContext,
             relatedCardIds: draftRelatedCardIds,
@@ -1048,7 +1273,11 @@ export const LoreMusicSection: React.FC<LoreMusicSectionProps> = ({
           }
         : s
     );
-    await persistSongsToFirestore(updatedSongs, 'Contexto e Lore da música salvos com sucesso!');
+    await persistToFirestore(
+      updatedSongs,
+      connectionsRef.current,
+      'Curiosidades da música salvas!'
+    );
     setAdminMode('none');
   };
 
@@ -1056,167 +1285,147 @@ export const LoreMusicSection: React.FC<LoreMusicSectionProps> = ({
     const vid = extractYouTubeId(newSongYoutubeUrl);
     if (!vid || !newSongTitle.trim()) return;
     const newId = `song_${vid}_${Date.now()}`;
+    const pos = getDefaultNodePosition(songs.length);
     const newEntry: LoreSongData = {
       id: newId,
       videoId: vid,
       title: newSongTitle.trim(),
-      artist: newSongArtist.trim() || 'Salazar Dias',
+      artist: 'Salazar Dias',
       album: 'Light Dark Official Soundtrack',
       duration: newSongDuration.trim() || '3:30',
       coverUrl: `https://i.ytimg.com/vi/${vid}/hqdefault.jpg`,
+      backgroundUrl: `https://i.ytimg.com/vi/${vid}/maxresdefault.jpg`,
       loreTitle: '',
       loreContext: '',
+      chronologicalOrder: songs.length + 1,
+      nodeX: pos.x,
+      nodeY: pos.y,
       relatedCharacters: [],
       relatedCardIds: [],
       lyrics: []
     };
-    const nextList = [newEntry, ...songs];
-    await persistSongsToFirestore(nextList, 'Nova música adicionada à Lore!');
+    const nextList = [...songs, newEntry];
+    await persistToFirestore(nextList, connectionsRef.current, 'Música adicionada!');
     setNewSongYoutubeUrl('');
     setNewSongTitle('');
     setAdminMode('none');
-    handleSelectSong(newEntry, false);
+    setSelectedSongId(newEntry.id);
   };
 
   const handleDeleteSong = async (songId: string) => {
     if (songs.length <= 1) return;
-    const nextList = songs
-      .filter((s) => s.id !== songId)
-      .map((s, idx) => ({ ...s, chronologicalOrder: idx + 1 }));
-    await persistSongsToFirestore(nextList, 'Música removida.');
+    const nextList = songs.filter((s) => s.id !== songId);
+    const nextConns = connections.filter((c) => c.fromId !== songId && c.toId !== songId);
+    await persistToFirestore(nextList, nextConns, 'Música removida.');
     if (selectedSongId === songId && nextList[0]) {
-      handleSelectSong(nextList[0], false);
+      setSelectedSongId(nextList[0].id);
+    }
+    if (curiositiesSongId === songId) {
+      setCuriositiesSongId(null);
     }
   };
 
-  // Lista ordenada em Ordem Cronológica da Lore
-  const chronologicallySortedSongs = useMemo(() => {
-    return [...songs].sort((a, b) => {
-      const orderA = a.chronologicalOrder ?? 9999;
-      const orderB = b.chronologicalOrder ?? 9999;
-      if (orderA !== orderB) return orderA - orderB;
-      return 0;
+  // Tamanho total do canvas da Linha do Tempo Modular baseado nos blocos
+  const canvasDimensions = useMemo(() => {
+    let maxX = 1400;
+    let maxY = 340;
+    songs.forEach((s) => {
+      if (typeof s.nodeX === 'number' && s.nodeX + NODE_WIDTH + 120 > maxX) {
+        maxX = s.nodeX + NODE_WIDTH + 120;
+      }
+      if (typeof s.nodeY === 'number' && s.nodeY + NODE_HEIGHT + 80 > maxY) {
+        maxY = s.nodeY + NODE_HEIGHT + 80;
+      }
     });
+    return { width: maxX, height: maxY };
   }, [songs]);
 
-  // Mover música para cima ou para baixo na Ordem Cronológica
-  const handleMoveSongChronology = async (songId: string, direction: -1 | 1, saveImmediately = true) => {
-    const ordered = [...chronologicallySortedSongs];
-    const currentIdx = ordered.findIndex((s) => s.id === songId);
-    if (currentIdx < 0) return;
-    const targetIdx = currentIdx + direction;
-    if (targetIdx < 0 || targetIdx >= ordered.length) return;
+  const songMapById = useMemo(() => {
+    const map = new Map<string, LoreSongData>();
+    songs.forEach((s) => map.set(s.id, s));
+    return map;
+  }, [songs]);
 
-    const temp = ordered[currentIdx];
-    ordered[currentIdx] = ordered[targetIdx];
-    ordered[targetIdx] = temp;
-
-    const normalized = ordered.map((s, idx) => ({
-      ...s,
-      chronologicalOrder: idx + 1
-    }));
-
-    if (saveImmediately) {
-      await persistSongsToFirestore(normalized, 'Ordem cronológica atualizada!');
-    } else {
-      setSongs(normalized);
-    }
-  };
-
-  // Definir posição exata (ex: mover direto para a posição #1, #5, etc.)
-  const handleSetSongExactPosition = (songId: string, newPos1Based: number) => {
-    const ordered = [...chronologicallySortedSongs];
-    const currentIdx = ordered.findIndex((s) => s.id === songId);
-    if (currentIdx < 0) return;
-    const clampedTargetIdx = Math.max(0, Math.min(ordered.length - 1, newPos1Based - 1));
-    if (clampedTargetIdx === currentIdx) return;
-
-    const [moved] = ordered.splice(currentIdx, 1);
-    ordered.splice(clampedTargetIdx, 0, moved);
-
-    const normalized = ordered.map((s, idx) => ({
-      ...s,
-      chronologicalOrder: idx + 1
-    }));
-    setSongs(normalized);
-  };
-
-  const handleUpdateSongChronologicalEra = (songId: string, eraLabel: string) => {
-    setSongs((prev) =>
-      prev.map((s) => (s.id === songId ? { ...s, chronologicalEra: eraLabel } : s))
-    );
-  };
-
-  // Lista filtrada e ordenada de músicas na barra lateral
-  const filteredSongs = useMemo(() => {
-    const baseList =
-      sortMode === 'chronological'
-        ? chronologicallySortedSongs
-        : [...songs].sort((a, b) => a.title.localeCompare(b.title));
-
-    return baseList.filter((s) => {
-      const matchesSearch =
-        !searchQuery.trim() ||
-        s.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        s.artist.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (s.loreTitle || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (s.chronologicalEra || '').toLowerCase().includes(searchQuery.toLowerCase());
-      const hasLyricsOrLore =
-        !filterWithLyricsOnly ||
-        (s.lyrics && s.lyrics.length > 0) ||
-        Boolean(s.loreContext && s.loreContext.trim());
-      return matchesSearch && hasLyricsOrLore;
+  // Conjunto de músicas que já possuem pelo menos 1 ligação (traço)
+  const linkedSongIdsSet = useMemo(() => {
+    const set = new Set<string>();
+    connections.forEach((c) => {
+      if (songMapById.has(c.fromId) && songMapById.has(c.toId)) {
+        set.add(c.fromId);
+        set.add(c.toId);
+      }
     });
-  }, [songs, chronologicallySortedSongs, sortMode, searchQuery, filterWithLyricsOnly]);
+    return set;
+  }, [connections, songMapById]);
 
-  // Cartas vinculadas à música atual
-  const linkedCards = useMemo(() => {
-    if (!selectedSong?.relatedCardIds?.length) return [];
-    return cards.filter((c) => selectedSong.relatedCardIds?.includes(c.id));
-  }, [cards, selectedSong]);
+  const unlinkedSongsCount = useMemo(() => {
+    return songs.filter((s) => !linkedSongIdsSet.has(s.id)).length;
+  }, [songs, linkedSongIdsSet]);
 
-  const syncedLinesCount = useMemo(() => {
-    if (!selectedSong?.lyrics) return 0;
-    return selectedSong.lyrics.filter((l) => l.time !== null && l.time !== undefined).length;
-  }, [selectedSong]);
+  const curiositiesLinkedCards = useMemo(() => {
+    if (!curiositiesSong?.relatedCardIds?.length) return [];
+    return cards.filter((c) => curiositiesSong.relatedCardIds?.includes(c.id));
+  }, [cards, curiositiesSong]);
+
+  const bgImageSrc =
+    selectedSong?.backgroundUrl ||
+    selectedSong?.coverUrl ||
+    'https://i.ytimg.com/vi/OD4j3ot0l8U/maxresdefault.jpg';
 
   return (
-    <div className="max-w-[1440px] mx-auto px-4 sm:px-6 pt-6 pb-28 text-slate-200">
-      {/* Cabeçalho da Seção Músicas & Lore */}
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-6 border-b border-[rgba(var(--primary-rgb),0.25)] pb-5">
-        <div>
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-300 text-[11px] font-bold uppercase tracking-widest mb-2">
-            <Music size={13} /> Trilha Sonora Oficial • Letras Sincronizadas & Lore
-          </div>
-          <h2 className="font-cinzel text-3xl sm:text-4xl font-black text-white tracking-wider uppercase">
-            Músicas do <span className="text-theme">Macroverso</span>
-          </h2>
-          <p className="text-xs sm:text-sm text-slate-400 mt-1 max-w-2xl">
-            Selecione uma música para ouvir, acompanhar a letra original e traduzida em tempo real e descobrir a história e o contexto de cada canção dentro da Lore.
-          </p>
-        </div>
+    <div className="fixed inset-0 z-[150] bg-[#08070b] text-white overflow-hidden flex flex-col select-none">
+      {/* YouTube Player Oculto (Áudio em Tempo Real) */}
+      <div className="fixed -left-[9999px] -top-[9999px] w-1 h-1 overflow-hidden pointer-events-none opacity-0">
+        <div id="yt-lore-music-player" />
+      </div>
 
+      {/* IMAGEM DE FUNDO EM TELA CHEIA COM ZOOM DE ENQUADRAMENTO (REMOVE BORDAS DO YOUTUBE) */}
+      <div className="absolute inset-0 pointer-events-none overflow-hidden">
+        <img
+          src={bgImageSrc}
+          alt=""
+          onError={(e) => {
+            if (selectedSong?.coverUrl && e.currentTarget.src !== selectedSong.coverUrl) {
+              e.currentTarget.src = selectedSong.coverUrl;
+            }
+          }}
+          className="w-full h-full object-cover object-center opacity-40 scale-[1.35] transition-all duration-700"
+        />
+        <div
+          className="absolute inset-0"
+          style={{
+            background:
+              'radial-gradient(circle at 50% 35%, rgba(25,12,12,0.3) 0%, rgba(7,7,11,0.86) 75%, rgba(5,5,8,0.97) 100%)'
+          }}
+        />
+      </div>
+
+      {/* TOPO: CONTROLES EXCLUSIVOS DO ADMIN + CONTROLES DE ZOOM DA TIMELINE + BOTÃO FECHAR JANELA */}
+      <div className="relative z-30 flex items-center justify-between px-4 sm:px-6 pt-3 pb-1 gap-2 flex-wrap">
         <div className="flex flex-wrap items-center gap-2">
-          {saveFeedback && (
-            <div className="px-3 py-1.5 rounded-lg bg-emerald-950/90 border border-emerald-500/50 text-emerald-300 text-xs font-bold flex items-center gap-1.5 animate-fade-in">
-              <Check size={14} /> {saveFeedback}
-            </div>
-          )}
-
           {isAdmin && (
             <>
               <button
                 type="button"
-                onClick={() =>
-                  setAdminMode(adminMode === 'bulk_lyrics' ? 'none' : 'bulk_lyrics')
-                }
-                className={`px-3.5 py-2 rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 border transition ${
-                  adminMode === 'bulk_lyrics'
-                    ? 'bg-amber-500 text-slate-950 border-amber-400 shadow-lg'
-                    : 'bg-[#101018] hover:bg-[#181824] text-amber-300 border-amber-500/40'
+                onClick={() => {
+                  setIsLinkingMode((v) => !v);
+                  setLinkSourceSongId(null);
+                }}
+                className={`px-3 py-1.5 rounded-xl text-[11px] font-black uppercase tracking-wider flex items-center gap-1.5 border transition shadow-lg ${
+                  isLinkingMode
+                    ? 'bg-white text-slate-950 border-white'
+                    : 'bg-black/70 hover:bg-black/90 text-slate-200 border-white/20'
                 }`}
+                title="Clique em uma música e depois em outra para criar ou remover um traço branco entre elas"
               >
-                <FileText size={14} /> Colar / Editar Letras
+                <Link2 size={13} />
+                <span>
+                  {isLinkingMode
+                    ? linkSourceSongId
+                      ? 'Clique na 2ª Música...'
+                      : 'Modo Linkar Traços (Ativo)'
+                    : 'Linkar com Traços'}
+                </span>
               </button>
 
               <button
@@ -1224,13 +1433,13 @@ export const LoreMusicSection: React.FC<LoreMusicSectionProps> = ({
                 onClick={() =>
                   setAdminMode(adminMode === 'sync_studio' ? 'none' : 'sync_studio')
                 }
-                className={`px-3.5 py-2 rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 border transition ${
-                  adminMode === 'sync_studio'
-                    ? 'bg-emerald-500 text-slate-950 border-emerald-400 shadow-lg'
-                    : 'bg-[#101018] hover:bg-[#181824] text-emerald-300 border-emerald-500/40'
+                className={`px-3 py-1.5 rounded-xl text-[11px] font-black uppercase tracking-wider flex items-center gap-1.5 border transition shadow-lg ${
+                  adminMode === 'sync_studio' || adminMode === 'bulk_lyrics'
+                    ? 'bg-emerald-500 text-slate-950 border-emerald-400'
+                    : 'bg-black/70 hover:bg-black/90 text-emerald-300 border-emerald-500/40'
                 }`}
               >
-                <Clock size={14} /> Sincronizar Letra
+                <Clock size={13} /> Sincronizar / Letra
               </button>
 
               <button
@@ -1238,27 +1447,13 @@ export const LoreMusicSection: React.FC<LoreMusicSectionProps> = ({
                 onClick={() =>
                   setAdminMode(adminMode === 'edit_lore' ? 'none' : 'edit_lore')
                 }
-                className={`px-3.5 py-2 rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 border transition ${
+                className={`px-3 py-1.5 rounded-xl text-[11px] font-black uppercase tracking-wider flex items-center gap-1.5 border transition shadow-lg ${
                   adminMode === 'edit_lore'
-                    ? 'bg-purple-500 text-white border-purple-400 shadow-lg'
-                    : 'bg-[#101018] hover:bg-[#181824] text-purple-300 border-purple-500/40'
+                    ? 'bg-purple-500 text-white border-purple-400'
+                    : 'bg-black/70 hover:bg-black/90 text-purple-300 border-purple-500/40'
                 }`}
               >
-                <BookOpen size={14} /> Editar Contexto & Lore
-              </button>
-
-              <button
-                type="button"
-                onClick={() =>
-                  setAdminMode(adminMode === 'chronology' ? 'none' : 'chronology')
-                }
-                className={`px-3.5 py-2 rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 border transition ${
-                  adminMode === 'chronology'
-                    ? 'bg-amber-500 text-slate-950 border-amber-400 shadow-lg'
-                    : 'bg-[#101018] hover:bg-[#181824] text-amber-300 border-amber-500/40'
-                }`}
-              >
-                <ListOrdered size={14} /> Ordem Cronológica
+                <BookOpen size={13} /> Editar Curiosidades
               </button>
 
               <button
@@ -1266,1023 +1461,726 @@ export const LoreMusicSection: React.FC<LoreMusicSectionProps> = ({
                 onClick={() =>
                   setAdminMode(adminMode === 'add_song' ? 'none' : 'add_song')
                 }
-                className={`px-3 py-2 rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-1 border transition ${
+                className={`px-3 py-1.5 rounded-xl text-[11px] font-black uppercase tracking-wider flex items-center gap-1 border transition shadow-lg ${
                   adminMode === 'add_song'
-                    ? 'bg-cyan-500 text-slate-950 border-cyan-400'
-                    : 'bg-[#101018] hover:bg-[#181824] text-cyan-300 border-cyan-500/40'
+                    ? 'bg-amber-500 text-slate-950 border-amber-400'
+                    : 'bg-black/70 hover:bg-black/90 text-amber-300 border-amber-500/40'
                 }`}
               >
-                <Plus size={14} /> Nova Música
+                <Plus size={13} /> Nova Música
               </button>
+
+              {unlinkedSongsCount > 0 && (
+                <span
+                  className="px-2.5 py-1.5 rounded-xl bg-rose-950/90 border border-rose-500/60 text-rose-300 text-[11px] font-black uppercase tracking-wider flex items-center gap-1.5 shadow-lg"
+                  title="Músicas marcadas em vermelho na linha do tempo ainda não possuem nenhum traço de ligação"
+                >
+                  <Unlink size={12} className="text-rose-400" />
+                  <span>{unlinkedSongsCount} sem ligação</span>
+                </span>
+              )}
+
+              {saveFeedback && (
+                <span className="px-2.5 py-1 rounded-lg bg-emerald-950/90 border border-emerald-500/50 text-emerald-300 text-[11px] font-bold flex items-center gap-1">
+                  <Check size={12} /> {saveFeedback}
+                </span>
+              )}
             </>
+          )}
+        </div>
+
+        {/* CONTROLES DE ZOOM DA TIMELINE + BOTÃO FECHAR */}
+        <div className="flex items-center gap-2 ml-auto">
+          <div className="flex items-center gap-1 bg-black/75 border border-white/20 rounded-xl px-2 py-1 shadow-xl">
+            <button
+              type="button"
+              onClick={() => handleAdjustTimelineZoom(-0.15)}
+              disabled={timelineZoom <= MIN_TIMELINE_ZOOM}
+              className="p-1 rounded-lg hover:bg-white/10 disabled:opacity-35 text-slate-200 hover:text-white transition"
+              title="Diminuir Zoom da Linha do Tempo"
+            >
+              <ZoomOut size={14} />
+            </button>
+            <input
+              type="range"
+              min={MIN_TIMELINE_ZOOM}
+              max={MAX_TIMELINE_ZOOM}
+              step={0.05}
+              value={timelineZoom}
+              onChange={(e) => setTimelineZoom(parseFloat(e.target.value))}
+              className="w-16 sm:w-20 accent-white h-1 bg-slate-700 rounded-lg cursor-pointer"
+              title="Zoom da Linha do Tempo"
+            />
+            <span className="text-[10px] font-mono font-bold text-slate-300 w-9 text-center">
+              {Math.round(timelineZoom * 100)}%
+            </span>
+            <button
+              type="button"
+              onClick={() => handleAdjustTimelineZoom(0.15)}
+              disabled={timelineZoom >= MAX_TIMELINE_ZOOM}
+              className="p-1 rounded-lg hover:bg-white/10 disabled:opacity-35 text-slate-200 hover:text-white transition"
+              title="Aumentar Zoom da Linha do Tempo"
+            >
+              <ZoomIn size={14} />
+            </button>
+            {Math.abs(timelineZoom - 1) > 0.01 && (
+              <button
+                type="button"
+                onClick={() => setTimelineZoom(1)}
+                className="p-1 rounded-lg hover:bg-white/10 text-amber-300 hover:text-amber-200 transition"
+                title="Resetar Zoom (100%)"
+              >
+                <RotateCcw size={12} />
+              </button>
+            )}
+          </div>
+
+          {onClose && (
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-3.5 py-1.5 rounded-xl bg-black/70 hover:bg-black/90 border border-white/20 text-slate-200 hover:text-white text-xs font-bold uppercase tracking-widest flex items-center gap-1.5 shadow-xl transition"
+            >
+              <X size={15} /> Fechar
+            </button>
           )}
         </div>
       </div>
 
-      {/* Painel para Organizar as Músicas em Ordem Cronológica da Lore (Admin) */}
-      {isAdmin && adminMode === 'chronology' && (
-        <div className="mb-6 p-5 rounded-2xl bg-[#0e0e18] border border-amber-500/50 shadow-2xl">
-          <div className="flex flex-wrap items-center justify-between gap-3 mb-4 pb-3 border-b border-white/10">
-            <div>
-              <h3 className="font-cinzel text-sm sm:text-base font-black uppercase tracking-wider text-amber-300 flex items-center gap-2">
-                <ListOrdered size={17} /> Organizar Músicas em Ordem Cronológica da Lore
-              </h3>
-              <p className="text-xs text-slate-400 mt-0.5">
-                Defina a sequência cronológica das músicas na história (1ª, 2ª, 3ª...) usando as setas ou digitando a posição desejada, e adicione opcionalmente a Era/Período de cada faixa.
+      {/* ÁREA SUPERIOR CENTRAL: LETRA GRANDE SENDO EXIBIDA + TRADUÇÃO MENOR (IGUAL AO RASCUNHO) */}
+      <div className="relative z-10 flex-1 min-h-[180px] flex flex-col items-center justify-center px-6 text-center pointer-events-none">
+        {activeLyricLine ? (
+          <div className="max-w-5xl mx-auto transition-all duration-300">
+            <p className="text-2xl sm:text-4xl md:text-5xl font-semibold text-white tracking-wide leading-tight drop-shadow-[0_4px_24px_rgba(0,0,0,0.95)]">
+              {activeLyricLine.original || '♪'}
+            </p>
+            {activeLyricLine.translation && (
+              <p className="mt-2 sm:mt-3 text-base sm:text-xl md:text-2xl font-normal text-white/90 tracking-wide drop-shadow-[0_2px_16px_rgba(0,0,0,0.95)]">
+                {activeLyricLine.translation}
               </p>
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                disabled={saving}
-                onClick={async () => {
-                  const normalized = chronologicallySortedSongs.map((s, idx) => ({
-                    ...s,
-                    chronologicalOrder: idx + 1
-                  }));
-                  await persistSongsToFirestore(
-                    normalized,
-                    'Ordem cronológica das músicas salva com sucesso!'
-                  );
-                  setAdminMode('none');
-                }}
-                className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs uppercase tracking-wider flex items-center gap-1.5 shadow-lg"
-              >
-                <Save size={14} /> {saving ? 'Salvando...' : 'Salvar Ordem Cronológica'}
-              </button>
-              <button
-                type="button"
-                onClick={() => setAdminMode('none')}
-                className="p-2 text-slate-400 hover:text-white"
-              >
-                <X size={16} />
-              </button>
-            </div>
+            )}
           </div>
+        ) : (
+          <div className="max-w-4xl mx-auto">
+            <p className="text-2xl sm:text-4xl md:text-5xl font-semibold text-white/90 tracking-wide drop-shadow-[0_4px_24px_rgba(0,0,0,0.95)]">
+              {selectedSong?.title || ''}
+            </p>
+            {selectedSong?.loreTitle && (
+              <p className="mt-2 text-base sm:text-xl md:text-2xl text-white/75 drop-shadow-[0_2px_16px_rgba(0,0,0,0.95)]">
+                {selectedSong.loreTitle}
+              </p>
+            )}
+          </div>
+        )}
+      </div>
 
-          <div className="max-h-96 overflow-y-auto space-y-2 pr-1 custom-scrollbar">
-            {chronologicallySortedSongs.map((song, idx) => (
-              <div
-                key={song.id}
-                className="p-2.5 rounded-xl bg-[#141422] border border-white/10 hover:border-amber-500/40 flex flex-wrap sm:flex-nowrap items-center gap-3 transition"
-              >
-                {/* Seletor / Número da Posição Cronológica */}
-                <div className="flex items-center gap-1.5 shrink-0">
-                  <span className="text-[10px] font-mono uppercase text-amber-400 font-bold">
-                    Posição:
-                  </span>
-                  <select
-                    value={idx + 1}
-                    onChange={(e) =>
-                      handleSetSongExactPosition(song.id, Number(e.target.value))
-                    }
-                    className="bg-black border border-amber-500/40 rounded-lg px-2 py-1 text-xs font-mono font-black text-amber-300"
-                    title="Mudar posição cronológica diretamente"
-                  >
-                    {chronologicallySortedSongs.map((_, posIdx) => (
-                      <option key={posIdx + 1} value={posIdx + 1}>
-                        {posIdx + 1}º na Lore
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Botões Subir / Descer */}
-                <div className="flex items-center gap-1 shrink-0">
-                  <button
-                    type="button"
-                    disabled={idx === 0}
-                    onClick={() => handleMoveSongChronology(song.id, -1, false)}
-                    className="p-1.5 rounded-lg bg-white/5 hover:bg-white/15 disabled:opacity-30 text-slate-200"
-                    title="Subir na cronologia"
-                  >
-                    <ArrowUp size={13} />
-                  </button>
-                  <button
-                    type="button"
-                    disabled={idx === chronologicallySortedSongs.length - 1}
-                    onClick={() => handleMoveSongChronology(song.id, 1, false)}
-                    className="p-1.5 rounded-lg bg-white/5 hover:bg-white/15 disabled:opacity-30 text-slate-200"
-                    title="Descer na cronologia"
-                  >
-                    <ArrowDown size={13} />
-                  </button>
-                </div>
-
-                <img
-                  src={song.coverUrl}
-                  alt={song.title}
-                  className="w-9 h-9 rounded-lg object-cover border border-white/10 shrink-0"
-                />
-
-                <div className="min-w-0 flex-1">
-                  <p className="text-xs font-bold text-white truncate">{song.title}</p>
-                  <p className="text-[10px] text-slate-400 truncate">
-                    {song.loreTitle || song.artist}
-                  </p>
-                </div>
-
-                {/* Campo opcional de Era / Momento Cronológico */}
-                <div className="w-full sm:w-56 shrink-0">
-                  <input
-                    type="text"
-                    value={song.chronologicalEra || ''}
-                    onChange={(e) =>
-                      handleUpdateSongChronologicalEra(song.id, e.target.value)
-                    }
-                    placeholder="Era / Marco (ex: Era Primordial, Ato I...)"
-                    className="w-full bg-black/60 border border-white/15 focus:border-amber-500/50 rounded-lg px-2.5 py-1.5 text-[11px] text-amber-200 outline-none"
+      {/* ÁREA INFERIOR: LINHA DO TEMPO MODULAR COM ZOOM, BLOCOS ARRASTÁVEIS E TRAÇOS BRANCOS */}
+      <div
+        ref={timelineCanvasRef}
+        onWheel={(e) => {
+          if (e.ctrlKey || e.metaKey) {
+            e.preventDefault();
+            handleAdjustTimelineZoom(e.deltaY < 0 ? 0.1 : -0.1);
+          }
+        }}
+        className="relative z-20 h-[52vh] min-h-[310px] w-full overflow-auto custom-scrollbar"
+      >
+        {/* Wrapper dimensionado pelo Zoom para scroll natural */}
+        <div
+          className="relative mx-auto"
+          style={{
+            width: `${Math.round(canvasDimensions.width * timelineZoom)}px`,
+            height: `${Math.round(canvasDimensions.height * timelineZoom)}px`
+          }}
+        >
+          {/* Canvas escalado pelo timelineZoom */}
+          <div
+            className="relative origin-top-left transition-transform duration-75"
+            style={{
+              width: `${canvasDimensions.width}px`,
+              height: `${canvasDimensions.height}px`,
+              transform: `scale(${timelineZoom})`
+            }}
+          >
+            {/* CAMADA SVG DOS TRAÇOS BRANCOS CONECTANDO AS MÚSICAS */}
+            <svg
+              className="absolute inset-0 pointer-events-none"
+              width={canvasDimensions.width}
+              height={canvasDimensions.height}
+            >
+              {connections.map((conn, idx) => {
+                const fromSong = songMapById.get(conn.fromId);
+                const toSong = songMapById.get(conn.toId);
+                if (!fromSong || !toSong) return null;
+                const x1 = (fromSong.nodeX ?? 0) + NODE_WIDTH / 2;
+                const y1 = (fromSong.nodeY ?? 0) + NODE_HEIGHT / 2;
+                const x2 = (toSong.nodeX ?? 0) + NODE_WIDTH / 2;
+                const y2 = (toSong.nodeY ?? 0) + NODE_HEIGHT / 2;
+                return (
+                  <line
+                    key={`${conn.fromId}_${conn.toId}_${idx}`}
+                    x1={x1}
+                    y1={y1}
+                    x2={x2}
+                    y2={y2}
+                    stroke="#ffffff"
+                    strokeWidth={7}
+                    strokeLinecap="round"
                   />
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+                );
+              })}
+            </svg>
 
-      {/* Modal/Painel para Adicionar Nova Música (Admin) */}
-      {isAdmin && adminMode === 'add_song' && (
-        <div className="mb-6 p-5 rounded-2xl bg-[#0e0e16] border border-cyan-500/40 shadow-2xl">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="font-cinzel text-sm sm:text-base font-black uppercase tracking-wider text-cyan-300 flex items-center gap-2">
-              <Plus size={16} /> Adicionar Música à Lore
-            </h3>
-            <button
-              type="button"
-              onClick={() => setAdminMode('none')}
-              className="text-slate-400 hover:text-white"
-            >
-              <X size={16} />
-            </button>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
-            <div>
-              <label className="block text-[11px] font-bold uppercase text-slate-400 mb-1">
-                Link ou ID do YouTube *
-              </label>
-              <input
-                type="text"
-                value={newSongYoutubeUrl}
-                onChange={(e) => setNewSongYoutubeUrl(e.target.value)}
-                placeholder="Ex: https://youtu.be/OD4j3ot0l8U"
-                className="w-full bg-black/60 border border-white/15 rounded-lg px-3 py-2 text-xs text-white"
-              />
-            </div>
-            <div>
-              <label className="block text-[11px] font-bold uppercase text-slate-400 mb-1">
-                Nome da Música *
-              </label>
-              <input
-                type="text"
-                value={newSongTitle}
-                onChange={(e) => setNewSongTitle(e.target.value)}
-                placeholder="Ex: The Dragon and Elf"
-                className="w-full bg-black/60 border border-white/15 rounded-lg px-3 py-2 text-xs text-white"
-              />
-            </div>
-            <div>
-              <label className="block text-[11px] font-bold uppercase text-slate-400 mb-1">
-                Artista / Compositor
-              </label>
-              <input
-                type="text"
-                value={newSongArtist}
-                onChange={(e) => setNewSongArtist(e.target.value)}
-                placeholder="Salazar Dias"
-                className="w-full bg-black/60 border border-white/15 rounded-lg px-3 py-2 text-xs text-white"
-              />
-            </div>
-            <div>
-              <label className="block text-[11px] font-bold uppercase text-slate-400 mb-1">
-                Duração
-              </label>
-              <input
-                type="text"
-                value={newSongDuration}
-                onChange={(e) => setNewSongDuration(e.target.value)}
-                placeholder="3:45"
-                className="w-full bg-black/60 border border-white/15 rounded-lg px-3 py-2 text-xs text-white"
-              />
-            </div>
-          </div>
-          <div className="flex justify-end gap-2 mt-4">
-            <button
-              type="button"
-              onClick={() => setAdminMode('none')}
-              className="px-4 py-2 rounded-lg border border-white/15 text-xs text-slate-300"
-            >
-              Cancelar
-            </button>
-            <button
-              type="button"
-              onClick={handleCreateNewSong}
-              disabled={!newSongYoutubeUrl.trim() || !newSongTitle.trim() || saving}
-              className="px-4 py-2 rounded-lg bg-cyan-500 hover:bg-cyan-400 disabled:opacity-40 text-slate-950 font-black text-xs uppercase tracking-wider"
-            >
-              Adicionar Música
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Layout Principal em 3 Colunas (Desktop): Lista de Músicas | Letra Sincronizada + Player | Contexto & Lore */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        {/* COLUNA 1: Catálogo de Músicas (3 cols) */}
-        <div className="lg:col-span-3 bg-[#0b0b12] border border-white/10 rounded-2xl p-4 shadow-xl flex flex-col max-h-[780px]">
-          <div className="flex items-center justify-between gap-2 mb-2.5">
-            <h3 className="font-cinzel text-sm font-black uppercase tracking-wider text-amber-400 flex items-center gap-2">
-              <Disc3 size={16} className={isPlaying ? 'animate-spin text-amber-400' : 'text-amber-400'} />
-              Faixas ({filteredSongs.length})
-            </h3>
-            <button
-              type="button"
-              onClick={() => setFilterWithLyricsOnly((v) => !v)}
-              className={`text-[10px] px-2 py-0.5 rounded border font-bold uppercase transition ${
-                filterWithLyricsOnly
-                  ? 'bg-amber-500/20 border-amber-400 text-amber-300'
-                  : 'border-white/10 text-slate-400 hover:text-white'
-              }`}
-              title="Filtrar músicas que já possuem letra ou lore cadastrada"
-            >
-              {filterWithLyricsOnly ? 'Com Letra/Lore' : 'Todas'}
-            </button>
-          </div>
-
-          {/* Seletor de Ordenação: Ordem Cronológica vs A-Z */}
-          <div className="flex items-center gap-1 bg-black/50 border border-white/10 rounded-xl p-1 mb-3">
-            <button
-              type="button"
-              onClick={() => setSortMode('chronological')}
-              className={`flex-1 py-1 px-2 rounded-lg text-[10px] font-black uppercase tracking-wider flex items-center justify-center gap-1 transition ${
-                sortMode === 'chronological'
-                  ? 'bg-amber-500 text-slate-950 shadow'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              <ListOrdered size={12} /> Ordem Cronológica
-            </button>
-            <button
-              type="button"
-              onClick={() => setSortMode('alphabetical')}
-              className={`py-1 px-2.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition ${
-                sortMode === 'alphabetical'
-                  ? 'bg-amber-500 text-slate-950 shadow'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              A–Z
-            </button>
-          </div>
-
-          <div className="relative mb-3">
-            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Buscar música ou era..."
-              className="w-full bg-black/50 border border-white/10 focus:border-amber-500/50 rounded-xl pl-8 pr-3 py-2 text-xs text-white outline-none"
-            />
-          </div>
-
-          <div className="overflow-y-auto space-y-1.5 pr-1 custom-scrollbar flex-1">
-            {filteredSongs.map((song, idx) => {
+            {/* BLOCOS DE CADA MÚSICA (IMAGEM ENQUADRADA COM ZOOM, NOME, TEMPO E BOTÃO DE PLAY) */}
+            {songs.map((song, idx) => {
               const isSelected = selectedSong?.id === song.id;
-              const hasLyrics = song.lyrics && song.lyrics.length > 0;
-              const hasLore = Boolean(song.loreContext && song.loreContext.trim());
-              const chronoIndex =
-                chronologicallySortedSongs.findIndex((s) => s.id === song.id) + 1;
+              const isThisPlaying = isSelected && isPlaying;
+              const isLinkSource = isLinkingMode && linkSourceSongId === song.id;
+              const isUnlinked = !linkedSongIdsSet.has(song.id);
+              const pos = {
+                x: typeof song.nodeX === 'number' ? song.nodeX : getDefaultNodePosition(idx).x,
+                y: typeof song.nodeY === 'number' ? song.nodeY : getDefaultNodePosition(idx).y
+              };
+
               return (
                 <div
                   key={song.id}
-                  onClick={() => handleSelectSong(song, true)}
-                  className={`group p-2.5 rounded-xl border cursor-pointer transition flex items-center gap-2.5 ${
-                    isSelected
-                      ? 'bg-amber-500/15 border-amber-400/70 text-white shadow-[0_0_20px_rgba(245,158,11,0.15)]'
-                      : 'bg-[#10101a]/70 border-white/5 hover:border-white/20 text-slate-300'
+                  onPointerDown={(e) => handleNodePointerDown(e, song)}
+                  onClick={() => {
+                    if (dragOffsetRef.current.moved) {
+                      dragOffsetRef.current.moved = false;
+                      return;
+                    }
+                    handleClickSongBlock(song);
+                  }}
+                  style={{
+                    left: `${pos.x}px`,
+                    top: `${pos.y}px`,
+                    width: `${NODE_WIDTH}px`
+                  }}
+                  className={`absolute rounded-2xl bg-[#101217] p-2.5 shadow-[0_12px_30px_rgba(0,0,0,0.85)] transition-shadow flex flex-col items-center ${
+                    isAdmin && !isLinkingMode ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'
+                  } ${
+                    isLinkSource
+                      ? 'ring-4 ring-white'
+                      : isAdmin && isUnlinked
+                      ? 'ring-2 ring-rose-500 shadow-[0_0_24px_rgba(244,63,94,0.45)]'
+                      : isSelected
+                      ? 'ring-2 ring-amber-400 shadow-[0_0_25px_rgba(245,158,11,0.35)]'
+                      : 'hover:ring-1 hover:ring-white/40'
                   }`}
                 >
-                  <div className="relative w-11 h-11 rounded-lg overflow-hidden shrink-0 bg-black border border-white/10">
+                  {/* Marcação exclusiva para o Admin quando a música não tem nenhuma ligação */}
+                  {isAdmin && isUnlinked && (
+                    <div
+                      className="absolute -top-2.5 left-1/2 -translate-x-1/2 z-20 px-2 py-0.5 rounded-full bg-rose-600 text-white text-[9px] font-black uppercase tracking-wider flex items-center gap-1 shadow-lg whitespace-nowrap border border-rose-300/60"
+                      title="Esta música ainda não está ligada a nenhuma outra na linha do tempo"
+                    >
+                      <Unlink size={9} />
+                      <span>Sem Ligação</span>
+                    </div>
+                  )}
+
+                  {/* Imagem Quadrada da Música Enquadrada com Zoom na Moldura + Botão de Play */}
+                  <div className="relative w-20 h-20 rounded-xl overflow-hidden bg-black shrink-0 group border border-white/10">
                     <img
                       src={song.coverUrl}
                       alt={song.title}
-                      className="w-full h-full object-cover"
+                      draggable={false}
+                      className="w-full h-full object-cover object-center scale-[1.36] transition-transform duration-300 group-hover:scale-[1.44]"
                     />
-                    <div
-                      className={`absolute inset-0 bg-black/50 flex items-center justify-center transition ${
-                        isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+                    <button
+                      type="button"
+                      data-play-btn="true"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handlePlayOrToggleSong(song);
+                      }}
+                      className={`absolute inset-0 flex items-center justify-center bg-black/45 transition ${
+                        isThisPlaying ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
                       }`}
+                      title={isThisPlaying ? 'Pausar' : 'Tocar'}
                     >
-                      {isSelected && isPlaying ? (
-                        <Pause size={16} className="text-amber-400" />
-                      ) : (
-                        <Play size={16} className="text-white fill-white ml-0.5" />
-                      )}
-                    </div>
+                      <div className="w-9 h-9 rounded-full bg-black/80 border border-white/30 flex items-center justify-center text-white shadow-lg">
+                        {isThisPlaying ? (
+                          <Pause size={16} />
+                        ) : (
+                          <Play size={16} className="fill-white ml-0.5" />
+                        )}
+                      </div>
+                    </button>
                   </div>
 
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center justify-between gap-1">
-                      <p className="text-xs font-bold truncate text-white">
-                        <span className="text-amber-400 font-mono mr-1">
-                          #{chronoIndex > 0 ? chronoIndex : idx + 1}
-                        </span>
-                        {song.title}
-                      </p>
-                      <span className="text-[10px] font-mono text-slate-500 shrink-0">
-                        {song.duration}
-                      </span>
-                    </div>
-                    <p className="text-[11px] text-slate-400 truncate">
-                      {song.chronologicalEra ? (
-                        <span className="text-amber-300/90 font-semibold">
-                          {song.chronologicalEra}
-                        </span>
-                      ) : (
-                        song.artist
-                      )}
-                    </p>
-                    <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-                      {hasLyrics && (
-                        <span className="text-[9px] px-1.5 py-0.2 rounded bg-emerald-950/80 border border-emerald-500/40 text-emerald-300 font-bold uppercase">
-                          Letra ({song.lyrics.length})
-                        </span>
-                      )}
-                      {hasLore && (
-                        <span className="text-[9px] px-1.5 py-0.2 rounded bg-purple-950/80 border border-purple-500/40 text-purple-300 font-bold uppercase">
-                          Lore
-                        </span>
-                      )}
-                    </div>
-                  </div>
+                  {/* Nome da Música */}
+                  <p className="mt-2 text-xs font-extrabold text-white text-center leading-tight line-clamp-2 w-full">
+                    {song.title}
+                  </p>
 
-                  {/* Controles rápidos de Subir/Descer na Ordem Cronológica + Excluir (Admin) */}
-                  {isAdmin && (
-                    <div
-                      className="flex flex-col items-center gap-0.5 shrink-0"
-                      onClick={(e) => e.stopPropagation()}
+                  {/* Tempo e Botão de Play Compacto */}
+                  <div className="mt-1.5 w-full flex items-center justify-between px-1 pt-1 border-t border-white/10">
+                    <span className="text-[10px] font-mono text-slate-400">
+                      {song.duration}
+                    </span>
+                    <button
+                      type="button"
+                      data-play-btn="true"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handlePlayOrToggleSong(song);
+                      }}
+                      className={`w-6 h-6 rounded-full flex items-center justify-center transition ${
+                        isThisPlaying
+                          ? 'bg-amber-500 text-slate-950'
+                          : 'bg-white/10 hover:bg-white/25 text-white'
+                      }`}
+                      title={isThisPlaying ? 'Pausar' : 'Tocar'}
                     >
-                      {sortMode === 'chronological' && !searchQuery.trim() && !filterWithLyricsOnly && (
-                        <div className="flex items-center gap-0.5">
-                          <button
-                            type="button"
-                            disabled={chronoIndex <= 1}
-                            onClick={() => handleMoveSongChronology(song.id, -1, true)}
-                            className="p-1 text-slate-400 hover:text-amber-300 disabled:opacity-25 transition"
-                            title="Subir na ordem cronológica"
-                          >
-                            <ArrowUp size={12} />
-                          </button>
-                          <button
-                            type="button"
-                            disabled={chronoIndex >= chronologicallySortedSongs.length}
-                            onClick={() => handleMoveSongChronology(song.id, 1, true)}
-                            className="p-1 text-slate-400 hover:text-amber-300 disabled:opacity-25 transition"
-                            title="Descer na ordem cronológica"
-                          >
-                            <ArrowDown size={12} />
-                          </button>
-                        </div>
+                      {isThisPlaying ? (
+                        <Pause size={11} />
+                      ) : (
+                        <Play size={11} className="fill-current ml-0.5" />
                       )}
-                      {songs.length > 1 && (
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteSong(song.id)}
-                          className="opacity-0 group-hover:opacity-100 p-1 text-slate-500 hover:text-rose-400 transition"
-                          title="Remover música"
-                        >
-                          <Trash2 size={12} />
-                        </button>
-                      )}
-                    </div>
-                  )}
+                    </button>
+                  </div>
                 </div>
               );
             })}
           </div>
         </div>
+      </div>
 
-        {/* COLUNA 2: Player + Acompanhamento da Letra Sincronizada (Original & Traduzida) (5 cols) */}
-        <div className="lg:col-span-5 flex flex-col gap-4">
-          {/* Card do Player da Música Selecionada */}
-          {selectedSong && (
-            <div className="bg-gradient-to-br from-[#12121f] via-[#0d0d16] to-[#090910] border border-amber-500/30 rounded-2xl p-4 shadow-2xl">
-              <div className="flex items-center gap-4">
-                <img
-                  src={selectedSong.coverUrl}
-                  alt={selectedSong.title}
-                  className="w-16 h-16 sm:w-20 sm:h-20 rounded-xl object-cover border border-amber-500/40 shadow-lg shrink-0"
-                />
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-[10px] font-mono uppercase tracking-widest text-amber-400 font-bold">
-                      Tocando na Lore
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setShowVideoFrame((v) => !v)}
-                      className="text-[10px] text-slate-400 hover:text-white flex items-center gap-1 border border-white/10 px-2 py-0.5 rounded-md"
-                    >
-                      {showVideoFrame ? <EyeOff size={11} /> : <Eye size={11} />}
-                      <span>{showVideoFrame ? 'Ocultar Vídeo' : 'Ver Vídeo'}</span>
-                    </button>
-                  </div>
-                  <h3 className="font-cinzel text-lg sm:text-xl font-black text-white truncate mt-0.5">
-                    {selectedSong.title}
+      {/* BARRA INFERIOR COMPACTA DE ÁUDIO (PLAY/PAUSE, TEMPO E BOTÃO DE CURIOSIDADES) */}
+      {selectedSong && (
+        <div className="relative z-30 bg-[#0a0b0f]/95 border-t border-white/10 px-4 sm:px-6 py-2.5 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <button
+              type="button"
+              onClick={() => handlePlayOrToggleSong(selectedSong)}
+              className="w-9 h-9 rounded-full bg-white hover:bg-slate-200 text-slate-950 flex items-center justify-center shrink-0 shadow"
+            >
+              {isPlaying ? (
+                <Pause size={16} />
+              ) : (
+                <Play size={16} className="fill-slate-950 ml-0.5" />
+              )}
+            </button>
+            <div className="min-w-0">
+              <p className="text-xs sm:text-sm font-bold text-white truncate">
+                {selectedSong.title}
+              </p>
+              <p className="text-[10px] font-mono text-slate-400">
+                {formatSecondsShort(currentTime)} /{' '}
+                {durationSec > 0 ? formatSecondsShort(durationSec) : selectedSong.duration}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex-1 max-w-md mx-2 hidden sm:block">
+            <input
+              type="range"
+              min={0}
+              max={durationSec > 0 ? durationSec : 240}
+              step={0.1}
+              value={Math.min(currentTime, durationSec > 0 ? durationSec : 240)}
+              onChange={(e) => seekToSeconds(parseFloat(e.target.value), false)}
+              className="w-full accent-white h-1 bg-slate-800 rounded-lg cursor-pointer"
+            />
+          </div>
+
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() =>
+                setCuriositiesSongId(
+                  curiositiesSongId === selectedSong.id ? null : selectedSong.id
+                )
+              }
+              className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 border border-white/15 text-xs font-bold text-white flex items-center gap-1.5 transition"
+            >
+              <BookOpen size={13} />
+              <span>Curiosidades da Música</span>
+            </button>
+
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={toggleMute}
+                className="text-slate-400 hover:text-white"
+              >
+                {isMuted || volume === 0 ? <VolumeX size={15} /> : <Volume2 size={15} />}
+              </button>
+              <input
+                type="range"
+                min={0}
+                max={100}
+                value={isMuted ? 0 : volume}
+                onChange={(e) => handleVolumeChange(Number(e.target.value))}
+                className="w-16 accent-white h-1 bg-slate-800 rounded cursor-pointer"
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL / PAINEL PÚBLICO: "CURIOSIDADES DA MÚSICA" (ABRE AO CLICAR EM UMA MÚSICA) */}
+      {curiositiesSong && adminMode === 'none' && (
+        <div
+          className="fixed inset-0 z-[170] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={() => setCuriositiesSongId(null)}
+        >
+          <div
+            className="w-full max-w-xl bg-[#0e1017] border border-white/15 rounded-2xl p-5 sm:p-6 shadow-2xl space-y-4 max-h-[85vh] overflow-y-auto custom-scrollbar"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-3 border-b border-white/10 pb-4">
+              <div className="flex items-center gap-3.5">
+                <div className="w-14 h-14 rounded-xl overflow-hidden border border-white/15 shrink-0 bg-black">
+                  <img
+                    src={curiositiesSong.coverUrl}
+                    alt={curiositiesSong.title}
+                    className="w-full h-full object-cover object-center scale-[1.36]"
+                  />
+                </div>
+                <div>
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-amber-400 block">
+                    Curiosidades da Música
+                  </span>
+                  <h3 className="text-lg sm:text-xl font-black text-white">
+                    {curiositiesSong.title}
                   </h3>
-                  <p className="text-xs text-slate-400 truncate">
-                    {selectedSong.artist} • <span className="text-slate-500">{selectedSong.album}</span>
-                  </p>
-                  {selectedSong.loreTitle && (
-                    <p className="text-[11px] text-purple-300 font-semibold truncate mt-1">
-                      ✦ {selectedSong.loreTitle}
+                  {curiositiesSong.loreTitle && (
+                    <p className="text-xs text-slate-300 mt-0.5">
+                      {curiositiesSong.loreTitle}
                     </p>
                   )}
                 </div>
               </div>
 
-              {/* YouTube Video Container (visível se o usuário clicar em Ver Vídeo, senão fica oculto mantendo o áudio) */}
-              <div
-                className={`mt-3 overflow-hidden rounded-xl border border-white/10 bg-black flex justify-center transition-all ${
-                  showVideoFrame ? 'h-48 opacity-100' : 'h-0 opacity-0 pointer-events-none'
-                }`}
-              >
-                <div id="yt-lore-music-player" className="w-full h-full" />
+              <div className="flex items-center gap-1.5">
+                {isAdmin && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedSongId(curiositiesSong.id);
+                      setAdminMode('edit_lore');
+                    }}
+                    className="px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-xs font-bold text-amber-300 flex items-center gap-1"
+                  >
+                    <Edit3 size={12} /> Editar
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setCuriositiesSongId(null)}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-white"
+                >
+                  <X size={18} />
+                </button>
               </div>
+            </div>
 
-              {/* Barra de Progresso (Seek) */}
-              <div className="mt-4">
-                <input
-                  type="range"
-                  min={0}
-                  max={durationSec > 0 ? durationSec : 240}
-                  step={0.1}
-                  value={Math.min(currentTime, durationSec > 0 ? durationSec : 240)}
-                  onChange={(e) => seekToSeconds(parseFloat(e.target.value), false)}
-                  className="w-full accent-amber-500 h-1.5 bg-slate-800 rounded-lg cursor-pointer"
-                />
-                <div className="flex items-center justify-between text-[11px] font-mono text-slate-400 mt-1">
-                  <span>{formatSecondsShort(currentTime)}</span>
-                  <span className="text-amber-400/90 text-[10px]">
-                    {syncedLinesCount > 0
-                      ? `${syncedLinesCount}/${selectedSong.lyrics.length} versos sincronizados`
-                      : selectedSong.lyrics.length > 0
-                      ? `${selectedSong.lyrics.length} versos (sem tempo marcado)`
-                      : 'Sem letra cadastrada'}
-                  </span>
-                  <span>
-                    {durationSec > 0 ? formatSecondsShort(durationSec) : selectedSong.duration}
-                  </span>
+            {curiositiesSong.loreContext && curiositiesSong.loreContext.trim() ? (
+              <div className="text-sm text-slate-200 leading-relaxed whitespace-pre-wrap bg-black/40 border border-white/10 rounded-xl p-4">
+                {curiositiesSong.loreContext}
+              </div>
+            ) : (
+              <div className="text-xs text-slate-400 bg-black/30 border border-white/5 rounded-xl p-5 text-center">
+                Nenhuma curiosidade registrada para esta música ainda.
+              </div>
+            )}
+
+            {curiositiesLinkedCards.length > 0 && (
+              <div className="pt-2">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">
+                  Personagens Relacionados
+                </h4>
+                <div className="grid grid-cols-2 gap-2">
+                  {curiositiesLinkedCards.map((card) => (
+                    <div
+                      key={card.id}
+                      onClick={() => onInspectCard?.(card)}
+                      className="p-2 rounded-xl bg-black/50 hover:bg-black/80 border border-white/10 cursor-pointer flex items-center gap-2.5 transition"
+                    >
+                      <img
+                        src={card.imageUrl}
+                        alt={card.name}
+                        className="w-10 h-10 rounded-lg object-cover shrink-0"
+                      />
+                      <div className="min-w-0">
+                        <p className="text-xs font-bold text-white truncate">{card.name}</p>
+                        <p className="text-[10px] text-amber-400 truncate">{card.archetype}</p>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
+            )}
+          </div>
+        </div>
+      )}
 
-              {/* Controles de Reprodução */}
-              <div className="flex items-center justify-between gap-2 mt-3 pt-2 border-t border-white/10">
-                <div className="flex items-center gap-1.5">
+      {/* ========================================================================
+          MODAIS EXCLUSIVOS DO ADMIN (SINCRONIZAR LETRA, LEGENDA YT, CURIOSIDADES, NOVA MÚSICA)
+          ======================================================================== */}
+      {isAdmin && adminMode !== 'none' && selectedSong && (
+        <div className="fixed inset-0 z-[180] bg-black/80 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto">
+          <div className="w-full max-w-2xl bg-[#0b0b12] border border-white/15 rounded-2xl p-5 shadow-2xl max-h-[90vh] overflow-y-auto custom-scrollbar space-y-4">
+            {/* CABEÇALHO DO MODAL ADMIN */}
+            <div className="flex items-center justify-between border-b border-white/10 pb-3">
+              <div className="flex items-center gap-3">
+                <div className="w-11 h-11 rounded-xl overflow-hidden border border-amber-500/40 shrink-0 bg-black">
+                  <img
+                    src={selectedSong.coverUrl}
+                    alt={selectedSong.title}
+                    className="w-full h-full object-cover object-center scale-[1.36]"
+                  />
+                </div>
+                <div>
+                  <h3 className="font-cinzel text-base font-black text-white uppercase">
+                    {selectedSong.title}
+                  </h3>
+                  <p className="text-[11px] text-slate-400">
+                    {adminMode === 'sync_studio'
+                      ? 'Sincronização da Letra'
+                      : adminMode === 'bulk_lyrics'
+                      ? 'Colar Letras / Legenda do YouTube'
+                      : adminMode === 'edit_lore'
+                      ? 'Editar Curiosidades da Música'
+                      : 'Adicionar Nova Música'}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setAdminMode('none')}
+                className="p-1.5 text-slate-400 hover:text-white"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* MINI PLAYER DENTRO DO MODAL ADMIN PARA SINCRONIZAR COM FACILIDADE */}
+            {(adminMode === 'sync_studio' || adminMode === 'bulk_lyrics') && (
+              <div className="bg-[#12121e] border border-amber-500/30 rounded-xl p-3">
+                <div className="flex items-center gap-3">
                   <button
                     type="button"
                     onClick={() => seekToSeconds(currentTime - 5)}
-                    className="px-2 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 text-[11px] font-mono"
-                    title="Voltar 5 segundos"
+                    className="px-2 py-1 rounded bg-white/5 hover:bg-white/10 text-xs font-mono text-slate-300"
                   >
                     -5s
                   </button>
                   <button
                     type="button"
-                    onClick={togglePlayPause}
-                    className="w-10 h-10 rounded-full bg-amber-500 hover:bg-amber-400 text-slate-950 flex items-center justify-center shadow-lg transition"
-                    title={isPlaying ? 'Pausar' : 'Tocar'}
+                    onClick={() => handlePlayOrToggleSong(selectedSong)}
+                    className="w-9 h-9 rounded-full bg-amber-500 hover:bg-amber-400 text-slate-950 flex items-center justify-center shrink-0 shadow"
                   >
                     {isPlaying ? (
-                      <Pause size={18} />
+                      <Pause size={16} />
                     ) : (
-                      <Play size={18} className="fill-slate-950 ml-0.5" />
+                      <Play size={16} className="fill-slate-950 ml-0.5" />
                     )}
                   </button>
                   <button
                     type="button"
                     onClick={() => seekToSeconds(currentTime + 5)}
-                    className="px-2 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 text-[11px] font-mono"
-                    title="Avançar 5 segundos"
+                    className="px-2 py-1 rounded bg-white/5 hover:bg-white/10 text-xs font-mono text-slate-300"
                   >
                     +5s
                   </button>
-                </div>
-
-                {/* Controle de Volume */}
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={toggleMute}
-                    className="text-slate-400 hover:text-white"
-                  >
-                    {isMuted || volume === 0 ? <VolumeX size={16} /> : <Volume2 size={16} />}
-                  </button>
-                  <input
-                    type="range"
-                    min={0}
-                    max={100}
-                    value={isMuted ? 0 : volume}
-                    onChange={(e) => handleVolumeChange(Number(e.target.value))}
-                    className="w-20 accent-amber-400 h-1 bg-slate-800 rounded cursor-pointer"
-                  />
+                  <div className="flex-1">
+                    <input
+                      type="range"
+                      min={0}
+                      max={durationSec > 0 ? durationSec : 240}
+                      step={0.1}
+                      value={Math.min(currentTime, durationSec > 0 ? durationSec : 240)}
+                      onChange={(e) => seekToSeconds(parseFloat(e.target.value), false)}
+                      className="w-full accent-amber-500 h-1.5 bg-slate-800 rounded-lg cursor-pointer"
+                    />
+                  </div>
+                  <span className="text-xs font-mono text-amber-300 shrink-0">
+                    {formatSeconds(currentTime)}
+                  </span>
                 </div>
               </div>
-            </div>
-          )}
+            )}
 
-          {/* MODO ADMIN 1: COLAR / EDITAR LETRAS EM LOTE OU IMPORTAR LEGENDA DO YOUTUBE */}
-          {isAdmin && adminMode === 'bulk_lyrics' && selectedSong && (
-            <div className="bg-[#0e0e18] border border-amber-500/50 rounded-2xl p-4 shadow-2xl space-y-4">
-              <div className="flex items-center justify-between gap-2">
-                <div>
-                  <h4 className="font-cinzel text-sm font-black uppercase tracking-wider text-amber-300 flex items-center gap-2">
-                    <FileText size={15} /> Letras & Importador de Legendas do YouTube
-                  </h4>
-                  <p className="text-[11px] text-slate-400 mt-0.5">
-                    Escolha entre colar os versos linha por linha ou colar direto o texto/arquivo de legenda sincronizada do YouTube.
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setAdminMode('none')}
-                  className="text-slate-400 hover:text-white"
-                >
-                  <X size={16} />
-                </button>
-              </div>
-
-              {/* Seletor de Aba: Colar Versos Linha por Linha vs Importar Legenda do YouTube (Com Tempos) */}
-              <div className="flex items-center gap-1.5 bg-black/60 border border-white/10 rounded-xl p-1">
-                <button
-                  type="button"
-                  onClick={() => setBulkImportTab('plain')}
-                  className={`flex-1 py-2 px-3 rounded-lg text-xs font-black uppercase tracking-wider transition ${
-                    bulkImportTab === 'plain'
-                      ? 'bg-amber-500 text-slate-950 shadow'
-                      : 'text-slate-400 hover:text-white'
-                  }`}
-                >
-                  1. Letra Linha por Linha
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setBulkImportTab('yt_captions')}
-                  className={`flex-1 py-2 px-3 rounded-lg text-xs font-black uppercase tracking-wider transition ${
-                    bulkImportTab === 'yt_captions'
-                      ? 'bg-emerald-500 text-slate-950 shadow'
-                      : 'text-emerald-300/80 hover:text-white'
-                  }`}
-                >
-                  2. Colar Sync de Legenda do YouTube (.txt / .sbv / .srt)
-                </button>
-              </div>
-
-              {bulkImportTab === 'plain' ? (
-                <>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-[11px] font-bold uppercase text-amber-300 mb-1">
-                        Letra Original (1 verso por linha)
-                      </label>
-                      <textarea
-                        rows={12}
-                        value={bulkOriginalText}
-                        onChange={(e) => setBulkOriginalText(e.target.value)}
-                        placeholder={'In the shadows of the ancient stars...\nTwo souls bound by fire and steel...'}
-                        className="w-full bg-black/70 border border-white/15 rounded-xl p-3 text-xs text-white font-mono leading-relaxed"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[11px] font-bold uppercase text-cyan-300 mb-1">
-                        Letra Traduzida PT-BR (1 verso por linha)
-                      </label>
-                      <textarea
-                        rows={12}
-                        value={bulkTranslationText}
-                        onChange={(e) => setBulkTranslationText(e.target.value)}
-                        placeholder={'Nas sombras das estrelas ancestrais...\nDuas almas unidas pelo fogo e aço...'}
-                        className="w-full bg-black/70 border border-white/15 rounded-xl p-3 text-xs text-cyan-100 font-mono leading-relaxed"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-white/10">
-                    <span className="text-[11px] text-slate-400">
-                      Dica: Se você já tiver a legenda com tempos do YouTube, clique na aba <strong className="text-emerald-300">&ldquo;2. Colar Sync de Legenda do YouTube&rdquo;</strong> acima!
-                    </span>
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setAdminMode('none')}
-                        className="px-3 py-1.5 rounded-lg border border-white/15 text-xs text-slate-300"
-                      >
-                        Cancelar
-                      </button>
-                      <button
-                        type="button"
-                        onClick={handleApplyBulkLyrics}
-                        disabled={saving}
-                        className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs uppercase tracking-wider flex items-center gap-1.5 shadow-lg"
-                      >
-                        <Save size={14} /> Salvar Versos & Ir para Sincronização
-                      </button>
-                    </div>
-                  </div>
-                </>
-              ) : (
-                /* ABA 2: IMPORTADOR DE LEGENDA SINCRONIZADA DO YOUTUBE (.TXT / .SBV / .SRT / .VTT) */
-                <div className="space-y-3">
-                  <div className="p-3 rounded-xl bg-emerald-950/30 border border-emerald-500/30 text-xs text-slate-200 space-y-1">
-                    <p className="font-bold text-emerald-300">
-                      Compatível com qualquer formato de legenda manual do YouTube:
-                    </p>
-                    <p className="text-[11px] text-slate-300">
-                      • Arquivo/texto do YouTube Studio (<code>0:00:12.340,0:00:16.500</code> + verso abaixo)<br />
-                      • Formato SRT/VTT (<code>00:00:12,340 --&gt; 00:00:16,500</code>)<br />
-                      • Transcrição copiada do YouTube (<code>0:12</code> numa linha e o verso na linha seguinte, ou <code>0:12 Verso</code>)
-                    </p>
-                  </div>
-
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <label className="inline-flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={ytBilingualSingleBlock}
-                        onChange={(e) => setYtBilingualSingleBlock(e.target.checked)}
-                        className="accent-emerald-500 rounded"
-                      />
-                      <span>
-                        Minha legenda do YouTube já tem Original + Tradução juntos no mesmo bloco (1ª linha Original, 2ª linha Tradução)
-                      </span>
-                    </label>
-
-                    <label className="px-3 py-1 rounded-lg bg-white/5 hover:bg-white/10 border border-white/15 text-[11px] font-bold text-amber-300 cursor-pointer">
-                      Carregar arquivo (.txt / .sbv / .srt)
-                      <input
-                        type="file"
-                        accept=".txt,.sbv,.srt,.vtt,.lrc"
-                        className="hidden"
-                        onChange={(e) => {
-                          const file = e.target.files?.[0];
-                          if (!file) return;
-                          const reader = new FileReader();
-                          reader.onload = () => {
-                            if (typeof reader.result === 'string') {
-                              setYtCaptionOriginalText(reader.result);
-                            }
-                          };
-                          reader.readAsText(file);
-                          e.target.value = '';
-                        }}
-                      />
-                    </label>
-                  </div>
-
-                  <div className={`grid grid-cols-1 ${ytBilingualSingleBlock ? '' : 'sm:grid-cols-2'} gap-3`}>
-                    <div>
-                      <label className="block text-[11px] font-bold uppercase text-emerald-300 mb-1">
-                        Texto / Sync de Legenda do YouTube (Com os Tempos)
-                      </label>
-                      <textarea
-                        rows={11}
-                        value={ytCaptionOriginalText}
-                        onChange={(e) => setYtCaptionOriginalText(e.target.value)}
-                        placeholder={'0:00:12.340,0:00:16.500\nIn the shadows of the ancient stars\n\n0:00:16.500,0:00:21.000\nTwo souls bound by fire and steel'}
-                        className="w-full bg-black/70 border border-emerald-500/40 rounded-xl p-3 text-xs text-white font-mono leading-relaxed"
-                      />
-                    </div>
-
-                    {!ytBilingualSingleBlock && (
-                      <div>
-                        <label className="block text-[11px] font-bold uppercase text-cyan-300 mb-1">
-                          Tradução PT-BR (Pode ser com tempos do YT ou só 1 verso por linha)
-                        </label>
-                        <textarea
-                          rows={11}
-                          value={ytCaptionTranslationText}
-                          onChange={(e) => setYtCaptionTranslationText(e.target.value)}
-                          placeholder={'Nas sombras das estrelas ancestrais\nDuas almas unidas pelo fogo e aço\n(Ou cole o .txt/.sbv traduzido com tempos)'}
-                          className="w-full bg-black/70 border border-cyan-500/30 rounded-xl p-3 text-xs text-cyan-100 font-mono leading-relaxed"
-                        />
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Resumo / Prévia dos versos reconhecidos */}
-                  <div className="p-2.5 rounded-xl bg-black/50 border border-white/10 flex flex-wrap items-center justify-between gap-2">
-                    <span className="text-xs text-slate-300">
-                      Versos reconhecidos:{' '}
-                      <strong className="text-emerald-400">
-                        {ytCaptionPreviewItems.length}
-                      </strong>{' '}
-                      ({ytCaptionPreviewItems.filter((i) => i.time !== null).length} com tempo sincronizado)
-                    </span>
-                    {ytCaptionPreviewItems.length > 0 && (
-                      <span className="text-[11px] font-mono text-amber-300 truncate max-w-xs">
-                        1º verso: [{formatSeconds(ytCaptionPreviewItems[0].time)}] {ytCaptionPreviewItems[0].original}
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="flex justify-end gap-2 pt-2 border-t border-white/10">
-                    <button
-                      type="button"
-                      onClick={() => setAdminMode('none')}
-                      className="px-3 py-1.5 rounded-lg border border-white/15 text-xs text-slate-300"
-                    >
-                      Cancelar
-                    </button>
-                    <button
-                      type="button"
-                      disabled={saving || ytCaptionPreviewItems.length === 0}
-                      onClick={handleApplyYouTubeCaptions}
-                      className="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 disabled:opacity-40 text-slate-950 font-black text-xs uppercase tracking-wider flex items-center gap-1.5 shadow-lg"
-                    >
-                      <Save size={14} /> Importar Legenda Sincronizada ({ytCaptionPreviewItems.length} versos)
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* MODO ADMIN 2: BARRA DE SINCRONIZAÇÃO AO VIVO (TAP SYNC) */}
-          {isAdmin && adminMode === 'sync_studio' && selectedSong && (
-            <div className="bg-emerald-950/30 border border-emerald-500/50 rounded-2xl p-4 shadow-2xl space-y-3">
-              <div className="flex items-center justify-between gap-2">
-                <div>
-                  <h4 className="font-cinzel text-sm font-black uppercase tracking-wider text-emerald-300 flex items-center gap-2">
-                    <Clock size={15} /> Estúdio de Sincronização da Letra
-                  </h4>
-                  <p className="text-[11px] text-slate-300">
-                    Dê Play na música e clique no botão abaixo (ou aperte <kbd className="px-1.5 py-0.5 rounded bg-black/80 border border-white/20 text-amber-300 font-mono">Espaço</kbd>) exatamente quando cada verso começar a ser cantado!
-                  </p>
-                </div>
-                <div className="flex items-center gap-1.5">
+            {/* MODO 1: SINCRONIZADOR DE LETRA (LAYOUT COMPACTO SOLICITADO) */}
+            {adminMode === 'sync_studio' && (
+              <div className="space-y-4">
+                <div className="flex flex-wrap sm:flex-nowrap items-center gap-3">
                   <button
                     type="button"
                     onClick={() => {
-                      setBulkImportTab('yt_captions');
-                      setAdminMode('bulk_lyrics');
+                      if (!selectedSong.lyrics || selectedSong.lyrics.length === 0) {
+                        handleAddSingleLine();
+                      } else {
+                        handleStampCurrentLine();
+                      }
                     }}
-                    className="px-2.5 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-[10px] font-bold uppercase text-emerald-200"
+                    className="flex-1 py-3 px-4 rounded-xl bg-emerald-500 hover:bg-emerald-400 active:scale-[0.99] text-slate-950 font-black text-xs sm:text-sm uppercase tracking-wider flex items-center justify-center gap-2.5 shadow-[0_0_25px_rgba(16,185,129,0.3)] transition"
                   >
-                    Colar Legenda YT
+                    <Clock size={18} className="shrink-0" />
+                    <span>
+                      Marcar Tempo ({formatSeconds(currentTime)}) &amp; Próximo Verso
+                    </span>
                   </button>
+
                   <button
                     type="button"
-                    onClick={() => setAdminMode('none')}
-                    className="text-slate-400 hover:text-white"
+                    disabled={saving}
+                    onClick={() =>
+                      persistToFirestore(
+                        songs,
+                        connectionsRef.current,
+                        'Sincronização salva!'
+                      )
+                    }
+                    className="py-3 px-5 rounded-xl bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 font-black text-xs sm:text-sm uppercase tracking-wider flex items-center justify-center gap-2 shadow-lg shrink-0 transition"
                   >
-                    <X size={16} />
+                    <Save size={16} />
+                    <span>{saving ? 'Salvando...' : 'Salvar Sincronização'}</span>
                   </button>
                 </div>
-              </div>
 
-              {selectedSong.lyrics.length === 0 ? (
-                <div className="p-4 rounded-xl bg-black/40 border border-white/10 text-center space-y-2">
-                  <p className="text-xs text-slate-300">
-                    Esta música ainda não tem versos cadastrados.
-                  </p>
-                  <div className="flex flex-wrap justify-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setBulkImportTab('plain');
-                        setAdminMode('bulk_lyrics');
-                      }}
-                      className="px-4 py-2 rounded-lg bg-amber-500 text-slate-950 font-black text-xs uppercase tracking-wider"
-                    >
-                      Colar Letra Original e Tradução
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setBulkImportTab('yt_captions');
-                        setAdminMode('bulk_lyrics');
-                      }}
-                      className="px-4 py-2 rounded-lg bg-emerald-500 text-slate-950 font-black text-xs uppercase tracking-wider"
-                    >
-                      Colar Sync de Legenda do YouTube
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleAddSingleLine()}
-                      className="px-4 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-white font-bold text-xs uppercase tracking-wider"
-                    >
-                      + Criar 1º Verso Manualmente
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <>
-                  {/* Destaque da Linha Selecionada para Marcar */}
-                  <div className="p-3 rounded-xl bg-black/60 border border-emerald-500/40">
-                    <div className="flex items-center justify-between text-[11px] text-emerald-300 font-mono mb-1">
-                      <span>
-                        VERSO ALVO #{Math.min(syncCursorIndex + 1, selectedSong.lyrics.length)} DE {selectedSong.lyrics.length}
-                      </span>
-                      <span>
-                        Tempo atual do player: <strong>{formatSeconds(currentTime)}</strong>
-                      </span>
-                    </div>
-                    <p className="text-sm font-bold text-white">
-                      {selectedSong.lyrics[syncCursorIndex]?.original || '(Verso original vazio — digite abaixo)'}
-                    </p>
-                    <p className="text-xs text-cyan-300 mt-0.5">
-                      {selectedSong.lyrics[syncCursorIndex]?.translation || '(Sem tradução)'}
-                    </p>
-                  </div>
-
-                  <div className="flex flex-wrap items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => handleStampCurrentLine()}
-                      className="flex-1 min-w-[220px] py-3 px-4 rounded-xl bg-emerald-500 hover:bg-emerald-400 active:scale-[0.99] text-slate-950 font-black text-xs sm:text-sm uppercase tracking-wider flex items-center justify-center gap-2 shadow-[0_0_25px_rgba(16,185,129,0.35)] transition"
-                    >
-                      <Clock size={17} />
-                      Marcar Tempo ({formatSeconds(currentTime)}) & Próximo Verso
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setSyncCursorIndex((p) => Math.max(0, p - 1))}
-                      disabled={syncCursorIndex === 0}
-                      className="px-3 py-3 rounded-xl bg-white/5 hover:bg-white/10 disabled:opacity-40 text-xs font-bold text-slate-200"
-                    >
-                      ↑ Verso Anterior
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setSyncCursorIndex((p) =>
-                          Math.min(selectedSong.lyrics.length - 1, p + 1)
-                        )
-                      }
-                      disabled={syncCursorIndex >= selectedSong.lyrics.length - 1}
-                      className="px-3 py-3 rounded-xl bg-white/5 hover:bg-white/10 disabled:opacity-40 text-xs font-bold text-slate-200"
-                    >
-                      ↓ Próximo
-                    </button>
-                  </div>
-
-                  <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-white/10">
+                <div className="bg-[#08080e] border border-white/10 rounded-2xl p-4 flex flex-col">
+                  <div className="flex flex-wrap items-center justify-between gap-2 pb-3 mb-3 border-b border-white/10">
                     <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => handleAddSingleLine(syncCursorIndex)}
-                        className="px-2.5 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-[11px] font-bold text-emerald-300 flex items-center gap-1"
-                      >
-                        <Plus size={12} /> Inserir Verso Abaixo do Alvo (#{syncCursorIndex + 1})
-                      </button>
-                      <button
-                        type="button"
-                        onClick={handleClearAllTimestamps}
-                        className="px-2.5 py-1.5 rounded-lg bg-rose-950/50 hover:bg-rose-900/60 border border-rose-500/30 text-[11px] font-bold text-rose-300 flex items-center gap-1"
-                      >
-                        <RotateCcw size={12} /> Zerar Tempos
-                      </button>
+                      <Languages size={16} className="text-amber-400" />
+                      <h4 className="font-cinzel text-sm font-black uppercase tracking-wider text-white">
+                        Letra da Música
+                      </h4>
                     </div>
 
-                    <button
-                      type="button"
-                      disabled={saving}
-                      onClick={() =>
-                        persistSongsToFirestore(songs, 'Sincronização da letra salva com sucesso!')
-                      }
-                      className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs uppercase tracking-wider flex items-center gap-1.5 shadow-lg"
-                    >
-                      <Save size={14} /> {saving ? 'Salvando...' : 'Salvar Sincronização'}
-                    </button>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <div className="inline-flex bg-black/60 border border-white/10 rounded-lg p-0.5">
+                        <button
+                          type="button"
+                          onClick={() => setLyricDisplayMode('both')}
+                          className={`px-2.5 py-1 rounded-md text-[10px] font-black uppercase transition ${
+                            lyricDisplayMode === 'both'
+                              ? 'bg-amber-500 text-slate-950'
+                              : 'text-slate-400 hover:text-white'
+                          }`}
+                        >
+                          Original + Tradução
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setLyricDisplayMode('original')}
+                          className={`px-2.5 py-1 rounded-md text-[10px] font-black uppercase transition ${
+                            lyricDisplayMode === 'original'
+                              ? 'bg-amber-500 text-slate-950'
+                              : 'text-slate-400 hover:text-white'
+                          }`}
+                        >
+                          Original
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setLyricDisplayMode('translation')}
+                          className={`px-2.5 py-1 rounded-md text-[10px] font-black uppercase transition ${
+                            lyricDisplayMode === 'translation'
+                              ? 'bg-cyan-500 text-slate-950'
+                              : 'text-slate-400 hover:text-white'
+                          }`}
+                        >
+                          Tradução
+                        </button>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => setAutoScrollEnabled((v) => !v)}
+                        className={`px-2.5 py-1 rounded-lg border text-[10px] font-bold uppercase transition ${
+                          autoScrollEnabled
+                            ? 'bg-emerald-950/60 border-emerald-500/40 text-emerald-300'
+                            : 'bg-black/40 border-white/10 text-slate-500 hover:text-white'
+                        }`}
+                      >
+                        Auto-Roll: {autoScrollEnabled ? 'ON' : 'OFF'}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setBulkImportTab('yt_captions');
+                          setAdminMode('bulk_lyrics');
+                        }}
+                        className="px-2.5 py-1 rounded-lg bg-white text-slate-950 hover:bg-slate-200 text-[10px] font-extrabold uppercase transition"
+                      >
+                        Legenda YT
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setBulkImportTab('plain');
+                          setAdminMode('bulk_lyrics');
+                        }}
+                        className="px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-white text-[10px] font-bold uppercase transition"
+                      >
+                        Colar Texto
+                      </button>
+                    </div>
                   </div>
-                </>
-              )}
-            </div>
-          )}
 
-          {/* PAINEL DE LETRA SINCRONIZADA (ORIGINAL & TRADUÇÃO SIMULTÂNEAS) */}
-          <div className="bg-[#0b0b12] border border-white/10 rounded-2xl p-4 sm:p-5 shadow-2xl flex flex-col">
-            <div className="flex flex-wrap items-center justify-between gap-2 pb-3 mb-3 border-b border-white/10">
-              <div className="flex items-center gap-2">
-                <Languages size={16} className="text-amber-400" />
-                <h4 className="font-cinzel text-sm font-black uppercase tracking-wider text-white">
-                  Letra da Música
-                </h4>
-              </div>
-
-              {/* Botões de modo de exibição: Original + Tradução ao mesmo tempo, Só Original, Só Tradução */}
-              <div className="flex flex-wrap items-center gap-1.5">
-                <div className="inline-flex bg-black/60 border border-white/10 rounded-lg p-0.5">
-                  <button
-                    type="button"
-                    onClick={() => setLyricDisplayMode('both')}
-                    className={`px-2.5 py-1 rounded-md text-[10px] font-black uppercase transition ${
-                      lyricDisplayMode === 'both'
-                        ? 'bg-amber-500 text-slate-950'
-                        : 'text-slate-400 hover:text-white'
-                    }`}
+                  <div
+                    ref={lyricsScrollContainerRef}
+                    className="h-[390px] overflow-y-auto pr-2 space-y-2.5 custom-scrollbar"
                   >
-                    Original + Tradução
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setLyricDisplayMode('original')}
-                    className={`px-2.5 py-1 rounded-md text-[10px] font-black uppercase transition ${
-                      lyricDisplayMode === 'original'
-                        ? 'bg-amber-500 text-slate-950'
-                        : 'text-slate-400 hover:text-white'
-                    }`}
-                  >
-                    Original
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setLyricDisplayMode('translation')}
-                    className={`px-2.5 py-1 rounded-md text-[10px] font-black uppercase transition ${
-                      lyricDisplayMode === 'translation'
-                        ? 'bg-cyan-500 text-slate-950'
-                        : 'text-slate-400 hover:text-white'
-                    }`}
-                  >
-                    Tradução
-                  </button>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => setAutoScrollEnabled((v) => !v)}
-                  className={`px-2.5 py-1 rounded-lg border text-[10px] font-bold uppercase transition ${
-                    autoScrollEnabled
-                      ? 'bg-emerald-950/60 border-emerald-500/40 text-emerald-300'
-                      : 'bg-black/40 border-white/10 text-slate-500 hover:text-white'
-                  }`}
-                  title="Rolar a letra automaticamente conforme a música avança"
-                >
-                  Auto-Roll: {autoScrollEnabled ? 'ON' : 'OFF'}
-                </button>
-              </div>
-            </div>
-
-            {/* Lista de Versos */}
-            <div
-              ref={lyricsScrollContainerRef}
-              className="h-[460px] overflow-y-auto pr-2 space-y-2.5 custom-scrollbar"
-            >
-              {!selectedSong || selectedSong.lyrics.length === 0 ? (
-                <div className="h-full flex flex-col items-center justify-center text-center px-4 py-12">
-                  <Music size={36} className="text-slate-600 mb-3" />
-                  <p className="font-cinzel text-sm font-bold text-slate-400 uppercase tracking-wider">
-                    Letra ainda não cadastrada para &ldquo;{selectedSong?.title}&rdquo;
-                  </p>
-                  <p className="text-xs text-slate-500 mt-1 max-w-sm">
-                    {isAdmin
-                      ? 'Clique em "Colar / Editar Letras" no topo para adicionar a letra original e a tradução e sincronizar cada verso com a música.'
-                      : 'A letra sincronizada e a tradução desta faixa serão disponibilizadas em breve.'}
-                  </p>
-                  {isAdmin && (
-                    <button
-                      type="button"
-                      onClick={() => setAdminMode('bulk_lyrics')}
-                      className="mt-4 px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs uppercase tracking-wider flex items-center gap-1.5"
-                    >
-                      <Plus size={14} /> Adicionar Letra Original & Tradução
-                    </button>
-                  )}
-                </div>
-              ) : (
-                selectedSong.lyrics.map((line, idx) => {
-                  const isActive = activeLyricIndex === idx;
-                  const isSyncTarget = adminMode === 'sync_studio' && syncCursorIndex === idx;
-
-                  return (
-                    <div
-                      key={line.id || idx}
-                      ref={(el) => {
-                        if (line.id) lineRefs.current[line.id] = el;
-                      }}
-                      onClick={() => {
-                        if (adminMode === 'sync_studio') {
-                          setSyncCursorIndex(idx);
-                          return;
-                        }
-                        if (line.time !== null && line.time !== undefined) {
-                          seekToSeconds(line.time, true);
-                        }
-                      }}
-                      className={`rounded-xl p-3 transition-all duration-300 border ${
-                        isSyncTarget
-                          ? 'bg-emerald-950/50 border-emerald-400 shadow-[0_0_20px_rgba(16,185,129,0.2)]'
-                          : isActive
-                          ? 'bg-gradient-to-r from-amber-500/20 via-amber-500/10 to-transparent border-amber-400/80 shadow-[0_0_25px_rgba(245,158,11,0.18)] scale-[1.01]'
-                          : 'bg-[#101018]/60 border-white/5 hover:border-white/20 cursor-pointer'
-                      }`}
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="flex-1 min-w-0">
-                          {/* MODO DE EDIÇÃO DIRETA NO SYNC STUDIO */}
-                          {isAdmin && adminMode === 'sync_studio' ? (
+                    {selectedSong.lyrics.length === 0 ? (
+                      <div className="h-full flex flex-col items-center justify-center text-center p-6 gap-3">
+                        <p className="text-xs text-slate-400">
+                          Nenhum verso cadastrado nesta música.
+                        </p>
+                        <div className="flex flex-wrap justify-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setBulkImportTab('yt_captions');
+                              setAdminMode('bulk_lyrics');
+                            }}
+                            className="px-4 py-2 rounded-xl bg-emerald-500 text-slate-950 font-black text-xs uppercase"
+                          >
+                            Colar Legenda YT
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setBulkImportTab('plain');
+                              setAdminMode('bulk_lyrics');
+                            }}
+                            className="px-4 py-2 rounded-xl bg-amber-500 text-slate-950 font-black text-xs uppercase"
+                          >
+                            Colar Letra Original e Tradução
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleAddSingleLine()}
+                            className="px-4 py-2 rounded-xl bg-white/10 text-white font-bold text-xs uppercase"
+                          >
+                            + Verso Manual
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      selectedSong.lyrics.map((line, idx) => {
+                        const isSyncTarget = syncCursorIndex === idx;
+                        return (
+                          <div
+                            key={line.id || idx}
+                            ref={(el) => {
+                              if (line.id) lineRefs.current[line.id] = el;
+                            }}
+                            onClick={() => updateSyncCursor(idx)}
+                            className={`rounded-xl p-3 transition-all border ${
+                              isSyncTarget
+                                ? 'bg-emerald-950/50 border-emerald-400 shadow-[0_0_20px_rgba(16,185,129,0.2)]'
+                                : 'bg-[#101018]/70 border-white/5 hover:border-white/20'
+                            }`}
+                          >
                             <div
                               className="space-y-1.5"
                               onClick={(e) => e.stopPropagation()}
@@ -2290,13 +2188,12 @@ export const LoreMusicSection: React.FC<LoreMusicSectionProps> = ({
                               <div className="flex items-center gap-1.5 flex-wrap">
                                 <button
                                   type="button"
-                                  onClick={() => setSyncCursorIndex(idx)}
+                                  onClick={() => updateSyncCursor(idx)}
                                   className={`text-[10px] font-mono px-1.5 py-0.5 rounded font-bold transition ${
                                     isSyncTarget
                                       ? 'bg-emerald-500 text-slate-950'
                                       : 'bg-white/5 text-slate-400 hover:text-white'
                                   }`}
-                                  title="Selecionar este verso como alvo da sincronização"
                                 >
                                   #{idx + 1}
                                 </button>
@@ -2311,7 +2208,7 @@ export const LoreMusicSection: React.FC<LoreMusicSectionProps> = ({
                                       : ''
                                   }
                                   onFocus={() => {
-                                    setSyncCursorIndex(idx);
+                                    updateSyncCursor(idx);
                                     setTimeInputDrafts((prev) => ({
                                       ...prev,
                                       [line.id]:
@@ -2353,7 +2250,6 @@ export const LoreMusicSection: React.FC<LoreMusicSectionProps> = ({
                                     }
                                   }}
                                   className="w-24 bg-black/80 border border-amber-500/40 focus:border-amber-400 rounded px-2 py-0.5 text-[11px] font-mono text-amber-300 outline-none"
-                                  title="Digite o tempo manualmente (ex: 01:23.4 ou 83.4)"
                                 />
                                 <button
                                   type="button"
@@ -2373,7 +2269,6 @@ export const LoreMusicSection: React.FC<LoreMusicSectionProps> = ({
                                   type="button"
                                   onClick={() => handleStampCurrentLine(idx)}
                                   className="px-2 py-0.5 rounded bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-[10px] font-bold text-emerald-300"
-                                  title="Gravar o tempo atual do player neste verso e ir para o próximo"
                                 >
                                   Marcar Agora
                                 </button>
@@ -2390,7 +2285,6 @@ export const LoreMusicSection: React.FC<LoreMusicSectionProps> = ({
                                   type="button"
                                   onClick={() => handleAddSingleLine(idx)}
                                   className="px-1.5 py-0.5 rounded bg-white/5 hover:bg-white/15 text-[10px] font-bold text-slate-300 flex items-center gap-0.5"
-                                  title="Inserir um novo verso imediatamente abaixo deste"
                                 >
                                   <Plus size={11} /> Verso
                                 </button>
@@ -2398,307 +2292,445 @@ export const LoreMusicSection: React.FC<LoreMusicSectionProps> = ({
                                   type="button"
                                   onClick={() => handleRemoveSingleLine(idx)}
                                   className="ml-auto p-1 text-slate-500 hover:text-rose-400"
-                                  title="Excluir linha"
                                 >
                                   <Trash2 size={12} />
                                 </button>
                               </div>
 
-                              <input
-                                type="text"
-                                value={line.original}
-                                onChange={(e) =>
-                                  handleUpdateLineField(idx, 'original', e.target.value)
-                                }
-                                placeholder="Letra original..."
-                                className="w-full bg-black/60 border border-white/10 rounded px-2.5 py-1 text-xs text-white font-semibold"
-                              />
-                              <input
-                                type="text"
-                                value={line.translation}
-                                onChange={(e) =>
-                                  handleUpdateLineField(idx, 'translation', e.target.value)
-                                }
-                                placeholder="Tradução em português..."
-                                className="w-full bg-black/60 border border-white/10 rounded px-2.5 py-1 text-xs text-cyan-200"
-                              />
-                            </div>
-                          ) : (
-                            /* MODO LEITURA & ACOMPANHAMENTO SINCRONIZADO */
-                            <>
-                              {(lyricDisplayMode === 'both' ||
-                                lyricDisplayMode === 'original') && (
-                                <p
-                                  className={`leading-snug transition-colors ${
-                                    isActive
-                                      ? 'text-base sm:text-lg font-black text-amber-300 drop-shadow-[0_0_8px_rgba(245,158,11,0.3)]'
-                                      : 'text-xs sm:text-sm font-bold text-slate-200'
-                                  }`}
-                                >
-                                  {line.original || '♪'}
-                                </p>
+                              {(lyricDisplayMode === 'both' || lyricDisplayMode === 'original') && (
+                                <input
+                                  type="text"
+                                  value={line.original}
+                                  onChange={(e) =>
+                                    handleUpdateLineField(idx, 'original', e.target.value)
+                                  }
+                                  placeholder="Letra original..."
+                                  className="w-full bg-black/60 border border-white/10 rounded px-2.5 py-1 text-xs text-white font-semibold"
+                                />
                               )}
-
                               {(lyricDisplayMode === 'both' ||
-                                lyricDisplayMode === 'translation') &&
-                                line.translation && (
-                                  <p
-                                    className={`mt-1 leading-snug italic transition-colors ${
-                                      isActive
-                                        ? 'text-xs sm:text-sm font-semibold text-cyan-200'
-                                        : 'text-[11px] sm:text-xs text-slate-400'
-                                    }`}
-                                  >
-                                    {line.translation}
-                                  </p>
-                                )}
-                            </>
-                          )}
-                        </div>
+                                lyricDisplayMode === 'translation') && (
+                                <input
+                                  type="text"
+                                  value={line.translation}
+                                  onChange={(e) =>
+                                    handleUpdateLineField(idx, 'translation', e.target.value)
+                                  }
+                                  placeholder="Tradução em português..."
+                                  className="w-full bg-black/60 border border-white/10 rounded px-2.5 py-1 text-xs text-cyan-200"
+                                />
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
 
-                        {/* Badge de Tempo do Verso (clicável para pular para o trecho) */}
-                        {adminMode !== 'sync_studio' && line.time !== null && (
-                          <span
-                            className={`text-[10px] font-mono px-1.5 py-0.5 rounded shrink-0 ${
-                              isActive
-                                ? 'bg-amber-500 text-slate-950 font-black'
-                                : 'bg-black/40 text-slate-500'
-                            }`}
-                          >
-                            {formatSecondsShort(line.time)}
-                          </span>
-                        )}
+            {/* MODO 2: COLAR LETRAS OU SYNC DE LEGENDA DO YOUTUBE */}
+            {adminMode === 'bulk_lyrics' && (
+              <div className="space-y-4">
+                <div className="flex items-center gap-1.5 bg-black/60 border border-white/10 rounded-xl p-1">
+                  <button
+                    type="button"
+                    onClick={() => setBulkImportTab('yt_captions')}
+                    className={`flex-1 py-2 px-3 rounded-lg text-xs font-black uppercase tracking-wider transition ${
+                      bulkImportTab === 'yt_captions'
+                        ? 'bg-emerald-500 text-slate-950 shadow'
+                        : 'text-emerald-300/80 hover:text-white'
+                    }`}
+                  >
+                    Colar Sync de Legenda do YouTube (.txt / .sbv / .srt)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setBulkImportTab('plain')}
+                    className={`flex-1 py-2 px-3 rounded-lg text-xs font-black uppercase tracking-wider transition ${
+                      bulkImportTab === 'plain'
+                        ? 'bg-amber-500 text-slate-950 shadow'
+                        : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    Letra Linha por Linha (Sem Tempos)
+                  </button>
+                </div>
+
+                {bulkImportTab === 'yt_captions' ? (
+                  <div className="space-y-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <label className="inline-flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={ytBilingualSingleBlock}
+                          onChange={(e) => setYtBilingualSingleBlock(e.target.checked)}
+                          className="accent-emerald-500 rounded"
+                        />
+                        <span>
+                          Legenda única já com Original + Tradução no mesmo bloco
+                        </span>
+                      </label>
+
+                      <label className="px-3 py-1 rounded-lg bg-white/5 hover:bg-white/10 border border-white/15 text-[11px] font-bold text-amber-300 cursor-pointer">
+                        Carregar arquivo (.txt / .sbv / .srt)
+                        <input
+                          type="file"
+                          accept=".txt,.sbv,.srt,.vtt,.lrc"
+                          className="hidden"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (!file) return;
+                            const reader = new FileReader();
+                            reader.onload = () => {
+                              if (typeof reader.result === 'string') {
+                                setYtCaptionOriginalText(reader.result);
+                              }
+                            };
+                            reader.readAsText(file);
+                            e.target.value = '';
+                          }}
+                        />
+                      </label>
+                    </div>
+
+                    <div
+                      className={`grid grid-cols-1 ${
+                        ytBilingualSingleBlock ? '' : 'sm:grid-cols-2'
+                      } gap-3`}
+                    >
+                      <div>
+                        <label className="block text-[11px] font-bold uppercase text-emerald-300 mb-1">
+                          Texto de Sync da Legenda do YouTube (Com Tempos)
+                        </label>
+                        <textarea
+                          rows={10}
+                          value={ytCaptionOriginalText}
+                          onChange={(e) => setYtCaptionOriginalText(e.target.value)}
+                          placeholder={
+                            '0:00:12.340,0:00:16.500\nIn the shadows of the ancient stars\n\n0:00:16.500,0:00:21.000\nTwo souls bound by fire and steel'
+                          }
+                          className="w-full bg-black/70 border border-emerald-500/40 rounded-xl p-3 text-xs text-white font-mono leading-relaxed"
+                        />
+                      </div>
+
+                      {!ytBilingualSingleBlock && (
+                        <div>
+                          <label className="block text-[11px] font-bold uppercase text-cyan-300 mb-1">
+                            Tradução PT-BR (Com tempos do YT ou 1 verso por linha)
+                          </label>
+                          <textarea
+                            rows={10}
+                            value={ytCaptionTranslationText}
+                            onChange={(e) => setYtCaptionTranslationText(e.target.value)}
+                            placeholder={
+                              'Nas sombras das estrelas ancestrais\nDuas almas unidas pelo fogo e aço'
+                            }
+                            className="w-full bg-black/70 border border-cyan-500/30 rounded-xl p-3 text-xs text-cyan-100 font-mono leading-relaxed"
+                          />
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="p-2.5 rounded-xl bg-black/50 border border-white/10 flex items-center justify-between text-xs">
+                      <span className="text-slate-300">
+                        Versos reconhecidos:{' '}
+                        <strong className="text-emerald-400">
+                          {ytCaptionPreviewItems.length}
+                        </strong>
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setAdminMode('sync_studio')}
+                          className="px-3 py-1.5 rounded-lg border border-white/15 text-slate-300"
+                        >
+                          Voltar
+                        </button>
+                        <button
+                          type="button"
+                          disabled={saving || ytCaptionPreviewItems.length === 0}
+                          onClick={handleApplyYouTubeCaptions}
+                          className="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 disabled:opacity-40 text-slate-950 font-black uppercase"
+                        >
+                          Importar Legenda YT
+                        </button>
                       </div>
                     </div>
-                  );
-                })
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* COLUNA 3: Contexto & Lore da Música (4 cols) */}
-        <div className="lg:col-span-4 bg-[#0b0b12] border border-purple-500/30 rounded-2xl p-4 sm:p-5 shadow-2xl flex flex-col">
-          <div className="flex items-center justify-between gap-2 pb-3 mb-4 border-b border-white/10">
-            <div className="flex items-center gap-2">
-              <BookOpen size={17} className="text-purple-400" />
-              <div>
-                <h3 className="font-cinzel text-sm sm:text-base font-black uppercase tracking-wider text-white">
-                  Contexto & Lore da Música
-                </h3>
-                <p className="text-[10px] text-slate-400">
-                  História por trás da faixa, eventos e personagens conectados
-                </p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-[11px] font-bold uppercase text-amber-300 mb-1">
+                          Letra Original (1 verso por linha)
+                        </label>
+                        <textarea
+                          rows={10}
+                          value={bulkOriginalText}
+                          onChange={(e) => setBulkOriginalText(e.target.value)}
+                          className="w-full bg-black/70 border border-white/15 rounded-xl p-3 text-xs text-white font-mono"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-bold uppercase text-cyan-300 mb-1">
+                          Tradução PT-BR (1 verso por linha)
+                        </label>
+                        <textarea
+                          rows={10}
+                          value={bulkTranslationText}
+                          onChange={(e) => setBulkTranslationText(e.target.value)}
+                          className="w-full bg-black/70 border border-white/15 rounded-xl p-3 text-xs text-cyan-100 font-mono"
+                        />
+                      </div>
+                    </div>
+                    <div className="flex justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setAdminMode('sync_studio')}
+                        className="px-3 py-1.5 rounded-lg border border-white/15 text-xs text-slate-300"
+                      >
+                        Voltar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleApplyBulkLyrics}
+                        className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs uppercase"
+                      >
+                        Salvar Versos &amp; Sincronizar
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
-            </div>
-
-            {isAdmin && (
-              <button
-                type="button"
-                onClick={() =>
-                  setAdminMode(adminMode === 'edit_lore' ? 'none' : 'edit_lore')
-                }
-                className="px-2.5 py-1 rounded-lg bg-purple-950/60 hover:bg-purple-900/70 border border-purple-500/40 text-purple-200 text-[11px] font-bold flex items-center gap-1"
-              >
-                <Edit3 size={12} />
-                <span>{adminMode === 'edit_lore' ? 'Fechar' : 'Editar'}</span>
-              </button>
             )}
-          </div>
 
-          {/* MODO EDIÇÃO DE CONTEXTO & LORE (ADMIN) */}
-          {isAdmin && adminMode === 'edit_lore' && selectedSong ? (
-            <div className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                <div>
-                  <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">
-                    Nome da Música
-                  </label>
-                  <input
-                    type="text"
-                    value={draftSongTitle}
-                    onChange={(e) => setDraftSongTitle(e.target.value)}
-                    className="w-full bg-black/60 border border-white/15 rounded-lg px-2.5 py-1.5 text-xs text-white"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">
-                    Artista / Compositor
-                  </label>
-                  <input
-                    type="text"
-                    value={draftSongArtist}
-                    onChange={(e) => setDraftSongArtist(e.target.value)}
-                    className="w-full bg-black/60 border border-white/15 rounded-lg px-2.5 py-1.5 text-xs text-white"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-bold uppercase text-purple-300 mb-1">
-                  Título do Arco / Evento na Lore
-                </label>
-                <input
-                  type="text"
-                  value={draftLoreTitle}
-                  onChange={(e) => setDraftLoreTitle(e.target.value)}
-                  placeholder="Ex: O Pacto de Sangue em Arkham / A Queda do Macroverso 12"
-                  className="w-full bg-black/60 border border-purple-500/40 rounded-lg px-3 py-2 text-xs text-white"
-                />
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-bold uppercase text-purple-300 mb-1">
-                  História, Significado e Contexto da Música
-                </label>
-                <textarea
-                  rows={10}
-                  value={draftLoreContext}
-                  onChange={(e) => setDraftLoreContext(e.target.value)}
-                  placeholder="Escreva aqui o contexto completo desta música dentro da Lore de Light Dark, o que cada estrofe simboliza, quais personagens protagonizam o momento e as curiosidades de criação..."
-                  className="w-full bg-black/60 border border-white/15 rounded-xl p-3 text-xs text-slate-100 leading-relaxed"
-                />
-              </div>
-
-              {/* Vincular Cartas / Personagens da Lore */}
-              <div className="border-t border-white/10 pt-3">
-                <label className="block text-[11px] font-bold uppercase text-amber-300 mb-1.5">
-                  Personagens / Cartas Relacionadas ({draftRelatedCardIds.length})
-                </label>
-                <input
-                  type="text"
-                  value={cardSearchTerm}
-                  onChange={(e) => setCardSearchTerm(e.target.value)}
-                  placeholder="Filtrar carta pelo nome..."
-                  className="w-full bg-black/60 border border-white/15 rounded-lg px-2.5 py-1.5 text-xs text-white mb-2"
-                />
-                <div className="max-h-36 overflow-y-auto grid grid-cols-1 gap-1 p-1.5 bg-black/40 border border-white/10 rounded-xl custom-scrollbar">
-                  {cards
-                    .filter(
-                      (c) =>
-                        !cardSearchTerm.trim() ||
-                        c.name.toLowerCase().includes(cardSearchTerm.toLowerCase())
-                    )
-                    .slice(0, 40)
-                    .map((card) => {
-                      const isLinked = draftRelatedCardIds.includes(card.id);
-                      return (
-                        <button
-                          key={card.id}
-                          type="button"
-                          onClick={() => {
-                            setDraftRelatedCardIds((prev) =>
-                              isLinked
-                                ? prev.filter((id) => id !== card.id)
-                                : [...prev, card.id]
-                            );
-                          }}
-                          className={`px-2.5 py-1.5 rounded-lg text-left text-xs flex items-center justify-between transition ${
-                            isLinked
-                              ? 'bg-purple-900/50 border border-purple-400 text-white font-bold'
-                              : 'hover:bg-white/5 text-slate-400'
-                          }`}
-                        >
-                          <span className="truncate">{card.name}</span>
-                          {isLinked && <Check size={13} className="text-purple-300 shrink-0" />}
-                        </button>
-                      );
-                    })}
-                </div>
-              </div>
-
-              <div className="flex justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setAdminMode('none')}
-                  className="px-3 py-1.5 rounded-lg border border-white/15 text-xs text-slate-300"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="button"
-                  disabled={saving}
-                  onClick={handleSaveLoreAndContext}
-                  className="px-4 py-2 rounded-xl bg-purple-500 hover:bg-purple-400 text-white font-black text-xs uppercase tracking-wider flex items-center gap-1.5 shadow-lg"
-                >
-                  <Save size={14} /> {saving ? 'Salvando...' : 'Salvar Contexto & Lore'}
-                </button>
-              </div>
-            </div>
-          ) : (
-            /* VISUALIZAÇÃO DO CONTEXTO & LORE DA MÚSICA */
-            <div className="space-y-4">
-              {selectedSong?.loreTitle && (
-                <div className="p-3.5 rounded-xl bg-purple-950/30 border border-purple-500/30">
-                  <span className="text-[10px] font-mono uppercase tracking-widest text-purple-300 font-bold block mb-0.5">
-                    Arco / Capítulo Relacionado
-                  </span>
-                  <h4 className="font-cinzel text-base font-black text-white">
-                    {selectedSong.loreTitle}
-                  </h4>
-                </div>
-              )}
-
-              {selectedSong?.loreContext && selectedSong.loreContext.trim() ? (
-                <div className="prose prose-invert max-w-none">
-                  <div className="text-xs sm:text-sm text-slate-200 leading-relaxed whitespace-pre-wrap font-serif bg-[#10101a]/70 border border-white/5 rounded-xl p-4 max-h-[380px] overflow-y-auto custom-scrollbar">
-                    {selectedSong.loreContext}
+            {/* MODO 3: EDITAR CURIOSIDADES DA MÚSICA, CAPA E IMAGEM DE FUNDO */}
+            {adminMode === 'edit_lore' && (
+              <div className="space-y-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-bold uppercase text-slate-400 mb-1">
+                      Nome da Música
+                    </label>
+                    <input
+                      type="text"
+                      value={draftSongTitle}
+                      onChange={(e) => setDraftSongTitle(e.target.value)}
+                      className="w-full bg-black/60 border border-white/15 rounded-lg px-3 py-2 text-xs text-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold uppercase text-slate-400 mb-1">
+                      Tempo / Duração
+                    </label>
+                    <input
+                      type="text"
+                      value={draftSongDuration}
+                      onChange={(e) => setDraftSongDuration(e.target.value)}
+                      className="w-full bg-black/60 border border-white/15 rounded-lg px-3 py-2 text-xs text-white"
+                    />
                   </div>
                 </div>
-              ) : (
-                <div className="p-6 rounded-xl bg-[#10101a]/60 border border-white/5 text-center">
-                  <Sparkles size={28} className="text-purple-400/50 mx-auto mb-2" />
-                  <p className="font-cinzel text-xs font-bold uppercase tracking-wider text-slate-300">
-                    Arquivo de Contexto & Lore da Faixa
-                  </p>
-                  <p className="text-xs text-slate-500 mt-1">
-                    {isAdmin
-                      ? 'Clique em "Editar Contexto & Lore" para escrever a história, o contexto e os segredos desta música no universo Light Dark.'
-                      : 'Os registros históricos sobre o contexto desta canção no Macroverso ainda estão sendo catalogados.'}
-                  </p>
-                  {isAdmin && (
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-bold uppercase text-slate-400 mb-1">
+                      URL da Imagem do Bloco (Capa)
+                    </label>
+                    <input
+                      type="text"
+                      value={draftCoverUrl}
+                      onChange={(e) => setDraftCoverUrl(e.target.value)}
+                      className="w-full bg-black/60 border border-white/15 rounded-lg px-3 py-2 text-xs text-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold uppercase text-slate-400 mb-1">
+                      URL da Arte de Fundo da Tela (Opcional)
+                    </label>
+                    <input
+                      type="text"
+                      value={draftBackgroundUrl}
+                      onChange={(e) => setDraftBackgroundUrl(e.target.value)}
+                      placeholder="Arte grande exibida atrás da letra..."
+                      className="w-full bg-black/60 border border-white/15 rounded-lg px-3 py-2 text-xs text-white"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold uppercase text-purple-300 mb-1">
+                    Subtítulo / Arco (Opcional)
+                  </label>
+                  <input
+                    type="text"
+                    value={draftLoreTitle}
+                    onChange={(e) => setDraftLoreTitle(e.target.value)}
+                    placeholder="Ex: Arco de Arkham"
+                    className="w-full bg-black/60 border border-white/15 rounded-lg px-3 py-2 text-xs text-white"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold uppercase text-purple-300 mb-1">
+                    Curiosidades da Música
+                  </label>
+                  <textarea
+                    rows={8}
+                    value={draftLoreContext}
+                    onChange={(e) => setDraftLoreContext(e.target.value)}
+                    placeholder="Escreva aqui as curiosidades e a história desta música..."
+                    className="w-full bg-black/60 border border-white/15 rounded-xl p-3 text-xs text-slate-100 leading-relaxed"
+                  />
+                </div>
+
+                <div className="border-t border-white/10 pt-3">
+                  <label className="block text-[11px] font-bold uppercase text-amber-300 mb-1">
+                    Personagens Relacionados ({draftRelatedCardIds.length})
+                  </label>
+                  <input
+                    type="text"
+                    value={cardSearchTerm}
+                    onChange={(e) => setCardSearchTerm(e.target.value)}
+                    placeholder="Filtrar personagem..."
+                    className="w-full bg-black/60 border border-white/15 rounded-lg px-2.5 py-1.5 text-xs text-white mb-2"
+                  />
+                  <div className="max-h-32 overflow-y-auto grid grid-cols-2 gap-1 p-1.5 bg-black/40 border border-white/10 rounded-xl custom-scrollbar">
+                    {cards
+                      .filter(
+                        (c) =>
+                          !cardSearchTerm.trim() ||
+                          c.name.toLowerCase().includes(cardSearchTerm.toLowerCase())
+                      )
+                      .slice(0, 40)
+                      .map((card) => {
+                        const isLinked = draftRelatedCardIds.includes(card.id);
+                        return (
+                          <button
+                            key={card.id}
+                            type="button"
+                            onClick={() =>
+                              setDraftRelatedCardIds((prev) =>
+                                isLinked
+                                  ? prev.filter((id) => id !== card.id)
+                                  : [...prev, card.id]
+                              )
+                            }
+                            className={`px-2 py-1 rounded text-left text-xs flex items-center justify-between ${
+                              isLinked
+                                ? 'bg-purple-900/50 border border-purple-400 text-white font-bold'
+                                : 'hover:bg-white/5 text-slate-400'
+                            }`}
+                          >
+                            <span className="truncate">{card.name}</span>
+                            {isLinked && <Check size={12} className="text-purple-300 shrink-0" />}
+                          </button>
+                        );
+                      })}
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between pt-3 border-t border-white/10">
+                  {songs.length > 1 ? (
                     <button
                       type="button"
-                      onClick={() => setAdminMode('edit_lore')}
-                      className="mt-3 px-3.5 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold uppercase tracking-wider inline-flex items-center gap-1.5"
+                      onClick={() => {
+                        handleDeleteSong(selectedSong.id);
+                        setAdminMode('none');
+                      }}
+                      className="px-3 py-1.5 rounded-lg bg-rose-950/60 hover:bg-rose-900/80 border border-rose-500/40 text-xs font-bold text-rose-300 flex items-center gap-1"
                     >
-                      <Edit3 size={12} /> Escrever Contexto e Lore
+                      <Trash2 size={13} /> Excluir Música
                     </button>
+                  ) : (
+                    <div />
                   )}
-                </div>
-              )}
-
-              {/* Cartas / Personagens Relacionados à Música */}
-              {linkedCards.length > 0 && (
-                <div className="border-t border-white/10 pt-4">
-                  <h5 className="text-[11px] font-cinzel font-black uppercase tracking-wider text-amber-400 mb-2.5 flex items-center gap-1.5">
-                    <Users size={13} /> Personagens & Cartas Conectadas
-                  </h5>
-                  <div className="grid grid-cols-2 gap-2">
-                    {linkedCards.map((card) => (
-                      <div
-                        key={card.id}
-                        onClick={() => onInspectCard?.(card)}
-                        className="p-2 rounded-xl bg-[#12121e] hover:bg-[#19192a] border border-white/10 hover:border-amber-500/50 cursor-pointer transition flex items-center gap-2.5"
-                      >
-                        <img
-                          src={card.imageUrl}
-                          alt={card.name}
-                          className="w-10 h-10 rounded-lg object-cover border border-amber-500/30 shrink-0"
-                        />
-                        <div className="min-w-0">
-                          <p className="text-xs font-bold text-white truncate">{card.name}</p>
-                          <p className="text-[10px] text-amber-400 truncate">{card.archetype}</p>
-                        </div>
-                      </div>
-                    ))}
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setAdminMode('none')}
+                      className="px-3 py-1.5 rounded-lg border border-white/15 text-xs text-slate-300"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="button"
+                      disabled={saving}
+                      onClick={handleSaveCuriosities}
+                      className="px-4 py-2 rounded-xl bg-purple-500 hover:bg-purple-400 text-white font-black text-xs uppercase flex items-center gap-1.5"
+                    >
+                      <Save size={14} /> Salvar Curiosidades
+                    </button>
                   </div>
                 </div>
-              )}
-            </div>
-          )}
+              </div>
+            )}
+
+            {/* MODO 4: ADICIONAR NOVA MÚSICA */}
+            {adminMode === 'add_song' && (
+              <div className="space-y-3">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-bold uppercase text-slate-400 mb-1">
+                      Link ou ID do YouTube *
+                    </label>
+                    <input
+                      type="text"
+                      value={newSongYoutubeUrl}
+                      onChange={(e) => setNewSongYoutubeUrl(e.target.value)}
+                      placeholder="https://youtu.be/..."
+                      className="w-full bg-black/60 border border-white/15 rounded-lg px-3 py-2 text-xs text-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold uppercase text-slate-400 mb-1">
+                      Nome da Música *
+                    </label>
+                    <input
+                      type="text"
+                      value={newSongTitle}
+                      onChange={(e) => setNewSongTitle(e.target.value)}
+                      placeholder="Ex: My Lady"
+                      className="w-full bg-black/60 border border-white/15 rounded-lg px-3 py-2 text-xs text-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold uppercase text-slate-400 mb-1">
+                      Tempo / Duração
+                    </label>
+                    <input
+                      type="text"
+                      value={newSongDuration}
+                      onChange={(e) => setNewSongDuration(e.target.value)}
+                      placeholder="3:45"
+                      className="w-full bg-black/60 border border-white/15 rounded-lg px-3 py-2 text-xs text-white"
+                    />
+                  </div>
+                </div>
+                <div className="flex justify-end gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setAdminMode('none')}
+                    className="px-3 py-1.5 rounded-lg border border-white/15 text-xs text-slate-300"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!newSongYoutubeUrl.trim() || !newSongTitle.trim() || saving}
+                    onClick={handleCreateNewSong}
+                    className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-slate-950 font-black text-xs uppercase"
+                  >
+                    Criar Bloco na Linha do Tempo
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 };

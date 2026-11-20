@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
   BookOpen, Clock, Layers, Scale, Sparkles, ChevronDown, ChevronUp, 
-  Info, Sword, Crown, Zap, CheckCircle, Ghost, FileText, 
+  Info, Sword, Shield, Crown, Zap, CheckCircle, Ghost, FileText, 
   Edit2, Save, X, Plus, Trash2, AlertCircle, Eye, EyeOff, Check, Search, Grid,
   Trophy, Award, Upload, Loader2, Image as ImageIcon, Flame, Filter, Hexagon, Users
 } from 'lucide-react';
@@ -12,6 +12,7 @@ import { sanitizeForFirestore, useCards } from '../CardContext';
 import { GameField } from './GameField';
 import { InteractionsFaqSection } from './InteractionsFaqSection';
 import { ArchetypeData, TierGuideItem, RarityGuideItem } from '../types';
+import { ArcaneCyberTextureLayer, CyberArcaneCornerFrame, ThemeTextureSlot } from './ArcaneCyberTheme';
 
 export const defaultRarityItems: RarityGuideItem[] = [
   // --- FRAME MODERNO (11) ---
@@ -758,6 +759,10 @@ interface GameGuideSectionsProps {
   onOpenArchetypeModal?: (archetype: ArchetypeData) => void;
   ArchetypeCardComponent: React.ComponentType<any>;
   cardTypesShowcase?: React.ReactNode;
+  textureSlot?: ThemeTextureSlot;
+  panelTextureSlot?: ThemeTextureSlot;
+  showPlaceholderBadge?: boolean;
+  onConfigureTexture?: (slotId: string) => void;
 }
 
 export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
@@ -765,7 +770,11 @@ export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
   onSelectArchetype,
   isAdmin,
   ArchetypeCardComponent,
-  cardTypesShowcase
+  cardTypesShowcase,
+  textureSlot,
+  panelTextureSlot,
+  showPlaceholderBadge,
+  onConfigureTexture
 }) => {
   const [data, setData] = useState<GameManualData>(() => readBrowserCache<GameManualData>('ld_cache_gameManual_v3') || defaultManualData);
   const [isLoading, setIsLoading] = useState(true);
@@ -1149,8 +1158,16 @@ export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
   );
 
   return (
-    <section id="manual-regras" className="py-16 md:py-24 bg-[#0a0a0c] relative border-b border-purple-900/20 text-slate-200">
-      <div className="container mx-auto px-4 sm:px-6 max-w-5xl">
+    <section id="manual-regras" className="py-16 md:py-24 bg-[#05040a] relative border-b border-amber-500/20 text-slate-200 overflow-hidden">
+      {textureSlot && (
+        <ArcaneCyberTextureLayer
+          slot={textureSlot}
+          variant="hybrid"
+          showPlaceholderBadge={showPlaceholderBadge}
+          onOpenConfig={onConfigureTexture}
+        />
+      )}
+      <div className="container mx-auto px-4 sm:px-6 max-w-5xl relative z-10">
 
         {/* TIPOS DE CARTAS (ACIMA DE PATCH ATUAL) */}
         {cardTypesShowcase && (
@@ -1161,23 +1178,31 @@ export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
 
         {/* Novelty Alert Banner (Mensagem de novidade com a data do patch) */}
         {activeManual.isNoveltyActive && (
-          <div className="mb-10 p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-purple-950/80 via-indigo-950/70 to-slate-900/90 border border-purple-500/40 shadow-xl shadow-purple-950/30 relative overflow-hidden backdrop-blur-md">
-            <div className="absolute top-0 right-0 -mr-16 -mt-16 w-44 h-44 bg-purple-600/20 rounded-full blur-2xl pointer-events-none"></div>
+          <div className="mb-10 p-4 sm:p-6 cyber-arcane-box relative overflow-hidden">
+            {panelTextureSlot && (
+              <ArcaneCyberTextureLayer
+                slot={panelTextureSlot}
+                variant="cyber-grid"
+                showPlaceholderBadge={showPlaceholderBadge}
+                onOpenConfig={onConfigureTexture}
+              />
+            )}
+            <CyberArcaneCornerFrame accent="cyan" />
             <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 relative z-10">
               <div className="flex items-start gap-3.5">
-                <div className="p-2.5 rounded-xl bg-purple-600/30 border border-purple-400/40 text-purple-300 shrink-0 mt-0.5 md:mt-0 shadow-[0_0_15px_rgba(168,85,247,0.4)]">
+                <div className="p-2.5 bg-purple-950/80 border border-amber-400/50 text-amber-300 shrink-0 mt-0.5 md:mt-0 shadow-[0_0_15px_rgba(212,175,55,0.3)]">
                   <Sparkles size={22} className="animate-pulse" />
                 </div>
                 <div>
                   <div className="flex items-center gap-2 flex-wrap mb-1">
-                    <span className="text-[11px] font-black uppercase tracking-widest px-2.5 py-0.5 rounded-full bg-purple-500/30 text-purple-200 border border-purple-400/50">
-                      Novidade do Patch {isMesaoMode ? '(Modo Mesão)' : ''}
+                    <span className="text-[11px] font-cyber font-black uppercase tracking-widest px-2.5 py-0.5 bg-purple-950/90 text-amber-200 border border-amber-500/45">
+                      ATUALIZAÇÃO DO CÓDEX {isMesaoMode ? '// MODO MESÃO' : '// M13'}
                     </span>
-                    <span className="text-xs font-mono font-bold text-amber-400 bg-amber-950/50 border border-amber-600/40 px-2 py-0.5 rounded">
+                    <span className="text-xs font-mono font-bold text-cyan-300 bg-cyan-950/60 border border-cyan-500/40 px-2 py-0.5">
                       {activeManual.patchDate || 'Patch Recente'}
                     </span>
                   </div>
-                  <h4 className="text-sm sm:text-base font-bold text-white leading-tight">
+                  <h4 className="text-sm sm:text-base font-cinzel font-bold text-amber-50 leading-tight tracking-wide">
                     {activeManual.noveltyMessage || 'O jogo foi atualizado com novos esclarecimentos e regras de combate!'}
                   </h4>
                 </div>
@@ -1190,9 +1215,9 @@ export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
                     const el = document.getElementById('section-patch');
                     if (el) el.scrollIntoView({ behavior: 'smooth' });
                   }}
-                  className="px-4 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-xs font-bold rounded-xl shadow-lg shadow-purple-900/40 transition active:scale-95 flex items-center gap-1.5"
+                  className="cyber-arcane-btn px-4 py-2 bg-gradient-to-r from-purple-900 via-indigo-900 to-cyan-900 hover:from-purple-800 hover:to-cyan-800 text-amber-200 border border-amber-500/45 text-xs font-cinzel font-bold uppercase tracking-wider shadow-lg transition active:scale-95 flex items-center gap-1.5"
                 >
-                  <Eye size={14} /> Ver Patch Notes
+                  <Eye size={14} className="text-cyan-400" /> Inspecionar Patch Notes
                 </button>
               </div>
             </div>
@@ -1200,25 +1225,25 @@ export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
         )}
 
         {/* Section Header */}
-        <div className={`flex flex-col lg:flex-row lg:items-end justify-between gap-5 mb-10 pb-6 border-b ${isMesaoMode ? 'border-emerald-500/40' : 'border-slate-800'}`}>
+        <div className={`flex flex-col lg:flex-row lg:items-end justify-between gap-5 mb-10 pb-6 border-b ${isMesaoMode ? 'border-emerald-500/40' : 'border-amber-500/25'}`}>
           <div className="flex-1 min-w-0">
-            <div className={`flex items-center gap-2 text-xs font-mono uppercase tracking-widest mb-2 ${isMesaoMode ? 'text-emerald-400' : 'text-purple-400'}`}>
-              {isMesaoMode ? <Users size={15} className="shrink-0" /> : <BookOpen size={15} className="shrink-0" />}
-              <span>{isMesaoMode ? 'Formato Multijogador Oficial • Modo Mesão' : 'Compêndio Geral do Jogador'}</span>
+            <div className={`flex items-center gap-2 text-xs font-mono uppercase tracking-[0.22em] mb-2 ${isMesaoMode ? 'text-emerald-400' : 'text-cyan-400'}`}>
+              {isMesaoMode ? <Users size={15} className="shrink-0" /> : <BookOpen size={15} className="shrink-0 text-amber-400" />}
+              <span>{isMesaoMode ? 'PROTOCOLO MULTIJOGADOR // MODO MESÃO' : 'CÓDEX ARCANO-TECNOLÓGICO // REGRAS OFICIAIS'}</span>
             </div>
-            <h2 className="text-2xl sm:text-4xl font-black text-white uppercase tracking-tight flex flex-wrap items-baseline gap-x-3 gap-y-1">
+            <h2 className="text-2xl sm:text-4xl font-cinzel font-black text-amber-50 uppercase tracking-wider flex flex-wrap items-baseline gap-x-3 gap-y-1">
               {isMesaoMode ? (
                 <>
                   <span className="text-emerald-400">{data.mesaoTitle || 'MANUAL E REGRAS — MODO MESÃO'}</span>
-                  <span className="text-amber-400 text-lg sm:text-2xl font-mono whitespace-nowrap">
-                    (PATCH ATUAL: {activeManual.patchDate || 'Atual'})
+                  <span className="text-amber-400 text-base sm:text-xl font-mono whitespace-nowrap">
+                    [PATCH: {activeManual.patchDate || 'Atual'}]
                   </span>
                 </>
               ) : (
                 <>
                   <span>MANUAL E REGRAS</span>
-                  <span className="text-amber-400 text-lg sm:text-2xl font-mono whitespace-nowrap">
-                    (PATCH ATUAL: {activeManual.patchDate || 'Atual'})
+                  <span className="text-amber-400 text-base sm:text-xl font-mono whitespace-nowrap">
+                    [PATCH: {activeManual.patchDate || 'Atual'}]
                   </span>
                 </>
               )}
@@ -1226,28 +1251,28 @@ export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
             <p className="text-slate-400 text-sm mt-1.5 max-w-2xl leading-relaxed">
               {isMesaoMode
                 ? (data.mesaoSubtitle || 'Consulte todas as diretrizes oficiais do Modo Mesão, fases de turno, regras avançadas, arquétipos e layout do campo em seções retráteis.')
-                : 'Consulte todas as diretrizes oficiais de jogo, fases de turno, regras avançadas, arquétipos e layout do campo em seções retráteis.'}
+                : 'Consulte todas as diretrizes oficiais de jogo, fases de turno, regras avançadas, arquétipos e layout do campo em módulos retráteis.'}
             </p>
           </div>
 
           <div className="flex flex-col sm:flex-row lg:flex-col items-start sm:items-center lg:items-end gap-2.5 shrink-0">
             {/* Botões Normal e Modo Mesão lado a lado */}
-            <div className="inline-flex items-center p-1 rounded-xl bg-slate-900/95 border border-slate-700/80 shadow-lg gap-1">
+            <div className="inline-flex items-center p-1 bg-[#090714] border border-amber-500/35 shadow-lg gap-1">
               <button
                 type="button"
                 onClick={() => {
                   setIsMesaoMode(false);
                   setEditingArchetype(null);
                 }}
-                className={`text-xs font-black px-3.5 py-2 rounded-lg transition-all flex items-center gap-1.5 whitespace-nowrap active:scale-95 ${
+                className={`cyber-arcane-btn text-xs font-cyber font-black uppercase tracking-wider px-3.5 py-2 transition-all flex items-center gap-1.5 whitespace-nowrap active:scale-95 ${
                   !isMesaoMode
-                    ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-md shadow-purple-900/50 border border-purple-400/40'
+                    ? 'bg-gradient-to-r from-purple-900 to-indigo-900 text-amber-200 shadow-md border border-amber-400/50'
                     : 'text-slate-400 hover:text-white hover:bg-slate-800/70 border border-transparent'
                 }`}
                 title="Exibir o Manual no Modo Normal"
               >
                 <BookOpen size={14} />
-                <span>Normal</span>
+                <span>Modo Normal</span>
               </button>
 
               <button
@@ -1256,9 +1281,9 @@ export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
                   setIsMesaoMode(true);
                   setEditingArchetype(null);
                 }}
-                className={`text-xs font-black px-3.5 py-2 rounded-lg transition-all flex items-center gap-1.5 whitespace-nowrap active:scale-95 ${
+                className={`cyber-arcane-btn text-xs font-cyber font-black uppercase tracking-wider px-3.5 py-2 transition-all flex items-center gap-1.5 whitespace-nowrap active:scale-95 ${
                   isMesaoMode
-                    ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-slate-950 shadow-md shadow-emerald-900/50 border border-emerald-300'
+                    ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-slate-950 shadow-md border border-emerald-300'
                     : 'text-slate-400 hover:text-emerald-300 hover:bg-slate-800/70 border border-transparent'
                 }`}
                 title="Exibir o Manual no Modo Mesão (Seção 01 até Seção 07 com mesma disposição)"
@@ -1271,21 +1296,21 @@ export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
             <div className="flex items-center gap-2 flex-wrap">
               <button
                 onClick={expandAll}
-                className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 transition whitespace-nowrap"
+                className="cyber-arcane-btn text-xs font-cyber font-bold uppercase tracking-wider px-3 py-1.5 bg-[#090714] hover:bg-purple-950/60 border border-purple-500/35 text-slate-200 transition whitespace-nowrap"
               >
-                Expandir Todos
+                Expandir Códex
               </button>
               <button
                 onClick={collapseAll}
-                className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 transition whitespace-nowrap"
+                className="cyber-arcane-btn text-xs font-cyber font-bold uppercase tracking-wider px-3 py-1.5 bg-[#090714] hover:bg-purple-950/60 border border-purple-500/35 text-slate-200 transition whitespace-nowrap"
               >
-                Recolher Todos
+                Recolher Códex
               </button>
               
               {isAdmin && (
                 <button
                   onClick={() => openEditorAtTab('patch')}
-                  className="text-xs font-bold px-3.5 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-white shadow-md shadow-purple-900/30 transition flex items-center gap-1.5 whitespace-nowrap active:scale-95"
+                  className="cyber-arcane-btn text-xs font-cyber font-bold uppercase tracking-wider px-3.5 py-1.5 bg-purple-700 hover:bg-purple-600 text-white border border-amber-400/40 shadow-md transition flex items-center gap-1.5 whitespace-nowrap active:scale-95"
                   title={isMesaoMode ? 'Editar as seções 01 a 07 do Modo Mesão' : 'Editar todas as seções e patch do manual'}
                 >
                   <Edit2 size={13} /> {isMesaoMode ? 'Editar Modo Mesão' : 'Editar Manual'}
@@ -1314,31 +1339,31 @@ export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
         <div className="space-y-4">
 
           {/* 1. PATCH ATUAL */}
-          <div id="section-patch" className="rounded-2xl border border-amber-600/30 bg-gradient-to-b from-amber-950/20 to-slate-950 overflow-hidden shadow-lg shadow-black/40 transition-all">
-            <div className="w-full flex items-center justify-between p-4 sm:p-5 text-left hover:bg-amber-950/30 transition group">
+          <div id="section-patch" className="cyber-arcane-box-sm border border-amber-500/40 bg-[#080612]/95 overflow-hidden shadow-lg shadow-black/60 transition-all hover:border-amber-400/70">
+            <div className="w-full flex items-center justify-between p-4 sm:p-5 text-left hover:bg-amber-950/20 transition group">
               <button
                 type="button"
                 onClick={() => toggleSection('patch')}
                 className="flex items-center gap-3 sm:gap-4 min-w-0 flex-1 text-left"
               >
-                <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400 shrink-0 shadow-[0_0_15px_rgba(245,158,11,0.25)]">
+                <div className="cyber-arcane-btn w-10 h-10 bg-amber-500/15 border border-amber-500/40 flex items-center justify-center text-amber-400 shrink-0 shadow-[0_0_15px_rgba(245,158,11,0.25)]">
                   <Scale size={20} />
                 </div>
                 <div className="min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-xs font-mono font-bold text-amber-400 uppercase tracking-wider">
-                      Seção 01
+                    <span className="text-xs font-mono font-bold text-amber-400 uppercase tracking-widest">
+                      SEÇÃO 01 // PROTOCOLO
                     </span>
-                    <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                    <span className="text-[11px] font-mono px-2 py-0.5 bg-amber-500/15 text-amber-300 border border-amber-500/40">
                       Data: {activeManual.patchDate || 'Atual'}
                     </span>
                     {isMesaoMode && (
-                      <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-emerald-950/80 text-emerald-300 border border-emerald-600/40">
+                      <span className="text-[11px] font-mono px-2 py-0.5 bg-emerald-950/80 text-emerald-300 border border-emerald-600/40">
                         Modo Mesão
                       </span>
                     )}
                   </div>
-                  <h3 className="text-lg sm:text-xl font-black text-white group-hover:text-amber-300 transition-colors tracking-wide">
+                  <h3 className="text-lg sm:text-xl font-cinzel font-black text-white group-hover:text-amber-300 transition-colors tracking-wider">
                     PATCH ATUAL
                   </h3>
                 </div>
@@ -1348,7 +1373,7 @@ export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
                   <button
                     type="button"
                     onClick={() => openEditorAtTab('patch')}
-                    className="px-2.5 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 text-xs font-bold flex items-center gap-1 transition"
+                    className="cyber-arcane-btn px-2.5 py-1.5 bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 text-xs font-cyber font-bold uppercase tracking-wider flex items-center gap-1 transition"
                   >
                     <Edit2 size={12} /> <span className="hidden sm:inline">Editar</span>
                   </button>
@@ -1356,7 +1381,7 @@ export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
                 <button
                   type="button"
                   onClick={() => toggleSection('patch')}
-                  className="p-2 rounded-lg bg-slate-900/80 border border-slate-700/60 text-slate-300 group-hover:text-white"
+                  className="cyber-arcane-btn p-2 bg-[#0d0a1a] border border-amber-500/30 text-amber-300 group-hover:text-white"
                 >
                   {openSections.patch ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
                 </button>
@@ -1406,28 +1431,28 @@ export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
           </div>
 
           {/* 2. BASICO */}
-          <div id="section-basico" className="rounded-2xl border border-slate-800 bg-slate-950 overflow-hidden shadow-lg shadow-black/40 transition-all hover:border-slate-700">
-            <div className="w-full flex items-center justify-between p-4 sm:p-5 text-left hover:bg-slate-900/50 transition group">
+          <div id="section-basico" className="cyber-arcane-box-sm border border-purple-500/35 bg-[#080612]/95 overflow-hidden shadow-lg shadow-black/60 transition-all hover:border-purple-400/65">
+            <div className="w-full flex items-center justify-between p-4 sm:p-5 text-left hover:bg-purple-950/20 transition group">
               <button
                 type="button"
                 onClick={() => toggleSection('basico')}
                 className="flex items-center gap-3 sm:gap-4 min-w-0 flex-1 text-left"
               >
-                <div className="w-10 h-10 rounded-xl bg-purple-500/20 border border-purple-500/40 flex items-center justify-center text-purple-400 shrink-0">
+                <div className="cyber-arcane-btn w-10 h-10 bg-purple-500/15 border border-purple-500/40 flex items-center justify-center text-purple-400 shrink-0">
                   <Info size={20} />
                 </div>
                 <div className="min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-xs font-mono font-bold text-purple-400 uppercase tracking-wider">
-                      Seção 02
+                    <span className="text-xs font-mono font-bold text-purple-400 uppercase tracking-widest">
+                      SEÇÃO 02 // FUNDAMENTOS
                     </span>
                     {isMesaoMode && (
-                      <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-emerald-950/80 text-emerald-300 border border-emerald-600/40">
+                      <span className="text-[11px] font-mono px-2 py-0.5 bg-emerald-950/80 text-emerald-300 border border-emerald-600/40">
                         Modo Mesão
                       </span>
                     )}
                   </div>
-                  <h3 className="text-lg sm:text-xl font-black text-white group-hover:text-purple-300 transition-colors tracking-wide">
+                  <h3 className="text-lg sm:text-xl font-cinzel font-black text-white group-hover:text-purple-300 transition-colors tracking-wider">
                     BÁSICO
                   </h3>
                 </div>
@@ -1437,7 +1462,7 @@ export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
                   <button
                     type="button"
                     onClick={() => openEditorAtTab('basico')}
-                    className="px-2.5 py-1.5 rounded-lg bg-purple-500/20 hover:bg-purple-500/30 border border-purple-500/40 text-purple-300 text-xs font-bold flex items-center gap-1 transition"
+                    className="cyber-arcane-btn px-2.5 py-1.5 bg-purple-500/20 hover:bg-purple-500/30 border border-purple-500/40 text-purple-300 text-xs font-cyber font-bold uppercase tracking-wider flex items-center gap-1 transition"
                   >
                     <Edit2 size={12} /> <span className="hidden sm:inline">Editar</span>
                   </button>
@@ -1445,7 +1470,7 @@ export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
                 <button
                   type="button"
                   onClick={() => toggleSection('basico')}
-                  className="p-2 rounded-lg bg-slate-900 border border-slate-700/60 text-slate-300 group-hover:text-white"
+                  className="cyber-arcane-btn p-2 bg-[#0d0a1a] border border-purple-500/30 text-purple-300 group-hover:text-white"
                 >
                   {openSections.basico ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
                 </button>
@@ -1511,28 +1536,28 @@ export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
           </div>
 
           {/* 3. CARTAS */}
-          <div id="section-cartas" className="rounded-2xl border border-slate-800 bg-slate-950 overflow-hidden shadow-lg shadow-black/40 transition-all hover:border-slate-700">
-            <div className="w-full flex items-center justify-between p-4 sm:p-5 text-left hover:bg-slate-900/50 transition group">
+          <div id="section-cartas" className="cyber-arcane-box-sm border border-cyan-500/35 bg-[#080612]/95 overflow-hidden shadow-lg shadow-black/60 transition-all hover:border-cyan-400/65">
+            <div className="w-full flex items-center justify-between p-4 sm:p-5 text-left hover:bg-cyan-950/20 transition group">
               <button
                 type="button"
                 onClick={() => toggleSection('cartas')}
                 className="flex items-center gap-3 sm:gap-4 min-w-0 flex-1 text-left"
               >
-                <div className="w-10 h-10 rounded-xl bg-blue-500/20 border border-blue-500/40 flex items-center justify-center text-blue-400 shrink-0">
+                <div className="cyber-arcane-btn w-10 h-10 bg-cyan-500/15 border border-cyan-500/40 flex items-center justify-center text-cyan-400 shrink-0">
                   <Layers size={20} />
                 </div>
                 <div className="min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-xs font-mono font-bold text-blue-400 uppercase tracking-wider">
-                      Seção 03
+                    <span className="text-xs font-mono font-bold text-cyan-400 uppercase tracking-widest">
+                      SEÇÃO 03 // TIPOLOGIA
                     </span>
                     {isMesaoMode && (
-                      <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-emerald-950/80 text-emerald-300 border border-emerald-600/40">
+                      <span className="text-[11px] font-mono px-2 py-0.5 bg-emerald-950/80 text-emerald-300 border border-emerald-600/40">
                         Modo Mesão
                       </span>
                     )}
                   </div>
-                  <h3 className="text-lg sm:text-xl font-black text-white group-hover:text-blue-300 transition-colors tracking-wide">
+                  <h3 className="text-lg sm:text-xl font-cinzel font-black text-white group-hover:text-cyan-300 transition-colors tracking-wider">
                     CARTAS
                   </h3>
                 </div>
@@ -1542,7 +1567,7 @@ export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
                   <button
                     type="button"
                     onClick={() => openEditorAtTab('cartas')}
-                    className="px-2.5 py-1.5 rounded-lg bg-blue-500/20 hover:bg-blue-500/30 border border-blue-500/40 text-blue-300 text-xs font-bold flex items-center gap-1 transition"
+                    className="cyber-arcane-btn px-2.5 py-1.5 bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/40 text-cyan-300 text-xs font-cyber font-bold uppercase tracking-wider flex items-center gap-1 transition"
                   >
                     <Edit2 size={12} /> <span className="hidden sm:inline">Editar</span>
                   </button>
@@ -1550,7 +1575,7 @@ export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
                 <button
                   type="button"
                   onClick={() => toggleSection('cartas')}
-                  className="p-2 rounded-lg bg-slate-900 border border-slate-700/60 text-slate-300 group-hover:text-white"
+                  className="cyber-arcane-btn p-2 bg-[#0d0a1a] border border-cyan-500/30 text-cyan-300 group-hover:text-white"
                 >
                   {openSections.cartas ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
                 </button>
@@ -1662,28 +1687,28 @@ export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
           </div>
 
           {/* 4. TURNOS */}
-          <div id="section-turnos" className="rounded-2xl border border-slate-800 bg-slate-950 overflow-hidden shadow-lg shadow-black/40 transition-all hover:border-slate-700">
-            <div className="w-full flex items-center justify-between p-4 sm:p-5 text-left hover:bg-slate-900/50 transition group">
+          <div id="section-turnos" className="cyber-arcane-box-sm border border-red-500/35 bg-[#080612]/95 overflow-hidden shadow-lg shadow-black/60 transition-all hover:border-red-400/65">
+            <div className="w-full flex items-center justify-between p-4 sm:p-5 text-left hover:bg-red-950/20 transition group">
               <button
                 type="button"
                 onClick={() => toggleSection('turnos')}
                 className="flex items-center gap-3 sm:gap-4 min-w-0 flex-1 text-left"
               >
-                <div className="w-10 h-10 rounded-xl bg-red-500/20 border border-red-500/40 flex items-center justify-center text-red-400 shrink-0">
+                <div className="cyber-arcane-btn w-10 h-10 bg-red-500/15 border border-red-500/40 flex items-center justify-center text-red-400 shrink-0">
                   <Clock size={20} />
                 </div>
                 <div className="min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-xs font-mono font-bold text-red-400 uppercase tracking-wider">
-                      Seção 04
+                    <span className="text-xs font-mono font-bold text-red-400 uppercase tracking-widest">
+                      SEÇÃO 04 // CRONOLOGIA DE COMBATE
                     </span>
                     {isMesaoMode && (
-                      <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-emerald-950/80 text-emerald-300 border border-emerald-600/40">
+                      <span className="text-[11px] font-mono px-2 py-0.5 bg-emerald-950/80 text-emerald-300 border border-emerald-600/40">
                         Modo Mesão
                       </span>
                     )}
                   </div>
-                  <h3 className="text-lg sm:text-xl font-black text-white group-hover:text-red-300 transition-colors tracking-wide">
+                  <h3 className="text-lg sm:text-xl font-cinzel font-black text-white group-hover:text-red-300 transition-colors tracking-wider">
                     TURNOS
                   </h3>
                 </div>
@@ -1693,7 +1718,7 @@ export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
                   <button
                     type="button"
                     onClick={() => openEditorAtTab('turnos')}
-                    className="px-2.5 py-1.5 rounded-lg bg-red-500/20 hover:bg-red-500/30 border border-red-500/40 text-red-300 text-xs font-bold flex items-center gap-1 transition"
+                    className="cyber-arcane-btn px-2.5 py-1.5 bg-red-500/20 hover:bg-red-500/30 border border-red-500/40 text-red-300 text-xs font-cyber font-bold uppercase tracking-wider flex items-center gap-1 transition"
                   >
                     <Edit2 size={12} /> <span className="hidden sm:inline">Editar</span>
                   </button>
@@ -1701,7 +1726,7 @@ export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
                 <button
                   type="button"
                   onClick={() => toggleSection('turnos')}
-                  className="p-2 rounded-lg bg-slate-900 border border-slate-700/60 text-slate-300 group-hover:text-white"
+                  className="cyber-arcane-btn p-2 bg-[#0d0a1a] border border-red-500/30 text-red-300 group-hover:text-white"
                 >
                   {openSections.turnos ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
                 </button>
@@ -1749,28 +1774,28 @@ export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
           </div>
 
           {/* 5. REGRAS */}
-          <div id="section-regras" className="rounded-2xl border border-slate-800 bg-slate-950 overflow-hidden shadow-lg shadow-black/40 transition-all hover:border-slate-700">
-            <div className="w-full flex items-center justify-between p-4 sm:p-5 text-left hover:bg-slate-900/50 transition group">
+          <div id="section-regras" className="cyber-arcane-box-sm border border-emerald-500/35 bg-[#080612]/95 overflow-hidden shadow-lg shadow-black/60 transition-all hover:border-emerald-400/65">
+            <div className="w-full flex items-center justify-between p-4 sm:p-5 text-left hover:bg-emerald-950/20 transition group">
               <button
                 type="button"
                 onClick={() => toggleSection('regras')}
                 className="flex items-center gap-3 sm:gap-4 min-w-0 flex-1 text-left"
               >
-                <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 shrink-0">
+                <div className="cyber-arcane-btn w-10 h-10 bg-emerald-500/15 border border-emerald-500/40 flex items-center justify-center text-emerald-400 shrink-0">
                   <Scale size={20} />
                 </div>
                 <div className="min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-xs font-mono font-bold text-emerald-400 uppercase tracking-wider">
-                      Seção 05
+                    <span className="text-xs font-mono font-bold text-emerald-400 uppercase tracking-widest">
+                      SEÇÃO 05 // CÓDIGO ARCANO
                     </span>
                     {isMesaoMode && (
-                      <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-emerald-950/80 text-emerald-300 border border-emerald-600/40">
+                      <span className="text-[11px] font-mono px-2 py-0.5 bg-emerald-950/80 text-emerald-300 border border-emerald-600/40">
                         Modo Mesão
                       </span>
                     )}
                   </div>
-                  <h3 className="text-lg sm:text-xl font-black text-white group-hover:text-emerald-300 transition-colors tracking-wide">
+                  <h3 className="text-lg sm:text-xl font-cinzel font-black text-white group-hover:text-emerald-300 transition-colors tracking-wider">
                     REGRAS
                   </h3>
                 </div>
@@ -1780,7 +1805,7 @@ export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
                   <button
                     type="button"
                     onClick={() => openEditorAtTab('regras')}
-                    className="px-2.5 py-1.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-300 text-xs font-bold flex items-center gap-1 transition"
+                    className="cyber-arcane-btn px-2.5 py-1.5 bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-300 text-xs font-cyber font-bold uppercase tracking-wider flex items-center gap-1 transition"
                   >
                     <Edit2 size={12} /> <span className="hidden sm:inline">Editar</span>
                   </button>
@@ -1788,7 +1813,7 @@ export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
                 <button
                   type="button"
                   onClick={() => toggleSection('regras')}
-                  className="p-2 rounded-lg bg-slate-900 border border-slate-700/60 text-slate-300 group-hover:text-white"
+                  className="cyber-arcane-btn p-2 bg-[#0d0a1a] border border-emerald-500/30 text-emerald-300 group-hover:text-white"
                 >
                   {openSections.regras ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
                 </button>
@@ -1842,31 +1867,31 @@ export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
           </div>
 
           {/* 6. ARQUÉTIPOS (EXATAMENTE A MESMA DISPOSIÇÃO EM AMBOS OS MODOS) */}
-          <div id="section-arquetipos" className="rounded-2xl border border-purple-800/40 bg-slate-950 overflow-hidden shadow-lg shadow-black/40 transition-all hover:border-purple-600/60">
-            <div className="w-full flex items-center justify-between p-4 sm:p-5 text-left hover:bg-slate-900/50 transition group">
+          <div id="section-arquetipos" className="cyber-arcane-box-sm border border-purple-500/40 bg-[#080612]/95 overflow-hidden shadow-lg shadow-black/60 transition-all hover:border-purple-400/70">
+            <div className="w-full flex items-center justify-between p-4 sm:p-5 text-left hover:bg-purple-950/20 transition group">
               <button
                 type="button"
                 onClick={() => toggleSection('arquetipos')}
                 className="flex items-center gap-3 sm:gap-4 min-w-0 flex-1 text-left"
               >
-                <div className="w-10 h-10 rounded-xl bg-purple-600/20 border border-purple-500/40 flex items-center justify-center text-purple-400 shrink-0">
+                <div className="cyber-arcane-btn w-10 h-10 bg-purple-600/20 border border-purple-500/40 flex items-center justify-center text-purple-400 shrink-0">
                   <Crown size={20} />
                 </div>
                 <div className="min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-xs font-mono font-bold text-purple-400 uppercase tracking-wider">
-                      Seção 06
+                    <span className="text-xs font-mono font-bold text-purple-400 uppercase tracking-widest">
+                      SEÇÃO 06 // LINHAGENS MACROVERSAIS
                     </span>
-                    <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-purple-950 text-purple-300 border border-purple-800/50">
+                    <span className="text-[11px] font-mono px-2 py-0.5 bg-purple-950 text-purple-300 border border-purple-800/50">
                       {activeArchetypes.length} Arquétipos Registrados
                     </span>
                     {isMesaoMode && (
-                      <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-emerald-950/80 text-emerald-300 border border-emerald-600/40">
+                      <span className="text-[11px] font-mono px-2 py-0.5 bg-emerald-950/80 text-emerald-300 border border-emerald-600/40">
                         Modo Mesão
                       </span>
                     )}
                   </div>
-                  <h3 className="text-lg sm:text-xl font-black text-white group-hover:text-purple-300 transition-colors tracking-wide">
+                  <h3 className="text-lg sm:text-xl font-cinzel font-black text-white group-hover:text-purple-300 transition-colors tracking-wider">
                     ARQUÉTIPOS
                   </h3>
                 </div>
@@ -1876,7 +1901,7 @@ export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
                   <button
                     type="button"
                     onClick={() => openEditorAtTab('arquetipos')}
-                    className="px-2.5 py-1.5 rounded-lg bg-purple-500/20 hover:bg-purple-500/30 border border-purple-500/40 text-purple-300 text-xs font-bold flex items-center gap-1 transition"
+                    className="cyber-arcane-btn px-2.5 py-1.5 bg-purple-500/20 hover:bg-purple-500/30 border border-purple-500/40 text-purple-300 text-xs font-cyber font-bold uppercase tracking-wider flex items-center gap-1 transition"
                   >
                     <Edit2 size={12} /> <span className="hidden sm:inline">Editar</span>
                   </button>
@@ -1884,7 +1909,7 @@ export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
                 <button
                   type="button"
                   onClick={() => toggleSection('arquetipos')}
-                  className="p-2 rounded-lg bg-slate-900 border border-slate-700/60 text-slate-300 group-hover:text-white"
+                  className="cyber-arcane-btn p-2 bg-[#0d0a1a] border border-purple-500/30 text-purple-300 group-hover:text-white"
                 >
                   {openSections.arquetipos ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
                 </button>
@@ -2070,17 +2095,18 @@ export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
                 <div className="flex flex-col gap-3">
                   {filteredArchetypes.length > 0 ? (
                     filteredArchetypes.map((arch, idx) => (
-                      <div key={arch.name || idx} className="relative group/arch">
+                      <div key={arch.name || idx} className="relative group/arch flex flex-col gap-1.5">
                         <ArchetypeCardComponent {...arch} />
                         {isAdmin && (
-                          <div className="mt-2 sm:mt-0 sm:absolute sm:top-3.5 sm:right-4 flex items-center justify-end gap-2 z-10">
+                          <div className="flex items-center justify-end gap-2 px-2 py-1 bg-[#090714]/90 border border-purple-500/25">
+                            <span className="text-[10px] font-mono text-slate-500 mr-auto">CONTROLE ADMIN // {arch.name}</span>
                             <button
                               type="button"
                               onClick={() => handleToggleArchetypeNew(arch)}
-                              className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition flex items-center gap-1 ${
+                              className={`cyber-arcane-btn px-2.5 py-1 text-[11px] font-cyber font-bold uppercase tracking-wider border transition flex items-center gap-1 ${
                                 arch.isNew
                                   ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50 hover:bg-emerald-500/30'
-                                  : 'bg-slate-800/90 text-slate-400 border-slate-700 hover:text-white hover:border-slate-500'
+                                  : 'bg-slate-900 text-slate-400 border-slate-700 hover:text-white hover:border-slate-500'
                               }`}
                               title="Alternar destaque Novo no Manual"
                             >
@@ -2101,7 +2127,7 @@ export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
                                 const el = document.getElementById('section-arquetipos');
                                 if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
                               }}
-                              className="px-3 py-1 rounded-lg bg-purple-600/90 hover:bg-purple-500 text-white text-[11px] font-bold flex items-center gap-1 shadow transition"
+                              className="cyber-arcane-btn px-3 py-1 bg-purple-700 hover:bg-purple-600 text-white border border-amber-400/40 text-[11px] font-cyber font-bold uppercase tracking-wider flex items-center gap-1 shadow transition"
                             >
                               <Edit2 size={11} /> Editar
                             </button>
@@ -2120,31 +2146,31 @@ export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
           </div>
 
           {/* 7. CAMPOS */}
-          <div id="section-campos" className="rounded-2xl border border-cyan-800/40 bg-slate-950 overflow-hidden shadow-lg shadow-black/40 transition-all hover:border-cyan-600/60">
-            <div className="w-full flex items-center justify-between p-4 sm:p-5 text-left hover:bg-slate-900/50 transition group">
+          <div id="section-campos" className="cyber-arcane-box-sm border border-cyan-500/40 bg-[#080612]/95 overflow-hidden shadow-lg shadow-black/60 transition-all hover:border-cyan-400/70">
+            <div className="w-full flex items-center justify-between p-4 sm:p-5 text-left hover:bg-cyan-950/20 transition group">
               <button
                 type="button"
                 onClick={() => toggleSection('campos')}
                 className="flex items-center gap-3 sm:gap-4 min-w-0 flex-1 text-left"
               >
-                <div className="w-10 h-10 rounded-xl bg-cyan-600/20 border border-cyan-500/40 flex items-center justify-center text-cyan-400 shrink-0">
+                <div className="cyber-arcane-btn w-10 h-10 bg-cyan-600/20 border border-cyan-500/40 flex items-center justify-center text-cyan-400 shrink-0">
                   <Grid size={20} />
                 </div>
                 <div className="min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-xs font-mono font-bold text-cyan-400 uppercase tracking-wider">
-                      Seção 07
+                    <span className="text-xs font-mono font-bold text-cyan-400 uppercase tracking-widest">
+                      SEÇÃO 07 // TOPOLOGIA DE ARENA
                     </span>
-                    <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-cyan-950 text-cyan-300 border border-cyan-800/50">
+                    <span className="text-[11px] font-mono px-2 py-0.5 bg-cyan-950 text-cyan-300 border border-cyan-800/50">
                       Playmat Interativo
                     </span>
                     {isMesaoMode && (
-                      <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-emerald-950/80 text-emerald-300 border border-emerald-600/40">
+                      <span className="text-[11px] font-mono px-2 py-0.5 bg-emerald-950/80 text-emerald-300 border border-emerald-600/40">
                         Modo Mesão
                       </span>
                     )}
                   </div>
-                  <h3 className="text-lg sm:text-xl font-black text-white group-hover:text-cyan-300 transition-colors tracking-wide">
+                  <h3 className="text-lg sm:text-xl font-cinzel font-black text-white group-hover:text-cyan-300 transition-colors tracking-wider">
                     CAMPOS
                   </h3>
                 </div>
@@ -2154,7 +2180,7 @@ export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
                   <button
                     type="button"
                     onClick={() => openEditorAtTab('campos')}
-                    className="px-2.5 py-1.5 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/40 text-cyan-300 text-xs font-bold flex items-center gap-1 transition"
+                    className="cyber-arcane-btn px-2.5 py-1.5 bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/40 text-cyan-300 text-xs font-cyber font-bold uppercase tracking-wider flex items-center gap-1 transition"
                   >
                     <Edit2 size={12} /> <span className="hidden sm:inline">Editar</span>
                   </button>
@@ -2162,7 +2188,7 @@ export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
                 <button
                   type="button"
                   onClick={() => toggleSection('campos')}
-                  className="p-2 rounded-lg bg-slate-900 border border-slate-700/60 text-slate-300 group-hover:text-white"
+                  className="cyber-arcane-btn p-2 bg-[#0d0a1a] border border-cyan-500/30 text-cyan-300 group-hover:text-white"
                 >
                   {openSections.campos ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
                 </button>
@@ -2201,33 +2227,33 @@ export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
           </div>
 
           {/* 8. RARIDADE DAS CARTAS */}
-          <div id="section-raridades" className="rounded-2xl border border-amber-500/40 bg-slate-950 overflow-hidden shadow-lg shadow-black/40 transition-all hover:border-amber-500/60">
+          <div id="section-raridades" className="cyber-arcane-box-sm border border-amber-500/40 bg-[#080612]/95 overflow-hidden shadow-lg shadow-black/60 transition-all hover:border-amber-400/70">
             <button
               onClick={() => toggleSection('raridades')}
-              className="w-full flex items-center justify-between p-4 sm:p-5 text-left hover:bg-slate-900/50 transition group"
+              className="w-full flex items-center justify-between p-4 sm:p-5 text-left hover:bg-amber-950/20 transition group"
             >
               <div className="flex items-center gap-3 sm:gap-4 min-w-0">
-                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-500/20 via-purple-600/20 to-cyan-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400 shrink-0 shadow-[0_0_15px_rgba(245,158,11,0.25)]">
+                <div className="cyber-arcane-btn w-10 h-10 bg-gradient-to-br from-amber-500/20 via-purple-600/20 to-cyan-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400 shrink-0 shadow-[0_0_15px_rgba(245,158,11,0.25)]">
                   <Award size={20} />
                 </div>
                 <div className="min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-xs font-mono font-bold text-amber-400 uppercase tracking-wider">
-                      Seção 08
+                    <span className="text-xs font-mono font-bold text-amber-400 uppercase tracking-widest">
+                      SEÇÃO 08 // HIERARQUIA DE TIRAGEM
                     </span>
-                    <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-amber-950/80 text-amber-300 border border-amber-800/50">
+                    <span className="text-[11px] font-mono px-2 py-0.5 bg-amber-950/80 text-amber-300 border border-amber-800/50">
                       Oficial • 17 Raridades
                     </span>
-                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-900 text-slate-300 border border-slate-700 hidden sm:inline-block">
+                    <span className="text-[10px] font-mono px-2 py-0.5 bg-slate-900 text-slate-300 border border-slate-700 hidden sm:inline-block">
                       Frame Moderno (11) & Frame Legado (6)
                     </span>
                   </div>
-                  <h3 className="text-lg sm:text-xl font-black text-white group-hover:text-amber-300 transition-colors tracking-wide">
+                  <h3 className="text-lg sm:text-xl font-cinzel font-black text-white group-hover:text-amber-300 transition-colors tracking-wider">
                     RARIDADE DAS CARTAS
                   </h3>
                 </div>
               </div>
-              <div className="p-2 rounded-lg bg-slate-900 border border-slate-700/60 text-slate-300 group-hover:text-white shrink-0 ml-2">
+              <div className="cyber-arcane-btn p-2 bg-[#0d0a1a] border border-amber-500/30 text-amber-300 group-hover:text-white shrink-0 ml-2">
                 {openSections.raridades ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
               </div>
             </button>
@@ -2584,30 +2610,30 @@ export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
           </div>
 
           {/* 9. FAQ RÁPIDO DE INTERAÇÕES (JUIZ DIGITAL & EMBAIXADORES) - RETRÁTIL */}
-          <div id="section-faq" className="rounded-2xl border border-indigo-500/40 bg-slate-950 overflow-hidden shadow-lg shadow-black/40 transition-all hover:border-indigo-500/60">
+          <div id="section-faq" className="cyber-arcane-box-sm border border-indigo-500/40 bg-[#080612]/95 overflow-hidden shadow-lg shadow-black/60 transition-all hover:border-indigo-400/70">
             <button
               onClick={() => toggleSection('faq')}
-              className="w-full flex items-center justify-between p-4 sm:p-5 text-left hover:bg-slate-900/50 transition group"
+              className="w-full flex items-center justify-between p-4 sm:p-5 text-left hover:bg-indigo-950/20 transition group"
             >
               <div className="flex items-center gap-3 sm:gap-4 min-w-0">
-                <div className="w-10 h-10 rounded-xl bg-indigo-600/20 border border-indigo-500/40 flex items-center justify-center text-indigo-400 shrink-0">
+                <div className="cyber-arcane-btn w-10 h-10 bg-indigo-600/20 border border-indigo-500/40 flex items-center justify-center text-indigo-400 shrink-0">
                   <Scale size={20} />
                 </div>
                 <div className="min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-xs font-mono font-bold text-indigo-400 uppercase tracking-wider">
-                      Seção 09
+                    <span className="text-xs font-mono font-bold text-indigo-400 uppercase tracking-widest">
+                      SEÇÃO 09 // JURISPRUDÊNCIA & FAQ
                     </span>
-                    <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-indigo-950 text-indigo-300 border border-indigo-800/50">
+                    <span className="text-[11px] font-mono px-2 py-0.5 bg-indigo-950 text-indigo-300 border border-indigo-800/50">
                       Juiz Digital & Embaixadores
                     </span>
                   </div>
-                  <h3 className="text-lg sm:text-xl font-black text-white group-hover:text-indigo-300 transition-colors tracking-wide">
+                  <h3 className="text-lg sm:text-xl font-cinzel font-black text-white group-hover:text-indigo-300 transition-colors tracking-wider">
                     FAQ RÁPIDO DE INTERAÇÕES
                   </h3>
                 </div>
               </div>
-              <div className="p-2 rounded-lg bg-slate-900 border border-slate-700/60 text-slate-300 group-hover:text-white shrink-0 ml-2">
+              <div className="cyber-arcane-btn p-2 bg-[#0d0a1a] border border-indigo-500/30 text-indigo-300 group-hover:text-white shrink-0 ml-2">
                 {openSections.faq ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
               </div>
             </button>

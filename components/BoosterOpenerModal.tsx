@@ -228,7 +228,9 @@ export const BoosterOpenerModal: React.FC<BoosterOpenerModalProps> = ({
     const generated = generatePackCards(currentPack);
     if (generated.length === 0) {
       alert(
-        'Este booster ainda não possui cartas ou coleções configuradas. Configure as cartas/coleções no painel de Admin.'
+        isAdmin
+          ? 'Este booster ainda não possui cartas ou coleções configuradas. Configure as cartas/coleções no painel de Admin.'
+          : 'Este booster estará disponível em breve!'
       );
       return;
     }
@@ -339,20 +341,20 @@ export const BoosterOpenerModal: React.FC<BoosterOpenerModalProps> = ({
         <CardDetailModal card={inspectedCard} onClose={() => setInspectedCard(null)} />
       )}
 
-      <div className="relative w-full max-w-6xl bg-[#0b0b10] border border-purple-500/30 rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh]">
+      <div className="cyber-arcane-box relative w-full max-w-6xl bg-[#070510]/95 border border-amber-500/40 shadow-[0_0_70px_rgba(0,0,0,0.95)] overflow-hidden flex flex-col max-h-[92vh]">
         {/* Header */}
-        <div className="p-4 sm:p-6 bg-slate-950/90 border-b border-slate-800 flex flex-wrap items-center justify-between gap-3 shrink-0">
-          <div className="flex items-center gap-3">
-            <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-purple-600/30 to-amber-500/20 border border-purple-500/40 flex items-center justify-center text-amber-400 shadow-lg">
+        <div className="p-4 sm:p-6 bg-gradient-to-r from-[#070510] via-purple-950/35 to-[#070510] border-b border-amber-500/30 flex flex-wrap items-center justify-between gap-3 shrink-0">
+          <div className="flex items-center gap-3.5">
+            <div className="cyber-arcane-btn w-11 h-11 bg-gradient-to-br from-purple-600/30 to-amber-500/20 border border-amber-500/50 flex items-center justify-center text-amber-400 shadow-lg">
               <Package size={22} />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <span className="text-[10px] font-mono uppercase tracking-widest px-2 py-0.5 rounded-full bg-purple-950 text-purple-300 border border-purple-700/50">
-                  Pack Opener
+                <span className="text-[10px] font-mono uppercase tracking-[0.22em] px-2 py-0.5 bg-purple-950/90 text-cyan-300 border border-cyan-500/40">
+                  CÂMARA DE INVOCAÇÃO // PACK OPENER
                 </span>
               </div>
-              <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight">
+              <h2 className="text-xl sm:text-2xl font-cinzel font-black text-white tracking-wider mt-0.5">
                 SIMULADOR DE ABERTURA DE BOOSTER
               </h2>
             </div>
@@ -363,10 +365,10 @@ export const BoosterOpenerModal: React.FC<BoosterOpenerModalProps> = ({
               <button
                 type="button"
                 onClick={() => setIsEditingPacks((prev) => !prev)}
-                className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition border ${
+                className={`cyber-arcane-btn px-3.5 py-2 text-xs font-cyber font-bold uppercase tracking-wider flex items-center gap-1.5 transition border ${
                   isEditingPacks
-                    ? 'bg-amber-500 text-slate-950 border-amber-400 shadow-lg'
-                    : 'bg-slate-900 hover:bg-slate-800 text-amber-300 border-amber-500/40'
+                    ? 'bg-amber-500 text-slate-950 border-amber-300 shadow-lg'
+                    : 'bg-[#0d0a1a] hover:bg-purple-950/60 text-amber-300 border-amber-500/40'
                 }`}
               >
                 <Settings size={14} />
@@ -376,7 +378,7 @@ export const BoosterOpenerModal: React.FC<BoosterOpenerModalProps> = ({
             <button
               type="button"
               onClick={onClose}
-              className="p-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-white border border-slate-800 transition"
+              className="cyber-arcane-btn p-2 bg-[#0d0a1a] hover:bg-red-950/50 text-slate-400 hover:text-white border border-amber-500/30 transition"
             >
               <X size={20} />
             </button>

@@ -1053,16 +1053,16 @@ export const TournamentManager: React.FC<TournamentManagerProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-[100] flex flex-col bg-[#1a1a1a] text-slate-200 font-sans animate-in fade-in duration-200 overflow-hidden">
+    <div className="fixed inset-0 z-[100] flex flex-col bg-[#05030a] text-slate-200 font-sans animate-in fade-in duration-200 overflow-hidden">
       
       {/* HEADER */}
-      <div className={`p-4 flex flex-wrap justify-between items-center shadow-lg shrink-0 gap-3 border-b ${
+      <div className={`p-4 flex flex-wrap justify-between items-center shadow-[0_10px_30px_rgba(0,0,0,0.85)] shrink-0 gap-3 border-b ${
         isOfficial 
-          ? 'bg-gradient-to-r from-amber-950/60 via-slate-900 to-slate-950 border-amber-500/50' 
-          : 'bg-[#242424] border-[#333]'
+          ? 'bg-gradient-to-r from-amber-950/60 via-[#090614] to-[#05030a] border-amber-500/50' 
+          : 'bg-[#080612] border-purple-500/35'
       }`}>
         <div className="flex items-center gap-3">
-          <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 border ${
+          <div className={`cyber-arcane-btn w-10 h-10 flex items-center justify-center shrink-0 border ${
             isOfficial 
               ? 'bg-gradient-to-br from-amber-500 to-yellow-500 text-slate-950 border-amber-300 shadow-md shadow-amber-950/60' 
               : 'bg-purple-900/60 text-purple-300 border-purple-500/40'
@@ -1070,22 +1070,25 @@ export const TournamentManager: React.FC<TournamentManagerProps> = ({
             <Crown size={22} className={isOfficial ? 'fill-slate-950' : 'fill-purple-400'} />
           </div>
           <div>
+            <span className="block text-[9px] font-mono uppercase tracking-[0.22em] text-cyan-400">
+              COLISEU COMPETITIVO // GESTÃO DE CHAVES
+            </span>
             <div className="flex items-center gap-2">
-              <h2 className="text-lg sm:text-xl font-black text-white truncate max-w-[200px] sm:max-w-md">
+              <h2 className="text-lg sm:text-xl font-cinzel font-black text-white tracking-wider truncate max-w-[200px] sm:max-w-md">
                 {name || 'Torneio Light Dark TCG'}
               </h2>
               {isOfficial ? (
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-gradient-to-r from-amber-500 to-yellow-500 text-slate-950 shadow-sm flex items-center gap-1">
+                <span className="cyber-arcane-btn px-2 py-0.5 text-[10px] font-mono font-black uppercase tracking-wider bg-gradient-to-r from-amber-500 to-yellow-500 text-slate-950 shadow-sm flex items-center gap-1">
                   <Crown size={10} className="fill-slate-950" /> Oficial
                 </span>
               ) : (
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-800 text-slate-400 border border-slate-700">
+                <span className="cyber-arcane-btn px-2 py-0.5 text-[10px] font-mono font-bold bg-[#0d0a1a] text-slate-300 border border-purple-500/35">
                   Comunitário
                 </span>
               )}
             </div>
             <div className="flex items-center gap-2 text-[11px] text-slate-400 mt-0.5">
-              <span>Código: <b className="font-mono text-purple-300">{tournamentId.split('_').slice(-1)[0]}</b></span>
+              <span>Código: <b className="font-mono text-amber-300">{tournamentId.split('_').slice(-1)[0]}</b></span>
               {isSavingCloud && <span className="text-amber-400 text-[10px] flex items-center gap-1">• Salvando na nuvem...</span>}
             </div>
           </div>
@@ -1097,7 +1100,7 @@ export const TournamentManager: React.FC<TournamentManagerProps> = ({
           {user ? (
             myLinkedParticipant ? (
               <div 
-                className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-950/70 border border-emerald-500/50 text-emerald-300 text-xs font-bold"
+                className="cyber-arcane-btn hidden sm:flex items-center gap-1.5 px-3 py-1.5 bg-emerald-950/70 border border-emerald-500/50 text-emerald-300 text-xs font-cyber font-bold uppercase tracking-wider"
                 title={`Vinculado como ${myLinkedParticipant.name}. Resultados serão gravados no seu histórico!`}
               >
                 <CheckCircle size={13} className="text-emerald-400" />
@@ -1106,7 +1109,7 @@ export const TournamentManager: React.FC<TournamentManagerProps> = ({
             ) : (
               <button
                 onClick={() => setShowPickParticipantModal(true)}
-                className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition flex items-center gap-1.5 shadow-md shadow-emerald-950/40 active:scale-95"
+                className="cyber-arcane-btn px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-cyber font-bold uppercase tracking-wider text-xs transition flex items-center gap-1.5 shadow-md shadow-emerald-950/40 active:scale-95"
                 title="Vincular sua conta a um participante para computar este torneio no seu histórico"
               >
                 <Link2 size={13} />
@@ -1116,7 +1119,7 @@ export const TournamentManager: React.FC<TournamentManagerProps> = ({
           ) : (
             <button
               onClick={onOpenAuth}
-              className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-purple-300 hover:text-white font-bold text-xs transition flex items-center gap-1.5 border border-purple-500/30 active:scale-95"
+              className="cyber-arcane-btn px-3 py-1.5 bg-[#0d0a1a] hover:bg-purple-950/60 text-purple-300 hover:text-white font-cyber font-bold uppercase tracking-wider text-xs transition flex items-center gap-1.5 border border-purple-500/40 active:scale-95"
               title="Faça login com sua conta para que seus resultados contem no seu histórico"
             >
               <LogIn size={13} />
@@ -1127,7 +1130,7 @@ export const TournamentManager: React.FC<TournamentManagerProps> = ({
           {/* Botão de Compartilhar */}
           <button
             onClick={() => setShowShareModal(true)}
-            className="px-3 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs transition flex items-center gap-1.5 shadow-md shadow-purple-950/40 active:scale-95"
+            className="cyber-arcane-btn px-3 py-1.5 bg-purple-700 hover:bg-purple-600 text-white border border-amber-400/40 font-cyber font-bold uppercase tracking-wider text-xs transition flex items-center gap-1.5 shadow-md shadow-purple-950/40 active:scale-95"
             title="Compartilhar link deste torneio"
           >
             <Share2 size={14} />
@@ -1137,7 +1140,7 @@ export const TournamentManager: React.FC<TournamentManagerProps> = ({
           {/* Botão Ver Meu Histórico de Campeonatos */}
           <button
             onClick={() => setShowHistoryModal(true)}
-            className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white font-bold text-xs transition flex items-center gap-1.5 border border-slate-700 active:scale-95"
+            className="cyber-arcane-btn px-3 py-1.5 bg-[#0d0a1a] hover:bg-purple-950/50 text-slate-300 hover:text-white font-cyber font-bold uppercase tracking-wider text-xs transition flex items-center gap-1.5 border border-amber-500/35 active:scale-95"
             title="Ver meus títulos e histórico de campeonatos"
           >
             <History size={14} className="text-amber-400" />
@@ -1147,7 +1150,7 @@ export const TournamentManager: React.FC<TournamentManagerProps> = ({
           {/* Fechar */}
           <button 
             onClick={onClose} 
-            className="p-2 hover:bg-[#333] rounded-full text-slate-400 hover:text-white transition"
+            className="cyber-arcane-btn p-2 bg-[#0d0a1a] hover:bg-red-950/50 border border-amber-500/30 text-slate-400 hover:text-white transition"
           >
             <X size={22} />
           </button>
@@ -1155,22 +1158,22 @@ export const TournamentManager: React.FC<TournamentManagerProps> = ({
       </div>
 
       {/* TABS */}
-      <div className="flex bg-[#242424] border-b border-[#333] shrink-0 overflow-x-auto no-scrollbar">
+      <div className="flex bg-[#090614] border-b border-purple-500/30 shrink-0 overflow-x-auto no-scrollbar">
         <button 
           onClick={() => setActiveTab('config')}
-          className={`flex-1 flex items-center justify-center gap-2 px-4 py-3.5 font-bold text-xs sm:text-sm uppercase tracking-wider transition whitespace-nowrap border-b-2 ${activeTab === 'config' ? 'border-[#a855f7] text-white bg-[#1a1a1a]' : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-[#333]'}`}
+          className={`flex-1 flex items-center justify-center gap-2 px-4 py-3.5 font-cyber font-bold text-xs sm:text-sm uppercase tracking-wider transition whitespace-nowrap border-b-2 ${activeTab === 'config' ? 'border-amber-400 text-amber-300 bg-[#05030a]' : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-purple-950/30'}`}
         >
           <Settings size={15} /> Configurações
         </button>
         <button 
           onClick={() => setActiveTab('participants')}
-          className={`flex-1 flex items-center justify-center gap-2 px-4 py-3.5 font-bold text-xs sm:text-sm uppercase tracking-wider transition whitespace-nowrap border-b-2 ${activeTab === 'participants' ? 'border-[#a855f7] text-white bg-[#1a1a1a]' : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-[#333]'}`}
+          className={`flex-1 flex items-center justify-center gap-2 px-4 py-3.5 font-cyber font-bold text-xs sm:text-sm uppercase tracking-wider transition whitespace-nowrap border-b-2 ${activeTab === 'participants' ? 'border-amber-400 text-amber-300 bg-[#05030a]' : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-purple-950/30'}`}
         >
-          <Users size={15} /> Participantes <span className="bg-[#333] text-xs px-2 py-0.5 rounded-full">{participants.length}</span>
+          <Users size={15} /> Participantes <span className="bg-purple-950/90 border border-purple-500/40 text-amber-300 font-mono text-xs px-2 py-0.5">{participants.length}</span>
         </button>
         <button 
           onClick={() => setActiveTab('bracket')}
-          className={`flex-1 flex items-center justify-center gap-2 px-4 py-3.5 font-bold text-xs sm:text-sm uppercase tracking-wider transition whitespace-nowrap border-b-2 ${activeTab === 'bracket' ? 'border-[#a855f7] text-white bg-[#1a1a1a]' : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-[#333]'}`}
+          className={`flex-1 flex items-center justify-center gap-2 px-4 py-3.5 font-cyber font-bold text-xs sm:text-sm uppercase tracking-wider transition whitespace-nowrap border-b-2 ${activeTab === 'bracket' ? 'border-amber-400 text-amber-300 bg-[#05030a]' : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-purple-950/30'}`}
         >
           <Trophy size={15} /> Chave & Partidas
         </button>

@@ -1,4 +1,146 @@
-/* Global styles */
+/* Global styles — Light Dark TCG: Dark Magic × High Magic × Futuristic Cyberpunk */
+
+:root {
+  --ld-obsidian: #05040a;
+  --ld-void: #090714;
+  --ld-grimoire: #100c20;
+  --ld-arcane-gold: #d4af37;
+  --ld-cyber-cyan: #06b6d4;
+  --ld-dark-magic: #9333ea;
+  --ld-crimson-ritual: #e11d48;
+}
+
+/* Chamfered Cyberpunk + Runic High Magic Containers */
+.cyber-arcane-box {
+  background: linear-gradient(145deg, rgba(11, 8, 22, 0.94) 0%, rgba(6, 5, 13, 0.97) 60%, rgba(16, 11, 32, 0.94) 100%);
+  border: 1px solid rgba(212, 175, 55, 0.32);
+  box-shadow:
+    0 16px 45px rgba(0, 0, 0, 0.85),
+    inset 0 1px 0 rgba(212, 175, 55, 0.18),
+    inset 0 0 28px rgba(147, 51, 234, 0.08);
+  clip-path: polygon(
+    14px 0,
+    100% 0,
+    100% calc(100% - 14px),
+    calc(100% - 14px) 100%,
+    0 100%,
+    0 14px
+  );
+}
+
+.cyber-arcane-box-sm {
+  background: linear-gradient(145deg, rgba(12, 9, 24, 0.93) 0%, rgba(6, 5, 13, 0.96) 100%);
+  border: 1px solid rgba(168, 85, 247, 0.28);
+  box-shadow:
+    0 10px 30px rgba(0, 0, 0, 0.75),
+    inset 0 1px 0 rgba(6, 182, 212, 0.14);
+  clip-path: polygon(
+    8px 0,
+    100% 0,
+    100% calc(100% - 8px),
+    calc(100% - 8px) 100%,
+    0 100%,
+    0 8px
+  );
+}
+
+.cyber-arcane-btn {
+  clip-path: polygon(
+    7px 0,
+    100% 0,
+    100% calc(100% - 7px),
+    calc(100% - 7px) 100%,
+    0 100%,
+    0 7px
+  );
+}
+
+/* Global Cyber-Arcane Modal & Tab Skinning — transforms all secondary tabs/modals */
+.cyber-arcane-modal-bg,
+div.fixed.inset-0.bg-slate-950,
+div.fixed.inset-0 > div.bg-slate-950,
+div.fixed.inset-0 > div.bg-slate-900 {
+  background-color: #05040a !important;
+  background-image:
+    radial-gradient(circle at 15% 15%, rgba(147, 51, 234, 0.13) 0%, transparent 45%),
+    radial-gradient(circle at 85% 80%, rgba(6, 182, 212, 0.1) 0%, transparent 45%),
+    radial-gradient(circle at 50% 0%, rgba(212, 175, 55, 0.09) 0%, transparent 40%),
+    linear-gradient(rgba(212, 175, 55, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(6, 182, 212, 0.03) 1px, transparent 1px) !important;
+  background-size: 100% 100%, 100% 100%, 100% 100%, 44px 44px, 44px 44px !important;
+}
+
+/* Modal & Tab Headers across all views */
+div.fixed.inset-0 h1,
+div.fixed.inset-0 h2,
+#manual-regras h2,
+#manual-regras h3 {
+  font-family: 'Cinzel', serif;
+  letter-spacing: 0.04em;
+}
+
+/* Upgrade generic slate-900 / slate-950 panels inside modals and tabs into Dark Magic Obsidian + Gold/Cyan Hairlines */
+div.fixed.inset-0 .bg-slate-900,
+div.fixed.inset-0 .bg-slate-900\/95,
+div.fixed.inset-0 .bg-slate-900\/90,
+div.fixed.inset-0 .bg-slate-900\/80,
+div.fixed.inset-0 .bg-slate-900\/60,
+div.fixed.inset-0 .bg-slate-900\/50,
+#manual-regras .bg-slate-950,
+#manual-regras .bg-slate-900\/60,
+#manual-regras .bg-slate-900\/50 {
+  background-color: rgba(10, 8, 20, 0.92) !important;
+  border-color: rgba(212, 175, 55, 0.24) !important;
+  box-shadow: inset 0 1px 0 rgba(212, 175, 55, 0.1), 0 8px 24px rgba(0, 0, 0, 0.65);
+}
+
+/* Inputs & Selects across all Tabs (Catálogo, DeckBuilder, Mercado, Torneios, Booster, Lore) */
+div.fixed.inset-0 input[type="text"],
+div.fixed.inset-0 input[type="number"],
+div.fixed.inset-0 input[type="email"],
+div.fixed.inset-0 input[type="password"],
+div.fixed.inset-0 input[type="search"],
+div.fixed.inset-0 select,
+div.fixed.inset-0 textarea,
+#manual-regras input[type="text"],
+#manual-regras select,
+#manual-regras textarea {
+  background-color: #070510 !important;
+  border-color: rgba(168, 85, 247, 0.35) !important;
+  font-family: 'Rajdhani', sans-serif;
+  letter-spacing: 0.02em;
+}
+
+div.fixed.inset-0 input:focus,
+div.fixed.inset-0 select:focus,
+div.fixed.inset-0 textarea:focus {
+  border-color: rgba(6, 182, 212, 0.75) !important;
+  box-shadow: 0 0 14px rgba(6, 182, 212, 0.2) !important;
+}
+
+/* Subtle Cyberpunk Holographic Scanline Overlay */
+.cyber-scanlines {
+  background-image: repeating-linear-gradient(
+    to bottom,
+    transparent 0px,
+    transparent 3px,
+    rgba(6, 182, 212, 0.025) 3px,
+    rgba(6, 182, 212, 0.025) 4px
+  );
+}
+
+/* High Magic Alchemical Gold Divider */
+.arcane-divider {
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(6, 182, 212, 0.35) 20%,
+    rgba(212, 175, 55, 0.85) 50%,
+    rgba(168, 85, 247, 0.45) 80%,
+    transparent 100%
+  );
+}
 
 /* FOIL HOLOGRAPHIC SHIMMER EFFECTS */
 @keyframes foil-rainbow-anim {
@@ -57,3 +199,134 @@
   mix-blend-mode: screen;
   border-radius: inherit;
 }
+
+/* Hide scrollbars on horizontal toolbars / navbars */
+.no-scrollbar::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+.no-scrollbar {
+  -ms-overflow-style: none !important;
+  scrollbar-width: none !important;
+}
+
+/* Subtle dark-magic themed scrollbar for internal scrollable panels */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: rgba(5, 4, 10, 0.85);
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(212, 175, 55, 0.35);
+  border-radius: 3px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(212, 175, 55, 0.65);
+}
+
+/* ==================== ANIMATED TEXTURE & SHADER-LIKE FX ==================== */
+@keyframes ld-tex-pan-drift {
+  0% {
+    transform: scale(1.08) translate3d(0%, 0%, 0);
+  }
+  25% {
+    transform: scale(1.12) translate3d(-1.8%, 1.2%, 0);
+  }
+  50% {
+    transform: scale(1.1) translate3d(1.5%, -1.5%, 0);
+  }
+  75% {
+    transform: scale(1.13) translate3d(-1.2%, -1.2%, 0);
+  }
+  100% {
+    transform: scale(1.08) translate3d(0%, 0%, 0);
+  }
+}
+
+@keyframes ld-tex-energy-pulse {
+  0%, 100% {
+    filter: brightness(0.95) contrast(1.05) saturate(1.05) drop-shadow(0 0 8px rgba(147, 51, 234, 0.25));
+    transform: scale(1.03);
+  }
+  50% {
+    filter: brightness(1.3) contrast(1.18) saturate(1.3) drop-shadow(0 0 22px rgba(6, 182, 212, 0.5));
+    transform: scale(1.06);
+  }
+}
+
+@keyframes ld-tex-heat-warp {
+  0%, 100% {
+    transform: scale(1.07) skewX(0deg) skewY(0deg);
+    filter: hue-rotate(0deg) brightness(1.05);
+  }
+  33% {
+    transform: scale(1.1) skewX(0.8deg) skewY(-0.5deg);
+    filter: hue-rotate(12deg) brightness(1.2);
+  }
+  66% {
+    transform: scale(1.08) skewX(-0.7deg) skewY(0.6deg);
+    filter: hue-rotate(-12deg) brightness(1.15);
+  }
+}
+
+@keyframes ld-tex-holo-scanline {
+  0% {
+    transform: translateY(-100%);
+    opacity: 0;
+  }
+  15% {
+    opacity: 0.85;
+  }
+  85% {
+    opacity: 0.85;
+  }
+  100% {
+    transform: translateY(1100%);
+    opacity: 0;
+  }
+}
+
+@keyframes ld-rune-spin-cw {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes ld-rune-spin-ccw {
+  from {
+    transform: rotate(360deg);
+  }
+  to {
+    transform: rotate(0deg);
+  }
+}
+
+.ld-anim-pan-drift {
+  animation: ld-tex-pan-drift var(--ld-tex-dur, 22s) ease-in-out infinite;
+}
+
+.ld-anim-energy-pulse {
+  animation: ld-tex-energy-pulse var(--ld-tex-dur, 6s) ease-in-out infinite;
+}
+
+.ld-anim-heat-warp {
+  animation: ld-tex-heat-warp var(--ld-tex-dur, 9s) ease-in-out infinite;
+}
+
+.ld-anim-spin-cw {
+  animation: ld-rune-spin-cw var(--ld-spin-dur, 48s) linear infinite;
+  transform-origin: center;
+}
+
+.ld-anim-spin-ccw {
+  animation: ld-rune-spin-ccw var(--ld-spin-dur, 36s) linear infinite;
+  transform-origin: center;
+}
+
+

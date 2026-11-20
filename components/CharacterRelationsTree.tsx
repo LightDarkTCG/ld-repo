@@ -64,12 +64,14 @@ interface CharacterRelationsTreeProps {
   cards: CardData[];
   isAdmin?: boolean;
   onInspectCard?: (card: CardData) => void;
+  onClose?: () => void;
 }
 
 export const CharacterRelationsTree: React.FC<CharacterRelationsTreeProps> = ({
   cards,
   isAdmin,
-  onInspectCard
+  onInspectCard,
+  onClose
 }) => {
   const [graph, setGraph] = useState<CharacterRelationsGraph>(() => {
     return readBrowserCache<CharacterRelationsGraph>(CACHE_KEY) || { nodes: [], edges: [] };
@@ -333,10 +335,21 @@ export const CharacterRelationsTree: React.FC<CharacterRelationsTreeProps> = ({
   };
 
   return (
-    <div className="relative w-full h-[calc(100vh-3.5rem)] bg-[#060609] overflow-hidden flex flex-col lg:flex-row">
+    <div className="fixed inset-0 z-[110] w-screen h-screen bg-[#05040a] overflow-hidden flex flex-col lg:flex-row">
       {/* ================= TOP FLOATING TOOLBAR ================= */}
       <div className="absolute top-4 left-4 right-4 lg:right-96 z-20 flex flex-wrap items-center justify-between gap-2 pointer-events-none">
-        <div className="bg-[#0b0b12]/95 border border-[#d4af37]/30 rounded-2xl p-2.5 flex flex-wrap items-center gap-2 shadow-2xl pointer-events-auto">
+        <div className="bg-[#090714]/95 border border-[#d4af37]/35 cyber-arcane-box-sm p-2.5 flex flex-wrap items-center gap-2 shadow-2xl pointer-events-auto">
+          {onClose && (
+            <button
+              type="button"
+              onClick={onClose}
+              className="cyber-arcane-btn px-3 py-1.5 bg-[#120e24] hover:bg-amber-500/20 border border-amber-500/45 text-amber-300 hover:text-white text-xs font-cinzel font-black uppercase tracking-wider flex items-center gap-1.5 transition cursor-pointer"
+              title="Voltar ao Archivum"
+            >
+              <X size={14} />
+              <span>Voltar</span>
+            </button>
+          )}
           <div className="flex items-center gap-2 px-2">
             <Users size={16} className="text-[#d4af37]" />
             <span className="font-cinzel font-black text-xs sm:text-sm text-white tracking-wider uppercase">

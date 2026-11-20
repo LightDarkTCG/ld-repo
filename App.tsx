@@ -38,36 +38,47 @@ import { DuelBotModal } from './duel-bot/DuelBotModal';
 import { BoosterOpenerModal } from './components/BoosterOpenerModal';
 import { NavbarSpotifyMicroPlayer } from './components/SpotifySoundtrackSection';
 import { downloadPresentationGuidePdf } from './utils/presentationPdfGenerator';
+import {
+  useThemeTextures,
+  ArcaneCyberTextureLayer,
+  CyberArcaneCornerFrame,
+  ThemeTexturesManagerModal,
+  ThemeTextureSlot,
+  DEFAULT_THEME_TEXTURES
+} from './components/ArcaneCyberTheme';
 
 // --- SUB-COMPONENTS ---
 
 const ArchetypeCard: React.FC<ArchetypeData> = ({ name, icon: Icon, imageUrl, color, description, patchDate, isNew }) => (
-  <div className={`bg-slate-900/90 border ${isNew ? 'border-emerald-500/40 shadow-[0_0_20px_rgba(16,185,129,0.12)]' : 'border-slate-800'} hover:border-purple-500/50 p-4 md:p-5 rounded-xl transition-all duration-300 flex items-start gap-4 md:gap-5 shadow-lg group relative overflow-hidden`}>
+  <div className={`cyber-arcane-box-sm ${isNew ? 'border-emerald-500/50 shadow-[0_0_24px_rgba(16,185,129,0.16)]' : ''} hover:border-amber-500/45 p-4 md:p-5 transition-all duration-300 flex items-start gap-4 md:gap-5 shadow-xl group relative overflow-hidden`}>
+    <CyberArcaneCornerFrame accent={isNew ? 'cyan' : 'violet'} />
     {/* Ícone à esquerda */}
-    <div className="shrink-0 flex items-center justify-center pt-0.5">
-      {imageUrl ? (
-        <img src={imageUrl} alt={name} className="w-10 h-10 md:w-12 md:h-12 object-contain drop-shadow-lg" />
-      ) : Icon ? (
-        <Icon className={`${color || 'text-purple-400'} w-10 h-10 md:w-12 md:h-12`} />
-      ) : (
-        <div className="w-10 h-10 md:w-12 md:h-12 rounded-full bg-purple-950/60 flex items-center justify-center text-purple-400 font-bold text-base md:text-lg">
-          {name.charAt(0)}
-        </div>
-      )}
+    <div className="shrink-0 flex items-center justify-center pt-0.5 relative z-10">
+      <div className="p-2 bg-[#07060e]/90 border border-amber-500/25 shadow-inner">
+        {imageUrl ? (
+          <img src={imageUrl} alt={name} className="w-10 h-10 md:w-12 md:h-12 object-contain drop-shadow-[0_0_10px_rgba(168,85,247,0.35)]" />
+        ) : Icon ? (
+          <Icon className={`${color || 'text-amber-400'} w-10 h-10 md:w-12 md:h-12`} />
+        ) : (
+          <div className="w-10 h-10 md:w-12 md:h-12 bg-purple-950/60 flex items-center justify-center text-amber-300 font-cinzel font-bold text-base md:text-lg">
+            {name.charAt(0)}
+          </div>
+        )}
+      </div>
     </div>
 
     {/* Nome em negrito e em baixo a descrição */}
-    <div className="flex-1 min-w-0">
+    <div className="flex-1 min-w-0 relative z-10">
       <div className="flex items-center justify-between gap-2 mb-1.5 flex-wrap">
-        <h4 className="font-bold text-base md:text-xl text-white group-hover:text-purple-300 transition-colors tracking-wide flex items-center gap-2.5">
+        <h4 className="font-cinzel font-bold text-base md:text-xl text-amber-50 group-hover:text-amber-300 transition-colors tracking-wider flex items-center gap-2.5 flex-wrap">
           <span>{name}</span>
           {isNew && (
-            <span className="relative inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-black uppercase tracking-wider bg-emerald-500/20 text-emerald-300 border border-emerald-500/50 shadow-[0_0_15px_rgba(16,185,129,0.35)] animate-pulse">
+            <span className="relative inline-flex items-center gap-1.5 px-2.5 py-0.5 text-[10px] font-cyber font-black uppercase tracking-widest bg-emerald-950/90 text-emerald-300 border border-emerald-400/60 shadow-[0_0_15px_rgba(16,185,129,0.35)]">
               <span className="relative flex h-2 w-2">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                 <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-400"></span>
               </span>
-              Novo
+              NOVO PATCH
             </span>
           )}
         </h4>
@@ -78,17 +89,17 @@ const ArchetypeCard: React.FC<ArchetypeData> = ({ name, icon: Icon, imageUrl, co
       </p>
 
       {/* Em baixo (pequeno): data do patch */}
-      <div className="mt-3 pt-2.5 border-t border-slate-800/80 flex items-center justify-between text-xs text-slate-400 flex-wrap gap-2">
+      <div className="mt-3 pt-2.5 border-t border-purple-500/20 flex items-center justify-between text-xs text-slate-400 flex-wrap gap-2">
         <span className="text-[11px] font-mono tracking-tight text-slate-400 flex items-center gap-1.5">
-          <span className="text-slate-500">Data do Patch:</span>
-          <span className="text-purple-300/90 font-medium bg-purple-950/40 px-1.5 py-0.5 rounded border border-purple-800/30">
+          <span className="text-slate-500 uppercase">REGISTRO DE PATCH:</span>
+          <span className="text-cyan-300 font-medium bg-cyan-950/40 px-2 py-0.5 border border-cyan-500/30">
             {patchDate || '10/09/2026'}
           </span>
         </span>
         {isNew && (
-          <span className="text-[11px] font-semibold text-emerald-400/90 flex items-center gap-1.5 animate-pulse">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
-            Atualizado no patch
+          <span className="text-[11px] font-cyber font-bold uppercase tracking-wider text-emerald-400/90 flex items-center gap-1.5">
+            <span className="w-1.5 h-1.5 bg-emerald-400 animate-ping" />
+            Sincronizado no Patch
           </span>
         )}
       </div>
@@ -108,78 +119,54 @@ const FieldItem = ({ label, value, icon: Icon, color }: { label: string, value: 
   </div>
 );
 
-const GameLore = () => {
-  const [isExpanded, setIsExpanded] = useState(false);
+const GameLore: React.FC<{
+  textureSlot?: ThemeTextureSlot;
+  showPlaceholderBadge?: boolean;
+  onConfigureTexture?: (slotId: string) => void;
+}> = ({ textureSlot, showPlaceholderBadge, onConfigureTexture }) => {
   return (
-    <section id="sobre-light-dark" className="py-20 bg-[#0a0a0c] border-b border-slate-900 relative">
-       <div className="container mx-auto px-6 max-w-4xl">
-          <div className="text-center mb-10">
-            <h2 className="text-3xl md:text-4xl font-black text-white mb-3 uppercase tracking-wider">SOBRE LIGHT DARK</h2>
-            <div className="h-1 w-24 bg-gradient-to-r from-purple-600 to-blue-600 mx-auto rounded-full"></div>
-          </div>
+    <section id="sobre-light-dark" className="py-24 bg-[#05040a] border-b border-amber-500/20 relative overflow-hidden">
+       {textureSlot && (
+         <ArcaneCyberTextureLayer
+           slot={textureSlot}
+           variant="dark-magic"
+           showPlaceholderBadge={showPlaceholderBadge}
+           onOpenConfig={onConfigureTexture}
+         />
+       )}
+       <div className="arcane-divider top-0 left-0 right-0 absolute" />
 
-          {/* Resumo da ideia do jogo sempre visível */}
-          <div className="prose prose-invert prose-lg mx-auto text-slate-300 leading-relaxed text-justify space-y-5 mb-6">
-            <p className="first-letter:text-5xl first-letter:font-bold first-letter:text-white first-letter:mr-2 first-letter:float-left">
-              <strong>Light Dark TCG</strong> é um jogo de cartas estratégico e colecionável que nasceu de uma campanha de RPG de mesa com mais de uma década de história. Nele, dois (ou quatro) jogadores se enfrentam em duelos dinâmicos de <strong>Ação e Reação</strong> com o objetivo de reduzir os <strong>20 pontos de Vida</strong> do oponente a zero.
-            </p>
-            <p className="border-l-4 border-purple-500 pl-4 bg-slate-900/60 p-4 rounded-r-xl text-slate-200">
-              Você monta um deck único de 30 a 35 cartas sem repetições e assume o comando de <strong>Heróis lendários, Combatentes, Equipamentos e Efeitos</strong> — utilizando <strong>Mana</strong> e <strong>Runas</strong> para invocar criaturas, criar correntes de resposta no turno adversário e dominar diferentes Arquétipos do Macroverso.
-            </p>
-          </div>
+       <div className="container mx-auto px-4 sm:px-6 max-w-4xl relative z-10">
+          <div className="cyber-arcane-box p-6 sm:p-10 md:p-12 relative">
+            <CyberArcaneCornerFrame accent="gold" />
 
-          <div className={`relative transition-all duration-700 ease-in-out ${isExpanded ? 'max-h-[3000px] opacity-100 mt-8' : 'max-h-0 opacity-0 overflow-hidden'}`}>
-             <div className="prose prose-invert prose-lg mx-auto text-slate-400 leading-relaxed text-justify border-t border-slate-800/80 pt-8">
-                <h3 className="text-2xl font-bold text-white text-center mb-6">O Fim do Macroverso?</h3>
-                <p className="mb-6">
-                  "Antes de existir qualquer universo, havia apenas duas coisas, Nada e o Mestre. Foi nesse contexto que o Mestre, que ao criar algo, criou antes o Caos, a mudança, a necessidade de algo sair da imobildiade, e após isso, criou os Conceitos, como a Criação e a Existência, abrindo o caminho para o nascimento do Tempo, do Fogo, da Água, do Desejo e de inúmeras forças cósmicas. Cada conceito molda realidades inteiras e disputa influência e coexistem sobre os universos, se algo existe é porque existe uma entidade pensante ou não.
+            <div className="text-center mb-10">
+              <div className="inline-flex items-center gap-2 px-3 py-1 mb-3 bg-purple-950/60 border border-amber-500/35 text-[11px] font-mono uppercase tracking-[0.25em] text-amber-300">
+                <span>GRIMÓRIO M13 // ARQUIVO CÓSMICO</span>
+              </div>
+              <h2 className="text-3xl md:text-5xl font-cinzel font-black text-amber-50 mb-4 uppercase tracking-wider drop-shadow-[0_2px_18px_rgba(212,175,55,0.25)]">
+                SOBRE LIGHT DARK
+              </h2>
+              <div className="flex items-center justify-center gap-3">
+                <div className="h-[1px] w-16 bg-gradient-to-r from-transparent to-amber-500/70"></div>
+                <div className="w-2 h-2 rotate-45 border border-cyan-400 bg-purple-600"></div>
+                <div className="h-[1px] w-16 bg-gradient-to-l from-transparent to-cyan-400/70"></div>
+              </div>
+            </div>
+
+            {/* Resumo da ideia do jogo */}
+            <div className="prose prose-invert prose-lg mx-auto text-slate-200 leading-relaxed text-justify space-y-6">
+              <p className="first-letter:text-5xl first-letter:font-cinzel first-letter:font-black first-letter:text-amber-400 first-letter:mr-3 first-letter:float-left">
+                <strong className="text-amber-200 font-cinzel">Light Dark TCG</strong> é um jogo de cartas estratégico e colecionável que nasceu de uma campanha de RPG de mesa com mais de uma década de história. Nele, dois (ou quatro) jogadores se enfrentam em duelos dinâmicos de <strong className="text-cyan-300">Ação e Reação</strong> com o objetivo de reduzir os <strong className="text-amber-300">20 pontos de Vida</strong> do oponente a zero.
+              </p>
+              <div className="cyber-arcane-box-sm p-5 bg-[#090714]/90 border border-cyan-500/30 text-slate-200 relative">
+                <CyberArcaneCornerFrame accent="cyan" />
+                <p className="m-0 text-sm sm:text-base leading-relaxed">
+                  Você monta um deck único de 30 a 35 cartas sem repetições e assume o comando de <strong className="text-amber-300">Heróis lendários, Combatentes, Equipamentos e Efeitos</strong> — utilizando <strong className="text-cyan-300">Mana</strong> e <strong className="text-purple-300">Runas</strong> para invocar criaturas, criar correntes de resposta no turno adversário e dominar diferentes Arquétipos entre a <span className="text-purple-300 font-semibold">Magia Negra</span>, a <span className="text-amber-300 font-semibold">Alta Magia</span> e a <span className="text-cyan-300 font-semibold">Tecnologia Futurista do Macroverso</span>.
                 </p>
-                <p className="mb-6">
-                  No Primeiro Macroverso, Salazar, o até então Conceito da Paz reinava, mas sua bondade era passiva, uma calmaria que permitia que as sombras se aprofundassem. Na sua luz branda, o Conceito Desejo encontrou um terreno fértil para crescer, manipulando a todos, desde outros Conceitos como o Tempo até o primogênito de Salazar, o inocente Ikari.
-                </p>
-                <p className="mb-6">
-                  A queda foi inevitável, a barreira entre os mundos, foi rasgada, e na tentativa de salvar o Macroverso de sua aniquilação pelas mãos do Nada, O Conceito Paz se dividiu em 3 entidades: Solus, Salazar e Jim.<br/>
-                  Contudo, o estrago já havia sido feito e o Macroverso 1 foi reiniciado, se tornando o 2, 3 e assim até o Macroverso 13 que é onde estamos atualmente.
-                </p>
-                <p className="mb-6">
-                  É neste mundo fraturado que uma nova geração de heróis e monstros se ergue, todos marcados pelo legado de seus pais e de seres que eles nem mesmo sabem da existência. Eles são os Escolhidos; princesas exiladas como Hyummeng; amantes amaldiçoados como Kevin e Blair, a Eterna; guerreiros forjados na dor como Criven e Donnie; e almas torturadas buscando um propósito, como Floquinho, Três e Jenos.
-                </p>
-                <p className="mb-6 italic text-purple-500 font-bold animate-flicker">
-                  É claro, há muita história oculta a ser descoberta, muitas tramas e plots escondidos nas entrelinhas... tudo feito por Mim...
-                </p>
-                <p className="mb-6">
-                  Agora, eles lutam não apenas contra os Errantes colossais ou os exércitos de Asmonious, mas também contra a desilusão. Pois neste novo mundo, as linhas se borraram: heróis são traídos por seus aliados mais confiáveis, vilões como Von Linden se tornam amigos, e a própria loucura, abraçada por acadêmicos como Patrick, pode ser a única forma de enxergar a verdade.
-                </p>
-                <p className="mb-6">
-                  Acima de tudo "Light e Dark" é uma homenagem aos mais de 50 jogadores que já passaram e jogaram essa campanha, sobre amigos que fizemos, sobre relacionamentos desenvolvidos, a lore também é saga sobre os filhos pagando pelos pecados de seus pais.
-                </p>
-                <p className="mb-6">
-                  É uma história sobre como o amor, a lealdade e o sacrifício sobrevivem em um universo onde a paz se revelou uma mentira e a traição é uma constante. Presos entre a luz de um futuro que desejam e a escuridão de um passado que os assombra.
-                </p>
-                <p className="mb-8 text-xl font-bold text-white text-center">
-                  Contudo... o que acontece quando a maior força de todas... decide ter vontade própria?
-                </p>
-                
-                <div className="w-full aspect-video rounded-xl overflow-hidden border border-slate-700 shadow-2xl">
-                  <iframe 
-                    src="https://drive.google.com/file/d/1F5prk1S1SY_kdq_XV9JkdkAnIrD7mG-L/preview" 
-                    className="w-full h-full border-0"
-                    allow="autoplay; fullscreen"
-                    title="Light Dark TCG Lore Video"
-                  ></iframe>
-                </div>
-             </div>
+              </div>
+            </div>
           </div>
-          <button 
-            onClick={() => setIsExpanded(!isExpanded)}
-            className="mt-6 text-white bg-slate-800 hover:bg-slate-700 border border-slate-600 px-8 py-3 rounded-full font-bold flex items-center justify-center gap-2 mx-auto transition-all hover:scale-105 group"
-          >
-            {isExpanded ? (
-              <>Ler Menos <ChevronUp size={18} className="group-hover:-translate-y-1 transition-transform" /></>
-            ) : (
-              <>Ler Mais sobre a História & Trailer <ChevronDown size={18} className="group-hover:translate-y-1 transition-transform" /></>
-            )}
-          </button>
        </div>
     </section>
   );
@@ -630,12 +617,14 @@ const CatalogModal = ({
   isOpen, 
   onClose, 
   onOpenAdmin, 
-  onOpenAuth 
+  onOpenAuth,
+  isAdmin
 }: { 
   isOpen: boolean; 
   onClose: () => void; 
   onOpenAdmin: () => void; 
-  onOpenAuth?: () => void; 
+  onOpenAuth?: () => void;
+  isAdmin?: boolean;
 }) => {
   const { cards: allCards, collections, archetypes } = useCards();
   const [searchTerm, setSearchTerm] = useState("");
@@ -1111,50 +1100,59 @@ const CatalogModal = ({
         </div>
       )}
 
-      <div className="bg-slate-900 border-b border-slate-800 p-4 flex flex-wrap justify-between items-center gap-3 shadow-lg z-20">
+      <div className="bg-[#070510]/95 border-b border-amber-500/35 p-4 flex flex-wrap justify-between items-center gap-3 shadow-[0_10px_30px_rgba(0,0,0,0.85)] z-20 relative">
         <div className="flex flex-wrap items-center gap-3">
-          <BookOpen className="text-purple-500 shrink-0" />
-          <h2 className="text-xl font-bold text-white flex flex-wrap items-center gap-2">
-            Catálogo de Cartas
-            <span className="text-purple-300 text-sm font-semibold bg-purple-950/60 border border-purple-800/50 px-2.5 py-0.5 rounded-full">
-              {totalVariationsCount} encontradas
-            </span>
-            {!expandVariations && totalVariationsCount !== filteredCards.length && (
-              <span className="text-slate-500 text-xs font-normal">
-                ({filteredCards.length} cartas base agrupadas)
+          <div className="p-2 bg-purple-950/80 border border-amber-500/45 text-amber-300 shadow-[0_0_12px_rgba(212,175,55,0.25)]">
+            <BookOpen size={20} className="shrink-0" />
+          </div>
+          <div>
+            <div className="text-[10px] font-mono uppercase tracking-[0.24em] text-cyan-400">
+              MATRIZ DE DADOS // GRIMÓRIO DE CARTAS
+            </div>
+            <h2 className="text-xl sm:text-2xl font-cinzel font-black text-amber-50 flex flex-wrap items-center gap-2.5">
+              <span>Catálogo de Cartas</span>
+              <span className="text-amber-300 text-xs font-mono font-bold bg-purple-950/80 border border-amber-500/40 px-2.5 py-0.5">
+                {totalVariationsCount} REGISTROS
               </span>
-            )}
-          </h2>
+              {isAdmin && !expandVariations && totalVariationsCount !== filteredCards.length && (
+                <span className="text-slate-500 text-xs font-mono font-normal">
+                  ({filteredCards.length} cartas base agrupadas)
+                </span>
+              )}
+            </h2>
+          </div>
         </div>
         <div className="flex items-center gap-2 sm:gap-3">
           <button
             onClick={() => setExpandVariations(prev => !prev)}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition flex items-center gap-1.5 ${
+            className={`cyber-arcane-btn px-3.5 py-1.5 text-xs font-cyber font-bold uppercase tracking-wider border transition flex items-center gap-1.5 ${
               expandVariations
-                ? 'bg-purple-600/20 border-purple-500 text-purple-200 shadow-[0_0_12px_rgba(168,85,247,0.3)]'
-                : 'bg-slate-800/80 border-slate-700 text-slate-300 hover:text-white hover:border-slate-600'
+                ? 'bg-purple-900/60 border-amber-400 text-amber-200 shadow-[0_0_15px_rgba(212,175,55,0.3)]'
+                : 'bg-[#0c0a18] border-purple-500/35 text-slate-300 hover:text-white hover:border-amber-400/60'
             }`}
-            title={expandVariations ? 'Agrupar variações na mesma carta usando a Capa do Catálogo' : 'Mostrar todas as variações individualmente na grade'}
+            title={expandVariations ? 'Agrupar variações na mesma carta' : 'Mostrar todas as variações individualmente na grade'}
           >
-            <Layers size={14} className={expandVariations ? 'text-purple-400' : 'text-slate-400'} />
+            <Layers size={14} className={expandVariations ? 'text-amber-400' : 'text-cyan-400'} />
             {expandVariations ? 'Agrupar Variações' : 'Mostrar Todas as Variações'}
           </button>
-          <button 
-            onClick={onOpenAdmin} 
-            className="p-2 hover:bg-slate-800 rounded-full text-slate-400 hover:text-white transition"
-            title="Admin do Catálogo"
-          >
-            <Settings size={20} />
-          </button>
-          <button onClick={onClose} className="p-2 hover:bg-slate-800 rounded-full text-slate-400 hover:text-white transition">
-            <X size={24} />
+          {isAdmin && (
+            <button 
+              onClick={onOpenAdmin} 
+              className="p-2 bg-[#0c0a18] border border-purple-500/35 hover:border-amber-400/60 text-slate-400 hover:text-amber-200 transition"
+              title="Admin do Catálogo"
+            >
+              <Settings size={18} />
+            </button>
+          )}
+          <button onClick={onClose} className="p-2 bg-[#0c0a18] border border-amber-500/35 hover:border-rose-500/60 text-slate-300 hover:text-white transition">
+            <X size={20} />
           </button>
         </div>
       </div>
 
-      <div className="bg-slate-900/50 border-b border-slate-800 p-4 flex flex-col xl:flex-row gap-4 z-10">
-        <div className="flex items-center bg-slate-950 border border-slate-700 rounded-lg overflow-hidden w-full xl:w-80 shrink-0">
-          <Search className="ml-3 text-slate-500 shrink-0" size={18} />
+      <div className="bg-[#080612]/90 border-b border-purple-500/25 p-4 flex flex-col xl:flex-row gap-4 z-10">
+        <div className="flex items-center bg-[#05040a] border border-amber-500/35 overflow-hidden w-full xl:w-80 shrink-0">
+          <Search className="ml-3 text-amber-400/80 shrink-0" size={18} />
           <input 
             type="text" 
             placeholder="Nome, Código ou Palavra Chave..." 
@@ -1487,8 +1485,67 @@ export default function App() {
   const [selectedType, setSelectedType] = useState<string | null>(null);
   const [scrolled, setScrolled] = useState(false);
   const [currentVideoIndex, setCurrentVideoIndex] = useState(0);
+  const DEFAULT_SHOWCASE_CARDS: CardData[] = [
+    {
+      code: 'LD-HERO-01',
+      name: 'Herói',
+      type: 'Herói' as CardType,
+      archetype: 'Liderança',
+      collection: 'Deck de Heróis',
+      ct: 0,
+      frame: 'Moderno',
+      description: 'Heróis lideram a batalha, possuem pontos de vida próprios e habilidades que definem a estratégia do seu deck.',
+      imageUrl: ''
+    },
+    {
+      code: 'LD-COMB-01',
+      name: 'Combatente',
+      type: 'Combatente' as CardType,
+      archetype: 'Vanguarda',
+      collection: 'Deck Principal',
+      ct: 2,
+      frame: 'Moderno',
+      description: 'Combatentes são invocados ao campo para atacar, defender e executar sinergias diretas com seus Heróis.',
+      imageUrl: ''
+    },
+    {
+      code: 'LD-EFF-01',
+      name: 'Efeito',
+      type: 'Efeito' as CardType,
+      archetype: 'Arcano',
+      collection: 'Deck Principal',
+      ct: 1,
+      frame: 'Moderno',
+      description: 'Cartas de Efeito alteram o rumo do turno com magias, respostas rápidas e manipulações táticas do campo.',
+      imageUrl: ''
+    },
+    {
+      code: 'LD-EQUIP-01',
+      name: 'Equipamento',
+      type: 'Equipamento' as CardType,
+      archetype: 'Arsenal',
+      collection: 'Deck Principal',
+      ct: 1,
+      frame: 'Moderno',
+      description: 'Equipamentos fortalecem Heróis ou Combatentes com bônus permanentes e habilidades especiais acopladas.',
+      imageUrl: ''
+    },
+    {
+      code: 'LD-TOKEN-01',
+      name: 'Token',
+      type: 'Token' as CardType,
+      archetype: 'Vinculado',
+      collection: 'Deck de Heróis (Máx. 15)',
+      ct: 0,
+      frame: 'Moderno',
+      description: 'Tokens são cartas vinculadas a cartas que se utilizam delas, só podem ser afetadas por cartas que as afetam diretamente, ocupam espaço em campo mas não declaram ataques e nem possuem efeitos, tokens também não podem ser equipados.',
+      imageUrl: ''
+    }
+  ];
+
   const [showcaseCards, setShowcaseCards] = useState<CardData[]>(() => {
-    return readBrowserCache<CardData[]>('ld_cache_showcaseCards_v3') || [];
+    const cached = readBrowserCache<CardData[]>('ld_cache_showcaseCards_v3');
+    return cached && cached.length > 0 ? cached : DEFAULT_SHOWCASE_CARDS;
   });
   const [selectedProduct, setSelectedProduct] = useState<ExclusiveProduct | null>(null);
   const [selectedProductVariationIndex, setSelectedProductVariationIndex] = useState<number | undefined>(undefined);
@@ -1655,6 +1712,15 @@ export default function App() {
   // Check for game mode in URL
   const [isGameMode, setIsGameMode] = useState(false);
   const [isDuelBotOpen, setIsDuelBotOpen] = useState(false);
+  const { textures, saveTextureSlot, showPlaceholdersUI, setShowPlaceholdersUI } = useThemeTextures();
+  const [isTextureModalOpen, setIsTextureModalOpen] = useState(false);
+  const [textureModalSlotId, setTextureModalSlotId] = useState<string | null>(null);
+
+  const handleOpenTextureSlotConfig = (slotId: string) => {
+    setTextureModalSlotId(slotId);
+    setIsTextureModalOpen(true);
+  };
+
   // Inicializa exclusivamente do cache do navegador (sincronizado com o Firebase) sem textos fixos antigos
   const [homeSettings, setHomeSettings] = useState<any>(() => {
     return readBrowserCache<any>('ld_cache_homeSettings_v2');
@@ -1963,42 +2029,49 @@ export default function App() {
   allCardsRef.current = allCards;
 
   useEffect(() => {
-    // Dynamic Showcase Rotation - EXCLUSIVELY Modern Frame Cards from Firebase
+    // Dynamic Showcase Rotation - Prefers Modern Frame Cards from Firebase, with safe fallbacks for all 5 card types
     const rotateShowcase = () => {
-      const modernCards = (allCardsRef.current || []).filter(c => c.frame === 'Moderno');
-      if (modernCards.length === 0) return;
+      const sourceCards = allCardsRef.current || [];
+      if (sourceCards.length === 0) return;
 
-      const getModernByType = (cardType: CardType) => {
-        const matching = modernCards.filter(c => c.type === cardType);
-        const withImg = matching.filter(c => !!c.imageUrl);
-        const pool = withImg.length > 0 ? withImg : matching;
-        return pool.length > 0 ? pool[Math.floor(Math.random() * pool.length)] : null;
+      const pickCardByType = (cardType: CardType, fallbackCard: CardData): CardData => {
+        const allOfType = sourceCards.filter(c => c.type === cardType);
+        if (allOfType.length === 0) return fallbackCard;
+
+        // 1. Try cards resolved to Modern frame with an image
+        const modernResolved = allOfType
+          .map(c => resolveModernFrameOnly(c))
+          .filter((c): c is CardData => c !== null);
+        const modernWithImg = modernResolved.filter(c => !!c.imageUrl);
+        if (modernWithImg.length > 0) {
+          return modernWithImg[Math.floor(Math.random() * modernWithImg.length)];
+        }
+        if (modernResolved.length > 0) {
+          return modernResolved[Math.floor(Math.random() * modernResolved.length)];
+        }
+
+        // 2. Fallback to any card of this type with an image
+        const anyWithImg = allOfType.filter(c => !!c.imageUrl);
+        if (anyWithImg.length > 0) {
+          return anyWithImg[Math.floor(Math.random() * anyWithImg.length)];
+        }
+
+        // 3. Fallback to any card of this type
+        return allOfType[Math.floor(Math.random() * allOfType.length)] || fallbackCard;
       };
 
-      const hero = getModernByType('Herói');
-      const combatant = getModernByType('Combatente');
-      const effect = getModernByType('Efeito');
-      const equipment = getModernByType('Equipamento');
-      const tokenCard = getModernByType('Token') || {
-        code: 'LD-TOKEN-01',
-        name: 'Token',
-        type: 'Token' as CardType,
-        archetype: 'Vinculado',
-        collection: 'Deck de Heróis (Máx. 15)',
-        ct: 0,
-        frame: 'Moderno' as const,
-        description: 'Tokens são cartas vinculadas a cartas que se utilizam delas, só podem ser afetadas por cartas que as afetam diretamente, ocupam espaço em campo mas não declaram ataques e nem possuem efeitos, tokens também não podem ser equipados. Ficam no deck de heróis (máximo 15) e quando deixam o campo voltam para o deck de heróis.',
-        imageUrl: ''
-      };
+      const hero = pickCardByType('Herói', DEFAULT_SHOWCASE_CARDS[0]);
+      const combatant = pickCardByType('Combatente', DEFAULT_SHOWCASE_CARDS[1]);
+      const effect = pickCardByType('Efeito', DEFAULT_SHOWCASE_CARDS[2]);
+      const equipment = pickCardByType('Equipamento', DEFAULT_SHOWCASE_CARDS[3]);
+      const tokenCard = pickCardByType('Token', DEFAULT_SHOWCASE_CARDS[4]);
 
-      if (hero && combatant && effect && equipment) {
-        const nextShowcase = [hero, combatant, effect, equipment, tokenCard];
-        setShowcaseCards(nextShowcase);
-        writeBrowserCache('ld_cache_showcaseCards_v3', nextShowcase);
-      }
+      const nextShowcase = [hero, combatant, effect, equipment, tokenCard];
+      setShowcaseCards(nextShowcase);
+      writeBrowserCache('ld_cache_showcaseCards_v3', nextShowcase);
     };
 
-    if (allCards.some(c => c.frame === 'Moderno')) {
+    if (allCards.length > 0) {
       rotateShowcase();
     }
     const interval = setInterval(rotateShowcase, 12000);
@@ -2006,11 +2079,8 @@ export default function App() {
     return () => clearInterval(interval);
   }, [allCards.length]);
 
-  if (isGameMode) {
-    return <GameBoard onClose={() => window.close()} />;
-  }
-
   const isOnHomePage = !(
+    isGameMode ||
     isManualOpen ||
     isBuyModalOpen ||
     isCatalogOpen ||
@@ -2031,8 +2101,28 @@ export default function App() {
     selectedProduct !== null
   );
 
+  // Bloqueia o scroll da página inicial sempre que qualquer janela/aba própria estiver aberta
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    if (!isOnHomePage) {
+      document.body.style.overflow = 'hidden';
+      document.documentElement.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+      document.documentElement.style.overflow = '';
+    }
+    return () => {
+      document.body.style.overflow = '';
+      document.documentElement.style.overflow = '';
+    };
+  }, [isOnHomePage]);
+
+  if (isGameMode) {
+    return <GameBoard onClose={() => window.close()} />;
+  }
+
   return (
-    <div className="min-h-screen bg-[#0a0a0c] text-slate-200 font-sans selection:bg-purple-500 selection:text-white overflow-x-hidden">
+    <div className={`${isOnHomePage ? 'min-h-screen' : 'h-screen overflow-hidden'} bg-[#05040a] text-slate-200 font-sans selection:bg-purple-500 selection:text-white overflow-x-hidden`}>
       
       <ManualModal isOpen={isManualOpen} onClose={closeCurrentModal} />
       <StoreModal
@@ -2066,13 +2156,11 @@ export default function App() {
         initialListingId={storeInitialListingId}
         initialVariationIdx={storeInitialVariationIdx}
       />
-      <CatalogModal isOpen={isCatalogOpen} onClose={closeCurrentModal} onOpenAdmin={() => { 
+      <CatalogModal isOpen={isCatalogOpen} onClose={closeCurrentModal} isAdmin={isAdmin} onOpenAdmin={() => { 
         if (isAdmin) {
           navigateToModal(() => {
             setAdminMode('catalog');
           });
-        } else {
-          alert('Acesso restrito ao administrador.');
         }
       }} onOpenAuth={() => setIsAuthModalOpen(true)} />
       {isLoreOpen && <LoreView onClose={closeCurrentModal} />}
@@ -2169,92 +2257,152 @@ export default function App() {
       <BoosterOpenerModal isOpen={isBoosterOpenerOpen} onClose={() => setIsBoosterOpenerOpen(false)} isAdmin={isAdmin} />
       {adminMode !== 'none' && isAdmin && <AdminPanel adminType={adminMode} onClose={closeCurrentModal} />}
 
-      {/* Navbar */}
-      <nav className={`fixed w-full z-50 transition-all duration-300 border-b ${scrolled ? 'bg-[#0a0a0c]/95 border-slate-800 py-3' : 'bg-transparent border-transparent py-6'}`}>
-        <div className="container mx-auto px-6 flex justify-between items-center">
+      {/* Camada Global de Textura / Placeholder para as Abas Secundárias (TEX-08 a TEX-11) */}
+      {(isCatalogOpen || isDeckBuilderOpen || isPopularCardsOpen || isSavedDecksOpen) && textures.catalog_deck_texture && (
+        <div className="fixed inset-0 z-[125] pointer-events-none">
+          <ArcaneCyberTextureLayer
+            slot={textures.catalog_deck_texture}
+            variant="cyber-grid"
+            showPlaceholderBadge={showPlaceholdersUI}
+            onOpenConfig={handleOpenTextureSlotConfig}
+          />
+        </div>
+      )}
+      {isLoreOpen && textures.lore_archivum_texture && (
+        <div className="fixed inset-0 z-[125] pointer-events-none">
+          <ArcaneCyberTextureLayer
+            slot={textures.lore_archivum_texture}
+            variant="high-magic"
+            showPlaceholderBadge={showPlaceholdersUI}
+            onOpenConfig={handleOpenTextureSlotConfig}
+          />
+        </div>
+      )}
+      {(isBuyModalOpen || isBoosterOpenerOpen || isTournamentOpen || isChampionshipHistoryOpen || isAlbumOpen || isCollectorsRankingOpen || isUserProfileOpen) && textures.store_booster_texture && (
+        <div className="fixed inset-0 z-[125] pointer-events-none">
+          <ArcaneCyberTextureLayer
+            slot={textures.store_booster_texture}
+            variant="hybrid"
+            showPlaceholderBadge={showPlaceholdersUI}
+            onOpenConfig={handleOpenTextureSlotConfig}
+          />
+        </div>
+      )}
+      {(isGameOpen || isDuelBotOpen) && textures.duel_arena_texture && (
+        <div className="fixed inset-0 z-[125] pointer-events-none">
+          <ArcaneCyberTextureLayer
+            slot={textures.duel_arena_texture}
+            variant="dark-magic"
+            showPlaceholderBadge={showPlaceholdersUI}
+            onOpenConfig={handleOpenTextureSlotConfig}
+          />
+        </div>
+      )}
+
+      <ThemeTexturesManagerModal
+        isOpen={isTextureModalOpen}
+        onClose={() => setIsTextureModalOpen(false)}
+        textures={textures}
+        onSaveSlot={saveTextureSlot}
+        initialSlotId={textureModalSlotId}
+        showPlaceholdersUI={showPlaceholdersUI}
+        onTogglePlaceholdersUI={setShowPlaceholdersUI}
+      />
+
+      {/* Navbar Cyber-Arcana (Dark Magic x High Magic x Cyberpunk) - Oculta quando outra janela está aberta */}
+      <nav className={`${isOnHomePage ? 'fixed' : 'hidden'} w-full z-50 transition-all duration-300 border-b ${scrolled ? 'bg-[#05040a]/95 border-amber-500/30 py-2.5 shadow-[0_10px_35px_rgba(0,0,0,0.85)] backdrop-blur-xl' : 'bg-gradient-to-b from-[#05040a]/95 via-[#05040a]/75 to-transparent border-amber-500/15 py-3.5'}`}>
+        <ArcaneCyberTextureLayer
+          slot={textures.navbar_hud_texture}
+          variant="cyber-grid"
+          showPlaceholderBadge={showPlaceholdersUI}
+          onOpenConfig={handleOpenTextureSlotConfig}
+        />
+        <div className="container mx-auto px-3 sm:px-6 relative z-10 flex items-center justify-between gap-3">
+          {/* Logo */}
           <div 
-            className="flex items-center gap-2 cursor-pointer"
+            className="flex items-center gap-2.5 cursor-pointer shrink-0 group"
             onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
           >
             <img 
               src="https://i.imgur.com/cDLxOtO.png" 
               alt="Light Dark TCG" 
-              className="h-14 w-auto object-contain"
+              className="h-11 sm:h-13 w-auto object-contain drop-shadow-[0_0_12px_rgba(212,175,55,0.3)] group-hover:scale-105 transition-transform"
             />
           </div>
 
-          <div className="hidden md:flex items-center gap-1.5 lg:gap-2">
+          {/* Desktop / Laptop Navigation - Wrap responsivo sem sobrepor botões */}
+          <div className="hidden md:flex items-center justify-end flex-wrap gap-1.5 lg:gap-2 flex-1 min-w-0">
             <NavbarSpotifyMicroPlayer isHomePage={isOnHomePage} />
             <button 
               type="button"
               onClick={() => {
                 document.getElementById('manual-regras')?.scrollIntoView({ behavior: 'smooth' });
               }}
-              className="bg-purple-600 hover:bg-purple-500 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 flex items-center gap-1.5 shadow-sm shadow-purple-900/40 active:scale-95 whitespace-nowrap"
+              className="cyber-arcane-btn bg-purple-950/90 hover:bg-purple-900 text-amber-200 border border-amber-500/45 px-2.5 py-1.5 text-[11px] font-cinzel font-bold uppercase tracking-wider transition-all duration-200 flex items-center gap-1.5 shadow-sm shadow-purple-950/60 active:scale-95 whitespace-nowrap"
             >
-              <BookOpen size={14} /> Manual Completo
+              <BookOpen size={13} className="text-amber-400" /> Manual
             </button>
             <button 
               onClick={() => setIsCatalogOpen(true)}
-              className="bg-slate-100 hover:bg-white text-slate-950 px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 flex items-center gap-1.5 shadow-sm active:scale-95 whitespace-nowrap"
+              className="cyber-arcane-btn bg-[#0d0b18]/90 hover:bg-[#17132b] text-slate-100 border border-purple-500/35 hover:border-amber-400/60 px-2.5 py-1.5 text-[11px] font-cyber font-bold uppercase tracking-wider transition-all duration-200 flex items-center gap-1.5 active:scale-95 whitespace-nowrap"
             >
-              <Search size={14} className="text-purple-600" /> Catálogo
+              <Search size={13} className="text-purple-400" /> Catálogo
             </button>
             <button 
               onClick={() => setIsLoreOpen(true)}
-              className="bg-slate-100 hover:bg-white text-slate-950 px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 flex items-center gap-1.5 shadow-sm active:scale-95 whitespace-nowrap"
+              className="cyber-arcane-btn bg-[#0d0b18]/90 hover:bg-[#17132b] text-slate-100 border border-cyan-500/35 hover:border-cyan-400/70 px-2.5 py-1.5 text-[11px] font-cyber font-bold uppercase tracking-wider transition-all duration-200 flex items-center gap-1.5 active:scale-95 whitespace-nowrap"
             >
-              <BookOpen size={14} className="text-blue-600" /> Lore
+              <BookOpen size={13} className="text-cyan-400" /> Lore
             </button>
             <button 
               onClick={() => setIsGameOpen(true)}
-              className="bg-slate-100 hover:bg-white text-slate-950 px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 flex items-center gap-1.5 shadow-sm active:scale-95 whitespace-nowrap"
+              className="cyber-arcane-btn bg-[#0d0b18]/90 hover:bg-[#17132b] text-slate-100 border border-purple-500/35 hover:border-purple-400/70 px-2.5 py-1.5 text-[11px] font-cyber font-bold uppercase tracking-wider transition-all duration-200 flex items-center gap-1.5 active:scale-95 whitespace-nowrap"
             >
-              <Zap size={14} className="text-purple-600 fill-purple-600/30" /> App Duelo
+              <Zap size={13} className="text-purple-400" /> App Duelo
             </button>
             <button 
               onClick={() => setIsDuelBotOpen(true)}
-              className="bg-gradient-to-r from-purple-700 to-indigo-700 hover:from-purple-600 hover:to-indigo-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 flex items-center gap-1.5 shadow-sm active:scale-95 whitespace-nowrap border border-purple-400/30"
+              className="cyber-arcane-btn bg-gradient-to-r from-purple-950 via-indigo-950 to-cyan-950 hover:from-purple-900 hover:to-cyan-900 text-cyan-200 px-2.5 py-1.5 text-[11px] font-cyber font-bold uppercase tracking-wider transition-all duration-200 flex items-center gap-1.5 active:scale-95 whitespace-nowrap border border-cyan-400/45 shadow-[0_0_12px_rgba(6,182,212,0.2)]"
               title="Simulador de Duelo contra IA (Deck Insanis)"
             >
-              <Sword size={14} className="text-amber-300" /> Duelo vs IA
+              <Sword size={13} className="text-amber-300" /> Duelo vs IA
             </button>
             <button 
               onClick={() => setIsTournamentOpen(true)}
-              className="bg-slate-100 hover:bg-white text-slate-950 px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 flex items-center gap-1.5 shadow-sm active:scale-95 whitespace-nowrap"
+              className="cyber-arcane-btn bg-[#0d0b18]/90 hover:bg-[#17132b] text-slate-100 border border-amber-500/35 hover:border-amber-400/70 px-2.5 py-1.5 text-[11px] font-cyber font-bold uppercase tracking-wider transition-all duration-200 flex items-center gap-1.5 active:scale-95 whitespace-nowrap"
             >
-              <Crown size={14} className="text-amber-500 fill-amber-500/30" /> Torneio
+              <Crown size={13} className="text-amber-400" /> Torneio
             </button>
             <button 
               onClick={() => setIsDeckBuilderOpen(true)} 
-              className="bg-slate-100 hover:bg-white text-slate-950 px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 flex items-center gap-1.5 shadow-sm active:scale-95 whitespace-nowrap"
+              className="cyber-arcane-btn bg-[#0d0b18]/90 hover:bg-[#17132b] text-slate-100 border border-purple-500/35 hover:border-amber-400/60 px-2.5 py-1.5 text-[11px] font-cyber font-bold uppercase tracking-wider transition-all duration-200 flex items-center gap-1.5 active:scale-95 whitespace-nowrap"
             >
-              <Layers size={14} className="text-purple-600" /> Monte seu Deck
+              <Layers size={13} className="text-purple-400" /> DeckBuilder
             </button>
             <button 
               onClick={() => setIsPopularCardsOpen(true)} 
-              className="bg-slate-100 hover:bg-white text-slate-950 px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 flex items-center gap-1.5 shadow-sm active:scale-95 whitespace-nowrap"
+              className="cyber-arcane-btn bg-[#0d0b18]/90 hover:bg-[#17132b] text-slate-100 border border-rose-500/35 hover:border-rose-400/70 px-2.5 py-1.5 text-[11px] font-cyber font-bold uppercase tracking-wider transition-all duration-200 flex items-center gap-1.5 active:scale-95 whitespace-nowrap"
               title="Cartas Populares da Comunidade (Meta)"
             >
-              <Flame size={14} className="text-red-500 fill-red-500/20" /> Populares
+              <Flame size={13} className="text-rose-400" /> Populares
             </button>
             <button 
               onClick={() => setIsBoosterOpenerOpen(true)} 
-              className="bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-slate-950 px-3 py-1.5 rounded-lg text-xs font-black transition-all duration-200 flex items-center gap-1.5 shadow-sm shadow-amber-900/30 active:scale-95 whitespace-nowrap"
+              className="cyber-arcane-btn bg-gradient-to-r from-amber-500/90 to-yellow-500/90 hover:from-amber-400 hover:to-yellow-400 text-slate-950 px-2.5 py-1.5 text-[11px] font-cinzel font-black uppercase tracking-wider transition-all duration-200 flex items-center gap-1.5 shadow-[0_0_15px_rgba(245,158,11,0.3)] active:scale-95 whitespace-nowrap"
               title="Simulador de Abertura de Booster (Pack Opener)"
             >
-              <Sparkles size={14} className="text-slate-950" /> Booster
+              <Sparkles size={13} className="text-slate-950" /> Booster
             </button>
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1">
               <button 
                 onClick={() => {
                   setStoreInitialOrderId(null);
                   setStoreInitialTab('vitrine');
                   setIsBuyModalOpen(true);
                 }}
-                className="relative bg-emerald-500 hover:bg-emerald-400 text-slate-950 px-3.5 py-1.5 rounded-lg text-xs font-black transition-all duration-200 flex items-center gap-1.5 shadow-sm shadow-emerald-900/40 active:scale-95 whitespace-nowrap"
+                className="cyber-arcane-btn relative bg-emerald-500/90 hover:bg-emerald-400 text-slate-950 px-3 py-1.5 text-[11px] font-cyber font-black uppercase tracking-wider transition-all duration-200 flex items-center gap-1.5 shadow-[0_0_15px_rgba(16,185,129,0.25)] active:scale-95 whitespace-nowrap"
               >
-                <Package size={14} className="text-slate-950" /> Mercado
+                <Package size={13} className="text-slate-950" /> Mercado
               </button>
               <button
                 onClick={() => {
@@ -2263,44 +2411,63 @@ export default function App() {
                   setIsBuyModalOpen(true);
                 }}
                 title="Abrir Carrinho & Calcular Frete"
-                className="relative p-1.5 rounded-lg bg-slate-900/90 hover:bg-slate-800 border border-emerald-500/40 text-emerald-400 transition-all active:scale-95 flex items-center justify-center"
+                className="relative p-1.5 bg-[#0d0b18]/90 hover:bg-slate-800 border border-emerald-500/45 text-emerald-400 transition-all active:scale-95 flex items-center justify-center"
               >
-                <ShoppingCart size={16} />
+                <ShoppingCart size={15} />
                 {cartCount > 0 && (
-                  <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 rounded-full bg-emerald-500 text-slate-950 text-[10px] font-black flex items-center justify-center shadow">
+                  <span className="absolute -top-1.5 -right-1.5 min-w-[17px] h-[17px] px-1 rounded-full bg-emerald-500 text-slate-950 text-[10px] font-black flex items-center justify-center shadow">
                     {cartCount}
                   </span>
                 )}
               </button>
             </div>
 
+            {isAdmin && (
+              <button
+                type="button"
+                onClick={() => {
+                  setTextureModalSlotId(null);
+                  setIsTextureModalOpen(true);
+                }}
+                className={`cyber-arcane-btn px-2.5 py-1.5 text-[10px] font-mono font-bold uppercase tracking-wider border transition flex items-center gap-1 whitespace-nowrap ${
+                  showPlaceholdersUI
+                    ? 'bg-amber-500/25 border-amber-400 text-amber-200 shadow-[0_0_12px_rgba(245,158,11,0.3)]'
+                    : 'bg-[#0d0b18]/90 border-amber-500/40 text-amber-300 hover:bg-amber-950/50'
+                }`}
+                title="Gerenciar Texturas & Placeholders do Tema (TEX-01..07)"
+              >
+                <Sparkles size={12} className="text-amber-400" />
+                <span>Texturas</span>
+              </button>
+            )}
+
             {/* Conta / Perfil */}
             {!user ? (
               <button 
                 onClick={() => setIsAuthModalOpen(true)}
-                className="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 flex items-center gap-1.5 shadow-md shadow-purple-900/40 active:scale-95 whitespace-nowrap"
+                className="cyber-arcane-btn bg-gradient-to-r from-purple-700 to-indigo-700 hover:from-purple-600 hover:to-indigo-600 text-white border border-purple-400/40 px-3 py-1.5 text-[11px] font-cyber font-bold uppercase tracking-wider transition-all duration-200 flex items-center gap-1.5 shadow-md shadow-purple-900/40 active:scale-95 whitespace-nowrap"
               >
-                <LogIn size={14} /> Entrar
+                <LogIn size={13} /> Entrar
               </button>
             ) : (
               <div className="relative">
                 <button
                   onClick={() => setIsUserMenuOpen(prev => !prev)}
-                  className="bg-slate-900/90 hover:bg-slate-800 text-white border border-purple-500/40 px-2.5 py-1 rounded-xl text-xs font-bold transition flex items-center gap-2 shadow-sm"
+                  className="bg-[#0d0b18]/95 hover:bg-[#17132b] text-amber-100 border border-amber-500/40 px-2.5 py-1 text-xs font-cyber font-bold transition flex items-center gap-2 shadow-sm"
                 >
                   {user.photoURL ? (
-                    <img src={user.photoURL} alt={user.displayName || 'Jogador'} className="w-5 h-5 rounded-full border border-purple-400" />
+                    <img src={user.photoURL} alt={user.displayName || 'Jogador'} className="w-5 h-5 rounded-full border border-amber-400" />
                   ) : (
-                    <div className="w-5 h-5 rounded-full bg-purple-600 flex items-center justify-center text-[10px] text-white font-bold">
+                    <div className="w-5 h-5 rounded-full bg-purple-800 border border-amber-400/50 flex items-center justify-center text-[10px] text-amber-200 font-bold">
                       {(user.displayName || 'J')[0]}
                     </div>
                   )}
-                  <span className="max-w-[100px] truncate hidden lg:inline">{user.displayName || 'Conta'}</span>
-                  <ChevronDown size={13} className="text-slate-400" />
+                  <span className="max-w-[95px] truncate hidden xl:inline">{user.displayName || 'Conta'}</span>
+                  <ChevronDown size={13} className="text-amber-400" />
                 </button>
 
                 {isUserMenuOpen && (
-                  <div className="absolute right-0 mt-2 w-64 bg-slate-950 border border-slate-800 rounded-xl shadow-2xl py-2 z-50 flex flex-col gap-1 animate-in fade-in zoom-in-95 duration-150">
+                  <div className="absolute right-0 mt-2 w-64 bg-[#07060e] border border-amber-500/40 shadow-2xl py-2 z-50 flex flex-col gap-1 animate-in fade-in zoom-in-95 duration-150">
                     <div className="px-3 py-2 border-b border-slate-800/80 mb-1">
                       {isEditingDisplayName ? (
                         <div className="flex flex-col gap-1.5 py-1">
@@ -2432,6 +2599,17 @@ export default function App() {
                       <>
                         <button
                           onClick={() => {
+                            setTextureModalSlotId(null);
+                            setIsTextureModalOpen(true);
+                            setIsUserMenuOpen(false);
+                          }}
+                          className="px-3 py-2 text-left text-xs text-cyan-300 hover:text-white hover:bg-cyan-900/30 flex items-center gap-2 transition font-bold"
+                        >
+                          <Sparkles size={14} className="text-cyan-400" />
+                          <span>Texturas & Placeholders (TEX-01..07)</span>
+                        </button>
+                        <button
+                          onClick={() => {
                             setAdminMode('store');
                             setIsUserMenuOpen(false);
                           }}
@@ -2468,8 +2646,8 @@ export default function App() {
             )}
           </div>
 
-          <button className="md:hidden text-white" onClick={() => setIsMenuOpen(!isMenuOpen)}>
-            {isMenuOpen ? <X /> : <Menu />}
+          <button className="md:hidden text-amber-200 p-1.5 border border-amber-500/30 bg-[#0d0b18]/80" onClick={() => setIsMenuOpen(!isMenuOpen)}>
+            {isMenuOpen ? <X size={20} /> : <Menu size={20} />}
           </button>
         </div>
         {/* Mobile Menu */}
@@ -2663,9 +2841,9 @@ export default function App() {
         )}
       </nav>
 
-      {/* 1. Hero Section (Tipo/Título da Página acima de tudo - ex: Halloween 31/10) */}
-      <header className="relative pt-28 pb-24 lg:pt-36 lg:pb-32 overflow-hidden min-h-[68vh] lg:min-h-[76vh] flex items-center">
-        <div className="absolute top-0 left-0 w-full h-full z-0 overflow-hidden bg-[#0a0a0c]">
+      {/* 1. Hero Section — Dark Magic x High Magic x Cyberpunk */}
+      <header className="relative pt-28 pb-24 lg:pt-36 lg:pb-32 overflow-hidden min-h-[70vh] lg:min-h-[78vh] flex items-center">
+        <div className="absolute top-0 left-0 w-full h-full z-0 overflow-hidden bg-[#05040a]">
           {backgroundVideos.map((vid: any, i: number) => {
             const isActive = i === currentVideoIndex;
             const resolvedPosition =
@@ -2686,55 +2864,70 @@ export default function App() {
                     setCurrentVideoIndex((prev) => (prev + 1) % backgroundVideos.length);
                   }
                 }} 
-                className={`absolute top-0 left-0 w-full h-full object-cover pointer-events-none transition-opacity duration-1000 ${isActive ? 'opacity-55' : 'opacity-0'} ${vid.transition === 'none' ? 'duration-0' : 'duration-1000'}`}
+                className={`absolute top-0 left-0 w-full h-full object-cover pointer-events-none transition-opacity duration-1000 ${isActive ? 'opacity-50' : 'opacity-0'} ${vid.transition === 'none' ? 'duration-0' : 'duration-1000'}`}
                 style={{ objectPosition: resolvedPosition }}
               />
             );
           })}
+          {/* Camada de Textura / Placeholder TEX-01 (Hero) */}
+          <ArcaneCyberTextureLayer
+            slot={textures.hero_bg_texture}
+            variant="dark-magic"
+            showPlaceholderBadge={showPlaceholdersUI}
+            onOpenConfig={handleOpenTextureSlotConfig}
+          />
+          <div className="absolute inset-0 cyber-scanlines opacity-35 pointer-events-none" />
           {/* Suave escurecimento no topo para leitura da navbar e gradiente intenso na base para não dar corte abrupto */}
-          <div className="absolute inset-0 bg-gradient-to-b from-[#0a0a0c]/75 via-transparent to-[#0a0a0c] pointer-events-none"></div>
-          <div className="absolute bottom-0 left-0 right-0 h-48 sm:h-64 md:h-72 bg-gradient-to-t from-[#0a0a0c] via-[#0a0a0c]/90 to-transparent pointer-events-none z-10"></div>
+          <div className="absolute inset-0 bg-gradient-to-b from-[#05040a]/80 via-[#05040a]/25 to-[#05040a] pointer-events-none"></div>
+          <div className="absolute bottom-0 left-0 right-0 h-48 sm:h-64 md:h-72 bg-gradient-to-t from-[#05040a] via-[#05040a]/90 to-transparent pointer-events-none z-10"></div>
         </div>
 
-        <div className="container mx-auto px-6 relative z-20 text-center">
+        <div className="container mx-auto px-4 sm:px-6 relative z-20 text-center">
           {homeSettings ? (
-            <>
-              <h2 className="font-mono text-xs sm:text-sm tracking-[0.3em] uppercase mb-4 animate-pulse drop-shadow-md" style={{ color: homeSettings.primaryColor || '#c084fc' }}>
-                {homeSettings.topSubtitle ?? ''}
-              </h2>
-              <div className="relative inline-block mb-6">
+            <div className="max-w-4xl mx-auto relative py-6 px-4 sm:px-8">
+              <div className="inline-flex items-center gap-2.5 px-3.5 py-1 mb-5 bg-[#090714]/85 border border-amber-500/35 shadow-[0_0_25px_rgba(168,85,247,0.2)]">
+                <span className="w-1.5 h-1.5 rotate-45 bg-cyan-400 animate-pulse" />
+                <h2 className="font-mono text-[11px] sm:text-xs tracking-[0.28em] uppercase drop-shadow-md" style={{ color: homeSettings.primaryColor || '#e2c15a' }}>
+                  {homeSettings.topSubtitle ?? ''}
+                </h2>
+                <span className="w-1.5 h-1.5 rotate-45 bg-amber-400 animate-pulse" />
+              </div>
+
+              {/* Título Principal + SideText em layout flexível responsivo (sem estourar nem sobrepor) */}
+              <div className="flex flex-wrap items-baseline justify-center gap-x-4 gap-y-2 mb-6">
                 <h1 
-                  className={`text-4xl sm:text-6xl md:text-8xl font-black tracking-tighter whitespace-nowrap ${homeSettings.titleEffect === 'glitch' ? 'glitch-text' : homeSettings.titleEffect === 'pulse' ? 'animate-pulse' : ''}`} 
+                  className={`font-cinzel text-4xl sm:text-6xl md:text-8xl font-black tracking-tight ${homeSettings.titleEffect === 'glitch' ? 'glitch-text' : homeSettings.titleEffect === 'pulse' ? 'animate-pulse' : ''}`} 
                   data-text={homeSettings.title ?? ''}
                   style={{
-                    color: homeSettings.primaryColor || '#9333ea',
-                    filter: `drop-shadow(0 0 ${homeSettings.titleShadowIntensity ?? 15}px ${homeSettings.titleShadowColor || homeSettings.primaryColor || '#9333ea'})`
+                    color: homeSettings.primaryColor || '#d4af37',
+                    filter: `drop-shadow(0 0 ${homeSettings.titleShadowIntensity ?? 18}px ${homeSettings.titleShadowColor || homeSettings.primaryColor || '#9333ea'})`
                   }}
                 >
                   {homeSettings.title ?? ''}
                 </h1>
                 {homeSettings.sideText && (
                   <span 
-                    className={`absolute top-1/2 -translate-y-1/2 left-[102%] text-3xl sm:text-5xl md:text-7xl font-mono tracking-normal pointer-events-none ${homeSettings.sideTextEffect === 'flicker' ? 'animate-flicker-rare' : homeSettings.sideTextEffect === 'pulse' ? 'animate-pulse' : homeSettings.sideTextEffect === 'glitch' ? 'glitch-text' : ''}`} 
+                    className={`text-2xl sm:text-4xl md:text-6xl font-cyber font-bold tracking-wider pointer-events-none ${homeSettings.sideTextEffect === 'flicker' ? 'animate-flicker-rare' : homeSettings.sideTextEffect === 'pulse' ? 'animate-pulse' : homeSettings.sideTextEffect === 'glitch' ? 'glitch-text' : ''}`} 
                     data-text={homeSettings.sideText}
                     style={{ 
-                      color: homeSettings.sideTextColor || '#a855f7',
-                      filter: `drop-shadow(0 0 ${homeSettings.sideTextShadowIntensity ?? 10}px ${homeSettings.sideTextShadowColor || homeSettings.sideTextColor || '#a855f7'})`
+                      color: homeSettings.sideTextColor || '#22d3ee',
+                      filter: `drop-shadow(0 0 ${homeSettings.sideTextShadowIntensity ?? 12}px ${homeSettings.sideTextShadowColor || homeSettings.sideTextColor || '#06b6d4'})`
                     }}
                   >
                     {homeSettings.sideText}
                   </span>
                 )}
               </div>
-              <p className="text-lg text-slate-200 max-w-2xl mx-auto drop-shadow-lg font-medium">
+
+              <p className="text-base sm:text-lg md:text-xl text-slate-200 max-w-2xl mx-auto drop-shadow-[0_2px_12px_rgba(0,0,0,0.9)] font-medium leading-relaxed">
                 {homeSettings.synopsis ?? ''}
               </p>
-            </>
+            </div>
           ) : (
             <div className="flex flex-col items-center justify-center gap-5 py-6 animate-pulse">
-              <div className="h-4 w-56 rounded-full bg-slate-800/70" />
-              <div className="h-16 sm:h-20 w-72 sm:w-96 rounded-2xl bg-slate-800/60" />
-              <div className="h-4 w-80 sm:w-[28rem] rounded-full bg-slate-800/50" />
+              <div className="h-4 w-56 bg-slate-800/70" />
+              <div className="h-16 sm:h-20 w-72 sm:w-96 bg-slate-800/60" />
+              <div className="h-4 w-80 sm:w-[28rem] bg-slate-800/50" />
             </div>
           )}
         </div>
@@ -2756,40 +2949,69 @@ export default function App() {
           setIsBuyModalOpen(true);
         }}
         allCards={allCards}
+        textureSlot={textures.novidades_cyber_texture}
+        showPlaceholderBadge={showPlaceholdersUI}
+        onConfigureTexture={handleOpenTextureSlotConfig}
       />
 
       {/* 3. ABAIXO: SOBRE LIGHT DARK */}
-      <GameLore />
+      <GameLore
+        textureSlot={textures.lore_grimoire_texture}
+        showPlaceholderBadge={showPlaceholdersUI}
+        onConfigureTexture={handleOpenTextureSlotConfig}
+      />
 
       {/* 4. ABAIXO: MANUAL E REGRAS (PATCH ATUAL:) + Tipos de Cartas + RESTANTE DO MANUAL */}
       <GameGuideSections 
         archetypes={archetypes} 
         isAdmin={isAdmin} 
         ArchetypeCardComponent={ArchetypeCard}
+        textureSlot={textures.manual_codex_texture}
+        panelTextureSlot={textures.panel_card_texture}
+        showPlaceholderBadge={showPlaceholdersUI}
+        onConfigureTexture={handleOpenTextureSlotConfig}
         cardTypesShowcase={
-          <div id="cartas" className="py-10 px-4 sm:px-6 rounded-2xl border border-slate-800 bg-[#0f0f13]">
-            <div className="text-center mb-10">
-              <h3 className="text-2xl sm:text-3xl font-black text-white uppercase tracking-wider">Tipos de Cartas</h3>
-              <div className="w-16 h-1 bg-purple-600 mx-auto mt-3 rounded-full"></div>
+          <div id="cartas" className="py-10 px-4 sm:px-8 cyber-arcane-box relative overflow-hidden">
+            <ArcaneCyberTextureLayer
+              slot={textures.card_altar_texture}
+              variant="high-magic"
+              showPlaceholderBadge={showPlaceholdersUI}
+              onOpenConfig={handleOpenTextureSlotConfig}
+            />
+            <CyberArcaneCornerFrame accent="gold" />
+            <div className="text-center mb-10 relative z-10">
+              <div className="inline-flex items-center gap-2 px-3 py-0.5 mb-2 bg-purple-950/70 border border-amber-500/35 text-[10px] font-mono uppercase tracking-[0.25em] text-amber-300">
+                <span>ALTAR DE INVOCAÇÃO // MATRIZ DE CARTAS</span>
+              </div>
+              <h3 className="text-2xl sm:text-4xl font-cinzel font-black text-amber-50 uppercase tracking-wider">Tipos de Cartas</h3>
+              <div className="flex items-center justify-center gap-2 mt-3">
+                <div className="w-12 h-[1px] bg-amber-500/60"></div>
+                <div className="w-2 h-2 rotate-45 bg-cyan-400"></div>
+                <div className="w-12 h-[1px] bg-cyan-400/60"></div>
+              </div>
             </div>
 
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 md:gap-6 px-2 md:px-0">
-              <AnimatePresence mode="wait">
-                {showcaseCards.map((card, idx) => (
-                  <motion.div 
-                    key={`${card.code}-${idx}`} 
-                    initial={{ opacity: 0, scale: 0.9 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    exit={{ opacity: 0, scale: 0.9 }}
-                    transition={{ duration: 0.5 }}
-                    className="cursor-pointer max-w-[140px] md:max-w-none mx-auto"
-                    onClick={() => setSelectedType(card.type)}
-                    title="Clique para saber mais"
-                  >
-                    <Card {...card} />
-                  </motion.div>
-                ))}
-              </AnimatePresence>
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 md:gap-6 px-2 md:px-0 relative z-10">
+              {(showcaseCards.length > 0 ? showcaseCards : DEFAULT_SHOWCASE_CARDS).map((card, idx) => (
+                <motion.div 
+                  key={`${card.type}-${card.code}-${idx}`} 
+                  initial={{ opacity: 0, y: 12 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.4, delay: idx * 0.06 }}
+                  className="group cursor-pointer w-full max-w-[175px] sm:max-w-[220px] md:max-w-none mx-auto hover:scale-105 transition-transform flex flex-col items-center gap-2.5"
+                  onClick={() => setSelectedType(card.type)}
+                  title={`Clique para inspecionar a classe ${card.type}`}
+                >
+                  <div className="w-full relative">
+                    <Card {...card} priority={true} />
+                  </div>
+                  <div className="w-full py-1.5 px-3 bg-[#090414]/90 border border-amber-500/35 group-hover:border-cyan-400/70 transition-colors text-center shadow-[0_0_15px_rgba(0,0,0,0.6)]">
+                    <span className="text-[11px] sm:text-xs font-cinzel font-bold uppercase tracking-[0.2em] text-amber-200 group-hover:text-cyan-300 transition-colors">
+                      {card.type}
+                    </span>
+                  </div>
+                </motion.div>
+              ))}
             </div>
           </div>
         }

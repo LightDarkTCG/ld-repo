@@ -112,7 +112,7 @@ export const Card: React.FC<CardProps> = React.memo(({ name, type, archetype, ct
               <>
                 <Hexagon size={56} className="text-yellow-400 drop-shadow-[0_0_12px_rgba(234,179,8,0.5)]" />
                 <span className="text-[10px] font-black uppercase tracking-widest text-yellow-300/90 bg-yellow-950/80 border border-yellow-500/40 px-2.5 py-0.5 rounded-full">
-                  Placeholder • Token
+                  Token
                 </span>
               </>
             )}

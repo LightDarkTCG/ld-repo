@@ -2,19 +2,26 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { ChevronLeft, ChevronRight, ShoppingCart, Sparkles, Layers, Image as ImageIcon, Play, Eye, Calendar, X } from 'lucide-react';
 import { ExclusiveProduct, CardData, ProductMediaItem } from '../types';
 import { parseDeckFromCode } from '../deckUtils';
+import { ArcaneCyberTextureLayer, CyberArcaneCornerFrame, ThemeTextureSlot } from './ArcaneCyberTheme';
 
 interface NovidadesSectionProps {
   products: ExclusiveProduct[];
   onOpenProductModal: (product: ExclusiveProduct, variationIndex?: number) => void;
   onOpenStoreCheckout?: (product: ExclusiveProduct, variationIndex?: number) => void;
   allCards: CardData[];
+  textureSlot?: ThemeTextureSlot;
+  showPlaceholderBadge?: boolean;
+  onConfigureTexture?: (slotId: string) => void;
 }
 
 export const NovidadesSection: React.FC<NovidadesSectionProps> = ({
   products,
   onOpenProductModal,
   onOpenStoreCheckout,
-  allCards
+  allCards,
+  textureSlot,
+  showPlaceholderBadge,
+  onConfigureTexture
 }) => {
   const activeProducts = useMemo(() => {
     return products.filter(p => p && p.isActive !== false);
@@ -100,15 +107,24 @@ export const NovidadesSection: React.FC<NovidadesSectionProps> = ({
     const buttonText = product.buttonText || (hasLink ? 'Comprar Agora' : 'PRÉ-VENDA');
 
     return (
-      <section id="novidades" className="-mt-12 sm:-mt-20 pt-2 pb-20 bg-gradient-to-b from-transparent via-[#0a0a0c] to-[#0a0a0c] relative z-20 overflow-hidden">
+      <section id="novidades" className="-mt-12 sm:-mt-20 pt-4 pb-20 bg-gradient-to-b from-transparent via-[#05040a] to-[#05040a] relative z-20 overflow-hidden">
+        {textureSlot && (
+          <ArcaneCyberTextureLayer
+            slot={textureSlot}
+            variant="cyber-grid"
+            showPlaceholderBadge={showPlaceholderBadge}
+            onOpenConfig={onConfigureTexture}
+          />
+        )}
         <div className="container mx-auto px-4 sm:px-6 relative z-10">
           <div className="max-w-5xl mx-auto w-full">
             <div 
               onClick={() => onOpenProductModal(product)}
-              className="bg-slate-900/95 border border-slate-800 hover:border-purple-500/60 rounded-2xl overflow-hidden shadow-2xl transition-all duration-300 cursor-pointer group flex flex-col md:flex-row"
+              className="cyber-arcane-box hover:border-amber-400/70 overflow-hidden shadow-[0_20px_60px_rgba(0,0,0,0.9)] transition-all duration-300 cursor-pointer group flex flex-col md:flex-row relative"
             >
+              <CyberArcaneCornerFrame accent="gold" />
               {/* Left Column: Media */}
-              <div className="relative md:w-1/2 aspect-video md:aspect-auto md:min-h-[380px] bg-black overflow-hidden flex items-center justify-center shrink-0">
+              <div className="relative md:w-1/2 aspect-video md:aspect-auto md:min-h-[380px] bg-black overflow-hidden flex items-center justify-center shrink-0 border-b md:border-b-0 md:border-r border-amber-500/20">
                 {mainMedia.type === 'video' ? (
                   <video 
                     src={mainMedia.url} 
@@ -126,34 +142,34 @@ export const NovidadesSection: React.FC<NovidadesSectionProps> = ({
                   />
                 )}
                 
-                <div className="absolute inset-0 bg-gradient-to-t md:bg-gradient-to-r from-slate-950 via-transparent to-transparent opacity-80 pointer-events-none"></div>
+                <div className="absolute inset-0 bg-gradient-to-t md:bg-gradient-to-r from-[#05040a] via-transparent to-transparent opacity-85 pointer-events-none"></div>
 
                 <div className="absolute top-4 left-4 flex flex-wrap gap-2 pointer-events-none">
-                  <span className="bg-purple-600/90 text-white text-[11px] font-bold uppercase tracking-wider px-3 py-1 rounded-full border border-purple-400/40 shadow-lg">
-                    {product.badge || 'Exclusivo'}
+                  <span className="cyber-arcane-btn bg-purple-950/90 text-amber-300 text-[11px] font-cinzel font-bold uppercase tracking-widest px-3 py-1 border border-amber-400/50 shadow-lg">
+                    {product.badge || 'Relíquia Oficial'}
                   </span>
                   {medias.length > 1 && (
-                    <span className="bg-black/75 backdrop-blur-sm text-purple-200 text-[11px] font-mono font-bold px-2.5 py-1 rounded-full border border-white/10 flex items-center gap-1">
+                    <span className="bg-black/80 backdrop-blur-sm text-cyan-300 text-[11px] font-mono font-bold px-2.5 py-1 border border-cyan-500/30 flex items-center gap-1">
                       <ImageIcon size={12} /> +{medias.length - 1} mídias
                     </span>
                   )}
                 </div>
 
-                <div className="absolute bottom-4 right-4 bg-black/70 backdrop-blur-sm px-3 py-1.5 rounded-lg border border-white/10 text-xs text-purple-300 font-bold flex items-center gap-1.5 opacity-90 group-hover:opacity-100 transition">
+                <div className="absolute bottom-4 right-4 bg-[#07060e]/85 backdrop-blur-sm px-3 py-1.5 border border-cyan-500/35 text-xs text-cyan-300 font-cyber font-bold uppercase tracking-wider flex items-center gap-1.5 opacity-90 group-hover:opacity-100 transition">
                   <Eye size={14} />
-                  <span>Clique para ver fotos e detalhes</span>
+                  <span>Inspecionar Relíquia & Detalhes</span>
                 </div>
               </div>
 
               {/* Right Column: Info & Action */}
-              <div className="p-6 md:p-8 flex flex-col justify-between flex-1 gap-6">
+              <div className="p-6 md:p-8 flex flex-col justify-between flex-1 gap-6 relative z-10">
                 <div>
-                  <div className="flex items-center gap-2 text-purple-400 text-xs font-mono font-bold uppercase tracking-wider mb-2">
-                    <Sparkles size={14} />
-                    <span>Destaque Oficial</span>
+                  <div className="flex items-center gap-2 text-cyan-400 text-xs font-mono font-bold uppercase tracking-[0.2em] mb-2">
+                    <Sparkles size={14} className="text-amber-400" />
+                    <span>ARSENAL OFICIAL // DESTAQUE</span>
                   </div>
                   
-                  <h3 className="text-2xl md:text-3xl font-black text-white group-hover:text-purple-300 transition-colors leading-tight mb-3">
+                  <h3 className="text-2xl md:text-3xl font-cinzel font-black text-amber-50 group-hover:text-amber-300 transition-colors leading-tight mb-3 tracking-wide">
                     {product.title || 'Produto Exclusivo'}
                   </h3>
 
@@ -163,8 +179,8 @@ export const NovidadesSection: React.FC<NovidadesSectionProps> = ({
 
                   <div className="flex flex-wrap items-center gap-2">
                     {deckCount > 0 && (
-                      <div className="inline-flex items-center gap-2 bg-purple-950/70 border border-purple-800/60 px-3 py-1.5 rounded-lg text-purple-300 text-xs font-bold font-mono">
-                        <Layers size={14} />
+                      <div className="inline-flex items-center gap-2 bg-purple-950/80 border border-amber-500/40 px-3 py-1.5 text-amber-200 text-xs font-bold font-mono">
+                        <Layers size={14} className="text-amber-400" />
                         <span>DECK PRÉ-MONTADO COM {deckCount} CARTAS</span>
                       </div>
                     )}
@@ -350,7 +366,15 @@ export const NovidadesSection: React.FC<NovidadesSectionProps> = ({
   const buttonText = currentProduct.buttonText || (hasLink ? 'Comprar Agora' : 'PRÉ-VENDA');
 
   return (
-    <section id="novidades" className="-mt-12 sm:-mt-20 pt-2 pb-20 bg-gradient-to-b from-transparent via-[#0a0a0c] to-[#0a0a0c] relative z-20 overflow-hidden">
+    <section id="novidades" className="-mt-12 sm:-mt-20 pt-4 pb-20 bg-gradient-to-b from-transparent via-[#05040a] to-[#05040a] relative z-20 overflow-hidden">
+      {textureSlot && (
+        <ArcaneCyberTextureLayer
+          slot={textureSlot}
+          variant="cyber-grid"
+          showPlaceholderBadge={showPlaceholderBadge}
+          onOpenConfig={onConfigureTexture}
+        />
+      )}
       <div className="container mx-auto px-4 sm:px-6 relative z-10">
         <div 
           className="max-w-5xl mx-auto w-full relative"
@@ -360,7 +384,7 @@ export const NovidadesSection: React.FC<NovidadesSectionProps> = ({
           {/* Side Navigation Button: Previous */}
           <button
             onClick={handlePrev}
-            className="absolute -left-3 sm:-left-5 top-1/2 -translate-y-1/2 z-30 p-2.5 sm:p-3 rounded-full bg-slate-900/90 border border-purple-600/50 text-white hover:bg-purple-600 hover:text-white transition shadow-[0_0_20px_rgba(168,85,247,0.3)] backdrop-blur-md"
+            className="absolute -left-2 sm:-left-5 top-1/2 -translate-y-1/2 z-30 p-2.5 sm:p-3 bg-[#090714]/95 border border-amber-500/50 text-amber-200 hover:bg-purple-900 hover:text-white transition shadow-[0_0_20px_rgba(212,175,55,0.3)] backdrop-blur-md"
             title="Produto Anterior"
           >
             <ChevronLeft size={22} />
@@ -369,7 +393,7 @@ export const NovidadesSection: React.FC<NovidadesSectionProps> = ({
           {/* Side Navigation Button: Next */}
           <button
             onClick={handleNext}
-            className="absolute -right-3 sm:-right-5 top-1/2 -translate-y-1/2 z-30 p-2.5 sm:p-3 rounded-full bg-slate-900/90 border border-purple-600/50 text-white hover:bg-purple-600 hover:text-white transition shadow-[0_0_20px_rgba(168,85,247,0.3)] backdrop-blur-md"
+            className="absolute -right-2 sm:-right-5 top-1/2 -translate-y-1/2 z-30 p-2.5 sm:p-3 bg-[#090714]/95 border border-amber-500/50 text-amber-200 hover:bg-purple-900 hover:text-white transition shadow-[0_0_20px_rgba(212,175,55,0.3)] backdrop-blur-md"
             title="Próximo Produto"
           >
             <ChevronRight size={22} />
@@ -378,10 +402,11 @@ export const NovidadesSection: React.FC<NovidadesSectionProps> = ({
           {/* Current Product Card */}
           <div 
             onClick={() => onOpenProductModal(currentProduct)}
-            className="bg-slate-900/95 border border-slate-800 hover:border-purple-500/60 rounded-2xl overflow-hidden shadow-2xl transition-all duration-300 cursor-pointer group flex flex-col md:flex-row"
+            className="cyber-arcane-box hover:border-amber-400/70 overflow-hidden shadow-[0_20px_60px_rgba(0,0,0,0.9)] transition-all duration-300 cursor-pointer group flex flex-col md:flex-row relative"
           >
+            <CyberArcaneCornerFrame accent="gold" />
             {/* Left Media */}
-            <div className="relative md:w-1/2 aspect-video md:aspect-auto md:min-h-[380px] bg-black overflow-hidden flex items-center justify-center shrink-0">
+            <div className="relative md:w-1/2 aspect-video md:aspect-auto md:min-h-[380px] bg-black overflow-hidden flex items-center justify-center shrink-0 border-b md:border-b-0 md:border-r border-amber-500/20">
               {mainMedia.type === 'video' ? (
                 <video 
                   key={mainMedia.url}
@@ -401,39 +426,39 @@ export const NovidadesSection: React.FC<NovidadesSectionProps> = ({
                 />
               )}
               
-              <div className="absolute inset-0 bg-gradient-to-t md:bg-gradient-to-r from-slate-950 via-transparent to-transparent opacity-80 pointer-events-none"></div>
+              <div className="absolute inset-0 bg-gradient-to-t md:bg-gradient-to-r from-[#05040a] via-transparent to-transparent opacity-85 pointer-events-none"></div>
 
               <div className="absolute top-4 left-4 flex flex-wrap gap-2 pointer-events-none">
-                <span className="bg-purple-600/90 text-white text-[11px] font-bold uppercase tracking-wider px-3 py-1 rounded-full border border-purple-400/40 shadow-lg">
-                  {currentProduct.badge || 'Exclusivo'}
+                <span className="cyber-arcane-btn bg-purple-950/90 text-amber-300 text-[11px] font-cinzel font-bold uppercase tracking-widest px-3 py-1 border border-amber-400/50 shadow-lg">
+                  {currentProduct.badge || 'Relíquia Oficial'}
                 </span>
                 {medias.length > 1 && (
-                  <span className="bg-black/75 backdrop-blur-sm text-purple-200 text-[11px] font-mono font-bold px-2.5 py-1 rounded-full border border-white/10 flex items-center gap-1">
+                  <span className="bg-black/80 backdrop-blur-sm text-cyan-300 text-[11px] font-mono font-bold px-2.5 py-1 border border-cyan-500/30 flex items-center gap-1">
                     <ImageIcon size={12} /> +{medias.length - 1} mídias
                   </span>
                 )}
               </div>
 
-              <div className="absolute bottom-4 right-4 bg-black/70 backdrop-blur-sm px-3 py-1.5 rounded-lg border border-white/10 text-xs text-purple-300 font-bold flex items-center gap-1.5 opacity-90 group-hover:opacity-100 transition">
+              <div className="absolute bottom-4 right-4 bg-[#07060e]/85 backdrop-blur-sm px-3 py-1.5 border border-cyan-500/35 text-xs text-cyan-300 font-cyber font-bold uppercase tracking-wider flex items-center gap-1.5 opacity-90 group-hover:opacity-100 transition">
                 <Eye size={14} />
-                <span>Clique para ver fotos e detalhes</span>
+                <span>Inspecionar Relíquia & Detalhes</span>
               </div>
             </div>
 
             {/* Right Info */}
-            <div className="p-6 md:p-8 flex flex-col justify-between flex-1 gap-6">
+            <div className="p-6 md:p-8 flex flex-col justify-between flex-1 gap-6 relative z-10">
               <div>
                 <div className="flex items-center justify-between gap-2 mb-2">
-                  <div className="flex items-center gap-2 text-purple-400 text-xs font-mono font-bold uppercase tracking-wider">
-                    <Sparkles size={14} />
-                    <span>Destaque {currentIndex + 1} de {activeProducts.length}</span>
+                  <div className="flex items-center gap-2 text-cyan-400 text-xs font-mono font-bold uppercase tracking-[0.2em]">
+                    <Sparkles size={14} className="text-amber-400" />
+                    <span>RELÍQUIA {currentIndex + 1} DE {activeProducts.length}</span>
                   </div>
-                  <span className="text-xs font-mono text-slate-400 bg-slate-800/80 px-2 py-0.5 rounded">
-                    Muda a cada 10s
+                  <span className="text-[11px] font-mono text-amber-300/90 bg-purple-950/70 border border-amber-500/30 px-2 py-0.5">
+                    CICLO: 10s
                   </span>
                 </div>
                 
-                <h3 className="text-2xl md:text-3xl font-black text-white group-hover:text-purple-300 transition-colors leading-tight mb-3">
+                <h3 className="text-2xl md:text-3xl font-cinzel font-black text-amber-50 group-hover:text-amber-300 transition-colors leading-tight mb-3 tracking-wide">
                   {currentProduct.title || 'Produto Exclusivo'}
                 </h3>
 
@@ -443,8 +468,8 @@ export const NovidadesSection: React.FC<NovidadesSectionProps> = ({
 
                 <div className="flex flex-wrap items-center gap-2">
                   {deckCount > 0 && (
-                    <div className="inline-flex items-center gap-2 bg-purple-950/70 border border-purple-800/60 px-3 py-1.5 rounded-lg text-purple-300 text-xs font-bold font-mono">
-                      <Layers size={14} />
+                    <div className="inline-flex items-center gap-2 bg-purple-950/80 border border-amber-500/40 px-3 py-1.5 text-amber-200 text-xs font-bold font-mono">
+                      <Layers size={14} className="text-amber-400" />
                       <span>DECK PRÉ-MONTADO COM {deckCount} CARTAS</span>
                     </div>
                   )}

@@ -460,21 +460,31 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
       />
 
       {/* Header */}
-      <div className="bg-slate-900 border-b border-slate-800 p-2 md:p-4 flex flex-col md:flex-row justify-between items-center shadow-lg gap-2 md:gap-0 shrink-0">
+      <div className="bg-[#070510]/95 border-b border-amber-500/35 p-2 md:p-4 flex flex-col md:flex-row justify-between items-center shadow-[0_10px_30px_rgba(0,0,0,0.85)] gap-2 md:gap-0 shrink-0 relative">
         <div className="flex flex-col md:flex-row items-center gap-2 md:gap-4 w-full md:w-auto">
-          <h2 className="text-lg md:text-2xl font-bold text-white flex items-center gap-2 whitespace-nowrap">
-            <Save className="text-purple-500" size={20} /> MONTE SEU DECK
-          </h2>
-          <div className="flex bg-slate-800 rounded-lg p-1 w-full md:w-auto overflow-x-auto gap-0.5">
+          <div className="flex items-center gap-2.5">
+            <div className="cyber-arcane-btn w-8 h-8 bg-purple-950/80 border border-amber-500/40 flex items-center justify-center text-amber-400 shrink-0">
+              <Save size={16} />
+            </div>
+            <div>
+              <span className="block text-[9px] font-mono uppercase tracking-[0.22em] text-cyan-400">
+                FORJA DE GRIMÓRIO // DECKBUILDER
+              </span>
+              <h2 className="text-base md:text-xl font-cinzel font-black text-white tracking-wider whitespace-nowrap">
+                MONTE SEU DECK
+              </h2>
+            </div>
+          </div>
+          <div className="flex bg-[#0c0918] border border-purple-500/30 p-1 w-full md:w-auto overflow-x-auto gap-1">
             <button 
               onClick={() => setActiveTab('build')}
-              className={`flex-1 md:flex-none px-2 md:px-3.5 py-1.5 rounded-md text-[10px] md:text-xs font-bold transition whitespace-nowrap ${activeTab === 'build' ? 'bg-purple-600 text-white' : 'text-slate-400 hover:text-white'}`}
+              className={`cyber-arcane-btn flex-1 md:flex-none px-2.5 md:px-3.5 py-1.5 text-[10px] md:text-xs font-cyber font-bold uppercase tracking-wider transition whitespace-nowrap ${activeTab === 'build' ? 'bg-purple-700 text-white border border-amber-400/50 shadow-[0_0_12px_rgba(168,85,247,0.4)]' : 'text-slate-400 hover:text-white'}`}
             >
               Montar
             </button>
             <button 
               onClick={() => setActiveTab('mulligan')}
-              className={`flex-1 md:flex-none px-2 md:px-3.5 py-1.5 rounded-md text-[10px] md:text-xs font-bold transition whitespace-nowrap flex items-center justify-center gap-1.5 ${activeTab === 'mulligan' ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-lg shadow-emerald-950/50 border border-emerald-400/40' : 'text-emerald-300 hover:text-white'}`}
+              className={`cyber-arcane-btn flex-1 md:flex-none px-2.5 md:px-3.5 py-1.5 text-[10px] md:text-xs font-cyber font-bold uppercase tracking-wider transition whitespace-nowrap flex items-center justify-center gap-1.5 ${activeTab === 'mulligan' ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-lg shadow-emerald-950/50 border border-emerald-400/50' : 'text-emerald-300 hover:text-white'}`}
               title="Simular Mão Inicial de 5 cartas, Mulligan 1x e Probabilidades exatas"
             >
               <Dices size={14} className={activeTab === 'mulligan' ? 'text-white' : 'text-emerald-400'} />
@@ -482,7 +492,7 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
             </button>
             <button 
               onClick={() => setActiveTab('neural')}
-              className={`flex-1 md:flex-none px-2 md:px-3.5 py-1.5 rounded-md text-[10px] md:text-xs font-bold transition whitespace-nowrap flex items-center justify-center gap-1.5 ${activeTab === 'neural' ? 'bg-gradient-to-r from-purple-700 to-indigo-700 text-white shadow-lg shadow-purple-900/50 border border-purple-500/40' : 'text-slate-400 hover:text-white'}`}
+              className={`cyber-arcane-btn flex-1 md:flex-none px-2.5 md:px-3.5 py-1.5 text-[10px] md:text-xs font-cyber font-bold uppercase tracking-wider transition whitespace-nowrap flex items-center justify-center gap-1.5 ${activeTab === 'neural' ? 'bg-gradient-to-r from-purple-700 to-indigo-700 text-white shadow-lg shadow-purple-900/50 border border-cyan-400/50' : 'text-slate-400 hover:text-white'}`}
               title="Visualizar Mapa Neural interativo de sinergias do Deck"
             >
               <Network size={14} className={activeTab === 'neural' ? 'text-cyan-300 animate-pulse' : 'text-cyan-400'} />
@@ -490,7 +500,7 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
             </button>
             <button 
               onClick={() => setActiveTab('compare')}
-              className={`flex-1 md:flex-none px-2 md:px-3.5 py-1.5 rounded-md text-[10px] md:text-xs font-bold transition whitespace-nowrap flex items-center justify-center gap-1.5 ${activeTab === 'compare' ? 'bg-gradient-to-r from-cyan-600 to-blue-600 text-white shadow-lg shadow-cyan-950/50 border border-cyan-400/40' : 'text-cyan-300 hover:text-white'}`}
+              className={`cyber-arcane-btn flex-1 md:flex-none px-2.5 md:px-3.5 py-1.5 text-[10px] md:text-xs font-cyber font-bold uppercase tracking-wider transition whitespace-nowrap flex items-center justify-center gap-1.5 ${activeTab === 'compare' ? 'bg-gradient-to-r from-cyan-600 to-blue-600 text-white shadow-lg shadow-cyan-950/50 border border-cyan-400/50' : 'text-cyan-300 hover:text-white'}`}
               title="Comparar dois decks lado a lado (Cartas em comum, exclusivas e curva CT)"
             >
               <GitCompare size={14} className={activeTab === 'compare' ? 'text-white' : 'text-cyan-400'} />
@@ -498,19 +508,19 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
             </button>
             <button 
               onClick={() => setActiveTab('stats')}
-              className={`flex-1 md:flex-none px-2 md:px-3.5 py-1.5 rounded-md text-[10px] md:text-xs font-bold transition whitespace-nowrap ${activeTab === 'stats' ? 'bg-purple-600 text-white' : 'text-slate-400 hover:text-white'}`}
+              className={`cyber-arcane-btn flex-1 md:flex-none px-2.5 md:px-3.5 py-1.5 text-[10px] md:text-xs font-cyber font-bold uppercase tracking-wider transition whitespace-nowrap ${activeTab === 'stats' ? 'bg-purple-700 text-white border border-amber-400/50' : 'text-slate-400 hover:text-white'}`}
             >
               Estatísticas
             </button>
             <button 
               onClick={() => setActiveTab('save')}
-              className={`flex-1 md:flex-none px-2 md:px-3.5 py-1.5 rounded-md text-[10px] md:text-xs font-bold transition whitespace-nowrap ${activeTab === 'save' ? 'bg-purple-600 text-white' : 'text-slate-400 hover:text-white'}`}
+              className={`cyber-arcane-btn flex-1 md:flex-none px-2.5 md:px-3.5 py-1.5 text-[10px] md:text-xs font-cyber font-bold uppercase tracking-wider transition whitespace-nowrap ${activeTab === 'save' ? 'bg-purple-700 text-white border border-amber-400/50' : 'text-slate-400 hover:text-white'}`}
             >
               Salvar/Carregar
             </button>
             <button 
               onClick={() => setShowCommunityDecksModal(true)}
-              className="flex-1 md:flex-none px-2 md:px-3 py-1.5 rounded-md text-[10px] md:text-xs font-bold transition whitespace-nowrap flex items-center justify-center gap-1.5 bg-gradient-to-r from-amber-600/30 to-purple-800/70 text-amber-200 hover:text-white border border-amber-500/40 shadow-sm active:scale-95"
+              className="cyber-arcane-btn flex-1 md:flex-none px-2.5 md:px-3 py-1.5 text-[10px] md:text-xs font-cyber font-bold uppercase tracking-wider transition whitespace-nowrap flex items-center justify-center gap-1.5 bg-gradient-to-r from-amber-600/30 to-purple-800/70 text-amber-200 hover:text-white border border-amber-500/40 shadow-sm active:scale-95"
               title="Explorar e publicar Decklists no Mural da Comunidade"
             >
               <Users size={13} className="text-amber-300" />
@@ -518,7 +528,7 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
             </button>
             <button 
               onClick={() => setShowCloudDecksModal(true)}
-              className="flex-1 md:flex-none px-2 md:px-3 py-1.5 rounded-md text-[10px] md:text-xs font-bold transition whitespace-nowrap flex items-center justify-center gap-1.5 bg-gradient-to-r from-purple-800 to-indigo-800 text-purple-200 hover:text-white border border-purple-600/40 shadow-sm active:scale-95"
+              className="cyber-arcane-btn flex-1 md:flex-none px-2.5 md:px-3 py-1.5 text-[10px] md:text-xs font-cyber font-bold uppercase tracking-wider transition whitespace-nowrap flex items-center justify-center gap-1.5 bg-gradient-to-r from-purple-800 to-indigo-800 text-purple-200 hover:text-white border border-purple-600/40 shadow-sm active:scale-95"
               title="Acessar meus decks salvos na nuvem"
             >
               <Cloud size={13} className="text-purple-300" />
@@ -526,7 +536,7 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
             </button>
             <button 
               onClick={() => setShowPopularModal(true)}
-              className="flex-1 md:flex-none px-2 md:px-3 py-1.5 rounded-md text-[10px] md:text-xs font-bold transition whitespace-nowrap flex items-center justify-center gap-1.5 bg-gradient-to-r from-red-950/80 to-amber-950/80 text-amber-200 hover:text-white border border-amber-600/40 shadow-sm active:scale-95"
+              className="cyber-arcane-btn flex-1 md:flex-none px-2.5 md:px-3 py-1.5 text-[10px] md:text-xs font-cyber font-bold uppercase tracking-wider transition whitespace-nowrap flex items-center justify-center gap-1.5 bg-gradient-to-r from-red-950/80 to-amber-950/80 text-amber-200 hover:text-white border border-amber-600/40 shadow-sm active:scale-95"
               title="Ver as 10 cartas mais usadas no Meta por categoria"
             >
               <Flame size={13} className="text-red-400" />
@@ -534,7 +544,7 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
             </button>
             <button 
               onClick={() => setShowDeckImageModal(true)}
-              className="flex-1 md:flex-none px-2 md:px-3 py-1.5 rounded-md text-[10px] md:text-xs font-bold transition whitespace-nowrap flex items-center justify-center gap-1.5 bg-gradient-to-r from-emerald-800 to-teal-800 text-emerald-100 hover:text-white border border-emerald-500/40 shadow-sm active:scale-95"
+              className="cyber-arcane-btn flex-1 md:flex-none px-2.5 md:px-3 py-1.5 text-[10px] md:text-xs font-cyber font-bold uppercase tracking-wider transition whitespace-nowrap flex items-center justify-center gap-1.5 bg-gradient-to-r from-emerald-800 to-teal-800 text-emerald-100 hover:text-white border border-emerald-500/40 shadow-sm active:scale-95"
               title="Gerar Lista de Deck para Torneio + Imagem do Deck (PDF / PNG)"
             >
               <FileText size={13} className="text-emerald-300" />
@@ -545,13 +555,13 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
         
         <div className="flex items-center gap-2 md:gap-3 w-full md:w-auto justify-between md:justify-end">
           {/* Seletor de Formato de Deck: Normal (30-35) vs Mesão (35-40) */}
-          <div className="flex bg-slate-800 rounded-lg p-0.5 border border-slate-700">
+          <div className="flex bg-[#0c0918] p-0.5 border border-purple-500/35">
             <button
               type="button"
               onClick={() => setDeckMode('normal')}
-              className={`px-2 md:px-2.5 py-1 rounded-md text-[10px] md:text-xs font-bold transition whitespace-nowrap ${
+              className={`cyber-arcane-btn px-2 md:px-2.5 py-1 text-[10px] md:text-xs font-cyber font-bold uppercase tracking-wider transition whitespace-nowrap ${
                 deckMode === 'normal'
-                  ? 'bg-purple-600 text-white shadow'
+                  ? 'bg-purple-700 text-white border border-purple-400/50 shadow'
                   : 'text-slate-400 hover:text-white'
               }`}
               title="Deck Normal: 30 a 35 cartas no Deck Principal (contando com Heróis)"
@@ -561,9 +571,9 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
             <button
               type="button"
               onClick={() => setDeckMode('mesao')}
-              className={`px-2 md:px-2.5 py-1 rounded-md text-[10px] md:text-xs font-bold transition whitespace-nowrap ${
+              className={`cyber-arcane-btn px-2 md:px-2.5 py-1 text-[10px] md:text-xs font-cyber font-bold uppercase tracking-wider transition whitespace-nowrap ${
                 deckMode === 'mesao'
-                  ? 'bg-amber-600 text-slate-950 shadow'
+                  ? 'bg-amber-500 text-slate-950 border border-amber-300 shadow'
                   : 'text-amber-300/80 hover:text-amber-200'
               }`}
               title="Deck Mesão: 35 a 40 cartas no Deck Principal (contando com Heróis)"
@@ -572,11 +582,11 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
             </button>
           </div>
 
-          <div className={`px-2 md:px-3 py-1 rounded border flex items-center gap-2 ${isValidDeckSize ? 'bg-green-900/30 border-green-500 text-green-400' : 'bg-red-900/30 border-red-500 text-red-400'}`}>
+          <div className={`cyber-arcane-btn px-2.5 md:px-3 py-1 border flex items-center gap-2 ${isValidDeckSize ? 'bg-emerald-950/60 border-emerald-500/60 text-emerald-400' : 'bg-red-950/60 border-red-500/60 text-red-400'}`}>
             <span className="font-mono font-bold text-sm md:text-lg">{deck.length}</span>
-            <span className="text-[10px] md:text-xs uppercase">/ {minMainCards}-{maxMainCards} Cartas</span>
+            <span className="text-[10px] md:text-xs font-mono uppercase">/ {minMainCards}-{maxMainCards} Cartas</span>
           </div>
-          <button onClick={onClose} className="p-2 hover:bg-slate-800 rounded-full text-slate-400 hover:text-white transition">
+          <button onClick={onClose} className="cyber-arcane-btn p-2 bg-[#0c0918] hover:bg-red-950/60 border border-amber-500/30 hover:border-red-500/50 text-slate-300 hover:text-white transition">
             <X size={20} />
           </button>
         </div>

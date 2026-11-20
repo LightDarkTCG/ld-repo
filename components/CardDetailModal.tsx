@@ -806,7 +806,7 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card: initialC
         <div className="flex flex-col items-center gap-4">
           <div className="scale-110 origin-center relative">
             <Card {...card} priority={true} />
-            {isCurrentCover && (
+            {isUserAdmin(user) && isCurrentCover && (
               <div className="absolute top-2 left-2 z-20 bg-amber-500 text-slate-950 font-black text-[10px] px-2 py-0.5 rounded-full shadow-lg border border-amber-300 flex items-center gap-1">
                 <Crown size={12} className="fill-current" />
                 <span>Capa do Catálogo</span>
@@ -1199,7 +1199,7 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card: initialC
                     >
                       <div className="flex items-center justify-between w-full">
                         <span className="flex items-center gap-1 min-w-0">
-                          {isVarCover && <Crown size={13} className="text-amber-400 fill-amber-400 shrink-0" title="Capa do Catálogo" />}
+                          {isUserAdmin(user) && isVarCover && <Crown size={13} className="text-amber-400 fill-amber-400 shrink-0" title="Capa do Catálogo" />}
                           <span className="truncate font-bold">{v.variationType || (v.frame === 'Moderno' ? 'Moderno' : 'Legado')}</span>
                         </span>
                         {isCurrent && <span className="text-[9px] bg-purple-600 px-1.5 py-0.2 rounded font-black shrink-0">Ativo</span>}

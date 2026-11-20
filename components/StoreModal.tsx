@@ -787,14 +787,14 @@ export const StoreModal: React.FC<StoreModalProps> = ({
       )}
 
       {/* ================= MAIN STORE HEADER ================= */}
-      <header className="bg-[#0e0e14] border-b border-slate-800/90 px-4 sm:px-8 py-3.5 shrink-0">
+      <header className="bg-[#070510]/95 border-b border-amber-500/35 px-4 sm:px-8 py-3.5 shrink-0 shadow-[0_10px_30px_rgba(0,0,0,0.85)]">
         <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-3 sm:gap-6">
           {/* Left: Back to Site + Store Brand */}
           <div className="flex items-center gap-3">
             <button
               type="button"
               onClick={onClose}
-              className="px-3 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-800 transition flex items-center gap-2 text-xs font-bold cursor-pointer"
+              className="cyber-arcane-btn px-3 py-2 bg-[#0d0a1a] hover:bg-purple-950/60 text-amber-200 hover:text-white border border-amber-500/35 transition flex items-center gap-2 text-xs font-cyber font-bold uppercase tracking-wider cursor-pointer"
               title="Voltar para a página inicial"
             >
               <ArrowLeft size={16} />
@@ -808,25 +808,25 @@ export const StoreModal: React.FC<StoreModalProps> = ({
                 className="h-9 w-auto object-contain hidden sm:block"
               />
               <div>
-                <h1 className="text-base sm:text-lg font-black text-white tracking-tight leading-none">
+                <span className="block text-[9px] font-mono uppercase tracking-[0.22em] text-cyan-400">
+                   EMPÓRIO MACROVERSAL // INTERCÂMBIO
+                </span>
+                <h1 className="text-base sm:text-xl font-cinzel font-black text-white tracking-wider leading-none mt-0.5">
                   MERCADO
                 </h1>
-                <span className="text-[11px] text-emerald-400 font-semibold block mt-0.5">
-                  Light Dark TCG · Produtos Oficiais & Vendas da Comunidade
-                </span>
               </div>
             </div>
           </div>
 
           {/* Center: Mode Switcher (Produtos Oficiais vs Cartas & Coleções de Usuários vs Área do Cliente) */}
-          <div className="order-3 md:order-2 w-full md:w-auto flex flex-wrap items-center gap-2 bg-slate-950 p-1.5 rounded-2xl border border-slate-800">
+          <div className="order-3 md:order-2 w-full md:w-auto flex flex-wrap items-center gap-1.5 bg-[#0c0918] p-1.5 border border-purple-500/35">
             <button
               type="button"
               onClick={() => setMarketSection('official')}
-              className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer ${
+              className={`cyber-arcane-btn px-3.5 py-2 text-xs font-cyber font-bold uppercase tracking-wider transition flex items-center gap-2 cursor-pointer ${
                 marketSection === 'official'
-                  ? 'bg-purple-600 text-white shadow-md shadow-purple-950/50'
-                  : 'text-slate-300 hover:text-white hover:bg-slate-900'
+                  ? 'bg-purple-700 text-white border border-amber-400/50 shadow-md shadow-purple-950/50'
+                  : 'text-slate-300 hover:text-white hover:bg-purple-950/40'
               }`}
             >
               <Package size={15} />
@@ -836,10 +836,10 @@ export const StoreModal: React.FC<StoreModalProps> = ({
             <button
               type="button"
               onClick={() => setMarketSection('community')}
-              className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer ${
+              className={`cyber-arcane-btn px-3.5 py-2 text-xs font-cyber font-bold uppercase tracking-wider transition flex items-center gap-2 cursor-pointer ${
                 marketSection === 'community'
-                  ? 'bg-emerald-600 text-white shadow-md shadow-emerald-950/50'
-                  : 'text-emerald-300 hover:text-white hover:bg-slate-900'
+                  ? 'bg-emerald-600 text-white border border-emerald-300/50 shadow-md shadow-emerald-950/50'
+                  : 'text-emerald-300 hover:text-white hover:bg-emerald-950/40'
               }`}
             >
               <Sparkles size={15} />
@@ -853,10 +853,10 @@ export const StoreModal: React.FC<StoreModalProps> = ({
             <button
               type="button"
               onClick={() => setMarketSection('customer_area')}
-              className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer ${
+              className={`cyber-arcane-btn px-3.5 py-2 text-xs font-cyber font-bold uppercase tracking-wider transition flex items-center gap-2 cursor-pointer ${
                 marketSection === 'customer_area'
-                  ? 'bg-cyan-600 text-white shadow-md shadow-cyan-950/50'
-                  : 'text-cyan-300 hover:text-white hover:bg-slate-900'
+                  ? 'bg-cyan-600 text-white border border-cyan-300/50 shadow-md shadow-cyan-950/50'
+                  : 'text-cyan-300 hover:text-white hover:bg-cyan-950/40'
               }`}
               title="Acompanhar minhas compras, etapas de separação e códigos de rastreio"
             >
@@ -873,9 +873,9 @@ export const StoreModal: React.FC<StoreModalProps> = ({
                 setMarketSection('community');
                 setOpenSellTrigger((prev) => prev + 1);
               }}
-              className={`px-3 py-2.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+              className={`cyber-arcane-btn px-3 py-2.5 text-xs font-cyber font-bold uppercase tracking-wider transition flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
                 isAdmin
-                  ? 'bg-amber-500 hover:bg-amber-400 text-slate-950 shadow-md shadow-amber-950/50'
+                  ? 'bg-amber-500 hover:bg-amber-400 text-slate-950 border border-amber-300 shadow-md shadow-amber-950/50'
                   : 'bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/40'
               }`}
               title={
@@ -894,7 +894,7 @@ export const StoreModal: React.FC<StoreModalProps> = ({
               <button
                 type="button"
                 onClick={onOpenAdminStore}
-                className="px-3 py-2.5 rounded-xl text-xs font-bold bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/40 transition flex items-center gap-1.5 whitespace-nowrap cursor-pointer"
+                className="cyber-arcane-btn px-3 py-2.5 text-xs font-cyber font-bold uppercase tracking-wider bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/40 transition flex items-center gap-1.5 whitespace-nowrap cursor-pointer"
                 title="Gerenciar Pedidos, Comissões de 10%, Frete e Produtos no Painel Admin"
               >
                 <Settings size={15} />
@@ -909,7 +909,7 @@ export const StoreModal: React.FC<StoreModalProps> = ({
                 setCartStep(activeOrder && cart.length === 0 ? 'payment' : 'cart');
                 setIsCartDrawerOpen(true);
               }}
-              className="relative p-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700/80 hover:border-emerald-500/60 transition flex items-center justify-center group cursor-pointer"
+              className="cyber-arcane-btn relative p-2.5 bg-[#0d0a1a] hover:bg-emerald-950/50 border border-emerald-500/40 hover:border-emerald-400 transition flex items-center justify-center group cursor-pointer"
               title="Abrir Carrinho e Calcular Frete"
             >
               <ShoppingCart
@@ -917,7 +917,7 @@ export const StoreModal: React.FC<StoreModalProps> = ({
                 className="text-emerald-400 group-hover:scale-105 transition-transform"
               />
               {totalItemsCount > 0 && (
-                <span className="absolute -top-1.5 -right-1.5 min-w-[20px] h-[20px] px-1 rounded-full bg-emerald-500 text-slate-950 text-[10px] font-black font-mono flex items-center justify-center tabular-nums shadow">
+                <span className="absolute -top-1.5 -right-1.5 min-w-[20px] h-[20px] px-1 bg-emerald-500 text-slate-950 text-[10px] font-black font-mono flex items-center justify-center tabular-nums shadow">
                   {totalItemsCount}
                 </span>
               )}
@@ -927,7 +927,7 @@ export const StoreModal: React.FC<StoreModalProps> = ({
 
         {/* ================= HORIZONTAL CATEGORY BAR (FOR OFFICIAL PRODUCTS) ================= */}
         {marketSection === 'official' && (
-          <div className="max-w-7xl mx-auto mt-3 pt-2.5 border-t border-slate-800/70 flex flex-wrap items-center justify-between gap-2">
+          <div className="max-w-7xl mx-auto mt-3 pt-2.5 border-t border-purple-500/25 flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
               {STORE_CATEGORIES.map((cat) => {
                 const isSelected = selectedCategory === cat.id;
@@ -937,18 +937,18 @@ export const StoreModal: React.FC<StoreModalProps> = ({
                     key={cat.id}
                     type="button"
                     onClick={() => setSelectedCategory(cat.id)}
-                    className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 whitespace-nowrap shrink-0 cursor-pointer ${
+                    className={`cyber-arcane-btn px-3.5 py-2 text-xs font-cyber font-bold uppercase tracking-wider transition flex items-center gap-2 whitespace-nowrap shrink-0 cursor-pointer ${
                       isSelected
-                        ? 'bg-purple-600 text-white shadow-md shadow-purple-950/50'
-                        : 'bg-slate-900/70 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-800/80'
+                        ? 'bg-purple-700 text-white border border-amber-400/50 shadow-md shadow-purple-950/50'
+                        : 'bg-[#0d0a1a]/90 hover:bg-purple-950/50 text-slate-300 hover:text-white border border-purple-500/30'
                     }`}
                   >
                     {getCategoryIcon(cat.id, 14)}
                     <span>{cat.label}</span>
                     <span
-                      className={`text-[10px] font-mono px-1.5 py-0.2 rounded-md tabular-nums ${
+                      className={`text-[10px] font-mono px-1.5 py-0.2 tabular-nums ${
                         isSelected
-                          ? 'bg-black/30 text-white font-black'
+                          ? 'bg-black/40 text-amber-300 font-black'
                           : 'bg-slate-950 text-slate-400'
                       }`}
                     >
@@ -962,14 +962,14 @@ export const StoreModal: React.FC<StoreModalProps> = ({
             <div className="relative w-full sm:w-72">
               <Search
                 size={14}
-                className="text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
+                className="text-amber-400/70 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
               />
               <input
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Buscar produto oficial..."
-                className="w-full bg-slate-950 border border-slate-800 focus:border-purple-500 rounded-xl pl-9 pr-8 py-1.5 text-xs text-white placeholder-slate-500 outline-none transition"
+                className="w-full bg-[#090612] border border-purple-500/35 focus:border-amber-400 pl-9 pr-8 py-1.5 text-xs text-white placeholder-slate-500 outline-none transition"
               />
               {searchQuery && (
                 <button

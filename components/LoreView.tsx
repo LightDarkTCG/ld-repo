@@ -26,6 +26,7 @@ import { useCards, sanitizeForFirestore } from '../CardContext';
 import { useAuth } from '../authService';
 import { CardDetailModal } from './CardDetailModal';
 import { CardData } from '../types';
+import { CyberArcaneCornerFrame } from './ArcaneCyberTheme';
 
 export interface Macroverse13Epoch {
   id: string;
@@ -543,35 +544,35 @@ export const LoreView = ({ onClose }: { onClose: () => void }) => {
     }
 
     return (
-      <nav className="fixed top-0 left-0 w-full h-14 z-[100] border-b border-[rgba(var(--primary-rgb),0.2)] bg-[#060608]/95 px-4 sm:px-6 flex items-center justify-between transition-colors">
-        <div className="flex items-center gap-3 sm:gap-5 overflow-x-auto no-scrollbar">
+      <nav className="fixed top-0 left-0 w-full h-14 z-[100] border-b border-amber-500/35 bg-[#05040a]/95 backdrop-blur-xl px-4 sm:px-6 flex items-center justify-between transition-colors shadow-[0_8px_30px_rgba(0,0,0,0.85)]">
+        <div className="flex items-center gap-3 sm:gap-4 overflow-x-auto no-scrollbar">
           <button
             type="button"
             onClick={() => setCurrentView('home')}
             className="text-xl sm:text-2xl font-black tracking-widest font-cinzel mr-1 shrink-0 text-left"
-            style={{ color: 'var(--primary-color)', textShadow: '0 0 10px rgba(var(--primary-rgb),0.4)' }}
+            style={{ color: 'var(--primary-color)', textShadow: '0 0 12px rgba(var(--primary-rgb),0.45)' }}
           >
             {wbSettings.mainTitle || 'ARCHIVUM'}
           </button>
 
           {/* Seletor de Macroverso: Macroverso 13 (90% da Lore + Linha do Tempo no Mapa) vs Macroverso 1 */}
-          <div className="flex items-center bg-[#0e0e14] border border-white/15 rounded-lg p-0.5 shrink-0">
+          <div className="flex items-center bg-[#090714] border border-amber-500/35 p-0.5 shrink-0">
             <button
               type="button"
               onClick={() => handleSelectMacroverse('macroverso_13')}
-              className={`px-2.5 py-1 rounded-md text-[10px] font-black uppercase tracking-wider transition whitespace-nowrap ${
+              className={`cyber-arcane-btn px-2.5 py-1 text-[10px] font-cyber font-black uppercase tracking-wider transition whitespace-nowrap ${
                 selectedMacroverse === 'macroverso_13'
                   ? 'bg-amber-500 text-slate-950 shadow-sm'
                   : 'text-slate-400 hover:text-white'
               }`}
-              title="Macroverso 13 (90% da Lore de Light Dark acontece aqui)"
+              title="Macroverso 13"
             >
               Macroverso 13
             </button>
             <button
               type="button"
               onClick={() => handleSelectMacroverse('macroverso_1')}
-              className={`px-2.5 py-1 rounded-md text-[10px] font-black uppercase tracking-wider transition whitespace-nowrap ${
+              className={`cyber-arcane-btn px-2.5 py-1 text-[10px] font-cyber font-black uppercase tracking-wider transition whitespace-nowrap ${
                 selectedMacroverse === 'macroverso_1'
                   ? 'bg-cyan-500 text-slate-950 shadow-sm'
                   : 'text-slate-400 hover:text-white'
@@ -582,10 +583,10 @@ export const LoreView = ({ onClose }: { onClose: () => void }) => {
             </button>
           </div>
 
-          <div className="flex items-center gap-3.5 text-[11px] tracking-[0.14em] uppercase text-[#a8a29e] font-bold">
+          <div className="flex items-center gap-2.5 text-[11px] font-cyber tracking-[0.12em] uppercase text-[#a8a29e] font-bold">
             <button
               onClick={() => setCurrentView('home')}
-              className={`hover:text-white transition whitespace-nowrap py-1 ${currentView === 'home' ? 'text-[var(--primary-color)] border-b border-[var(--primary-color)]' : ''}`}
+              className={`hover:text-white transition whitespace-nowrap py-1 px-2 ${currentView === 'home' ? 'text-[var(--primary-color)] border-b-2 border-[var(--primary-color)]' : ''}`}
             >
               Início
             </button>
@@ -595,10 +596,10 @@ export const LoreView = ({ onClose }: { onClose: () => void }) => {
                 setSelectedItem(null);
                 setCurrentView('cosmic_map');
               }}
-              className={`flex items-center gap-1.5 hover:text-white transition whitespace-nowrap px-2.5 py-1 rounded border ${
+              className={`cyber-arcane-btn flex items-center gap-1.5 hover:text-white transition whitespace-nowrap px-2.5 py-1 border ${
                 currentView === 'cosmic_map'
-                  ? 'bg-[rgba(var(--primary-rgb),0.18)] text-[var(--primary-color)] border-[var(--primary-color)]'
-                  : 'border-[rgba(var(--primary-rgb),0.3)] text-[#d4af37]'
+                  ? 'bg-[rgba(var(--primary-rgb),0.22)] text-[var(--primary-color)] border-[var(--primary-color)]'
+                  : 'bg-[#090714]/90 border-[rgba(var(--primary-rgb),0.35)] text-[#d4af37]'
               }`}
             >
               <Compass size={13} /> Mapa 3D ({selectedMacroverse === 'macroverso_13' ? 'M13' : 'M1'})
@@ -609,10 +610,10 @@ export const LoreView = ({ onClose }: { onClose: () => void }) => {
                 setSelectedItem(null);
                 setCurrentView('relations_tree');
               }}
-              className={`flex items-center gap-1.5 hover:text-white transition whitespace-nowrap px-2.5 py-1 rounded border ${
+              className={`cyber-arcane-btn flex items-center gap-1.5 hover:text-white transition whitespace-nowrap px-2.5 py-1 border ${
                 currentView === 'relations_tree'
-                  ? 'bg-purple-900/40 text-purple-300 border-purple-400'
-                  : 'border-purple-500/40 text-purple-300 hover:bg-purple-950/30'
+                  ? 'bg-purple-900/50 text-purple-200 border-purple-400'
+                  : 'bg-[#090714]/90 border-purple-500/40 text-purple-300 hover:bg-purple-950/40'
               }`}
             >
               <GitFork size={13} /> Árvore de Relações
@@ -623,10 +624,10 @@ export const LoreView = ({ onClose }: { onClose: () => void }) => {
                 setSelectedItem(null);
                 setCurrentView('daily_quiz');
               }}
-              className={`flex items-center gap-1.5 hover:text-white transition whitespace-nowrap px-2.5 py-1 rounded border ${
+              className={`cyber-arcane-btn flex items-center gap-1.5 hover:text-white transition whitespace-nowrap px-2.5 py-1 border ${
                 currentView === 'daily_quiz'
-                  ? 'bg-amber-500/20 text-amber-300 border-amber-400'
-                  : 'border-amber-500/40 text-amber-300 hover:bg-amber-950/30'
+                  ? 'bg-amber-500/25 text-amber-200 border-amber-400'
+                  : 'bg-[#090714]/90 border-amber-500/40 text-amber-300 hover:bg-amber-950/40'
               }`}
             >
               <HelpCircle size={13} /> Quiz do Macroverso
@@ -637,10 +638,10 @@ export const LoreView = ({ onClose }: { onClose: () => void }) => {
                 setSelectedItem(null);
                 setCurrentView('music');
               }}
-              className={`flex items-center gap-1.5 hover:text-white transition whitespace-nowrap px-2.5 py-1 rounded border ${
+              className={`cyber-arcane-btn flex items-center gap-1.5 hover:text-white transition whitespace-nowrap px-2.5 py-1 border ${
                 currentView === 'music'
-                  ? 'bg-emerald-500/20 text-emerald-300 border-emerald-400'
-                  : 'border-emerald-500/40 text-emerald-300 hover:bg-emerald-950/30'
+                  ? 'bg-cyan-500/25 text-cyan-200 border-cyan-400'
+                  : 'bg-[#090714]/90 border-cyan-500/40 text-cyan-300 hover:bg-cyan-950/40'
               }`}
             >
               <Music size={13} /> Músicas
@@ -656,12 +657,14 @@ export const LoreView = ({ onClose }: { onClose: () => void }) => {
               </button>
             ))}
 
-            <button
-              onClick={() => setIsAdminOpen(true)}
-              className="hover:text-purple-300 text-purple-400 transition whitespace-nowrap ml-1 border border-purple-900/60 px-2.5 py-1 rounded"
-            >
-              {isCollaborator && !isMasterAdmin ? 'Painel de Lore (Colaborador)' : 'Área do Mestre'}
-            </button>
+            {isAdmin && (
+              <button
+                onClick={() => setIsAdminOpen(true)}
+                className="hover:text-purple-300 text-purple-400 transition whitespace-nowrap ml-1 border border-purple-900/60 px-2.5 py-1 rounded"
+              >
+                {isCollaborator && !isMasterAdmin ? 'Painel de Lore (Colaborador)' : 'Área do Mestre'}
+              </button>
+            )}
 
             {isMasterAdmin && (
               <button
@@ -720,8 +723,21 @@ export const LoreView = ({ onClose }: { onClose: () => void }) => {
     );
   };
 
+  const isStandaloneSubWindow =
+    currentView === 'cosmic_map' ||
+    currentView === 'relations_tree' ||
+    currentView === 'daily_quiz' ||
+    currentView === 'music' ||
+    isAdminOpen ||
+    isCollaboratorsModalOpen;
+
   return (
-    <div className="fixed inset-0 z-[90] bg-[#060608] text-slate-300 overflow-y-auto" style={styleVars}>
+    <div
+      className={`fixed inset-0 z-[90] bg-[#060608] text-slate-300 ${
+        isStandaloneSubWindow ? 'overflow-hidden' : 'overflow-y-auto custom-scrollbar'
+      }`}
+      style={styleVars}
+    >
       <style dangerouslySetInnerHTML={{__html: `
         .font-cinzel { font-family: 'Cinzel', serif; }
         .font-playfair { font-family: 'Playfair Display', serif; }
@@ -751,7 +767,7 @@ export const LoreView = ({ onClose }: { onClose: () => void }) => {
         }
       `}} />
 
-      <TopNav />
+      {!isStandaloneSubWindow && <TopNav />}
       {isAdminOpen && <AdminPanel adminType="master" onClose={() => setIsAdminOpen(false)} />}
       {isCollaboratorsModalOpen && isMasterAdmin && (
         <div className="fixed inset-0 z-[210] bg-black/90 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto">
@@ -775,63 +791,25 @@ export const LoreView = ({ onClose }: { onClose: () => void }) => {
           </div>
         </div>
       ) : (
-        <div className={currentView === 'cosmic_map' || currentView === 'relations_tree' ? (isTopNavCollapsed ? 'h-screen' : 'pt-14 h-screen') : 'pt-14 min-h-screen'}>
-          {/* 3D INTERACTIVE MULTIVERSE / COSMOS MAP VIEW */}
+        <div className={isStandaloneSubWindow ? 'w-screen h-screen overflow-hidden' : 'pt-14 min-h-screen'}>
+          {/* 3D INTERACTIVE MULTIVERSE / COSMOS MAP VIEW (STANDALONE FULL-SCREEN WINDOW) */}
           {currentView === 'cosmic_map' && (
-            <div className="relative w-full h-full">
-              {/* Barra flutuante superior de alternância Macroverso 13 vs Macroverso 1 no Mapa 3D */}
-              <div className="absolute top-3 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2 bg-[#08080e]/90 border border-white/15 px-3 py-1.5 rounded-xl shadow-2xl backdrop-blur-md">
-                <button
-                  type="button"
-                  onClick={() => handleSelectMacroverse('macroverso_13')}
-                  className={`px-3 py-1 rounded-lg text-[11px] font-black uppercase tracking-wider transition flex items-center gap-1.5 ${
-                    selectedMacroverse === 'macroverso_13'
-                      ? 'bg-amber-500 text-slate-950 shadow'
-                      : 'text-slate-300 hover:text-white'
-                  }`}
-                >
-                  <span>Macroverso 13</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleSelectMacroverse('macroverso_1')}
-                  className={`px-3 py-1 rounded-lg text-[11px] font-black uppercase tracking-wider transition flex items-center gap-1.5 ${
-                    selectedMacroverse === 'macroverso_1'
-                      ? 'bg-cyan-500 text-slate-950 shadow'
-                      : 'text-slate-300 hover:text-white'
-                  }`}
-                >
-                  <span>Macroverso 1</span>
-                </button>
-              </div>
-
-              {/* Aviso de Aba Macroverso 1 */}
-              {selectedMacroverse === 'macroverso_1' && (
-                <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-40 max-w-lg w-[92%] bg-cyan-950/90 border border-cyan-500/50 text-cyan-100 px-4 py-2.5 rounded-xl shadow-2xl backdrop-blur-md flex items-center justify-between gap-4">
-                  <span className="text-xs font-bold text-cyan-200">
-                    Macroverso 1 selecionado (sem Linha do Tempo).
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => handleSelectMacroverse('macroverso_13')}
-                    className="shrink-0 px-3 py-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-[11px] uppercase tracking-wider transition"
-                  >
-                    Voltar p/ Macroverso 13
-                  </button>
-                </div>
-              )}
+            <div className="fixed inset-0 z-[110] w-screen h-screen bg-[#030308] overflow-hidden">
 
               {/* LINHA DO TEMPO RETRÁTIL NA PARTE DE BAIXO DO MAPA 3D (EXCLUSIVA DO MACROVERSO 13) */}
               {selectedMacroverse === 'macroverso_13' && (
                 <div className="fixed bottom-0 left-0 right-0 z-40 flex flex-col items-center pointer-events-none">
                   {/* Botão Retrátil (Aba para abrir/recolher a Linha do Tempo no rodapé do Mapa) */}
-                  <div className="pointer-events-auto flex items-center gap-2 mb-1">
+                  <div className="pointer-events-auto flex items-center gap-2">
                     <button
                       type="button"
                       onClick={() => setIsMapTimelineExpanded((prev) => !prev)}
-                      className="px-4 py-1.5 rounded-t-xl bg-[#090910]/95 hover:bg-[#12121e] border border-b-0 border-amber-500/40 text-amber-300 text-xs font-cinzel font-black uppercase tracking-widest flex items-center gap-2 shadow-2xl backdrop-blur-md transition"
+                      className="px-5 py-2 bg-[#070610]/95 hover:bg-[#120f24] border border-b-0 border-[#d4af37]/60 text-[#d4af37] text-xs font-cinzel font-black uppercase tracking-widest flex items-center gap-2.5 shadow-[0_-4px_25px_rgba(0,0,0,0.9)] backdrop-blur-md transition"
+                      style={{
+                        clipPath: 'polygon(10px 0, calc(100% - 10px) 0, 100% 100%, 0 100%)'
+                      }}
                     >
-                      <Clock size={14} className="text-amber-400" />
+                      <Clock size={14} className="text-cyan-400" />
                       <span>
                         Linha do Tempo do Mapa (M13)
                         {activeM13Epoch ? ` · ${activeM13Epoch.eraLabel || activeM13Epoch.title}` : ''}
@@ -1207,124 +1185,136 @@ export const LoreView = ({ onClose }: { onClose: () => void }) => {
                 onResetDefaultCosmology={handleResetDefaultCosmology}
                 onUploadMedia={handleUploadMediaFile}
                 onSelectCard={(card) => setInspectedCard(card)}
+                onClose={() => setCurrentView('home')}
+                selectedMacroverse={selectedMacroverse}
+                onSelectMacroverse={handleSelectMacroverse}
               />
             </div>
           )}
 
-          {/* CHARACTER RELATIONS TREE VIEW */}
+          {/* CHARACTER RELATIONS TREE VIEW (STANDALONE FULL-SCREEN WINDOW) */}
           {currentView === 'relations_tree' && (
             <CharacterRelationsTree
               cards={cards}
               isAdmin={isAdmin}
               onInspectCard={(card) => setInspectedCard(card)}
+              onClose={() => setCurrentView('home')}
             />
           )}
 
-          {/* QUIZ DIÁRIO DO MACROVERSO (DENTRO DE LORE) */}
+          {/* QUIZ DIÁRIO DO MACROVERSO (STANDALONE FULL-SCREEN WINDOW) */}
           {currentView === 'daily_quiz' && (
-            <div className="pb-24 pt-4">
-              <DailyQuizSection isAdmin={isAdmin} />
+            <div className="fixed inset-0 z-[110] bg-[#05040a] overflow-y-auto custom-scrollbar pb-24 pt-6">
+              <DailyQuizSection isAdmin={isAdmin} onClose={() => setCurrentView('home')} />
             </div>
           )}
 
-          {/* MÚSICAS, LETRAS SINCRONIZADAS (ORIGINAL + TRADUÇÃO) & CONTEXTO DE LORE */}
+          {/* MÚSICAS: JANELA PRÓPRIA ACIMA DE TUDO */}
           {currentView === 'music' && (
-            <LoreMusicSection
-              isAdmin={isAdmin}
-              cards={cards}
-              onInspectCard={(card) => setInspectedCard(card)}
-            />
+            <div className="fixed inset-0 z-[110] bg-[#05040a] overflow-y-auto custom-scrollbar">
+              <LoreMusicSection
+                isAdmin={isAdmin}
+                cards={cards}
+                onInspectCard={(card) => setInspectedCard(card)}
+                onClose={() => setCurrentView('home')}
+              />
+            </div>
           )}
 
           {/* HOME VIEW */}
           {currentView === 'home' && (
             <div className="flex flex-col items-center justify-center min-h-[85vh] px-4 text-center relative overflow-hidden">
-              <div className="absolute inset-0 pointer-events-none opacity-25" style={{ background: 'radial-gradient(ellipse at center, rgba(var(--primary-rgb),0.25), #060608, #060608)' }}></div>
+              <div className="absolute inset-0 pointer-events-none opacity-30" style={{ background: 'radial-gradient(ellipse at center, rgba(var(--primary-rgb),0.28), #05040a, #05040a)' }}></div>
+              <div className="absolute inset-0 cyber-scanlines opacity-25 pointer-events-none" />
 
-              {/* Abas Macroverso 13 vs Macroverso 1 no topo da Home do Archivum */}
-              <div className="relative z-10 mb-6 flex flex-col items-center gap-2">
-                <div className="inline-flex items-center bg-[#0d0d14] border border-white/15 rounded-xl p-1 shadow-xl">
-                  <button
-                    type="button"
-                    onClick={() => handleSelectMacroverse('macroverso_13')}
-                    className={`px-4 py-2 rounded-lg text-xs font-black uppercase tracking-wider transition ${
-                      selectedMacroverse === 'macroverso_13'
-                        ? 'bg-amber-500 text-slate-950 shadow'
-                        : 'text-slate-400 hover:text-white'
-                    }`}
-                  >
-                    Macroverso 13 (90% da Lore)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleSelectMacroverse('macroverso_1')}
-                    className={`px-4 py-2 rounded-lg text-xs font-black uppercase tracking-wider transition ${
-                      selectedMacroverse === 'macroverso_1'
-                        ? 'bg-cyan-500 text-slate-950 shadow'
-                        : 'text-slate-400 hover:text-white'
-                    }`}
-                  >
-                    Macroverso 1 (Ciclo Primordial)
-                  </button>
+              <div className="cyber-arcane-box max-w-5xl w-full p-8 sm:p-14 relative z-10 my-8">
+                <CyberArcaneCornerFrame accent="gold" />
+
+                {/* Abas Macroverso 13 vs Macroverso 1 no topo da Home do Archivum */}
+                <div className="relative z-10 mb-8 flex flex-col items-center gap-2">
+                  <div className="inline-flex items-center bg-[#090714] border border-amber-500/35 p-1 shadow-xl gap-1">
+                    <button
+                      type="button"
+                      onClick={() => handleSelectMacroverse('macroverso_13')}
+                      className={`cyber-arcane-btn px-4 py-2 text-xs font-cyber font-black uppercase tracking-wider transition ${
+                        selectedMacroverse === 'macroverso_13'
+                          ? 'bg-amber-500 text-slate-950 shadow'
+                          : 'text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      Macroverso 13
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleSelectMacroverse('macroverso_1')}
+                      className={`cyber-arcane-btn px-4 py-2 text-xs font-cyber font-black uppercase tracking-wider transition ${
+                        selectedMacroverse === 'macroverso_1'
+                          ? 'bg-cyan-500 text-slate-950 shadow'
+                          : 'text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      Macroverso 1 (Ciclo Primordial)
+                    </button>
+                  </div>
                 </div>
-              </div>
 
-              <p className="text-theme tracking-[0.3em] text-xs font-bold uppercase mb-4 opacity-80">{wbSettings.subtitle}</p>
+                <p className="text-theme font-mono tracking-[0.3em] text-xs font-bold uppercase mb-4 opacity-90">{wbSettings.subtitle}</p>
 
-              <h2 className="font-cinzel text-6xl sm:text-7xl md:text-9xl text-theme font-bold mb-8 drop-shadow-theme tracking-tight uppercase">
-                {wbSettings.mainTitle}
-              </h2>
+                <h2 className="font-cinzel text-5xl sm:text-7xl md:text-8xl text-theme font-black mb-8 drop-shadow-theme tracking-tight uppercase">
+                  {wbSettings.mainTitle}
+                </h2>
 
-              <div className="gold-line mb-10 w-full"></div>
+                <div className="arcane-divider mb-10 w-full max-w-xl mx-auto"></div>
 
-              <p className="font-playfair text-xl md:text-2xl text-[#a8a29e] max-w-2xl mb-12 leading-relaxed whitespace-pre-wrap">
-                {wbSettings.description}
-              </p>
+                <p className="text-base sm:text-lg md:text-xl text-slate-300 max-w-2xl mx-auto mb-12 leading-relaxed whitespace-pre-wrap">
+                  {wbSettings.description}
+                </p>
 
-              <div className="flex flex-col sm:flex-row flex-wrap justify-center items-center gap-4 relative z-10">
-                <button
-                  onClick={() => setCurrentView('cosmic_map')}
-                  className="font-cinzel border-2 border-theme bg-[rgba(var(--primary-rgb),0.2)] hover:bg-[rgba(var(--primary-rgb),0.35)] text-white px-7 py-4 tracking-widest uppercase text-sm font-bold transition duration-300 shadow-[0_0_25px_rgba(var(--primary-rgb),0.35)] flex items-center gap-3"
-                >
-                  <Compass size={18} className="text-theme" /> Explorar Mapa 3D ({selectedMacroverse === 'macroverso_13' ? 'Macroverso 13' : 'Macroverso 1'})
-                </button>
-
-                <button
-                  onClick={() => setCurrentView('relations_tree')}
-                  className="font-cinzel border-2 border-purple-500/70 bg-purple-950/35 hover:bg-purple-900/50 text-purple-100 px-7 py-4 tracking-widest uppercase text-sm font-bold transition duration-300 shadow-[0_0_25px_rgba(168,85,247,0.3)] flex items-center gap-3"
-                >
-                  <GitFork size={18} className="text-purple-400" /> Árvore de Relações
-                </button>
-
-                <button
-                  onClick={() => setCurrentView('daily_quiz')}
-                  className="font-cinzel border-2 border-amber-500/70 bg-amber-950/35 hover:bg-amber-900/50 text-amber-100 px-7 py-4 tracking-widest uppercase text-sm font-bold transition duration-300 shadow-[0_0_25px_rgba(245,158,11,0.25)] flex items-center gap-3"
-                >
-                  <HelpCircle size={18} className="text-amber-400" /> Quiz Diário do Macroverso
-                </button>
-
-                <button
-                  onClick={() => setCurrentView('music')}
-                  className="font-cinzel border-2 border-emerald-500/70 bg-emerald-950/35 hover:bg-emerald-900/50 text-emerald-100 px-7 py-4 tracking-widest uppercase text-sm font-bold transition duration-300 shadow-[0_0_25px_rgba(16,185,129,0.25)] flex items-center gap-3"
-                >
-                  <Music size={18} className="text-emerald-400" /> Músicas
-                </button>
-
-                {wbTabs.length > 0 ? (
+                <div className="flex flex-col sm:flex-row flex-wrap justify-center items-center gap-3.5 relative z-10">
                   <button
-                    onClick={() => navToTab(wbTabs[0].id)}
-                    className="font-cinzel border border-theme/50 bg-[#0c0c12] hover:bg-[rgba(var(--primary-rgb),0.12)] text-theme px-7 py-4 tracking-widest uppercase text-sm font-bold transition duration-300"
+                    onClick={() => setCurrentView('cosmic_map')}
+                    className="cyber-arcane-btn font-cinzel border border-theme bg-[rgba(var(--primary-rgb),0.2)] hover:bg-[rgba(var(--primary-rgb),0.35)] text-white px-6 py-3.5 tracking-widest uppercase text-xs sm:text-sm font-bold transition duration-300 shadow-[0_0_25px_rgba(var(--primary-rgb),0.35)] flex items-center gap-2.5"
                   >
-                    Abrir Arquivos & Crônicas
+                    <Compass size={17} className="text-theme" /> Explorar Mapa 3D ({selectedMacroverse === 'macroverso_13' ? 'Macroverso 13' : 'Macroverso 1'})
                   </button>
-                ) : (
+
                   <button
-                    onClick={() => setIsAdminOpen(true)}
-                    className="font-cinzel border border-purple-500 text-purple-400 px-7 py-4 tracking-widest uppercase text-sm font-bold transition hover:bg-purple-900/30"
+                    onClick={() => setCurrentView('relations_tree')}
+                    className="cyber-arcane-btn font-cinzel border border-purple-500/70 bg-purple-950/50 hover:bg-purple-900/60 text-purple-100 px-6 py-3.5 tracking-widest uppercase text-xs sm:text-sm font-bold transition duration-300 shadow-[0_0_25px_rgba(168,85,247,0.3)] flex items-center gap-2.5"
                   >
-                    Configurar Área do Mestre
+                    <GitFork size={17} className="text-purple-400" /> Árvore de Relações
                   </button>
-                )}
+
+                  <button
+                    onClick={() => setCurrentView('daily_quiz')}
+                    className="cyber-arcane-btn font-cinzel border border-amber-500/70 bg-amber-950/45 hover:bg-amber-900/60 text-amber-100 px-6 py-3.5 tracking-widest uppercase text-xs sm:text-sm font-bold transition duration-300 shadow-[0_0_25px_rgba(245,158,11,0.25)] flex items-center gap-2.5"
+                  >
+                    <HelpCircle size={17} className="text-amber-400" /> Quiz Diário do Macroverso
+                  </button>
+
+                  <button
+                    onClick={() => setCurrentView('music')}
+                    className="cyber-arcane-btn font-cinzel border border-cyan-500/70 bg-cyan-950/45 hover:bg-cyan-900/60 text-cyan-100 px-6 py-3.5 tracking-widest uppercase text-xs sm:text-sm font-bold transition duration-300 shadow-[0_0_25px_rgba(6,182,212,0.25)] flex items-center gap-2.5"
+                  >
+                    <Music size={17} className="text-cyan-400" /> Músicas
+                  </button>
+
+                  {wbTabs.length > 0 ? (
+                    <button
+                      onClick={() => navToTab(wbTabs[0].id)}
+                      className="cyber-arcane-btn font-cinzel border border-theme/60 bg-[#090714] hover:bg-[rgba(var(--primary-rgb),0.15)] text-theme px-6 py-3.5 tracking-widest uppercase text-xs sm:text-sm font-bold transition duration-300"
+                    >
+                      Abrir Arquivos & Crônicas
+                    </button>
+                  ) : isAdmin ? (
+                    <button
+                      onClick={() => setIsAdminOpen(true)}
+                      className="cyber-arcane-btn font-cinzel border border-purple-500 text-purple-400 px-6 py-3.5 tracking-widest uppercase text-xs sm:text-sm font-bold transition hover:bg-purple-900/30"
+                    >
+                      Configurar Área do Mestre
+                    </button>
+                  ) : null}
+                </div>
               </div>
             </div>
           )}

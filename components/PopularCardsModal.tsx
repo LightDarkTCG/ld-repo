@@ -96,23 +96,26 @@ export const PopularCardsModal: React.FC<PopularCardsModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[120] bg-black/85 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-[120] bg-black/90 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 animate-in fade-in duration-200">
       <div 
-        className="bg-slate-950 border border-purple-500/30 w-full max-w-6xl max-h-[92vh] rounded-2xl sm:rounded-3xl shadow-2xl flex flex-col overflow-hidden text-white"
+        className="cyber-arcane-box bg-[#070510]/95 border border-amber-500/40 w-full max-w-6xl max-h-[92vh] shadow-[0_0_60px_rgba(0,0,0,0.95)] flex flex-col overflow-hidden text-white"
         onClick={e => e.stopPropagation()}
       >
         {/* CABEÇALHO */}
-        <div className="p-4 sm:p-6 border-b border-slate-800 bg-gradient-to-r from-slate-950 via-purple-950/40 to-slate-950 flex flex-wrap items-center justify-between gap-4">
+        <div className="p-4 sm:p-6 border-b border-amber-500/30 bg-gradient-to-r from-[#070510] via-purple-950/40 to-[#070510] flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-3.5">
-            <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl bg-gradient-to-br from-amber-500 to-red-600 flex items-center justify-center text-white shadow-lg shadow-red-950/60 shrink-0">
+            <div className="cyber-arcane-btn w-11 h-11 sm:w-12 sm:h-12 bg-gradient-to-br from-amber-500/30 to-red-600/30 border border-amber-500/50 flex items-center justify-center text-amber-300 shadow-lg shadow-red-950/60 shrink-0">
               <Flame size={26} className="animate-pulse" />
             </div>
             <div>
+              <span className="block text-[10px] font-mono uppercase tracking-[0.22em] text-cyan-400 mb-0.5">
+                TELEMETRIA DO META // TOP 10 CARTAS
+              </span>
               <div className="flex items-center gap-2 flex-wrap">
-                <h2 className="text-lg sm:text-2xl font-black tracking-tight text-white flex items-center gap-2">
-                  Cartas Populares — {popularMode === 'mesao' ? 'Modo Mesão' : 'Modo Normal'}
+                <h2 className="text-lg sm:text-2xl font-cinzel font-black tracking-wider text-white flex items-center gap-2">
+                  CARTAS POPULARES — {popularMode === 'mesao' ? 'MODO MESÃO' : 'MODO NORMAL'}
                 </h2>
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-red-950/80 border border-red-500/50 text-red-300">
+                <span className="cyber-arcane-btn px-2.5 py-0.5 text-[10px] font-mono font-extrabold uppercase tracking-wider bg-red-950/80 border border-red-500/50 text-red-300">
                   Últimos 30 Dias
                 </span>
               </div>
@@ -124,13 +127,13 @@ export const PopularCardsModal: React.FC<PopularCardsModalProps> = ({
 
           <div className="flex items-center gap-2 flex-wrap">
             {/* Divisão: Cartas Populares Normais vs Mesão */}
-            <div className="flex bg-slate-900 rounded-xl p-1 border border-slate-700">
+            <div className="flex bg-[#0d0a1a] p-1 border border-purple-500/35">
               <button
                 type="button"
                 onClick={() => setPopularMode('normal')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-black transition whitespace-nowrap ${
+                className={`cyber-arcane-btn px-3 py-1.5 text-xs font-cyber font-black uppercase tracking-wider transition whitespace-nowrap ${
                   popularMode === 'normal'
-                    ? 'bg-purple-600 text-white shadow'
+                    ? 'bg-purple-700 text-white border border-purple-400/50 shadow'
                     : 'text-slate-400 hover:text-white'
                 }`}
               >
@@ -139,9 +142,9 @@ export const PopularCardsModal: React.FC<PopularCardsModalProps> = ({
               <button
                 type="button"
                 onClick={() => setPopularMode('mesao')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-black transition whitespace-nowrap ${
+                className={`cyber-arcane-btn px-3 py-1.5 text-xs font-cyber font-black uppercase tracking-wider transition whitespace-nowrap ${
                   popularMode === 'mesao'
-                    ? 'bg-amber-600 text-slate-950 shadow'
+                    ? 'bg-amber-500 text-slate-950 border border-amber-300 shadow'
                     : 'text-amber-300/80 hover:text-amber-200'
                 }`}
               >
@@ -152,7 +155,7 @@ export const PopularCardsModal: React.FC<PopularCardsModalProps> = ({
             <button
               onClick={loadData}
               disabled={isLoading}
-              className="p-2 sm:px-3 sm:py-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 hover:text-white transition flex items-center gap-1.5 text-xs font-bold disabled:opacity-50"
+              className="cyber-arcane-btn p-2 sm:px-3 sm:py-2 bg-[#0d0a1a] hover:bg-purple-950/50 border border-purple-500/35 text-slate-300 hover:text-white transition flex items-center gap-1.5 text-xs font-cyber font-bold uppercase tracking-wider disabled:opacity-50"
               title="Recarregar estatísticas da comunidade"
             >
               <RefreshCw size={14} className={isLoading ? 'animate-spin text-purple-400' : ''} />
@@ -160,7 +163,7 @@ export const PopularCardsModal: React.FC<PopularCardsModalProps> = ({
             </button>
             <button
               onClick={onClose}
-              className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition"
+              className="cyber-arcane-btn p-2 bg-[#0d0a1a] text-slate-400 hover:text-white hover:bg-red-950/50 border border-amber-500/30 transition"
               title="Fechar"
             >
               <X size={20} />

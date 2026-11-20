@@ -181,11 +181,15 @@ export const PLANE_DEFINITIONS: {
 
 const WANDERING_POCKET_WAYPOINTS: { x: number; y: number; z: number; sectorName: string }[] = [
   { x: 16, y: 9, z: -15, sectorName: 'Setor 1' },
-  { x: -30, y: 12, z: 10, sectorName: 'Setor 2' },
-  { x: 34, y: -5, z: 19, sectorName: 'Setor 3' },
-  { x: -16, y: 14, z: 32, sectorName: 'Setor 4' },
-  { x: 40, y: 12, z: -22, sectorName: 'Setor 5' },
-  { x: -24, y: -7, z: -28, sectorName: 'Setor 6' }
+  { x: -32, y: 13, z: 12, sectorName: 'Setor 9' },
+  { x: 36, y: -6, z: 22, sectorName: 'Setor 14' },
+  { x: -18, y: 15, z: 35, sectorName: 'Setor 19' },
+  { x: 42, y: 12, z: -24, sectorName: 'Setor 23' },
+  { x: -28, y: -8, z: -30, sectorName: 'Setor 27' },
+  { x: 8, y: 17, z: -42, sectorName: 'Setor 31' },
+  { x: -45, y: 6, z: -8, sectorName: 'Setor 34' },
+  { x: 26, y: 14, z: 38, sectorName: 'Setor 16' },
+  { x: -12, y: -9, z: 24, sectorName: 'Setor 6' }
 ];
 
 // Helper to compute polar sector centroid in 3D space
@@ -800,6 +804,9 @@ interface CosmicLoreMapProps {
   onResetDefaultCosmology?: () => Promise<void>;
   onUploadMedia: (file: File) => Promise<string>;
   onSelectCard?: (card: CardData) => void;
+  onClose?: () => void;
+  selectedMacroverse?: 'macroverso_13' | 'macroverso_1';
+  onSelectMacroverse?: (macro: 'macroverso_13' | 'macroverso_1') => void;
 }
 
 const _projVec = new THREE.Vector3();
@@ -809,6 +816,9 @@ const _dummyQuat = new THREE.Quaternion();
 const _dummyScale = new THREE.Vector3();
 const _dummyColor = new THREE.Color();
 const _shipNextPos = new THREE.Vector3();
+const _shipFuturePos = new THREE.Vector3();
+const _shipVelA = new THREE.Vector3();
+const _shipVelB = new THREE.Vector3();
 
 export const CosmicLoreMap: React.FC<CosmicLoreMapProps> = ({
   nodes,
@@ -821,7 +831,10 @@ export const CosmicLoreMap: React.FC<CosmicLoreMapProps> = ({
   onSaveTerritories,
   onResetDefaultCosmology,
   onUploadMedia,
-  onSelectCard
+  onSelectCard,
+  onClose,
+  selectedMacroverse = 'macroverso_13',
+  onSelectMacroverse
 }) => {
   const canvasMountRef = useRef<HTMLDivElement | null>(null);
 
@@ -996,6 +1009,23 @@ export const CosmicLoreMap: React.FC<CosmicLoreMapProps> = ({
     )
   );
 
+  // Estado de Teleporte Dimensional da Zona Caótica do Sábio (colapsa em fenda -> salta instantaneamente -> expande com onda de choque)
+  const wanderingTeleportRef = useRef<{
+    phase: 'idle' | 'collapsing' | 'expanding';
+    timer: number;
+    nextPos: THREE.Vector3;
+  }>({
+    phase: 'idle',
+    timer: 0,
+    nextPos: new THREE.Vector3(
+      WANDERING_POCKET_WAYPOINTS[wanderingSectorIdx].x,
+      WANDERING_POCKET_WAYPOINTS[wanderingSectorIdx].y,
+      WANDERING_POCKET_WAYPOINTS[wanderingSectorIdx].z
+    )
+  });
+
+  const shipBankAngleRef = useRef<number>(0);
+
   const cameraFlightRef = useRef<{
     active: boolean;
     camPos: THREE.Vector3;
@@ -1025,7 +1055,7 @@ export const CosmicLoreMap: React.FC<CosmicLoreMapProps> = ({
     clickableProxies: []
   });
 
-  // Silent background drift for Zona Caótica do Sábio
+  // Teleporte Dimensional periódico da Zona Caótica do Sábio para outras regiões do mapa
   useEffect(() => {
     const interval = window.setInterval(() => {
       setWanderingSectorIdx((prev) => {
@@ -1033,10 +1063,12 @@ export const CosmicLoreMap: React.FC<CosmicLoreMapProps> = ({
           (prev + 1 + Math.floor(Math.random() * (WANDERING_POCKET_WAYPOINTS.length - 1))) %
           WANDERING_POCKET_WAYPOINTS.length;
         const wp = WANDERING_POCKET_WAYPOINTS[nextIdx];
-        wanderingTargetRef.current.set(wp.x, wp.y, wp.z);
+        wanderingTeleportRef.current.nextPos.set(wp.x, wp.y, wp.z);
+        wanderingTeleportRef.current.phase = 'collapsing';
+        wanderingTeleportRef.current.timer = 0;
         return nextIdx;
       });
-    }, 12000);
+    }, 6500);
     return () => window.clearInterval(interval);
   }, []);
 
@@ -2147,36 +2179,36 @@ export const CosmicLoreMap: React.FC<CosmicLoreMapProps> = ({
         group.add(vortexFunnel);
       } else if (node.visualType === 'starship_vessel') {
         // ==================== NAVE MACROVERSAL ====================
-        // Distinct 3D Interuniversal Star-Cruiser Hull + Ion Particle Wake
+        // Distinct 3D Interuniversal Star-Cruiser Hull + Dual Thruster Flames + Animated Plasma/Fuel Trail
         const shipHullGroup = new THREE.Group();
         shipHullGroup.name = 'starship_hull';
 
         // Sleek Armored Forward Prow (elongated 4-sided pyramid pointing along +Z)
         const prowMesh = new THREE.Mesh(
-          new THREE.ConeGeometry(0.75, 2.8, 4),
+          new THREE.ConeGeometry(0.78, 3.0, 4),
           new THREE.MeshStandardMaterial({
             color: 0xe2e8f0,
             emissive: primary,
-            emissiveIntensity: 0.55,
-            metalness: 0.88,
-            roughness: 0.18,
+            emissiveIntensity: 0.65,
+            metalness: 0.9,
+            roughness: 0.16,
             flatShading: true
           })
         );
         prowMesh.rotation.x = Math.PI / 2;
         prowMesh.rotation.z = Math.PI / 4;
-        prowMesh.position.z = 1.1;
+        prowMesh.position.z = 1.15;
         shipHullGroup.add(prowMesh);
 
         // Main Cruiser Fuselage & Elevated Command Bridge
         const bridgeMesh = new THREE.Mesh(
-          new THREE.BoxGeometry(0.65, 0.55, 1.5),
+          new THREE.BoxGeometry(0.68, 0.56, 1.55),
           new THREE.MeshStandardMaterial({
             color: secondary,
             emissive: secondary,
-            emissiveIntensity: 0.7,
-            metalness: 0.85,
-            roughness: 0.2
+            emissiveIntensity: 0.78,
+            metalness: 0.86,
+            roughness: 0.18
           })
         );
         bridgeMesh.position.set(0, 0.42, 0.1);
@@ -2184,26 +2216,26 @@ export const CosmicLoreMap: React.FC<CosmicLoreMapProps> = ({
 
         // Swept Star-Cruiser Delta Wings
         const wingsMesh = new THREE.Mesh(
-          new THREE.BoxGeometry(3.2, 0.12, 1.35),
+          new THREE.BoxGeometry(3.35, 0.13, 1.4),
           new THREE.MeshStandardMaterial({
             color: primary,
             emissive: primary,
-            emissiveIntensity: 0.65,
-            metalness: 0.85,
-            roughness: 0.22
+            emissiveIntensity: 0.7,
+            metalness: 0.86,
+            roughness: 0.2
           })
         );
         wingsMesh.position.set(0, 0, -0.15);
         shipHullGroup.add(wingsMesh);
 
-        // Dual Warp Nacelle Engines (Port & Starboard)
-        [-1.15, 1.15].forEach((xOffset) => {
+        // Dual Warp Nacelle Engines (Port & Starboard) + Pulsing Thruster Flame Cones
+        [-1.15, 1.15].forEach((xOffset, idx) => {
           const nacelle = new THREE.Mesh(
-            new THREE.CylinderGeometry(0.18, 0.22, 1.7, 12),
+            new THREE.CylinderGeometry(0.19, 0.24, 1.75, 12),
             new THREE.MeshStandardMaterial({
               color: 0x0f172a,
               emissive: primary,
-              emissiveIntensity: 0.8,
+              emissiveIntensity: 0.85,
               metalness: 0.9,
               roughness: 0.15
             })
@@ -2211,57 +2243,100 @@ export const CosmicLoreMap: React.FC<CosmicLoreMapProps> = ({
           nacelle.rotation.x = Math.PI / 2;
           nacelle.position.set(xOffset, -0.05, -0.35);
           shipHullGroup.add(nacelle);
+
+          // Glowing Afterburner Flame Cone shooting backward along -Z
+          const flameCone = new THREE.Mesh(
+            new THREE.ConeGeometry(0.28, 1.85, 12),
+            new THREE.MeshBasicMaterial({
+              color: 0xffffff,
+              transparent: true,
+              opacity: 0.92,
+              blending: THREE.AdditiveBlending,
+              depthWrite: false
+            })
+          );
+          flameCone.name = idx === 0 ? 'thruster_flame_L' : 'thruster_flame_R';
+          flameCone.rotation.x = -Math.PI / 2;
+          flameCone.position.set(xOffset, -0.05, -1.95);
+          shipHullGroup.add(flameCone);
         });
 
-        // Streaming Ion-Plasma Particle Wake behind the Thrusters
-        const wakeCount = 550;
+        // Dynamically Animated Ion-Plasma / Fuel Particle Wake streaming from both engine nozzles
+        const wakeCount = 720;
         const wakePos = new Float32Array(wakeCount * 3);
         const wakeCol = new Float32Array(wakeCount * 3);
+        const wakePhases = new Float32Array(wakeCount);
+        const wakeAngles = new Float32Array(wakeCount);
+        const wakeSpeeds = new Float32Array(wakeCount);
+        const wakeSides = new Float32Array(wakeCount);
         const cTemp = new THREE.Color();
+
         for (let i = 0; i < wakeCount; i++) {
           const i3 = i * 3;
-          const tNorm = Math.random();
-          const angle = tNorm * Math.PI * 6 + (i % 2) * Math.PI;
-          const spreadR = 0.12 + tNorm * 1.1;
-          wakePos[i3] = Math.cos(angle) * spreadR;
-          wakePos[i3 + 1] = Math.sin(angle) * spreadR * 0.45;
-          wakePos[i3 + 2] = -0.9 - tNorm * 5.6;
-          cTemp.copy(primary).lerp(secondary, tNorm);
+          const phase = Math.random();
+          const angle = Math.random() * Math.PI * 2;
+          const speed = 1.45 + Math.random() * 1.15;
+          const side = i % 2 === 0 ? -1.15 : 1.15;
+
+          wakePhases[i] = phase;
+          wakeAngles[i] = angle;
+          wakeSpeeds[i] = speed;
+          wakeSides[i] = side;
+
+          const spreadR = 0.08 + phase * 1.35;
+          wakePos[i3] = side * (1 - phase * 0.25) + Math.cos(angle) * spreadR;
+          wakePos[i3 + 1] = -0.05 + Math.sin(angle) * spreadR * 0.55;
+          wakePos[i3 + 2] = -1.15 - phase * 7.8;
+
+          cTemp.copy(primary).lerp(secondary, phase);
           wakeCol[i3] = cTemp.r;
           wakeCol[i3 + 1] = cTemp.g;
           wakeCol[i3 + 2] = cTemp.b;
         }
+
         const wakeGeo = new THREE.BufferGeometry();
         wakeGeo.setAttribute('position', new THREE.BufferAttribute(wakePos, 3));
         wakeGeo.setAttribute('color', new THREE.BufferAttribute(wakeCol, 3));
         const wakeMat = new THREE.PointsMaterial({
-          size: 0.72,
+          size: 0.78,
           map: glowTexture,
           vertexColors: true,
           transparent: true,
-          opacity: 0.9,
+          opacity: 0.95,
           blending: THREE.AdditiveBlending,
           depthWrite: false
         });
-        shipHullGroup.add(new THREE.Points(wakeGeo, wakeMat));
+        const wakePoints = new THREE.Points(wakeGeo, wakeMat);
+        wakePoints.name = 'starship_fuel_wake';
+        wakePoints.userData = {
+          wakePhases,
+          wakeAngles,
+          wakeSpeeds,
+          wakeSides,
+          primaryColor: primary.clone(),
+          secondaryColor: secondary.clone()
+        };
+        shipHullGroup.add(wakePoints);
 
         group.add(shipHullGroup);
       } else if (node.visualType === 'wandering_pocket') {
-        // ==================== ZONA CAÓTICA DO SÁBIO ====================
-        // Arcane Pocket-Dimension Reliquary (Octahedron Core + Wireframe Dodecahedron Cage) + Rift Sparks
+        // ==================== ZONA CAÓTICA DO SÁBIO (TELEPORTADORA) ====================
+        // Arcane Pocket-Dimension Reliquary (Octahedron Core + Wireframe Dodecahedron Cage) + Teleport Shockwave Ring
+        group.userData.baseScale = baseScale;
+
         const coreOcta = new THREE.Mesh(
           new THREE.OctahedronGeometry(1.25, 0),
           new THREE.MeshStandardMaterial({
             color: primary,
             emissive: primary,
-            emissiveIntensity: 0.95,
+            emissiveIntensity: 1.05,
             metalness: 0.65,
             roughness: 0.15,
             flatShading: true
           })
         );
-        coreOcta.userData.spinSpeedY = 0.65;
-        coreOcta.userData.spinSpeedX = 0.35;
+        coreOcta.userData.spinSpeedY = 0.75;
+        coreOcta.userData.spinSpeedX = 0.45;
         group.add(coreOcta);
 
         const outerCage = new THREE.Mesh(
@@ -2270,11 +2345,11 @@ export const CosmicLoreMap: React.FC<CosmicLoreMapProps> = ({
             color: secondary,
             wireframe: true,
             transparent: true,
-            opacity: 0.75
+            opacity: 0.8
           })
         );
-        outerCage.userData.spinSpeedY = -0.4;
-        outerCage.userData.spinSpeedZ = 0.28;
+        outerCage.userData.spinSpeedY = -0.5;
+        outerCage.userData.spinSpeedZ = 0.35;
         group.add(outerCage);
 
         const arcaneRing = new THREE.Mesh(
@@ -2282,22 +2357,37 @@ export const CosmicLoreMap: React.FC<CosmicLoreMapProps> = ({
           new THREE.MeshBasicMaterial({
             color: primary,
             transparent: true,
-            opacity: 0.8
+            opacity: 0.85
           })
         );
         arcaneRing.rotation.x = Math.PI / 3;
-        arcaneRing.userData.spinSpeedZ = -0.5;
+        arcaneRing.userData.spinSpeedZ = -0.6;
         group.add(arcaneRing);
+
+        // Dimensional Teleportation Arrival Shockwave Ring
+        const shockwaveRing = new THREE.Mesh(
+          new THREE.TorusGeometry(2.2, 0.11, 12, 48),
+          new THREE.MeshBasicMaterial({
+            color: 0x38bdf8,
+            transparent: true,
+            opacity: 0,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false
+          })
+        );
+        shockwaveRing.name = 'teleport_shockwave';
+        shockwaveRing.rotation.x = Math.PI / 2;
+        group.add(shockwaveRing);
 
         group.add(
           createAmbientParticleAura({
-            count: 540,
+            count: 580,
             minRadius: 1.5,
-            maxRadius: 4.2,
+            maxRadius: 4.3,
             verticalScale: 1.0,
             primary,
             secondary,
-            pointSize: 0.72
+            pointSize: 0.74
           })
         );
       } else if (node.visualType === 'festival_arena') {
@@ -3219,6 +3309,13 @@ export const CosmicLoreMap: React.FC<CosmicLoreMapProps> = ({
       frameId = window.setTimeout(poll, 5);
     }
 
+    const evalStarshipSpline = (timeParam: number, out: THREE.Vector3) => {
+      const x = Math.sin(timeParam) * 44 + Math.cos(timeParam * 2.3) * 7.5;
+      const y = 9.5 + Math.cos(timeParam * 1.7) * 5.2 + Math.sin(timeParam * 3.4) * 1.8;
+      const z = Math.sin(timeParam * 2) * 29 + Math.sin(timeParam * 0.85) * 6.5;
+      return out.set(x, y, z);
+    };
+
     const tick = () => {
       const delta = Math.min(clock.getDelta(), 0.1);
       const elapsed = clock.getElapsedTime();
@@ -3227,24 +3324,130 @@ export const CosmicLoreMap: React.FC<CosmicLoreMapProps> = ({
         const nodeData = nodesRef.current.find((n) => n.id === id);
 
         if (nodeData?.isTravelingShip || id === 'node_nave_gina') {
-          const t = elapsed * 0.15;
-          const nextT = t + 0.05;
-          const curX = Math.sin(t) * 44;
-          const curY = 10 + Math.cos(t * 2) * 5;
-          const curZ = Math.sin(t * 2) * 28;
+          // Voo orbital fluido e dinâmico em 3D com inclinação aerodinâmica (banking) nas curvas e rastro de combustível animado
+          const t = elapsed * 0.24;
+          const dt = 0.04;
+          evalStarshipSpline(t, group.position);
+          evalStarshipSpline(t + dt, _shipNextPos);
+          evalStarshipSpline(t + dt * 2, _shipFuturePos);
 
-          _shipNextPos.set(
-            Math.sin(nextT) * 44,
-            10 + Math.cos(nextT * 2) * 5,
-            Math.sin(nextT * 2) * 28
-          );
-          group.position.set(curX, curY, curZ);
           const hullChild = group.getObjectByName('starship_hull');
           if (hullChild) {
             hullChild.lookAt(_shipNextPos);
+
+            // Calcula a curvatura lateral da curva para inclinar (roll/bank) a nave dinamicamente nas manobras
+            _shipVelA.subVectors(_shipNextPos, group.position).normalize();
+            _shipVelB.subVectors(_shipFuturePos, _shipNextPos).normalize();
+            const turnCrossY = _shipVelA.z * _shipVelB.x - _shipVelA.x * _shipVelB.z;
+            const targetBank = THREE.MathUtils.clamp(turnCrossY * 6.2, -0.68, 0.68);
+            shipBankAngleRef.current = THREE.MathUtils.lerp(
+              shipBankAngleRef.current,
+              targetBank,
+              1 - Math.exp(-6.5 * delta)
+            );
+            hullChild.rotateZ(shipBankAngleRef.current);
+
+            // Pulso dinâmico das chamas dos propulsores duplos
+            const flamePulse = 0.88 + Math.sin(elapsed * 28) * 0.22 + Math.cos(elapsed * 43) * 0.12;
+            const flameL = hullChild.getObjectByName('thruster_flame_L') as THREE.Mesh | undefined;
+            const flameR = hullChild.getObjectByName('thruster_flame_R') as THREE.Mesh | undefined;
+            if (flameL) flameL.scale.set(1, flamePulse, 1);
+            if (flameR) flameR.scale.set(1, flamePulse, 1);
+
+            // Animação contínua em tempo real do rastro de combustível / plasma ejetado pelos motores
+            const fuelWake = hullChild.getObjectByName('starship_fuel_wake') as THREE.Points | undefined;
+            if (fuelWake && fuelWake.userData.wakePhases) {
+              const posAttr = fuelWake.geometry.getAttribute('position') as THREE.BufferAttribute;
+              const colAttr = fuelWake.geometry.getAttribute('color') as THREE.BufferAttribute;
+              const phases = fuelWake.userData.wakePhases as Float32Array;
+              const angles = fuelWake.userData.wakeAngles as Float32Array;
+              const speeds = fuelWake.userData.wakeSpeeds as Float32Array;
+              const sides = fuelWake.userData.wakeSides as Float32Array;
+              const pCol = fuelWake.userData.primaryColor as THREE.Color;
+              const sCol = fuelWake.userData.secondaryColor as THREE.Color;
+
+              const count = phases.length;
+              for (let i = 0; i < count; i++) {
+                const p = (phases[i] + elapsed * speeds[i]) % 1.0;
+                const swirlAngle = angles[i] + p * 7.5 - elapsed * 4.2;
+                const coneRadius = 0.06 + p * p * 1.45;
+                const nozzleX = sides[i] * (1 - p * 0.18);
+
+                const px = nozzleX + Math.cos(swirlAngle) * coneRadius;
+                const py = -0.05 + Math.sin(swirlAngle) * coneRadius * 0.55 + Math.sin(p * 10 - elapsed * 8) * 0.14 * p;
+                const pz = -1.1 - p * 8.4;
+                posAttr.setXYZ(i, px, py, pz);
+
+                // Gradiente de combustão: núcleo branco/ciano incandescente -> plasma dourado/primário -> cauda púrpura/secundária
+                if (p < 0.2) {
+                  const k = p / 0.2;
+                  _dummyColor.setRGB(1, 1, 1).lerp(pCol, k);
+                } else {
+                  const k = (p - 0.2) / 0.8;
+                  _dummyColor.copy(pCol).lerp(sCol, k).multiplyScalar(1 - k * 0.55);
+                }
+                colAttr.setXYZ(i, _dummyColor.r, _dummyColor.g, _dummyColor.b);
+              }
+              posAttr.needsUpdate = true;
+              colAttr.needsUpdate = true;
+            }
           }
         } else if (nodeData?.isWandering || id === 'node_zona_caotica_sabio') {
-          group.position.lerp(wanderingTargetRef.current, 1 - Math.exp(-2.2 * delta));
+          // TELEPORTE DIMENSIONAL DA ZONA CAÓTICA DO SÁBIO (NÃO SE ARRASTA PELO MAPA!)
+          const tp = wanderingTeleportRef.current;
+          const baseScale = group.userData.baseScale || Math.max(0.5, nodeData?.scale || 1);
+          const shockwave = group.getObjectByName('teleport_shockwave') as THREE.Mesh | undefined;
+
+          if (tp.phase === 'collapsing') {
+            tp.timer += delta;
+            const dur = 0.36;
+            const prog = Math.min(1, tp.timer / dur);
+            // Implode em uma singularidade dimensional girando em alta velocidade
+            const collapseScale = Math.max(0.02, baseScale * (1 - prog * prog));
+            group.scale.setScalar(collapseScale);
+            group.rotation.y += delta * 14;
+
+            if (shockwave) {
+              const mat = shockwave.material as THREE.MeshBasicMaterial;
+              shockwave.scale.setScalar(1.8 - prog * 1.5);
+              mat.opacity = prog * 0.9;
+            }
+
+            if (prog >= 1) {
+              // SALTO DE TELEPORTE INSTANTÂNEO PARA A NOVA REGIÃO DO MAPA!
+              group.position.copy(tp.nextPos);
+              wanderingTargetRef.current.copy(tp.nextPos);
+              tp.phase = 'expanding';
+              tp.timer = 0;
+            }
+          } else if (tp.phase === 'expanding') {
+            tp.timer += delta;
+            const dur = 0.48;
+            const prog = Math.min(1, tp.timer / dur);
+            // Explosão dimensional de chegada com leve overshoot elástico
+            const overshoot = prog < 0.7 ? (prog / 0.7) * 1.24 : 1.24 - ((prog - 0.7) / 0.3) * 0.24;
+            group.scale.setScalar(Math.max(0.02, baseScale * overshoot));
+            group.rotation.y += delta * (1 - prog) * 10;
+
+            if (shockwave) {
+              const mat = shockwave.material as THREE.MeshBasicMaterial;
+              shockwave.scale.setScalar(0.4 + prog * 2.6);
+              mat.opacity = (1 - prog) * 0.95;
+            }
+
+            if (prog >= 1) {
+              group.scale.setScalar(baseScale);
+              if (shockwave) {
+                (shockwave.material as THREE.MeshBasicMaterial).opacity = 0;
+              }
+              tp.phase = 'idle';
+              tp.timer = 0;
+            }
+          } else {
+            // Em repouso no setor atual: apenas flutuação sutil no próprio eixo vertical sem se arrastar pelo mapa
+            group.scale.setScalar(baseScale);
+            group.position.y = wanderingTargetRef.current.y + Math.sin(elapsed * 2.1) * 0.45;
+          }
         }
 
         // Animate both spiral particle galaxies and 3D sculptural structures (rings, cages, citadels, relics)
@@ -3620,7 +3823,7 @@ export const CosmicLoreMap: React.FC<CosmicLoreMapProps> = ({
     PLANE_DEFINITIONS.find((p) => p.id === activePlane) || PLANE_DEFINITIONS[0];
 
   return (
-    <div className="relative w-full h-full min-h-[calc(100vh-3.5rem)] bg-[#030308] overflow-hidden select-none">
+    <div className="relative w-full h-screen bg-[#030308] overflow-hidden select-none">
       {/* Dedicated Empty WebGL Canvas Container */}
       <div ref={canvasMountRef} className="w-full h-full" />
 
@@ -3727,10 +3930,49 @@ export const CosmicLoreMap: React.FC<CosmicLoreMapProps> = ({
         })}
       </div>
 
-      {/* TOP-LEFT RETRACTABLE MENUS (Plane Switcher, Territory Control, Universe Index & Character Trajectories) */}
-      <div className="absolute top-3 left-3 z-20 pointer-events-auto flex flex-col items-start gap-2 max-w-md">
+      {/* TOP-LEFT RETRACTABLE MENUS (Standalone Map Controls + Voltar + Macroverse Switcher) */}
+      <div className="absolute top-3 left-3 z-20 pointer-events-auto flex flex-col items-start gap-2 max-w-2xl">
         {/* Compact Retractable Menu Triggers */}
         <div className="flex flex-wrap items-center gap-1.5">
+          {onClose && (
+            <button
+              type="button"
+              onClick={onClose}
+              className="cyber-arcane-btn px-3 py-1.5 bg-[#120e24]/95 hover:bg-amber-500/20 border border-amber-500/50 text-amber-300 hover:text-white text-[11px] font-cinzel font-black uppercase tracking-wider flex items-center gap-1.5 shadow-lg transition"
+              title="Voltar ao Archivum"
+            >
+              <X size={13} />
+              <span>Voltar</span>
+            </button>
+          )}
+
+          {onSelectMacroverse && (
+            <div className="flex items-center bg-[#080712]/95 border border-amber-500/35 p-0.5 cyber-arcane-btn shadow-lg">
+              <button
+                type="button"
+                onClick={() => onSelectMacroverse('macroverso_13')}
+                className={`px-2 py-1 text-[10px] font-cinzel font-black uppercase tracking-wider transition ${
+                  selectedMacroverse === 'macroverso_13'
+                    ? 'bg-amber-500 text-slate-950 shadow'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                M13
+              </button>
+              <button
+                type="button"
+                onClick={() => onSelectMacroverse('macroverso_1')}
+                className={`px-2 py-1 text-[10px] font-cinzel font-black uppercase tracking-wider transition ${
+                  selectedMacroverse === 'macroverso_1'
+                    ? 'bg-cyan-500 text-slate-950 shadow'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                M1
+              </button>
+            </div>
+          )}
+
           {/* 1. Mudar de Plano Dimensional */}
           <button
             type="button"
@@ -4277,8 +4519,10 @@ export const CosmicLoreMap: React.FC<CosmicLoreMapProps> = ({
                     }`}
                   >
                     <div
-                      onClick={() => setSelectedTerritoryId(isSel ? null : terr.id)}
-                      className="flex items-center justify-between gap-2 cursor-pointer"
+                      onClick={() => {
+                        if (isAdmin) setSelectedTerritoryId(isSel ? null : terr.id);
+                      }}
+                      className={`flex items-center justify-between gap-2 ${isAdmin ? 'cursor-pointer' : ''}`}
                     >
                       <div className="flex items-center gap-2 min-w-0">
                         <span
@@ -4288,15 +4532,18 @@ export const CosmicLoreMap: React.FC<CosmicLoreMapProps> = ({
                         <div className="truncate">
                           <div className="text-xs font-bold text-white truncate">{terr.name}</div>
                           <div className="text-[10px] text-slate-400">
-                            {terr.faction} · Anel {terr.innerRadius ?? 10}–{terr.outerRadius ?? 24} ·{' '}
-                            {terr.startAngleDeg ?? 0}°–{terr.endAngleDeg ?? 45}°
+                            {isAdmin
+                              ? `${terr.faction} · Anel ${terr.innerRadius ?? 10}–${terr.outerRadius ?? 24} · ${terr.startAngleDeg ?? 0}°–${terr.endAngleDeg ?? 45}°`
+                              : `Domínio: ${terr.faction}`}
                           </div>
                         </div>
                       </div>
-                      <ChevronDown
-                        size={13}
-                        className={`text-slate-400 transition-transform ${isSel ? 'rotate-180' : ''}`}
-                      />
+                      {isAdmin && (
+                        <ChevronDown
+                          size={13}
+                          className={`text-slate-400 transition-transform ${isSel ? 'rotate-180' : ''}`}
+                        />
+                      )}
                     </div>
 
                     {/* Admin Polar Sector Wedge Editor */}
@@ -4544,19 +4791,19 @@ export const CosmicLoreMap: React.FC<CosmicLoreMapProps> = ({
         )}
       </div>
 
-      {/* BOTTOM RETRACTABLE QUICK CONTROL BAR */}
-      <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-20 pointer-events-auto flex flex-col items-center">
+      {/* BOTTOM RETRACTABLE QUICK CONTROL BAR (Elevated above the M13 Timeline tab so they never overlap) */}
+      <div className="absolute bottom-14 left-1/2 -translate-x-1/2 z-20 pointer-events-auto flex flex-col items-center">
         {isHudCollapsed ? (
           <button
             type="button"
             onClick={() => setIsHudCollapsed(false)}
-            className="bg-[#090912]/90 hover:bg-[#121222] border border-white/20 px-3.5 py-1.5 rounded-full text-[11px] font-semibold text-slate-200 hover:text-white flex items-center gap-1.5 shadow-xl transition"
+            className="cyber-arcane-btn bg-[#080712]/95 hover:bg-[#131026] border border-[#d4af37]/50 px-4 py-1.5 text-[11px] font-cinzel font-bold uppercase tracking-wider text-[#d4af37] hover:text-white flex items-center gap-1.5 shadow-[0_0_20px_rgba(0,0,0,0.85)] transition"
           >
-            <ChevronUp size={13} className="text-[#d4af37]" />
+            <ChevronUp size={13} className="text-cyan-400" />
             <span>Controles do Mapa</span>
           </button>
         ) : (
-          <div className="bg-[#090912]/92 border border-white/15 rounded-full px-3 py-1.5 shadow-2xl flex flex-wrap items-center justify-center gap-1.5 max-w-[95vw]">
+          <div className="cyber-arcane-box-sm bg-[#070610]/95 border border-[#d4af37]/35 px-3.5 py-2 shadow-[0_0_30px_rgba(0,0,0,0.9)] flex flex-wrap items-center justify-center gap-1.5 max-w-[95vw]">
             <button
               type="button"
               onClick={() => handleSelectNode(null)}
