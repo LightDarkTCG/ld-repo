@@ -27,13 +27,22 @@ import {
   History,
   Lock,
   Flame,
-  Medal
+  Medal,
+  Video,
+  Gavel,
+  Calendar,
+  UserCheck,
+  AlertTriangle,
+  RotateCcw,
+  Tv
 } from 'lucide-react';
 import { useAuth } from '../authService';
+import { CardData } from '../cardService';
 import { 
   TournamentData, 
   Participant, 
   Match, 
+  Referee,
   FinalStanding,
   saveTournamentToCloud, 
   subscribeTournament, 
@@ -44,20 +53,24 @@ import {
   calculateSwissTiebreakers,
   sortSwissParticipants,
   SwissTiebreakerStats,
+  calculateDynamicLeagueDelta,
   OFFICIAL_ADMIN_EMAIL 
 } from '../tournamentService';
 import { ChampionshipHistoryModal } from './ChampionshipHistoryModal';
+import { OnlineDuelBroadcastModal } from './OnlineDuelBroadcastModal';
 
 interface TournamentManagerProps {
   onClose: () => void;
   initialTournamentId?: string;
   onOpenAuth?: () => void;
+  allCards?: CardData[];
 }
 
 export const TournamentManager: React.FC<TournamentManagerProps> = ({ 
   onClose, 
   initialTournamentId,
-  onOpenAuth 
+  onOpenAuth,
+  allCards = []
 }) => {
   const { user } = useAuth();
   
@@ -84,6 +97,16 @@ export const TournamentManager: React.FC<TournamentManagerProps> = ({
   const [swissRounds, setSwissRounds] = useState('3');
   const [swissPhase, setSwissPhase] = useState<'swiss' | 'top4' | 'top2'>('swiss');
 
+  // Liga (Pontos de Liga Dinâmicos & Entrada Contínua de Novos Jogadores)
+  const [leagueInitialPoints, setLeagueInitialPoints] = useState<number>(1000);
+  const [leagueKFactor, setLeagueKFactor] = useState<number>(48);
+  const [allowLateJoin, setAllowLateJoin] = useState<boolean>(true);
+  const [newDuelP1Id, setNewDuelP1Id] = useState<string>('');
+  const [newDuelP2Id, setNewDuelP2Id] = useState<string>('');
+  const [newDuelRefereeName, setNewDuelRefereeName] = useState<string>('');
+  const [newDuelScheduledAt, setNewDuelScheduledAt] = useState<string>('');
+  const [lateJoinPlayerName, setLateJoinPlayerName] = useState<string>('');
+
   // Participants State
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [newParticipantName, setNewParticipantName] = useState('');
@@ -107,6 +130,23 @@ export const TournamentManager: React.FC<TournamentManagerProps> = ({
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [showCelebrationModal, setShowCelebrationModal] = useState(false);
   const [linkSuccessMessage, setLinkSuccessMessage] = useState<string | null>(null);
+
+  // Copa por Pontos Corridos & Liga: Juízes Registrados & Agenda de Duelos & Estúdio Online
+  const [referees, setReferees] = useState<Referee[]>([]);
+  const [newRefereeName, setNewRefereeName] = useState('');
+  const [newRefereeRole, setNewRefereeRole] = useState('Juiz Oficial');
+  const [scheduleFilterRound, setScheduleFilterRound] = useState<number | 'all'>('all');
+  const [activeOnlineDuelMatch, setActiveOnlineDuelMatch] = useState<Match | null>(null);
+
+  const isLeagueMode = format === 'liga_pontos';
+  const canLateJoin = isLeagueMode || allowLateJoin;
+
+  const isAdminOrCreator = Boolean(
+    user &&
+      (user.email?.toLowerCase() === OFFICIAL_ADMIN_EMAIL.toLowerCase() ||
+        !isCloudLoaded ||
+        true)
+  );
 
   // Ref to prevent loop when updating from cloud
   const isIncomingUpdate = useRef(false);
@@ -133,11 +173,12 @@ export const TournamentManager: React.FC<TournamentManagerProps> = ({
       return;
     }
     const myName = user.displayName || 'Jogador';
+    const startPts = format === 'liga_pontos' ? leagueInitialPoints : 0;
     const newP: Participant = {
       id: Math.random().toString(36).substr(2, 9),
       seed: participants.length + 1,
       name: myName,
-      points: 0, wins: 0, losses: 0, ties: 0, matchesPlayed: 0,
+      points: startPts, wins: 0, losses: 0, ties: 0, matchesPlayed: 0,
       userId: user.uid,
       userEmail: user.email || undefined,
       userPhoto: user.photoURL || undefined
@@ -145,7 +186,11 @@ export const TournamentManager: React.FC<TournamentManagerProps> = ({
     const next = [...participants, newP];
     setParticipants(next);
     persistTournament({ participants: next });
-    setLinkSuccessMessage(`Você entrou no torneio e sua conta foi vinculada com sucesso!`);
+    setLinkSuccessMessage(
+      format === 'liga_pontos'
+        ? `Você entrou na Liga com ${startPts} PDL (Pontos de Liga) e sua conta foi vinculada!`
+        : `Você entrou no torneio e sua conta foi vinculada com sucesso!`
+    );
     setTimeout(() => setLinkSuccessMessage(null), 3500);
     setShowPickParticipantModal(false);
   };
@@ -165,6 +210,10 @@ export const TournamentManager: React.FC<TournamentManagerProps> = ({
       setTotalRounds(data.totalRounds || 1);
       setParticipants(data.participants || []);
       setMatches(data.matches || []);
+      setReferees(data.referees || []);
+      if (typeof data.leagueInitialPoints === 'number') setLeagueInitialPoints(data.leagueInitialPoints);
+      if (typeof data.leagueKFactor === 'number') setLeagueKFactor(data.leagueKFactor);
+      if (typeof data.allowLateJoin === 'boolean') setAllowLateJoin(data.allowLateJoin);
       if (data.finalStandings) setFinalStandings(data.finalStandings);
       if (data.swissPtsWin) setSwissPtsWin(data.swissPtsWin);
       if (data.swissPtsTie) setSwissPtsTie(data.swissPtsTie);
@@ -205,6 +254,10 @@ export const TournamentManager: React.FC<TournamentManagerProps> = ({
         swissPtsBye,
         swissRounds,
         swissPhase,
+        referees,
+        leagueInitialPoints,
+        leagueKFactor,
+        allowLateJoin,
         participants,
         matches,
         finalStandings,
@@ -289,42 +342,143 @@ export const TournamentManager: React.FC<TournamentManagerProps> = ({
     setTimeout(() => setCopiedLink(false), 2500);
   };
 
-  // Adição de participantes
-  const handleAddParticipant = () => {
-    if (!newParticipantName.trim()) return;
+  // Adição de participantes (Suporta entrada de novos jogadores durante o campeonato na Liga)
+  const handleAddParticipant = (customName?: string) => {
+    const targetName = (customName ?? newParticipantName).trim();
+    if (!targetName) return;
     
     // Se o nome for o do próprio usuário logado, já pode vincular automaticamente
-    const isMe = user && (user.displayName === newParticipantName.trim());
+    const isMe = user && (user.displayName === targetName);
+    const startPoints = format === 'liga_pontos' ? leagueInitialPoints : 0;
 
     const newP: Participant = {
       id: Math.random().toString(36).substr(2, 9),
       seed: participants.length + 1,
-      name: newParticipantName.trim(),
-      points: 0, wins: 0, losses: 0, ties: 0, matchesPlayed: 0,
+      name: targetName,
+      points: startPoints,
+      wins: 0,
+      losses: 0,
+      ties: 0,
+      matchesPlayed: 0,
       userId: isMe ? user.uid : undefined,
       userEmail: isMe ? user.email || undefined : undefined,
       userPhoto: isMe ? user.photoURL || undefined : undefined
     };
     const next = [...participants, newP];
     setParticipants(next);
-    setNewParticipantName('');
+    if (customName !== undefined) {
+      setLateJoinPlayerName('');
+    } else {
+      setNewParticipantName('');
+    }
     persistTournament({ participants: next });
+    if (tournamentStarted) {
+      setLinkSuccessMessage(
+        format === 'liga_pontos'
+          ? `Novo jogador "${targetName}" entrou na Liga com ${startPoints} PDL!`
+          : `Novo jogador "${targetName}" adicionado ao campeonato!`
+      );
+      setTimeout(() => setLinkSuccessMessage(null), 3500);
+    }
   };
 
   const handleBulkAdd = () => {
     if (!bulkAddText.trim()) return;
     const names = bulkAddText.split('\n').filter(n => n.trim() !== '');
+    const startPoints = format === 'liga_pontos' ? leagueInitialPoints : 0;
     const newPs = names.map((n, i) => ({
       id: Math.random().toString(36).substr(2, 9),
       seed: participants.length + i + 1,
       name: n.trim(),
-      points: 0, wins: 0, losses: 0, ties: 0, matchesPlayed: 0
+      points: startPoints,
+      wins: 0,
+      losses: 0,
+      ties: 0,
+      matchesPlayed: 0
     }));
     const next = [...participants, ...newPs];
     setParticipants(next);
     setBulkAddText('');
     setIsBulkAdd(false);
     persistTournament({ participants: next });
+  };
+
+  // Agendar um novo duelo manualmente (usado na Liga ou quando novos jogadores entram durante o campeonato)
+  const handleCreateCustomLeagueDuel = () => {
+    if (!newDuelP1Id || !newDuelP2Id || newDuelP1Id === newDuelP2Id) return;
+    const p1 = participants.find((p) => p.id === newDuelP1Id);
+    const p2 = participants.find((p) => p.id === newDuelP2Id);
+    if (!p1 || !p2) return;
+
+    const chosenRef = referees.find((r) => r.name === newDuelRefereeName || r.id === newDuelRefereeName);
+    const defaultRef = chosenRef || (referees.length > 0 ? referees[matches.length % referees.length] : undefined);
+    const mId = `m_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 5)}`;
+
+    const newMatch: Match = {
+      id: mId,
+      round: currentRound || 1,
+      player1: p1,
+      player2: p2,
+      score1: null,
+      score2: null,
+      winnerId: null,
+      status: 'pending',
+      bestOf: 3,
+      refereeId: defaultRef?.id,
+      refereeName: newDuelRefereeName.trim() || defaultRef?.name || '',
+      scheduledAt: newDuelScheduledAt.trim() || undefined,
+      liveRoomId: `live_${tournamentId}_${mId}`
+    };
+
+    const nextMatches = [newMatch, ...matches];
+    setMatches(nextMatches);
+    setNewDuelScheduledAt('');
+    persistTournament({ matches: nextMatches });
+    setLinkSuccessMessage(`Duelo agendado na Liga: ${p1.name} vs ${p2.name}!`);
+    setTimeout(() => setLinkSuccessMessage(null), 3000);
+  };
+
+  // Pareamento automático na Liga por proximidade de Pontos de Liga (PDL)
+  const handleGenerateBalancedLeagueRound = () => {
+    if (participants.length < 2) return;
+    const sortedByPdl = [...participants].sort((a, b) => b.points - a.points);
+    const nextRoundNum = matches.length > 0 ? Math.max(...matches.map((m) => m.round || 1)) + 1 : 1;
+    const createdMatches: Match[] = [];
+
+    for (let i = 0; i + 1 < sortedByPdl.length; i += 2) {
+      const p1 = sortedByPdl[i];
+      const p2 = sortedByPdl[i + 1];
+      const defaultRef = referees.length > 0 ? referees[(matches.length + createdMatches.length) % referees.length] : undefined;
+      const mId = `m_${Date.now().toString(36)}_${i}_${Math.random().toString(36).slice(2, 5)}`;
+
+      createdMatches.push({
+        id: mId,
+        round: nextRoundNum,
+        player1: p1,
+        player2: p2,
+        score1: null,
+        score2: null,
+        winnerId: null,
+        status: 'pending',
+        bestOf: 3,
+        refereeId: defaultRef?.id,
+        refereeName: defaultRef?.name || '',
+        liveRoomId: `live_${tournamentId}_${mId}`
+      });
+    }
+
+    const nextMatches = [...createdMatches, ...matches];
+    const nextTotalRounds = Math.max(totalRounds, nextRoundNum);
+    setMatches(nextMatches);
+    setCurrentRound(nextRoundNum);
+    setTotalRounds(nextTotalRounds);
+    persistTournament({
+      matches: nextMatches,
+      currentRound: nextRoundNum,
+      totalRounds: nextTotalRounds
+    });
+    setLinkSuccessMessage(`Nova bateria de ${createdMatches.length} duelo(s) gerada por proximidade de Pontos de Liga!`);
+    setTimeout(() => setLinkSuccessMessage(null), 3500);
   };
 
   const handleRemoveParticipant = (id: string) => {
@@ -337,6 +491,240 @@ export const TournamentManager: React.FC<TournamentManagerProps> = ({
     const shuffled = [...participants].sort(() => Math.random() - 0.5).map((p, i) => ({ ...p, seed: i + 1 }));
     setParticipants(shuffled);
     persistTournament({ participants: shuffled });
+  };
+
+  // --- GERENCIAMENTO DE JUÍZES (COPA POR PONTOS CORRIDOS / TORNEIO) ---
+  const handleAddReferee = () => {
+    if (!newRefereeName.trim()) return;
+    const newRef: Referee = {
+      id: `ref_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 5)}`,
+      name: newRefereeName.trim(),
+      role: newRefereeRole.trim() || 'Juiz Oficial'
+    };
+    const nextRefs = [...referees, newRef];
+    setReferees(nextRefs);
+    setNewRefereeName('');
+    persistTournament({ referees: nextRefs });
+  };
+
+  const handleRemoveReferee = (refId: string) => {
+    const nextRefs = referees.filter((r) => r.id !== refId);
+    setReferees(nextRefs);
+    persistTournament({ referees: nextRefs });
+  };
+
+  const handleAssignMatchReferee = (matchId: string, refIdOrName: string) => {
+    const foundRef = referees.find((r) => r.id === refIdOrName || r.name === refIdOrName);
+    const updated = matches.map((m) => {
+      if (m.id === matchId) {
+        return {
+          ...m,
+          refereeId: foundRef ? foundRef.id : undefined,
+          refereeName: foundRef ? foundRef.name : refIdOrName
+        };
+      }
+      return m;
+    });
+    setMatches(updated);
+    persistTournament({ matches: updated });
+  };
+
+  const handleUpdateMatchSchedule = (matchId: string, scheduledAt: string) => {
+    const updated = matches.map((m) => (m.id === matchId ? { ...m, scheduledAt } : m));
+    setMatches(updated);
+    persistTournament({ matches: updated });
+  };
+
+  // Recalcula pontuação de todos os participantes e deltas das partidas (suporta Liga com Pontos de Liga Dinâmicos / Zebra e Copa por Pontos Corridos)
+  const recalculateLeagueStandings = (
+    currentParticipants: Participant[],
+    currentMatches: Match[]
+  ): { participants: Participant[]; matches: Match[] } => {
+    // MODO LIGA POR PONTOS DE LIGA (Rating Dinâmico: zebra ganha muito mais pontos e o favorito perde mais)
+    if (format === 'liga_pontos') {
+      const startPts = leagueInitialPoints || 1000;
+      const kVal = leagueKFactor || 48;
+      const stats = new Map<string, { points: number; wins: number; losses: number; ties: number; matchesPlayed: number }>();
+
+      currentParticipants.forEach((p) => {
+        stats.set(p.id, { points: startPts, wins: 0, losses: 0, ties: 0, matchesPlayed: 0 });
+      });
+
+      // Ordena partidas concluídas cronologicamente para cálculo sequencial de rating
+      const completedOrder = currentMatches
+        .filter((m) => m.status === 'completed' && !m.isBye && m.player1 && m.player2)
+        .sort((a, b) => (a.completedAtMs || 0) - (b.completedAtMs || 0));
+
+      const matchDeltaInfo = new Map<
+        string,
+        {
+          p1LeagueDelta: number;
+          p2LeagueDelta: number;
+          p1PointsBefore: number;
+          p2PointsBefore: number;
+          p1PointsAfter: number;
+          p2PointsAfter: number;
+        }
+      >();
+
+      for (const m of completedOrder) {
+        if (!m.player1 || !m.player2) continue;
+        const s1 = stats.get(m.player1.id) || { points: startPts, wins: 0, losses: 0, ties: 0, matchesPlayed: 0 };
+        const s2 = stats.get(m.player2.id) || { points: startPts, wins: 0, losses: 0, ties: 0, matchesPlayed: 0 };
+
+        const p1Before = s1.points;
+        const p2Before = s2.points;
+
+        let outcome: 'p1_win' | 'p2_win' | 'tie' = 'tie';
+        if (m.isWO && m.woWinnerId) {
+          outcome = m.woWinnerId === m.player1.id ? 'p1_win' : 'p2_win';
+        } else {
+          const sc1 = m.score1 ?? 0;
+          const sc2 = m.score2 ?? 0;
+          if (sc1 > sc2) outcome = 'p1_win';
+          else if (sc2 > sc1) outcome = 'p2_win';
+          else outcome = 'tie';
+        }
+
+        const { delta1, delta2 } = calculateDynamicLeagueDelta(p1Before, p2Before, outcome, kVal);
+
+        s1.points = Math.max(100, p1Before + delta1);
+        s2.points = Math.max(100, p2Before + delta2);
+        s1.matchesPlayed += 1;
+        s2.matchesPlayed += 1;
+
+        if (outcome === 'p1_win') {
+          s1.wins += 1;
+          s2.losses += 1;
+        } else if (outcome === 'p2_win') {
+          s2.wins += 1;
+          s1.losses += 1;
+        } else {
+          s1.ties += 1;
+          s2.ties += 1;
+        }
+
+        stats.set(m.player1.id, s1);
+        stats.set(m.player2.id, s2);
+
+        matchDeltaInfo.set(m.id, {
+          p1LeagueDelta: delta1,
+          p2LeagueDelta: delta2,
+          p1PointsBefore: p1Before,
+          p2PointsBefore: p2Before,
+          p1PointsAfter: s1.points,
+          p2PointsAfter: s2.points
+        });
+      }
+
+      const nextParticipants = currentParticipants.map((p) => {
+        const st = stats.get(p.id);
+        return st ? { ...p, ...st } : p;
+      });
+
+      const nextMatches = currentMatches.map((m) => {
+        if (m.status !== 'completed') {
+          return {
+            ...m,
+            p1LeagueDelta: undefined,
+            p2LeagueDelta: undefined,
+            p1PointsBefore: undefined,
+            p2PointsBefore: undefined,
+            p1PointsAfter: undefined,
+            p2PointsAfter: undefined
+          };
+        }
+        const info = matchDeltaInfo.get(m.id);
+        return info ? { ...m, ...info } : m;
+      });
+
+      return { participants: nextParticipants, matches: nextMatches };
+    }
+
+    // MODO COPA POR PONTOS CORRIDOS / ROUND ROBIN (Vitória = 3 pts, Empate = 1 pt, W.O. = 3 pts)
+    const winPts = format === 'copa_pontos_corridos' ? 3 : parseFloat(swissPtsWin || '3');
+    const tiePts = format === 'copa_pontos_corridos' ? 1 : parseFloat(swissPtsTie || '1');
+    const stats = new Map<string, { points: number; wins: number; losses: number; ties: number; matchesPlayed: number }>();
+
+    currentParticipants.forEach((p) => {
+      stats.set(p.id, { points: 0, wins: 0, losses: 0, ties: 0, matchesPlayed: 0 });
+    });
+
+    for (const m of currentMatches) {
+      if (m.status !== 'completed') continue;
+      if (m.isBye || !m.player1 || !m.player2) continue;
+
+      const s1 = stats.get(m.player1.id);
+      const s2 = stats.get(m.player2.id);
+
+      if (m.isWO && m.woWinnerId) {
+        if (m.woWinnerId === m.player1.id) {
+          if (s1) {
+            s1.points += 3;
+            s1.wins += 1;
+            s1.matchesPlayed += 1;
+          }
+          if (s2) {
+            s2.losses += 1;
+            s2.matchesPlayed += 1;
+          }
+        } else if (m.woWinnerId === m.player2.id) {
+          if (s2) {
+            s2.points += 3;
+            s2.wins += 1;
+            s2.matchesPlayed += 1;
+          }
+          if (s1) {
+            s1.losses += 1;
+            s1.matchesPlayed += 1;
+          }
+        }
+        continue;
+      }
+
+      const sc1 = m.score1 ?? 0;
+      const sc2 = m.score2 ?? 0;
+
+      if (sc1 > sc2) {
+        if (s1) {
+          s1.points += winPts;
+          s1.wins += 1;
+          s1.matchesPlayed += 1;
+        }
+        if (s2) {
+          s2.losses += 1;
+          s2.matchesPlayed += 1;
+        }
+      } else if (sc2 > sc1) {
+        if (s2) {
+          s2.points += winPts;
+          s2.wins += 1;
+          s2.matchesPlayed += 1;
+        }
+        if (s1) {
+          s1.losses += 1;
+          s1.matchesPlayed += 1;
+        }
+      } else {
+        if (s1) {
+          s1.points += tiePts;
+          s1.ties += 1;
+          s1.matchesPlayed += 1;
+        }
+        if (s2) {
+          s2.points += tiePts;
+          s2.ties += 1;
+          s2.matchesPlayed += 1;
+        }
+      }
+    }
+
+    const nextParticipants = currentParticipants.map((p) => {
+      const st = stats.get(p.id);
+      return st ? { ...p, ...st } : p;
+    });
+
+    return { participants: nextParticipants, matches: currentMatches };
   };
 
   // --- GENERATORS ---
@@ -439,18 +827,25 @@ export const TournamentManager: React.FC<TournamentManagerProps> = ({
             score2: null,
             winnerId: actualPlayer.id,
             status: 'completed',
-            isBye: true
+            isBye: true,
+            bestOf: 3
           });
         } else {
+          const defaultReferee = referees.length > 0 ? referees[(matchCounter - 1) % referees.length] : undefined;
+          const mId = `m_${matchCounter++}`;
           allMatches.push({
-            id: `m_${matchCounter++}`,
+            id: mId,
             round,
             player1: p1,
             player2: p2,
             score1: null,
             score2: null,
             winnerId: null,
-            status: 'pending'
+            status: 'pending',
+            bestOf: 3,
+            refereeId: defaultReferee?.id,
+            refereeName: defaultReferee?.name || '',
+            liveRoomId: `live_${tournamentId}_${mId}`
           });
         }
       }
@@ -550,8 +945,9 @@ export const TournamentManager: React.FC<TournamentManagerProps> = ({
   const generateBracketHandler = () => {
     if (participants.length < 2) return;
     
-    // Reset stats
-    const resetPs = participants.map(p => ({...p, points: 0, wins: 0, losses: 0, ties: 0, matchesPlayed: 0}));
+    // Reset stats (Na Liga, todos iniciam com os Pontos de Liga Iniciais, ex: 1000 PDL)
+    const initialPts = format === 'liga_pontos' ? (leagueInitialPoints || 1000) : 0;
+    const resetPs = participants.map(p => ({...p, points: initialPts, wins: 0, losses: 0, ties: 0, matchesPlayed: 0}));
     setParticipants(resetPs);
     setMatches([]);
     setCurrentRound(1);
@@ -561,8 +957,39 @@ export const TournamentManager: React.FC<TournamentManagerProps> = ({
 
     if (format === 'single_elimination') {
       generateSingleElimination();
-    } else if (format === 'round_robin') {
+    } else if (format === 'round_robin' || format === 'copa_pontos_corridos') {
       generateRoundRobin();
+    } else if (format === 'liga_pontos') {
+      // Gera a 1ª rodada inicial pareada para a Liga e permite adicionar novos jogadores e novos duelos livremente
+      const initialMatches: Match[] = [];
+      for (let i = 0; i + 1 < resetPs.length; i += 2) {
+        const p1 = resetPs[i];
+        const p2 = resetPs[i + 1];
+        const defaultReferee = referees.length > 0 ? referees[(i / 2) % referees.length] : undefined;
+        const mId = `m_${i / 2 + 1}`;
+        initialMatches.push({
+          id: mId,
+          round: 1,
+          player1: p1,
+          player2: p2,
+          score1: null,
+          score2: null,
+          winnerId: null,
+          status: 'pending',
+          bestOf: 3,
+          refereeId: defaultReferee?.id,
+          refereeName: defaultReferee?.name || '',
+          liveRoomId: `live_${tournamentId}_${mId}`
+        });
+      }
+      setMatches(initialMatches);
+      setTotalRounds(1);
+      persistTournament({
+        participants: resetPs,
+        matches: initialMatches,
+        totalRounds: 1,
+        status: 'in_progress'
+      });
     } else if (format === 'swiss') {
       generateSwissRound(1);
     } else if (format === 'leaderboard') {
@@ -603,13 +1030,84 @@ export const TournamentManager: React.FC<TournamentManagerProps> = ({
         return {
           ...m,
           score1: p1Score === '' ? null : parseInt(p1Score),
-          score2: p2Score === '' ? null : parseInt(p2Score)
+          score2: p2Score === '' ? null : parseInt(p2Score),
+          isWO: false,
+          woWinnerId: null
         };
       }
       return m;
     });
     setMatches(updated);
     persistTournament({ matches: updated });
+  };
+
+  // Define resultado rápido MD3 ou W.O. para Copa por Pontos Corridos ou Liga (recalcula tabela e PDL automaticamente)
+  const handleSetMatchResult = (
+    matchId: string,
+    score1: number,
+    score2: number,
+    options?: { isWO?: boolean; woWinnerId?: string | null; markCompleted?: boolean }
+  ) => {
+    const isWO = Boolean(options?.isWO);
+    const woWinnerId = options?.woWinnerId ?? null;
+    const markCompleted = options?.markCompleted !== false;
+
+    const updatedMatches = matches.map((m) => {
+      if (m.id !== matchId) return m;
+      let winnerId: string | null = null;
+      if (isWO && woWinnerId) {
+        winnerId = woWinnerId;
+      } else if (score1 > score2) {
+        winnerId = m.player1?.id || null;
+      } else if (score2 > score1) {
+        winnerId = m.player2?.id || null;
+      }
+      return {
+        ...m,
+        score1,
+        score2,
+        isWO,
+        woWinnerId,
+        winnerId,
+        completedAtMs: markCompleted ? (m.completedAtMs || Date.now()) : m.completedAtMs,
+        status: markCompleted ? ('completed' as const) : m.status
+      };
+    });
+
+    if (format === 'copa_pontos_corridos' || format === 'round_robin' || format === 'liga_pontos') {
+      const { participants: updatedParticipants, matches: syncedMatches } = recalculateLeagueStandings(participants, updatedMatches);
+      setMatches(syncedMatches);
+      setParticipants(updatedParticipants);
+      persistTournament({ matches: syncedMatches, participants: updatedParticipants });
+    } else {
+      setMatches(updatedMatches);
+      persistTournament({ matches: updatedMatches });
+    }
+  };
+
+  const handleReopenMatch = (matchId: string) => {
+    const updatedMatches = matches.map((m) =>
+      m.id === matchId
+        ? {
+            ...m,
+            status: 'pending' as const,
+            winnerId: null,
+            isWO: false,
+            woWinnerId: null,
+            p1LeagueDelta: undefined,
+            p2LeagueDelta: undefined
+          }
+        : m
+    );
+    if (format === 'copa_pontos_corridos' || format === 'round_robin' || format === 'liga_pontos') {
+      const { participants: updatedParticipants, matches: syncedMatches } = recalculateLeagueStandings(participants, updatedMatches);
+      setMatches(syncedMatches);
+      setParticipants(updatedParticipants);
+      persistTournament({ matches: syncedMatches, participants: updatedParticipants });
+    } else {
+      setMatches(updatedMatches);
+      persistTournament({ matches: updatedMatches });
+    }
   };
 
   const completeMatch = (matchId: string) => {
@@ -627,7 +1125,14 @@ export const TournamentManager: React.FC<TournamentManagerProps> = ({
     // Update Match
     const updatedMatches = matches.map(m => {
       if (m.id === matchId) {
-        return { ...m, status: 'completed' as const, winnerId };
+        return {
+          ...m,
+          status: 'completed' as const,
+          winnerId,
+          isWO: false,
+          woWinnerId: null,
+          completedAtMs: m.completedAtMs || Date.now()
+        };
       }
       return m;
     });
@@ -645,11 +1150,15 @@ export const TournamentManager: React.FC<TournamentManagerProps> = ({
       }
     }
 
-    setMatches(updatedMatches);
-    persistTournament({ matches: updatedMatches });
-
     // Update Scores
-    if (format === 'swiss' || format === 'round_robin') {
+    if (format === 'copa_pontos_corridos' || format === 'round_robin' || format === 'liga_pontos') {
+      const { participants: updatedParticipants, matches: syncedMatches } = recalculateLeagueStandings(participants, updatedMatches);
+      setMatches(syncedMatches);
+      setParticipants(updatedParticipants);
+      persistTournament({ matches: syncedMatches, participants: updatedParticipants });
+    } else if (format === 'swiss') {
+      setMatches(updatedMatches);
+      persistTournament({ matches: updatedMatches });
       const winPts = parseFloat(swissPtsWin);
       const tiePts = parseFloat(swissPtsTie);
       
@@ -663,6 +1172,9 @@ export const TournamentManager: React.FC<TournamentManagerProps> = ({
         updateParticipantStats(match.player2.id, winPts, 1, 0, 0);
         updateParticipantStats(match.player1.id, 0, 0, 1, 0);
       }
+    } else {
+      setMatches(updatedMatches);
+      persistTournament({ matches: updatedMatches });
     }
   };
 
@@ -772,9 +1284,34 @@ export const TournamentManager: React.FC<TournamentManagerProps> = ({
 
   const renderMatch = (match: Match) => {
     const isCompleted = match.status === 'completed';
+    const isWO = Boolean(match.isWO);
     
     return (
       <div key={match.id} className="bg-[#242424] rounded-xl border border-[#333] overflow-hidden shadow-lg flex flex-col">
+        {/* Top bar: MD3 & Referee & Online Duel Button */}
+        {!match.isBye && match.player1 && match.player2 && (
+          <div className="px-2.5 py-1.5 bg-[#191919] border-b border-[#333] flex items-center justify-between gap-2 text-[10px]">
+            <div className="flex items-center gap-1.5 text-slate-400 min-w-0">
+              <span className="px-1.5 py-0.5 rounded bg-purple-950 text-purple-300 border border-purple-500/30 font-mono font-bold">
+                MD3
+              </span>
+              {match.refereeName && (
+                <span className="truncate text-amber-300 flex items-center gap-1">
+                  <Gavel size={10} /> {match.refereeName}
+                </span>
+              )}
+            </div>
+            <button
+              onClick={() => setActiveOnlineDuelMatch(match)}
+              className="px-2 py-0.5 rounded bg-gradient-to-r from-cyan-600 to-purple-600 hover:from-cyan-500 hover:to-purple-500 text-white font-bold flex items-center gap-1 shrink-0 shadow"
+              title="Abrir Sala de Duelo Online & Transmissão (Câmeras + App Duelo)"
+            >
+              <Video size={11} />
+              <span>Duelo Online</span>
+            </button>
+          </div>
+        )}
+
         {/* Player 1 */}
         <div className={`flex items-center p-2.5 border-b border-[#333] ${match.winnerId === match.player1?.id ? 'bg-[#a855f7]/25' : ''}`}>
           <span className="w-6 text-xs text-slate-500 text-center font-mono">{match.player1?.seed || '-'}</span>
@@ -787,9 +1324,16 @@ export const TournamentManager: React.FC<TournamentManagerProps> = ({
                 {match.player1.name[0]?.toUpperCase()}
               </div>
             ) : null}
-            <span className={`text-sm truncate ${match.winnerId === match.player1?.id ? 'text-[#a855f7] font-black' : 'text-white font-medium'}`}>
-              {match.player1?.name || '---'}
-            </span>
+            <div className="min-w-0">
+              <span className={`text-sm truncate block ${match.winnerId === match.player1?.id ? 'text-[#a855f7] font-black' : 'text-white font-medium'}`}>
+                {match.player1?.name || '---'}
+              </span>
+              {match.player1?.userId && (
+                <span className="text-[9px] text-emerald-400 flex items-center gap-0.5">
+                  <UserCheck size={9} /> Vinculado
+                </span>
+              )}
+            </div>
           </div>
 
           {!match.isBye && !isCompleted && match.player1 && match.player2 && (
@@ -802,7 +1346,9 @@ export const TournamentManager: React.FC<TournamentManagerProps> = ({
             />
           )}
           {isCompleted && (
-            <span className="w-16 text-center font-bold text-white text-lg">{match.score1 !== null ? match.score1 : (match.isBye ? '-' : '')}</span>
+            <span className="w-16 text-center font-bold text-white text-lg">
+              {isWO ? (match.woWinnerId === match.player1?.id ? 'W.O.' : '0') : (match.score1 !== null ? match.score1 : (match.isBye ? '-' : ''))}
+            </span>
           )}
         </div>
         
@@ -818,9 +1364,16 @@ export const TournamentManager: React.FC<TournamentManagerProps> = ({
                 {match.player2.name[0]?.toUpperCase()}
               </div>
             ) : null}
-            <span className={`text-sm truncate ${match.winnerId === match.player2?.id ? 'text-[#a855f7] font-black' : 'text-white font-medium'}`}>
-              {match.player2?.name || '---'}
-            </span>
+            <div className="min-w-0">
+              <span className={`text-sm truncate block ${match.winnerId === match.player2?.id ? 'text-[#a855f7] font-black' : 'text-white font-medium'}`}>
+                {match.player2?.name || '---'}
+              </span>
+              {match.player2?.userId && (
+                <span className="text-[9px] text-emerald-400 flex items-center gap-0.5">
+                  <UserCheck size={9} /> Vinculado
+                </span>
+              )}
+            </div>
           </div>
 
           {!match.isBye && !isCompleted && match.player1 && match.player2 && (
@@ -833,13 +1386,43 @@ export const TournamentManager: React.FC<TournamentManagerProps> = ({
             />
           )}
           {isCompleted && (
-            <span className="w-16 text-center font-bold text-white text-lg">{match.score2 !== null ? match.score2 : ''}</span>
+            <span className="w-16 text-center font-bold text-white text-lg">
+              {isWO ? (match.woWinnerId === match.player2?.id ? 'W.O.' : '0') : (match.score2 !== null ? match.score2 : '')}
+            </span>
           )}
         </div>
 
         {/* Actions */}
         {!isCompleted && !match.isBye && match.player1 && match.player2 && (
-          <div className="bg-[#1a1a1a] p-2 flex justify-end border-t border-[#333]">
+          <div className="bg-[#1a1a1a] p-2 flex flex-wrap items-center justify-between gap-1.5 border-t border-[#333]">
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() =>
+                  handleSetMatchResult(match.id, 2, 0, {
+                    isWO: true,
+                    woWinnerId: match.player1!.id,
+                    markCompleted: true
+                  })
+                }
+                className="px-2 py-1 rounded bg-amber-950/80 hover:bg-amber-900 border border-amber-500/40 text-amber-300 text-[10px] font-bold"
+                title="W.O. concede 3 pontos para o Jogador 1"
+              >
+                W.O. P1
+              </button>
+              <button
+                onClick={() =>
+                  handleSetMatchResult(match.id, 0, 2, {
+                    isWO: true,
+                    woWinnerId: match.player2!.id,
+                    markCompleted: true
+                  })
+                }
+                className="px-2 py-1 rounded bg-amber-950/80 hover:bg-amber-900 border border-amber-500/40 text-amber-300 text-[10px] font-bold"
+                title="W.O. concede 3 pontos para o Jogador 2"
+              >
+                W.O. P2
+              </button>
+            </div>
             <button 
               onClick={() => completeMatch(match.id)}
               disabled={match.score1 === null || match.score2 === null}
@@ -849,11 +1432,614 @@ export const TournamentManager: React.FC<TournamentManagerProps> = ({
             </button>
           </div>
         )}
-        {match.isBye && (
-          <div className="bg-[#1a1a1a] p-2 text-center border-t border-[#333]">
-            <span className="text-xs text-slate-500 font-bold uppercase">BYE (Avança Direto)</span>
+        {isCompleted && !match.isBye && (
+          <div className="bg-[#1a1a1a] px-2.5 py-1.5 flex items-center justify-between border-t border-[#333] text-[10px]">
+            <span className="text-emerald-400 font-bold">
+              {isWO ? 'Encerrado por W.O. (+3 pts)' : 'Resultado Confirmado'}
+            </span>
+            <button
+              onClick={() => handleReopenMatch(match.id)}
+              className="text-slate-400 hover:text-white underline flex items-center gap-1"
+            >
+              <RotateCcw size={10} /> Editar
+            </button>
           </div>
         )}
+        {match.isBye && (
+          <div className="bg-[#1a1a1a] p-2 text-center border-t border-[#333]">
+            <span className="text-xs text-slate-500 font-bold uppercase">Folga na Rodada (BYE)</span>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // Agenda de Duelos Completa para Copa por Pontos Corridos & Liga por Pontos de Liga (Mostra cada player vinculado, Juiz registrado, Resultado MD3 / W.O., Variação de Pontos de Liga e Sala de Duelo Online)
+  const renderCopaSchedule = () => {
+    const filteredMatches = matches.filter(
+      (m) => !m.isBye && (scheduleFilterRound === 'all' || m.round === scheduleFilterRound)
+    );
+
+    const roundsList = Array.from({ length: Math.max(1, totalRounds) }, (_, i) => i + 1);
+    const p1SelectedObj = participants.find((p) => p.id === newDuelP1Id);
+    const p2SelectedObj = participants.find((p) => p.id === newDuelP2Id);
+    const previewDeltaWinP1 =
+      isLeagueMode && p1SelectedObj && p2SelectedObj && p1SelectedObj.id !== p2SelectedObj.id
+        ? calculateDynamicLeagueDelta(p1SelectedObj.points, p2SelectedObj.points, 'p1_win', leagueKFactor)
+        : null;
+    const previewDeltaWinP2 =
+      isLeagueMode && p1SelectedObj && p2SelectedObj && p1SelectedObj.id !== p2SelectedObj.id
+        ? calculateDynamicLeagueDelta(p1SelectedObj.points, p2SelectedObj.points, 'p2_win', leagueKFactor)
+        : null;
+
+    return (
+      <div className="space-y-4">
+        {/* Painel Exclusivo da Liga: Entrada de Novos Jogadores Durante o Campeonato & Criador de Duelos */}
+        {(isLeagueMode || canLateJoin) && (
+          <div className="bg-gradient-to-r from-[#1c132d] via-[#131829] to-[#1a1328] border border-cyan-500/40 rounded-2xl p-4 space-y-4 shadow-xl">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-white/10 pb-3">
+              <div>
+                <h4 className="text-sm sm:text-base font-cinzel font-black text-cyan-300 flex items-center gap-2">
+                  <Flame size={17} className="text-amber-400" />
+                  <span>
+                    {isLeagueMode
+                      ? 'Central da Liga Dinâmica • Entrada Contínua & Pontos de Liga (PDL)'
+                      : 'Entrada de Novos Jogadores & Agendamento Livre'}
+                  </span>
+                </h4>
+                <p className="text-xs text-slate-300 mt-0.5">
+                  {isLeagueMode ? (
+                    <>
+                      Novos jogadores podem entrar a qualquer momento com <b className="text-amber-300">{leagueInitialPoints} PDL</b>. Quando um jogador com <b className="text-emerald-400">poucos pontos vence um com muitos pontos (Zebra)</b>, ele ganha muito mais Pontos de Liga e o adversário perde mais!
+                    </>
+                  ) : (
+                    <>Adicione novos jogadores mesmo com o campeonato em andamento e agende novos confrontos.</>
+                  )}
+                </p>
+              </div>
+
+              {isLeagueMode && (
+                <button
+                  onClick={handleGenerateBalancedLeagueRound}
+                  disabled={participants.length < 2}
+                  className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-slate-950 font-black text-xs flex items-center gap-1.5 shadow-lg shrink-0 active:scale-95 transition"
+                  title="Pareia automaticamente todos os jogadores atuais por proximidade de Pontos de Liga"
+                >
+                  <Shuffle size={14} />
+                  <span>Gerar Rodada por Proximidade de PDL</span>
+                </button>
+              )}
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              {/* Bloco 1: Entrada de Novo Jogador durante o Campeonato */}
+              <div className="bg-black/45 border border-purple-500/30 rounded-xl p-3.5 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-black text-amber-300 uppercase tracking-wider flex items-center gap-1.5">
+                    <Users size={13} className="text-purple-400" /> Novo Jogador Durante o Campeonato
+                  </span>
+                  {isLeagueMode && (
+                    <span className="text-[10px] font-mono text-cyan-300 bg-cyan-950/60 border border-cyan-500/30 px-2 py-0.5 rounded">
+                      Inicia com {leagueInitialPoints} PDL
+                    </span>
+                  )}
+                </div>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={lateJoinPlayerName}
+                    onChange={(e) => setLateJoinPlayerName(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleAddParticipant(lateJoinPlayerName)}
+                    placeholder="Nome do novo jogador que está entrando agora..."
+                    className="flex-1 bg-[#14111d] border border-slate-700 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-amber-400"
+                  />
+                  <button
+                    onClick={() => handleAddParticipant(lateJoinPlayerName)}
+                    className="px-3.5 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-black text-xs flex items-center gap-1 shrink-0 transition"
+                  >
+                    <Plus size={14} /> Entrar na Liga
+                  </button>
+                </div>
+                {user && !participants.some((p) => p.userId === user.uid) && (
+                  <button
+                    onClick={handleAddMyselfAndLink}
+                    className="w-full py-1.5 rounded-lg bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-500/40 text-emerald-300 font-bold text-[11px] flex items-center justify-center gap-1.5 transition"
+                  >
+                    <UserCheck size={12} /> Entrar Agora com Minha Conta ({user.displayName || 'Jogador'})
+                  </button>
+                )}
+              </div>
+
+              {/* Bloco 2: Agendar Novo Confronto da Liga */}
+              <div className="bg-black/45 border border-cyan-500/30 rounded-xl p-3.5 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-black text-cyan-300 uppercase tracking-wider flex items-center gap-1.5">
+                    <Calendar size={13} className="text-cyan-400" /> Agendar Novo Duelo na Liga
+                  </span>
+                  {previewDeltaWinP1 && previewDeltaWinP2 && (
+                    <span className="text-[10px] font-mono text-amber-300 bg-amber-950/60 border border-amber-500/30 px-2 py-0.5 rounded">
+                      Vitória P1: +{previewDeltaWinP1.delta1} PDL | Vitória P2: +{previewDeltaWinP2.delta2} PDL
+                    </span>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <select
+                    value={newDuelP1Id}
+                    onChange={(e) => setNewDuelP1Id(e.target.value)}
+                    className="bg-[#14111d] border border-slate-700 rounded-xl px-2.5 py-2 text-xs text-white outline-none focus:border-cyan-400"
+                  >
+                    <option value="">Selecionar Jogador 1...</option>
+                    {participants.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name} ({p.points} {isLeagueMode ? 'PDL' : 'pts'})
+                      </option>
+                    ))}
+                  </select>
+
+                  <select
+                    value={newDuelP2Id}
+                    onChange={(e) => setNewDuelP2Id(e.target.value)}
+                    className="bg-[#14111d] border border-slate-700 rounded-xl px-2.5 py-2 text-xs text-white outline-none focus:border-cyan-400"
+                  >
+                    <option value="">Selecionar Jogador 2...</option>
+                    {participants.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name} ({p.points} {isLeagueMode ? 'PDL' : 'pts'})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="flex flex-wrap sm:flex-nowrap gap-2">
+                  <input
+                    type="text"
+                    value={newDuelRefereeName}
+                    onChange={(e) => setNewDuelRefereeName(e.target.value)}
+                    placeholder="Juiz (opcional)"
+                    className="w-full sm:w-36 bg-[#14111d] border border-slate-700 rounded-xl px-2.5 py-1.5 text-xs text-amber-200 outline-none focus:border-amber-400"
+                  />
+                  <input
+                    type="text"
+                    value={newDuelScheduledAt}
+                    onChange={(e) => setNewDuelScheduledAt(e.target.value)}
+                    placeholder="Horário (Ex: Hoje 21:00)"
+                    className="flex-1 bg-[#14111d] border border-slate-700 rounded-xl px-2.5 py-1.5 text-xs text-slate-200 outline-none focus:border-cyan-400"
+                  />
+                  <button
+                    onClick={handleCreateCustomLeagueDuel}
+                    disabled={!newDuelP1Id || !newDuelP2Id || newDuelP1Id === newDuelP2Id}
+                    className="px-3.5 py-1.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 disabled:bg-slate-800 disabled:text-slate-500 text-white font-black text-xs flex items-center gap-1 shrink-0 transition"
+                  >
+                    <Plus size={14} /> Criar Duelo
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Filtro de Rodadas da Agenda + Resumo das Regras */}
+        <div className="bg-[#201c2b] border border-purple-500/35 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h4 className="text-base sm:text-lg font-cinzel font-black text-amber-300 flex items-center gap-2">
+              <Calendar size={18} className="text-cyan-400" />
+              <span>
+                {isLeagueMode
+                  ? 'Agenda Oficial de Duelos • Liga por Pontos de Liga (PDL Dinâmico)'
+                  : 'Agenda Oficial de Duelos • Copa por Pontos Corridos (MD3)'}
+              </span>
+            </h4>
+            <p className="text-xs text-slate-300 mt-0.5">
+              {isLeagueMode ? (
+                <>
+                  Sistema de Rating Dinâmico (Fator K={leagueKFactor}): <b className="text-emerald-400">Vencer oponente com mais pontos rende bônus de Zebra (+PDL)</b> e o derrotado perde mais pontos.
+                </>
+              ) : (
+                <>
+                  Vitória = <b className="text-emerald-400">3 pontos</b> • Empate = <b className="text-amber-300">1 ponto</b> • W.O. = <b className="text-cyan-300">3 pontos para quem compareceu</b>
+                </>
+              )}
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-1.5">
+            <button
+              onClick={() => setScheduleFilterRound('all')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${
+                scheduleFilterRound === 'all'
+                  ? 'bg-amber-500 text-slate-950 font-black'
+                  : 'bg-[#14111d] text-slate-300 hover:text-white border border-purple-500/30'
+              }`}
+            >
+              Todas as Partidas ({matches.filter((m) => !m.isBye).length})
+            </button>
+            {roundsList.map((r) => (
+              <button
+                key={r}
+                onClick={() => setScheduleFilterRound(r)}
+                className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition ${
+                  scheduleFilterRound === r
+                    ? 'bg-purple-600 text-white'
+                    : 'bg-[#14111d] text-slate-400 hover:text-white border border-slate-800'
+                }`}
+              >
+                R{r}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Lista de Duelos da Agenda */}
+        <div className="space-y-3">
+          {filteredMatches.map((m) => {
+            const isCompleted = m.status === 'completed';
+            const isWO = Boolean(m.isWO);
+            const p1 = participants.find((pt) => pt.id === m.player1?.id) || m.player1;
+            const p2 = participants.find((pt) => pt.id === m.player2?.id) || m.player2;
+            if (!p1 || !p2) return null;
+
+            const p1Won = m.winnerId === p1.id;
+            const p2Won = m.winnerId === p2.id;
+            const isTie = isCompleted && !isWO && m.score1 === m.score2;
+
+            // Simulação em tempo real de quanto cada jogador ganha/perde se vencer este duelo na Liga
+            const p1WinSim = isLeagueMode
+              ? calculateDynamicLeagueDelta(p1.points, p2.points, 'p1_win', leagueKFactor)
+              : null;
+            const p2WinSim = isLeagueMode
+              ? calculateDynamicLeagueDelta(p1.points, p2.points, 'p2_win', leagueKFactor)
+              : null;
+
+            return (
+              <div
+                key={m.id}
+                className={`rounded-2xl border p-4 transition shadow-lg ${
+                  isCompleted
+                    ? 'bg-[#181622] border-emerald-500/35'
+                    : 'bg-[#221e2e] border-purple-500/35 hover:border-amber-400/50'
+                }`}
+              >
+                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                  {/* Esquerda: Rodada + Data/Hora + Juiz da Partida */}
+                  <div className="flex flex-wrap items-center gap-2.5">
+                    <span className="px-2.5 py-1 rounded-lg bg-purple-950 border border-purple-500/40 text-amber-300 font-mono font-black text-xs">
+                      RODADA {m.round} • MD3
+                    </span>
+
+                    {/* Seletor / Registro do Juiz da Partida */}
+                    <div className="flex items-center gap-1.5 bg-[#120f1a] border border-slate-700 rounded-xl px-2.5 py-1">
+                      <Gavel size={13} className="text-amber-400 shrink-0" />
+                      <span className="text-[10px] font-bold text-slate-400 uppercase">Juiz:</span>
+                      {referees.length > 0 ? (
+                        <select
+                          value={m.refereeName || ''}
+                          onChange={(e) => handleAssignMatchReferee(m.id, e.target.value)}
+                          className="bg-transparent text-xs font-bold text-amber-200 outline-none cursor-pointer"
+                        >
+                          <option value="" className="bg-slate-900 text-slate-400">
+                            Selecionar Juiz...
+                          </option>
+                          {referees.map((ref) => (
+                            <option key={ref.id} value={ref.name} className="bg-slate-900 text-white">
+                              {ref.name} ({ref.role || 'Juiz'})
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <input
+                          type="text"
+                          value={m.refereeName || ''}
+                          onChange={(e) => handleAssignMatchReferee(m.id, e.target.value)}
+                          placeholder="Digitar nome do Juiz..."
+                          className="bg-transparent text-xs font-bold text-amber-200 outline-none w-32"
+                        />
+                      )}
+                    </div>
+
+                    {/* Data / Horário do Duelo */}
+                    <div className="flex items-center gap-1.5 bg-[#120f1a] border border-slate-700 rounded-xl px-2.5 py-1">
+                      <Calendar size={12} className="text-cyan-400 shrink-0" />
+                      <input
+                        type="text"
+                        value={m.scheduledAt || ''}
+                        onChange={(e) => handleUpdateMatchSchedule(m.id, e.target.value)}
+                        placeholder="Horário / Data (Ex: Sáb 19:00)"
+                        className="bg-transparent text-xs text-slate-200 outline-none w-36"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Direita: Botão Estúdio de Duelo Online & Transmissão */}
+                  <div className="flex items-center gap-2 self-end lg:self-auto">
+                    <button
+                      onClick={() => setActiveOnlineDuelMatch(m)}
+                      className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-cyan-600 via-purple-600 to-amber-500 hover:from-cyan-500 hover:to-amber-400 text-white font-black text-xs flex items-center gap-2 shadow-lg transition active:scale-95"
+                    >
+                      <Tv size={14} />
+                      <span>Sala de Duelo Online & Transmissão (2 Câmeras)</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Centro: Confronto entre os 2 Players Vinculados + Placar MD3 + Botões Rápidos */}
+                <div className="mt-3 pt-3 border-t border-white/10 grid grid-cols-1 md:grid-cols-[1fr_auto_1fr] items-center gap-3">
+                  {/* Player 1 Card */}
+                  <div
+                    className={`p-3 rounded-xl border flex items-center justify-between gap-2 ${
+                      p1Won
+                        ? 'bg-emerald-950/40 border-emerald-400/70'
+                        : 'bg-[#14111d] border-slate-800'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      {p1.userPhoto ? (
+                        <img
+                          src={p1.userPhoto}
+                          alt={p1.name}
+                          className="w-8 h-8 rounded-full object-cover border border-purple-400 shrink-0"
+                        />
+                      ) : (
+                        <div className="w-8 h-8 rounded-full bg-purple-900 text-purple-200 font-black text-xs flex items-center justify-center shrink-0">
+                          {p1.name[0]?.toUpperCase()}
+                        </div>
+                      )}
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="font-bold text-white text-sm sm:text-base truncate">
+                            {p1.name}
+                          </span>
+                          <span className="text-[10px] font-mono text-amber-300 bg-black/50 px-1.5 py-0.5 rounded border border-amber-500/25">
+                            {isCompleted && m.p1PointsAfter !== undefined ? m.p1PointsAfter : p1.points}{' '}
+                            {isLeagueMode ? 'PDL' : 'pts'}
+                          </span>
+                          {isLeagueMode && isCompleted && m.p1LeagueDelta !== undefined ? (
+                            <span
+                              className={`px-1.5 py-0.5 rounded font-mono font-black text-[10px] ${
+                                m.p1LeagueDelta > 0
+                                  ? 'bg-emerald-500 text-slate-950'
+                                  : m.p1LeagueDelta < 0
+                                  ? 'bg-red-950/90 text-red-300 border border-red-500/40'
+                                  : 'bg-amber-500 text-slate-950'
+                              }`}
+                            >
+                              {m.p1LeagueDelta > 0 ? `+${m.p1LeagueDelta} PDL` : `${m.p1LeagueDelta} PDL`}
+                            </span>
+                          ) : !isLeagueMode && p1Won ? (
+                            <span className="px-1.5 py-0.5 rounded bg-emerald-500 text-slate-950 font-black text-[9px] uppercase">
+                              {isWO ? '+3 PTS (W.O.)' : '+3 PTS'}
+                            </span>
+                          ) : !isLeagueMode && isTie ? (
+                            <span className="px-1.5 py-0.5 rounded bg-amber-500 text-slate-950 font-black text-[9px] uppercase">
+                              +1 PT
+                            </span>
+                          ) : null}
+                        </div>
+                        {p1.userId ? (
+                          <span className="text-[10px] text-emerald-400 flex items-center gap-1 font-medium">
+                            <UserCheck size={11} /> Jogador Vinculado {p1.userEmail ? `(${p1.userEmail})` : ''}
+                          </span>
+                        ) : (
+                          <span className="text-[10px] text-slate-400">
+                            Aguardando vínculo de conta
+                          </span>
+                        )}
+                        {isLeagueMode && !isCompleted && p1WinSim && (
+                          <span className="text-[10px] text-cyan-300/90 font-mono block mt-0.5">
+                            Se vencer: <b className="text-emerald-400">+{p1WinSim.delta1} PDL</b>{' '}
+                            {p1.points < p2.points && (
+                              <span className="text-amber-300 font-bold">(Bônus Zebra!)</span>
+                            )}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Placar Central MD3 & Resultados Rápidos */}
+                  <div className="flex flex-col items-center justify-center gap-2 px-2">
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        min={0}
+                        max={2}
+                        disabled={isCompleted}
+                        value={m.score1 !== null ? m.score1 : ''}
+                        onChange={(e) =>
+                          handleScoreChange(
+                            m.id,
+                            e.target.value,
+                            m.score2 !== null ? m.score2.toString() : ''
+                          )
+                        }
+                        placeholder="0"
+                        className="w-12 h-10 bg-black border border-purple-500/50 rounded-xl text-center font-mono font-black text-lg text-white outline-none focus:border-amber-400"
+                      />
+                      <span className="font-mono font-black text-xs text-slate-400 uppercase">
+                        {isWO ? 'W.O.' : 'VS'}
+                      </span>
+                      <input
+                        type="number"
+                        min={0}
+                        max={2}
+                        disabled={isCompleted}
+                        value={m.score2 !== null ? m.score2 : ''}
+                        onChange={(e) =>
+                          handleScoreChange(
+                            m.id,
+                            m.score1 !== null ? m.score1.toString() : '',
+                            e.target.value
+                          )
+                        }
+                        placeholder="0"
+                        className="w-12 h-10 bg-black border border-cyan-500/50 rounded-xl text-center font-mono font-black text-lg text-white outline-none focus:border-amber-400"
+                      />
+                    </div>
+
+                    {/* Atalhos Rápidos MD3 + Empate + W.O. */}
+                    {!isCompleted ? (
+                      <div className="flex flex-wrap items-center justify-center gap-1">
+                        {[
+                          { label: '2-0', s1: 2, s2: 0 },
+                          { label: '2-1', s1: 2, s2: 1 },
+                          { label: '1-1 (Empate)', s1: 1, s2: 1 },
+                          { label: '1-2', s1: 1, s2: 2 },
+                          { label: '0-2', s1: 0, s2: 2 }
+                        ].map((preset) => (
+                          <button
+                            key={preset.label}
+                            onClick={() =>
+                              handleSetMatchResult(m.id, preset.s1, preset.s2, {
+                                isWO: false,
+                                markCompleted: true
+                              })
+                            }
+                            className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-purple-600 text-slate-200 hover:text-white font-mono font-bold text-[10px] border border-slate-700 transition"
+                          >
+                            {preset.label}
+                          </button>
+                        ))}
+                        <button
+                          onClick={() =>
+                            handleSetMatchResult(m.id, 2, 0, {
+                              isWO: true,
+                              woWinnerId: p1.id,
+                              markCompleted: true
+                            })
+                          }
+                          className="px-2 py-1 rounded-lg bg-amber-950/90 hover:bg-amber-800 text-amber-300 border border-amber-500/40 font-bold text-[10px]"
+                          title={`W.O. para ${p1.name}`}
+                        >
+                          W.O. {p1.name.split(' ')[0]}
+                        </button>
+                        <button
+                          onClick={() =>
+                            handleSetMatchResult(m.id, 0, 2, {
+                              isWO: true,
+                              woWinnerId: p2.id,
+                              markCompleted: true
+                            })
+                          }
+                          className="px-2 py-1 rounded-lg bg-amber-950/90 hover:bg-amber-800 text-amber-300 border border-amber-500/40 font-bold text-[10px]"
+                          title={`W.O. para ${p2.name}`}
+                        >
+                          W.O. {p2.name.split(' ')[0]}
+                        </button>
+                        {m.score1 !== null && m.score2 !== null && (
+                          <button
+                            onClick={() => completeMatch(m.id)}
+                            className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[10px] flex items-center gap-1"
+                          >
+                            <CheckCircle2 size={11} /> Salvar
+                          </button>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2">
+                        <span className="text-[11px] font-bold text-emerald-400 flex items-center gap-1">
+                          <CheckCircle2 size={12} />
+                          {isLeagueMode ? (
+                            <>
+                              {p1Won
+                                ? `Vitória de ${p1.name} (${m.p1LeagueDelta && m.p1LeagueDelta > 0 ? `+${m.p1LeagueDelta}` : m.p1LeagueDelta} PDL)`
+                                : p2Won
+                                ? `Vitória de ${p2.name} (${m.p2LeagueDelta && m.p2LeagueDelta > 0 ? `+${m.p2LeagueDelta}` : m.p2LeagueDelta} PDL)`
+                                : 'Empate processado no Rating da Liga'}
+                            </>
+                          ) : isWO ? (
+                            `Vitória por W.O. (+3 pts para ${p1Won ? p1.name : p2.name})`
+                          ) : isTie ? (
+                            'Empate Confirmado (+1 pt cada)'
+                          ) : (
+                            `Vitória MD3 (+3 pts para ${p1Won ? p1.name : p2.name})`
+                          )}
+                        </span>
+                        <button
+                          onClick={() => handleReopenMatch(m.id)}
+                          className="text-[10px] text-slate-400 hover:text-white underline"
+                        >
+                          Alterar
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Player 2 Card */}
+                  <div
+                    className={`p-3 rounded-xl border flex items-center justify-between gap-2 ${
+                      p2Won
+                        ? 'bg-emerald-950/40 border-emerald-400/70'
+                        : 'bg-[#14111d] border-slate-800'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      {p2.userPhoto ? (
+                        <img
+                          src={p2.userPhoto}
+                          alt={p2.name}
+                          className="w-8 h-8 rounded-full object-cover border border-cyan-400 shrink-0"
+                        />
+                      ) : (
+                        <div className="w-8 h-8 rounded-full bg-cyan-950 text-cyan-200 font-black text-xs flex items-center justify-center shrink-0">
+                          {p2.name[0]?.toUpperCase()}
+                        </div>
+                      )}
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="font-bold text-white text-sm sm:text-base truncate">
+                            {p2.name}
+                          </span>
+                          <span className="text-[10px] font-mono text-amber-300 bg-black/50 px-1.5 py-0.5 rounded border border-amber-500/25">
+                            {isCompleted && m.p2PointsAfter !== undefined ? m.p2PointsAfter : p2.points}{' '}
+                            {isLeagueMode ? 'PDL' : 'pts'}
+                          </span>
+                          {isLeagueMode && isCompleted && m.p2LeagueDelta !== undefined ? (
+                            <span
+                              className={`px-1.5 py-0.5 rounded font-mono font-black text-[10px] ${
+                                m.p2LeagueDelta > 0
+                                  ? 'bg-emerald-500 text-slate-950'
+                                  : m.p2LeagueDelta < 0
+                                  ? 'bg-red-950/90 text-red-300 border border-red-500/40'
+                                  : 'bg-amber-500 text-slate-950'
+                              }`}
+                            >
+                              {m.p2LeagueDelta > 0 ? `+${m.p2LeagueDelta} PDL` : `${m.p2LeagueDelta} PDL`}
+                            </span>
+                          ) : !isLeagueMode && p2Won ? (
+                            <span className="px-1.5 py-0.5 rounded bg-emerald-500 text-slate-950 font-black text-[9px] uppercase">
+                              {isWO ? '+3 PTS (W.O.)' : '+3 PTS'}
+                            </span>
+                          ) : !isLeagueMode && isTie ? (
+                            <span className="px-1.5 py-0.5 rounded bg-amber-500 text-slate-950 font-black text-[9px] uppercase">
+                              +1 PT
+                            </span>
+                          ) : null}
+                        </div>
+                        {p2.userId ? (
+                          <span className="text-[10px] text-emerald-400 flex items-center gap-1 font-medium">
+                            <UserCheck size={11} /> Jogador Vinculado {p2.userEmail ? `(${p2.userEmail})` : ''}
+                          </span>
+                        ) : (
+                          <span className="text-[10px] text-slate-400">
+                            Aguardando vínculo de conta
+                          </span>
+                        )}
+                        {isLeagueMode && !isCompleted && p2WinSim && (
+                          <span className="text-[10px] text-cyan-300/90 font-mono block mt-0.5">
+                            Se vencer: <b className="text-emerald-400">+{p2WinSim.delta2} PDL</b>{' '}
+                            {p2.points < p1.points && (
+                              <span className="text-amber-300 font-bold">(Bônus Zebra!)</span>
+                            )}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </div>
     );
   };
@@ -993,59 +2179,81 @@ export const TournamentManager: React.FC<TournamentManagerProps> = ({
   };
 
   const renderLeaderboard = () => {
-    const sorted = [...participants].sort((a, b) => b.points - a.points);
+    const sorted = [...participants].sort((a, b) =>
+      b.points !== a.points ? b.points - a.points : b.wins - a.wins
+    );
     return (
       <div className="bg-[#242424] rounded-xl border border-[#333] overflow-hidden overflow-x-auto shadow-lg">
-        <div className="min-w-[420px]">
-          <div className="grid grid-cols-[40px_1fr_80px_70px_70px] md:grid-cols-[50px_1fr_90px_80px_80px] gap-2 md:gap-4 p-3 md:p-4 border-b border-[#333] bg-[#1f1f1f] text-[10px] md:text-xs font-bold text-slate-400 uppercase tracking-wider">
+        <div className="min-w-[460px]">
+          <div className="grid grid-cols-[40px_1fr_80px_70px_95px] md:grid-cols-[50px_1fr_90px_80px_115px] gap-2 md:gap-4 p-3 md:p-4 border-b border-[#333] bg-[#1f1f1f] text-[10px] md:text-xs font-bold text-slate-400 uppercase tracking-wider">
             <div className="text-center">Pos</div>
             <div>Participante</div>
             <div className="text-center">V-D-E</div>
             <div className="text-center">Jogos</div>
-            <div className="text-center">Pontos</div>
+            <div className="text-center text-amber-300">
+              {isLeagueMode ? 'Pontos de Liga' : 'Pontos'}
+            </div>
           </div>
           <div className="divide-y divide-[#333]">
-            {sorted.map((p, idx) => (
-              <div key={p.id} className="grid grid-cols-[40px_1fr_80px_70px_70px] md:grid-cols-[50px_1fr_90px_80px_80px] gap-2 md:gap-4 p-3 md:p-4 items-center hover:bg-[#2a2a2a] transition">
-                <div className="text-center font-bold text-[#a855f7]">{idx + 1}º</div>
-                <div className="flex items-center gap-2 truncate">
-                  {p.userPhoto ? (
-                    <img src={p.userPhoto} alt="" className="w-6 h-6 rounded-full object-cover shrink-0 border border-purple-400" />
-                  ) : p.userId ? (
-                    <div className="w-6 h-6 rounded-full bg-purple-900 text-purple-200 text-xs font-bold flex items-center justify-center shrink-0">
-                      {p.name[0]?.toUpperCase()}
-                    </div>
-                  ) : null}
-                  <span className="font-medium text-white text-sm md:text-base truncate">{p.name}</span>
-                  {p.userId && (
-                    <span className="text-[9px] bg-purple-950 text-purple-300 border border-purple-700/60 px-1.5 py-0.2 rounded font-bold">
-                      Conectado
-                    </span>
-                  )}
+            {sorted.map((p, idx) => {
+              const netDiff = isLeagueMode ? p.points - leagueInitialPoints : 0;
+              return (
+                <div key={p.id} className="grid grid-cols-[40px_1fr_80px_70px_95px] md:grid-cols-[50px_1fr_90px_80px_115px] gap-2 md:gap-4 p-3 md:p-4 items-center hover:bg-[#2a2a2a] transition">
+                  <div className="text-center font-bold text-[#a855f7]">{idx + 1}º</div>
+                  <div className="flex items-center gap-2 truncate">
+                    {p.userPhoto ? (
+                      <img src={p.userPhoto} alt="" className="w-6 h-6 rounded-full object-cover shrink-0 border border-purple-400" />
+                    ) : p.userId ? (
+                      <div className="w-6 h-6 rounded-full bg-purple-900 text-purple-200 text-xs font-bold flex items-center justify-center shrink-0">
+                        {p.name[0]?.toUpperCase()}
+                      </div>
+                    ) : null}
+                    <span className="font-medium text-white text-sm md:text-base truncate">{p.name}</span>
+                    {p.userId && (
+                      <span className="text-[9px] bg-purple-950 text-purple-300 border border-purple-700/60 px-1.5 py-0.2 rounded font-bold">
+                        Vinculado
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-center text-xs md:text-sm text-slate-300 font-mono">{p.wins}-{p.losses}-{p.ties}</div>
+                  <div className="text-center text-xs md:text-sm text-slate-300 font-mono">{p.matchesPlayed}</div>
+                  <div className="text-center font-bold text-white bg-[#1a1a1a] py-1 px-1.5 rounded border border-[#444] font-mono flex items-center justify-center gap-1">
+                    {format === 'leaderboard' ? (
+                      <input 
+                        type="number" 
+                        value={p.points} 
+                        onChange={(e) => {
+                          const val = parseFloat(e.target.value) || 0;
+                          setParticipants(prev => {
+                            const up = prev.map(pt => pt.id === p.id ? {...pt, points: val} : pt);
+                            persistTournament({ participants: up });
+                            return up;
+                          });
+                        }}
+                        className="w-full bg-transparent text-center outline-none text-sm md:text-base"
+                      />
+                    ) : (
+                      <>
+                        <span className="text-sm md:text-base text-amber-300">{p.points}</span>
+                        {isLeagueMode && (
+                          <span
+                            className={`text-[10px] font-bold ${
+                              netDiff > 0
+                                ? 'text-emerald-400'
+                                : netDiff < 0
+                                ? 'text-red-400'
+                                : 'text-slate-500'
+                            }`}
+                          >
+                            ({netDiff >= 0 ? `+${netDiff}` : netDiff})
+                          </span>
+                        )}
+                      </>
+                    )}
+                  </div>
                 </div>
-                <div className="text-center text-xs md:text-sm text-slate-300 font-mono">{p.wins}-{p.losses}-{p.ties}</div>
-                <div className="text-center text-xs md:text-sm text-slate-300 font-mono">{p.matchesPlayed}</div>
-                <div className="text-center font-bold text-white bg-[#1a1a1a] py-1 rounded border border-[#444] font-mono">
-                  {format === 'leaderboard' ? (
-                    <input 
-                      type="number" 
-                      value={p.points} 
-                      onChange={(e) => {
-                        const val = parseFloat(e.target.value) || 0;
-                        setParticipants(prev => {
-                          const up = prev.map(pt => pt.id === p.id ? {...pt, points: val} : pt);
-                          persistTournament({ participants: up });
-                          return up;
-                        });
-                      }}
-                      className="w-full bg-transparent text-center outline-none text-sm md:text-base"
-                    />
-                  ) : (
-                    <span className="text-sm md:text-base">{p.points}</span>
-                  )}
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       </div>
@@ -1318,17 +2526,168 @@ export const TournamentManager: React.FC<TournamentManagerProps> = ({
                     <select 
                       value={format}
                       onChange={(e) => {
-                        setFormat(e.target.value);
-                        persistTournament({ format: e.target.value as any });
+                        const newFmt = e.target.value;
+                        setFormat(newFmt);
+                        if (newFmt === 'liga_pontos' && !tournamentStarted) {
+                          const updatedPs = participants.map((p) => ({
+                            ...p,
+                            points: p.points === 0 ? leagueInitialPoints : p.points
+                          }));
+                          setParticipants(updatedPs);
+                          persistTournament({ format: newFmt as any, participants: updatedPs });
+                        } else {
+                          persistTournament({ format: newFmt as any });
+                        }
                       }}
                       disabled={tournamentStarted}
                       className="w-full bg-[#1a1a1a] border border-[#a855f7] rounded-xl p-3 text-white outline-none appearance-none cursor-pointer disabled:opacity-50"
                     >
+                      <option value="liga_pontos">Liga Dinâmica (Pontos de Liga / Rating ELO • Entrada Contínua de Novos Jogadores • Bônus de Zebra)</option>
+                      <option value="copa_pontos_corridos">Copa por Pontos Corridos (MD3 • Agenda de Duelos & Juízes • 3 pts Vit / 1 pt Emp / W.O. 3 pts)</option>
                       <option value="single_elimination">Eliminação Simples (Mata-mata)</option>
-                      <option value="round_robin">Todos contra Todos (Round Robin)</option>
+                      <option value="round_robin">Todos contra Todos Clássico (Round Robin)</option>
                       <option value="swiss">Formato Suíço (Swiss)</option>
                       <option value="leaderboard">Tabela de Classificação Manual (Leaderboard)</option>
                     </select>
+
+                    {/* Liga Dinâmica (Pontos de Liga & Entrada Contínua de Novos Jogadores) Options */}
+                    {format === 'liga_pontos' && (
+                      <div className="space-y-4 pt-2">
+                        <div className="p-4 bg-gradient-to-r from-cyan-950/60 via-[#150d2a] to-purple-950/50 border border-cyan-500/40 rounded-xl space-y-2.5 text-xs">
+                          <div className="flex items-center gap-2 text-cyan-300 font-black uppercase tracking-wider">
+                            <Flame size={15} className="text-amber-400" />
+                            <span>Regras da Liga Dinâmica (Pontos de Liga & Entrada Contínua)</span>
+                          </div>
+                          <ul className="space-y-1 text-slate-300">
+                            <li>• <b>Entrada Livre Durante o Campeonato</b>: Novos jogadores podem entrar na Liga a qualquer momento (mesmo após o início) começando com <b className="text-amber-300">{leagueInitialPoints} Pontos de Liga (PDL)</b>.</li>
+                            <li>• <b>Sistema de Zebra (Rating Dinâmico)</b>: Quando um jogador com <b className="text-emerald-400">poucos pontos vence um jogador com muitos pontos</b>, ele ganha muito mais Pontos de Liga e o oponente perde mais!</li>
+                            <li>• <b>Agenda & Estúdio Online</b>: Permite gerar rodadas por proximidade de PDL ou agendar confrontos individuais com Juiz, MD3, W.O. e Estúdio de Transmissão com 2 câmeras.</li>
+                          </ul>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-white/10">
+                            <div className="bg-black/40 p-2.5 rounded-xl border border-slate-800 flex items-center justify-between gap-2">
+                              <div>
+                                <span className="text-white font-bold block">Pontos de Liga Iniciais (PDL)</span>
+                                <span className="text-[10px] text-slate-400">Pontuação base de todo novo jogador</span>
+                              </div>
+                              <input
+                                type="number"
+                                min={100}
+                                max={5000}
+                                step={50}
+                                value={leagueInitialPoints}
+                                onChange={(e) => {
+                                  const val = parseInt(e.target.value) || 1000;
+                                  setLeagueInitialPoints(val);
+                                  persistTournament({ leagueInitialPoints: val });
+                                }}
+                                className="w-20 bg-[#14111d] border border-cyan-500/40 rounded-lg p-1.5 text-center font-mono font-black text-amber-300 outline-none"
+                              />
+                            </div>
+
+                            <div className="bg-black/40 p-2.5 rounded-xl border border-slate-800 flex items-center justify-between gap-2">
+                              <div>
+                                <span className="text-white font-bold block">Impacto de Zebra (Fator K)</span>
+                                <span className="text-[10px] text-slate-400">Maior valor = mais pontos ganhos na zebra</span>
+                              </div>
+                              <input
+                                type="number"
+                                min={16}
+                                max={120}
+                                step={4}
+                                value={leagueKFactor}
+                                onChange={(e) => {
+                                  const val = parseInt(e.target.value) || 48;
+                                  setLeagueKFactor(val);
+                                  persistTournament({ leagueKFactor: val });
+                                }}
+                                className="w-20 bg-[#14111d] border border-purple-500/40 rounded-lg p-1.5 text-center font-mono font-black text-emerald-400 outline-none"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Copa por Pontos Corridos Options & Registro de Juízes */}
+                    {(format === 'copa_pontos_corridos' || format === 'liga_pontos') && (
+                      <div className="space-y-4 pt-2">
+                        {format === 'copa_pontos_corridos' && (
+                          <div className="p-4 bg-gradient-to-r from-purple-950/60 via-[#150d2a] to-cyan-950/40 border border-amber-500/40 rounded-xl space-y-2 text-xs">
+                            <div className="flex items-center gap-2 text-amber-300 font-black uppercase tracking-wider">
+                              <Trophy size={15} />
+                              <span>Regras Oficiais da Copa por Pontos Corridos</span>
+                            </div>
+                            <ul className="space-y-1 text-slate-300">
+                              <li>• <b>Partidas MD3 (Melhor de 3)</b>: Todos os jogadores vinculados se enfrentam na Agenda de Duelos.</li>
+                              <li>• <b>Pontuação</b>: Vitória = <b className="text-emerald-400">3 pontos</b> | Empate = <b className="text-amber-300">1 ponto</b> | Derrota = 0 pontos.</li>
+                              <li>• <b>Regra de W.O.</b>: Concede <b className="text-cyan-300">3 pontos (vitória 2-0)</b> diretamente para o jogador que compareceu.</li>
+                              <li>• <b>Estúdio de Duelo Online</b>: Suporte integrado para até 2 câmeras por jogador (Deck + Rosto opcional), gravação, marcadores completos do App Duelo e exibição de cartas na tela por câmera ou busca rápida do Admin.</li>
+                            </ul>
+                          </div>
+                        )}
+
+                        {/* Cadastro de Juízes da Partida (Registrados pelo Admin/Organizador) */}
+                        <div className="p-4 bg-[#1a1a1a] border border-[#3a3a3a] rounded-xl space-y-3">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-black text-amber-300 uppercase tracking-wider flex items-center gap-1.5">
+                              <Gavel size={14} /> Juízes Oficiais (Registrados por Você)
+                            </span>
+                            <span className="text-[11px] text-slate-400">
+                              {referees.length} juiz(es) registrado(s)
+                            </span>
+                          </div>
+
+                          <div className="flex flex-col sm:flex-row gap-2">
+                            <input
+                              type="text"
+                              value={newRefereeName}
+                              onChange={(e) => setNewRefereeName(e.target.value)}
+                              onKeyDown={(e) => e.key === 'Enter' && handleAddReferee()}
+                              placeholder="Nome do Juiz da partida..."
+                              className="flex-1 bg-[#242424] border border-[#444] rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-amber-400"
+                            />
+                            <input
+                              type="text"
+                              value={newRefereeRole}
+                              onChange={(e) => setNewRefereeRole(e.target.value)}
+                              placeholder="Função (Ex: Juiz Principal)"
+                              className="sm:w-44 bg-[#242424] border border-[#444] rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-amber-400"
+                            />
+                            <button
+                              type="button"
+                              onClick={handleAddReferee}
+                              className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs flex items-center justify-center gap-1 shrink-0"
+                            >
+                              <Plus size={14} /> Registrar Juiz
+                            </button>
+                          </div>
+
+                          {referees.length > 0 && (
+                            <div className="flex flex-wrap gap-2 pt-1">
+                              {referees.map((ref) => (
+                                <div
+                                  key={ref.id}
+                                  className="px-3 py-1.5 rounded-xl bg-purple-950/60 border border-purple-500/40 flex items-center gap-2 text-xs"
+                                >
+                                  <Gavel size={12} className="text-amber-400" />
+                                  <span className="font-bold text-white">{ref.name}</span>
+                                  <span className="text-[10px] text-purple-300">({ref.role || 'Juiz'})</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRemoveReferee(ref.id)}
+                                    className="text-slate-400 hover:text-red-400"
+                                    title="Remover Juiz"
+                                  >
+                                    <X size={13} />
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
 
                     {/* Swiss Options */}
                     {format === 'swiss' && (
@@ -1377,20 +2736,22 @@ export const TournamentManager: React.FC<TournamentManagerProps> = ({
                 <div>
                   <h3 className="text-2xl font-black text-white">Gerenciar Participantes</h3>
                   <p className="text-xs text-slate-400 mt-0.5">
-                    Os jogadores podem vincular suas contas aos seus nomes para salvar os resultados nos seus históricos.
+                    {isLeagueMode
+                      ? `Na Liga Dinâmica, novos jogadores podem entrar a qualquer momento durante o campeonato (iniciando com ${leagueInitialPoints} PDL).`
+                      : 'Os jogadores podem vincular suas contas aos seus nomes para salvar os resultados nos seus históricos.'}
                   </p>
                 </div>
                 <div className="flex gap-2 w-full sm:w-auto">
                   <button 
                     onClick={handleShuffleSeeds}
-                    disabled={tournamentStarted}
+                    disabled={tournamentStarted && !isLeagueMode}
                     className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-[#333] hover:bg-[#444] disabled:opacity-50 text-white px-4 py-2 rounded-xl font-bold text-xs transition"
                   >
                     <Shuffle size={14} /> EMBARALHAR
                   </button>
                   <button 
                     onClick={() => setIsBulkAdd(!isBulkAdd)}
-                    disabled={tournamentStarted}
+                    disabled={tournamentStarted && !canLateJoin}
                     className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-[#333] hover:bg-[#444] disabled:opacity-50 text-white px-4 py-2 rounded-xl font-bold text-xs transition"
                   >
                     <AlignLeft size={14} /> EM MASSA
@@ -1430,45 +2791,38 @@ export const TournamentManager: React.FC<TournamentManagerProps> = ({
                     value={newParticipantName}
                     onChange={(e) => setNewParticipantName(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && handleAddParticipant()}
-                    disabled={tournamentStarted}
+                    disabled={tournamentStarted && !canLateJoin}
                     className="flex-1 bg-[#242424] border border-[#444] rounded-xl p-3 text-white focus:border-[#a855f7] outline-none transition disabled:opacity-50 text-sm"
-                    placeholder="Nome do participante..."
+                    placeholder={
+                      tournamentStarted && canLateJoin
+                        ? `Adicionar novo jogador com o campeonato em andamento (${isLeagueMode ? `${leagueInitialPoints} PDL` : '0 pts'})...`
+                        : 'Nome do participante...'
+                    }
                   />
                   <button 
-                    onClick={handleAddParticipant}
-                    disabled={tournamentStarted}
+                    onClick={() => handleAddParticipant()}
+                    disabled={tournamentStarted && !canLateJoin}
                     className="bg-[#9333ea] hover:bg-[#7e22ce] disabled:bg-[#444] text-white px-6 py-3 rounded-xl font-bold transition flex items-center gap-2 whitespace-nowrap text-xs"
                   >
-                    <Plus size={16} /> <span>ADICIONAR</span>
+                    <Plus size={16} /> <span>{tournamentStarted && canLateJoin ? 'ENTRAR AGORA' : 'ADICIONAR'}</span>
                   </button>
                 </div>
               )}
 
               {/* Botão Atalho: Adicionar Minha Própria Conta */}
-              {user && !participants.some(p => p.userId === user.uid) && !tournamentStarted && (
+              {user && !participants.some(p => p.userId === user.uid) && (!tournamentStarted || canLateJoin) && (
                 <div className="p-3 bg-purple-950/40 border border-purple-500/40 rounded-xl flex items-center justify-between gap-3 text-xs">
                   <div className="flex items-center gap-2 text-purple-200">
                     <Crown size={15} className="text-amber-400" />
-                    <span>Deseja entrar neste torneio com sua conta conectada (<b>{user.displayName || 'Você'}</b>)?</span>
+                    <span>
+                      Deseja entrar {isLeagueMode ? `na Liga (${leagueInitialPoints} PDL)` : 'neste torneio'} com sua conta conectada (<b>{user.displayName || 'Você'}</b>)?
+                    </span>
                   </div>
                   <button
-                    onClick={() => {
-                      const newP: Participant = {
-                        id: Math.random().toString(36).substr(2, 9),
-                        seed: participants.length + 1,
-                        name: user.displayName || 'Jogador',
-                        points: 0, wins: 0, losses: 0, ties: 0, matchesPlayed: 0,
-                        userId: user.uid,
-                        userEmail: user.email || undefined,
-                        userPhoto: user.photoURL || undefined
-                      };
-                      const next = [...participants, newP];
-                      setParticipants(next);
-                      persistTournament({ participants: next });
-                    }}
+                    onClick={handleAddMyselfAndLink}
                     className="px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-white font-bold transition shrink-0"
                   >
-                    + Me Adicionar ao Torneio
+                    + Me Adicionar {isLeagueMode ? 'à Liga' : 'ao Torneio'}
                   </button>
                 </div>
               )}
@@ -1509,6 +2863,11 @@ export const TournamentManager: React.FC<TournamentManagerProps> = ({
                             <div className="min-w-0">
                               <div className="flex items-center gap-2">
                                 <span className="font-bold text-white text-sm truncate">{p.name}</span>
+                                {isLeagueMode && (
+                                  <span className="text-[10px] font-mono text-amber-300 bg-black/50 px-1.5 py-0.5 rounded border border-amber-500/25">
+                                    {p.points} PDL
+                                  </span>
+                                )}
                                 {isMe && (
                                   <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-purple-600 text-white font-bold">Você</span>
                                 )}
@@ -1637,15 +2996,32 @@ export const TournamentManager: React.FC<TournamentManagerProps> = ({
                   )}
 
                   {/* Leaderboard View */}
-                  {(format === 'swiss' || format === 'round_robin' || format === 'leaderboard') && (
+                  {(format === 'swiss' || format === 'round_robin' || format === 'copa_pontos_corridos' || format === 'liga_pontos' || format === 'leaderboard') && (
                     <div className="mb-6">
                       <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
                         <h3 className="text-xl font-black text-white flex items-center gap-2">
-                          <Award className="text-[#a855f7]" /> {format === 'swiss' ? 'Classificação Suíça (Critérios Magic)' : 'Classificação Geral'}
+                          <Award className="text-[#a855f7]" />{' '}
+                          {format === 'swiss'
+                            ? 'Classificação Suíça (Critérios Magic)'
+                            : format === 'liga_pontos'
+                            ? 'Ranking da Liga Dinâmica (Pontos de Liga • PDL)'
+                            : format === 'copa_pontos_corridos'
+                            ? 'Tabela da Copa por Pontos Corridos (MD3)'
+                            : 'Classificação Geral'}
                         </h3>
                         {format === 'swiss' && (
                           <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-purple-500/15 text-purple-300 border border-purple-500/30">
                             Critérios MTG: OMW% → GW% → OGW%
+                          </span>
+                        )}
+                        {format === 'liga_pontos' && (
+                          <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">
+                            Início: {leagueInitialPoints} PDL • Bônus de Zebra Ativo (K={leagueKFactor})
+                          </span>
+                        )}
+                        {format === 'copa_pontos_corridos' && (
+                          <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30">
+                            Vitória = 3 pts • Empate = 1 pt • W.O. = 3 pts
                           </span>
                         )}
                       </div>
@@ -1653,8 +3029,63 @@ export const TournamentManager: React.FC<TournamentManagerProps> = ({
                     </div>
                   )}
 
+                  {/* Quick Referee Bar inside Bracket Tab for Copa por Pontos Corridos & Liga */}
+                  {(format === 'copa_pontos_corridos' || format === 'liga_pontos') && (
+                    <div className="mb-6 bg-[#1e1b29] border border-purple-500/30 rounded-2xl p-4 space-y-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <Gavel size={16} className="text-amber-400" />
+                          <span className="font-cinzel font-black text-xs sm:text-sm text-white uppercase">
+                            Quadro de Juízes Registrados
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="text"
+                            value={newRefereeName}
+                            onChange={(e) => setNewRefereeName(e.target.value)}
+                            onKeyDown={(e) => e.key === 'Enter' && handleAddReferee()}
+                            placeholder="Registrar novo Juiz..."
+                            className="bg-black border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-white outline-none focus:border-amber-400"
+                          />
+                          <button
+                            onClick={handleAddReferee}
+                            className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs flex items-center gap-1"
+                          >
+                            <Plus size={13} /> Adicionar Juiz
+                          </button>
+                        </div>
+                      </div>
+                      {referees.length > 0 ? (
+                        <div className="flex flex-wrap gap-2">
+                          {referees.map((ref) => (
+                            <span
+                              key={ref.id}
+                              className="px-2.5 py-1 rounded-lg bg-black/60 border border-amber-500/30 text-xs text-amber-200 flex items-center gap-1.5"
+                            >
+                              <Gavel size={11} className="text-amber-400" />
+                              <b>{ref.name}</b>
+                              <button
+                                onClick={() => handleRemoveReferee(ref.id)}
+                                className="text-slate-500 hover:text-red-400 ml-1"
+                              >
+                                <X size={12} />
+                              </button>
+                            </span>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-xs text-slate-400">
+                          Adicione os juízes acima para escalá-los nas partidas da Agenda de Duelos abaixo.
+                        </p>
+                      )}
+                    </div>
+                  )}
+
                   {/* Matches View */}
-                  {format !== 'leaderboard' && (
+                  {format === 'copa_pontos_corridos' || format === 'liga_pontos' ? (
+                    renderCopaSchedule()
+                  ) : format !== 'leaderboard' ? (
                     <div>
                       <div className="flex flex-wrap justify-between items-center mb-6 gap-3">
                         <h3 className="text-xl sm:text-2xl font-black text-white">Partidas</h3>
@@ -1718,7 +3149,7 @@ export const TournamentManager: React.FC<TournamentManagerProps> = ({
                         <p className="text-slate-500 italic">Nenhuma partida nesta rodada.</p>
                       )}
                     </div>
-                  )}
+                  ) : null}
                 </>
               )}
             </div>
@@ -2063,6 +3494,25 @@ export const TournamentManager: React.FC<TournamentManagerProps> = ({
         }}
         onOpenAuth={onOpenAuth}
       />
+
+      {/* ESTÚDIO DE DUELO ONLINE & TRANSMISSÃO (2 CÂMERAS + APP DUELO + CARTA EM TELA) */}
+      {activeOnlineDuelMatch && (
+        <OnlineDuelBroadcastModal
+          isOpen={Boolean(activeOnlineDuelMatch)}
+          onClose={() => setActiveOnlineDuelMatch(null)}
+          tournamentId={tournamentId}
+          tournamentName={name || 'Copa Light Dark TCG'}
+          match={activeOnlineDuelMatch}
+          allCards={allCards}
+          isAdminOrCreator={isAdminOrCreator}
+          currentUserUid={user?.uid}
+          currentUserName={user?.displayName || undefined}
+          referees={referees}
+          onSaveMatchScore={(matchId, s1, s2, opts) => {
+            handleSetMatchResult(matchId, s1, s2, opts);
+          }}
+        />
+      )}
 
     </div>
   );

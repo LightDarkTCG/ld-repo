@@ -2238,6 +2238,7 @@ export default function App() {
           initialTournamentId={activeTournamentId}
           onClose={closeCurrentModal}
           onOpenAuth={() => setIsAuthModalOpen(true)}
+          allCards={allCards}
         />
       )}
       <ChampionshipHistoryModal

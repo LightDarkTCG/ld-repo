@@ -30,6 +30,13 @@ export interface Participant {
   userPhoto?: string;
 }
 
+export interface Referee {
+  id: string;
+  name: string;
+  role?: string; // Ex: 'Juiz Principal', 'Juiz de Mesa'
+  contact?: string;
+}
+
 export interface Match {
   id: string;
   round: number;
@@ -41,6 +48,23 @@ export interface Match {
   status: 'pending' | 'active' | 'completed';
   nextMatchId?: string;
   isBye?: boolean;
+  // Copa por Pontos Corridos & Agenda de Duelos & Liga
+  refereeId?: string;
+  refereeName?: string;
+  scheduledAt?: string; // Data/hora agendada
+  bestOf?: number; // Padrão 3 (MD3)
+  isWO?: boolean;
+  woWinnerId?: string | null;
+  liveRoomId?: string; // ID da sala de duelo online/transmissão vinculada
+  notes?: string;
+  // Liga (Pontos de Liga / Rating Dinâmico)
+  p1LeagueDelta?: number;
+  p2LeagueDelta?: number;
+  p1PointsBefore?: number;
+  p2PointsBefore?: number;
+  p1PointsAfter?: number;
+  p2PointsAfter?: number;
+  completedAtMs?: number;
 }
 
 export interface FinalStanding {
@@ -78,10 +102,37 @@ export interface SwissTiebreakerStats {
   opponentsIds: string[]; // Real opponents IDs (excluding Byes)
 }
 
+/**
+ * Calcula a variação de Pontos de Liga (ELO Dinâmico) para uma partida entre dois jogadores.
+ * Quando um jogador com poucos pontos vence um com muitos pontos (zebra / upset),
+ * ele ganha muito mais pontos de liga e o outro perde mais.
+ */
+export function calculateDynamicLeagueDelta(
+  p1Points: number,
+  p2Points: number,
+  outcome: 'p1_win' | 'p2_win' | 'tie',
+  kFactor: number = 48
+): { delta1: number; delta2: number } {
+  const expected1 = 1 / (1 + Math.pow(10, (p2Points - p1Points) / 400));
+  const actual1 = outcome === 'p1_win' ? 1 : outcome === 'p2_win' ? 0 : 0.5;
+  let delta1 = Math.round(kFactor * (actual1 - expected1));
+
+  if (outcome === 'p1_win') {
+    delta1 = Math.max(5, delta1);
+  } else if (outcome === 'p2_win') {
+    delta1 = Math.min(-5, delta1);
+  }
+
+  return {
+    delta1,
+    delta2: -delta1
+  };
+}
+
 export interface TournamentData {
   id: string;
   name: string;
-  format: 'single_elimination' | 'round_robin' | 'swiss' | 'leaderboard';
+  format: 'single_elimination' | 'round_robin' | 'copa_pontos_corridos' | 'liga_pontos' | 'swiss' | 'leaderboard';
   isOfficial: boolean;
   officialVerifiedAt?: string;
   creatorId: string;
@@ -96,6 +147,11 @@ export interface TournamentData {
   swissPtsBye?: string;
   swissRounds?: string;
   swissPhase?: 'swiss' | 'top4' | 'top2';
+  // Copa por Pontos Corridos & Liga Config & Juízes
+  referees?: Referee[];
+  leagueInitialPoints?: number; // Ex: 1000 PDL iniciais
+  leagueKFactor?: number; // Ex: 48 (Fator de impacto de zebra)
+  allowLateJoin?: boolean; // Permitir novos jogadores durante o campeonato
   // State
   participants: Participant[];
   matches: Match[];
