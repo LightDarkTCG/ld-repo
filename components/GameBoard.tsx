@@ -3,6 +3,23 @@ import { X, Plus, Minus, Menu, RotateCcw, Image as ImageIcon, LogOut, Check, His
 import { ref, listAll, getDownloadURL } from 'firebase/storage';
 import { doc, getDoc, setDoc, updateDoc, onSnapshot } from 'firebase/firestore';
 import { storage, db } from '../firebase';
+import { ArcaneCyberTextureLayer, ThemeTextureSlot } from './ArcaneCyberTheme';
+
+const CHRISTMAS_DUEL_THEME_SLOT: ThemeTextureSlot = {
+  id: 'duel_christmas_festive',
+  code: 'TEX-NATAL',
+  title: 'Tema Natalino Festivo',
+  location: 'Tabuleiro de Duelo',
+  themePillar: 'Natalino Festivo',
+  recommendedFormat: 'Canvas Procedural Interativo',
+  recommendedResolution: 'Full Screen 60fps',
+  blendMode: 'screen',
+  opacity: 85,
+  imageUrl: '',
+  enabled: true,
+  animationEffect: 'christmas_festive',
+  animationSpeed: 8
+};
 
 interface GameBoardProps {
   onClose: () => void;
@@ -11,7 +28,8 @@ interface GameBoardProps {
 
 export default function GameBoard({ onClose, tourForceShowSetup }: GameBoardProps) {
   const [themes, setThemes] = useState([
-    { id: 'default', name: 'Padrão', url: null }
+    { id: 'default', name: 'Padrão', url: null },
+    { id: 'christmas_festive', name: '🎄 Tema Natalino (Animado)', url: 'procedural://christmas_festive' }
   ]);
 
   useEffect(() => {
@@ -23,6 +41,7 @@ export default function GameBoard({ onClose, tourForceShowSetup }: GameBoardProp
           const urls = await Promise.all(res.items.map(item => getDownloadURL(item)));
           const dynamicThemes = [
             { id: 'default', name: 'Padrão', url: null },
+            { id: 'christmas_festive', name: '🎄 Tema Natalino (Animado)', url: 'procedural://christmas_festive' },
             ...urls.map((url, index) => ({
               id: `theme${index + 1}`,
               name: `Tema ${index + 1}`,
@@ -829,15 +848,34 @@ export default function GameBoard({ onClose, tourForceShowSetup }: GameBoardProp
         <div 
           className={`absolute inset-0.5 sm:inset-1.5 rounded-xl sm:rounded-2xl pointer-events-none transition-all duration-500 z-30 ${
             isActive 
-              ? 'border-2 sm:border-3 border-amber-400 shadow-[0_0_24px_rgba(251,191,36,0.75),inset_0_0_20px_rgba(251,191,36,0.15)] ring-1 ring-amber-300/70 bg-amber-500/[0.03]' 
+              ? background === 'procedural://christmas_festive'
+                ? 'border-2 sm:border-3 border-red-500 shadow-[0_0_28px_rgba(239,68,68,0.85),inset_0_0_22px_rgba(220,38,38,0.25)] ring-1 ring-red-400/80 bg-red-600/[0.04]'
+                : 'border-2 sm:border-3 border-amber-400 shadow-[0_0_24px_rgba(251,191,36,0.75),inset_0_0_20px_rgba(251,191,36,0.15)] ring-1 ring-amber-300/70 bg-amber-500/[0.03]' 
+              : background === 'procedural://christmas_festive'
+              ? 'border border-red-500/35 opacity-80'
               : 'border border-white/5 opacity-40'
           }`}
         />
 
-        {/* Background Image/Video */}
+        {/* Background Image/Video or Animated Procedural Christmas Theme */}
         {background && (
           <div className="absolute inset-0 z-0">
-            {background.includes('.mp4') || background.includes('firebasestorage') ? (
+            {background === 'procedural://christmas_festive' ? (
+              <div className="w-full h-full relative overflow-hidden bg-gradient-to-br from-[#1f0408] via-[#110205] to-[#28050b]">
+                <div
+                  className="absolute inset-0 pointer-events-none"
+                  style={{
+                    background:
+                      'radial-gradient(circle at 20% 20%, rgba(239,68,68,0.28) 0%, transparent 55%), radial-gradient(circle at 80% 75%, rgba(220,38,38,0.24) 0%, transparent 55%), radial-gradient(circle at 50% 0%, rgba(251,191,36,0.16) 0%, transparent 45%)'
+                  }}
+                />
+                <ArcaneCyberTextureLayer
+                  slot={CHRISTMAS_DUEL_THEME_SLOT}
+                  variant="crimson"
+                  showPlaceholderBadge={false}
+                />
+              </div>
+            ) : background.includes('.mp4') || background.includes('firebasestorage') ? (
               <video 
                 src={background} 
                 autoPlay 
@@ -852,7 +890,7 @@ export default function GameBoard({ onClose, tourForceShowSetup }: GameBoardProp
             ) : (
               <img src={background} alt="Theme" className="w-full h-full object-cover opacity-80" />
             )}
-            <div className="absolute inset-0 bg-black/40"></div>
+            <div className={`absolute inset-0 ${background === 'procedural://christmas_festive' ? 'bg-red-950/20' : 'bg-black/40'} pointer-events-none`}></div>
           </div>
         )}
 
@@ -1772,10 +1810,30 @@ export default function GameBoard({ onClose, tourForceShowSetup }: GameBoardProp
                   <button 
                     key={theme.id}
                     onClick={() => handleThemeSelect(theme.url)}
-                    className="relative aspect-video rounded-lg overflow-hidden border-2 border-slate-700 hover:border-white transition group"
+                    className={`relative aspect-video rounded-lg overflow-hidden border-2 transition group ${
+                      theme.url === 'procedural://christmas_festive'
+                        ? 'border-red-500/80 hover:border-red-300 shadow-[0_0_20px_rgba(239,68,68,0.35)]'
+                        : 'border-slate-700 hover:border-white'
+                    }`}
                   >
                     {theme.url ? (
-                      theme.url.includes('.mp4') || theme.url.includes('firebasestorage') ? (
+                      theme.url === 'procedural://christmas_festive' ? (
+                        <div className="w-full h-full relative overflow-hidden bg-gradient-to-br from-[#2b050a] via-[#160205] to-[#3b070e] flex flex-col items-center justify-center p-2">
+                          <ArcaneCyberTextureLayer
+                            slot={CHRISTMAS_DUEL_THEME_SLOT}
+                            variant="crimson"
+                            showPlaceholderBadge={false}
+                          />
+                          <div className="relative z-10 flex flex-col items-center gap-1 text-center pointer-events-none">
+                            <span className="px-2 py-0.5 rounded-full bg-red-600/90 border border-amber-300/70 text-[10px] font-black uppercase tracking-wider text-white shadow">
+                              🎄 Natalino Dinâmico
+                            </span>
+                            <span className="text-[10px] font-bold text-red-100 drop-shadow">
+                              Flocos de Neve & Bolas de Natal
+                            </span>
+                          </div>
+                        </div>
+                      ) : theme.url.includes('.mp4') || theme.url.includes('firebasestorage') ? (
                         <video 
                           src={theme.url} 
                           autoPlay 
@@ -1793,14 +1851,14 @@ export default function GameBoard({ onClose, tourForceShowSetup }: GameBoardProp
                     ) : (
                       <div className="w-full h-full bg-slate-800 flex items-center justify-center text-slate-500 font-bold">Padrão</div>
                     )}
-                    <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition">
-                      <span className="font-bold text-white">{theme.name}</span>
+                    <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition z-20">
+                      <span className="font-bold text-white text-xs sm:text-sm px-2 text-center">{theme.name}</span>
                     </div>
                     {((themeTargetPlayer === 1 && p1Background === theme.url) ||
                       (themeTargetPlayer === 2 && p2Background === theme.url) ||
                       (themeTargetPlayer === 3 && p3Background === theme.url) ||
                       (themeTargetPlayer === 4 && p4Background === theme.url)) && (
-                      <div className="absolute top-2 right-2 bg-green-500 text-white p-1 rounded-full shadow-lg">
+                      <div className="absolute top-2 right-2 bg-green-500 text-white p-1 rounded-full shadow-lg z-20">
                         <Check size={12} />
                       </div>
                     )}

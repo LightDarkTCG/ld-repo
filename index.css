@@ -10,6 +10,84 @@
   --ld-crimson-ritual: #e11d48;
 }
 
+/* ==================== TEMA NATALINO ANIMADO (COR PRINCIPAL = VERMELHA) ==================== */
+html.ld-theme-christmas {
+  --ld-obsidian: #0c0305;
+  --ld-void: #140508;
+  --ld-grimoire: #21070d;
+  --ld-arcane-gold: #ef4444;
+  --ld-cyber-cyan: #f87171;
+  --ld-dark-magic: #dc2626;
+  --ld-crimson-ritual: #ef4444;
+}
+
+html.ld-theme-christmas body,
+body.ld-theme-christmas {
+  background-color: #0b0305 !important;
+}
+
+html.ld-theme-christmas .cyber-arcane-box {
+  background: linear-gradient(145deg, rgba(24, 6, 10, 0.94) 0%, rgba(12, 3, 6, 0.97) 60%, rgba(32, 7, 12, 0.94) 100%);
+  border: 1px solid rgba(239, 68, 68, 0.45);
+  box-shadow:
+    0 16px 45px rgba(0, 0, 0, 0.88),
+    inset 0 1px 0 rgba(252, 165, 165, 0.24),
+    inset 0 0 32px rgba(220, 38, 38, 0.14);
+}
+
+html.ld-theme-christmas .cyber-arcane-box-sm {
+  background: linear-gradient(145deg, rgba(24, 6, 10, 0.93) 0%, rgba(13, 3, 6, 0.96) 100%);
+  border: 1px solid rgba(239, 68, 68, 0.38);
+  box-shadow:
+    0 10px 30px rgba(0, 0, 0, 0.78),
+    inset 0 1px 0 rgba(248, 113, 113, 0.2);
+}
+
+html.ld-theme-christmas .arcane-divider {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(220, 38, 38, 0.45) 20%,
+    rgba(239, 68, 68, 0.95) 50%,
+    rgba(251, 191, 36, 0.55) 80%,
+    transparent 100%
+  );
+}
+
+html.ld-theme-christmas .cyber-arcane-modal-bg,
+html.ld-theme-christmas div.fixed.inset-0.bg-slate-950,
+html.ld-theme-christmas div.fixed.inset-0 > div.bg-slate-950,
+html.ld-theme-christmas div.fixed.inset-0 > div.bg-slate-900 {
+  background-color: #0b0305 !important;
+  background-image:
+    radial-gradient(circle at 15% 15%, rgba(220, 38, 38, 0.18) 0%, transparent 45%),
+    radial-gradient(circle at 85% 80%, rgba(239, 68, 68, 0.14) 0%, transparent 45%),
+    radial-gradient(circle at 50% 0%, rgba(251, 191, 36, 0.1) 0%, transparent 40%),
+    linear-gradient(rgba(239, 68, 68, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(220, 38, 38, 0.04) 1px, transparent 1px) !important;
+}
+
+html.ld-theme-christmas div.fixed.inset-0 .bg-slate-900,
+html.ld-theme-christmas div.fixed.inset-0 .bg-slate-900\/95,
+html.ld-theme-christmas div.fixed.inset-0 .bg-slate-900\/90,
+html.ld-theme-christmas div.fixed.inset-0 .bg-slate-900\/80,
+html.ld-theme-christmas div.fixed.inset-0 .bg-slate-900\/60,
+html.ld-theme-christmas div.fixed.inset-0 .bg-slate-900\/50,
+html.ld-theme-christmas #manual-regras .bg-slate-950,
+html.ld-theme-christmas #manual-regras .bg-slate-900\/60,
+html.ld-theme-christmas #manual-regras .bg-slate-900\/50 {
+  background-color: rgba(18, 5, 8, 0.93) !important;
+  border-color: rgba(239, 68, 68, 0.36) !important;
+  box-shadow: inset 0 1px 0 rgba(248, 113, 113, 0.14), 0 8px 24px rgba(0, 0, 0, 0.72);
+}
+
+html.ld-theme-christmas .custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(239, 68, 68, 0.45);
+}
+html.ld-theme-christmas .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(239, 68, 68, 0.8);
+}
+
 /* Chamfered Cyberpunk + Runic High Magic Containers */
 .cyber-arcane-box {
   background: linear-gradient(145deg, rgba(11, 8, 22, 0.94) 0%, rgba(6, 5, 13, 0.97) 60%, rgba(16, 11, 32, 0.94) 100%);

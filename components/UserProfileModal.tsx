@@ -31,7 +31,9 @@ import {
   Package,
   RefreshCw,
   QrCode,
-  CreditCard
+  CreditCard,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 import { User } from 'firebase/auth';
 import { useAuth, isUserAdmin } from '../authService';
@@ -116,6 +118,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
 
   // Tab ativa
   const [activeTab, setActiveTab] = useState<'wishlist' | 'most_wanted' | 'badges' | 'stats' | 'verifications' | 'orders'>(initialTab);
+  const [isTopBarMinimized, setIsTopBarMinimized] = useState(false);
 
   // Meus Pedidos & Rastreio (exclusivo no Perfil de Usuário)
   const [myOrders, setMyOrders] = useState<StoreOrder[]>([]);
@@ -213,6 +216,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
   useEffect(() => {
     if (isOpen) {
       setActiveTab(initialTab);
+      setIsTopBarMinimized(false);
     }
   }, [isOpen, initialTab, targetProfile?.userId]);
 
@@ -534,13 +538,35 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
         onClick={e => e.stopPropagation()}
       >
         {/* HEADER DO PERFIL */}
+        {isTopBarMinimized ? (
+          <div className="bg-[#080612] border-b border-purple-500/35 px-3 py-1 flex items-center justify-center shrink-0 relative z-20 shadow-md">
+            <button
+              type="button"
+              onClick={() => setIsTopBarMinimized(false)}
+              className="px-4 py-0.5 rounded-full bg-purple-950/80 hover:bg-purple-900 border border-amber-500/45 text-amber-300 hover:text-white transition flex items-center gap-1.5 text-[10px] font-cyber font-bold uppercase tracking-wider shadow cursor-pointer"
+              title="Expandir barra superior do Perfil"
+            >
+              <ChevronDown size={15} className="text-amber-400 animate-bounce" />
+            </button>
+          </div>
+        ) : (
         <div className="relative bg-gradient-to-r from-purple-950/80 via-slate-900 to-indigo-950/80 p-4 sm:p-6 border-b border-purple-800/40 shrink-0">
-          <button 
-            onClick={onClose}
-            className="absolute top-4 right-4 p-2 text-slate-400 hover:text-white bg-slate-900/80 hover:bg-slate-800 border border-slate-700/60 rounded-full transition z-10"
-          >
-            <X size={18} />
-          </button>
+          <div className="absolute top-4 right-4 flex items-center gap-1.5 z-10">
+            <button
+              type="button"
+              onClick={() => setIsTopBarMinimized(true)}
+              className="p-2 text-slate-400 hover:text-amber-300 bg-slate-900/80 hover:bg-slate-800 border border-slate-700/60 rounded-full transition"
+              title="Minimizar barra superior"
+            >
+              <ChevronUp size={16} />
+            </button>
+            <button 
+              onClick={onClose}
+              className="p-2 text-slate-400 hover:text-white bg-slate-900/80 hover:bg-slate-800 border border-slate-700/60 rounded-full transition"
+            >
+              <X size={18} />
+            </button>
+          </div>
 
           <div className="flex flex-col sm:flex-row items-center sm:items-start gap-4">
             {/* Avatar */}
@@ -858,9 +884,17 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
             )}
           </div>
         </div>
+        )}
 
         {/* CONTEÚDO DA ABA SELECIONADA */}
-        <div className="flex-1 overflow-y-auto p-4 sm:p-6 custom-scrollbar">
+        <div
+          className="flex-1 overflow-y-auto p-4 sm:p-6 custom-scrollbar"
+          onScroll={(e) => {
+            if (e.currentTarget.scrollTop > 35 && !isTopBarMinimized) {
+              setIsTopBarMinimized(true);
+            }
+          }}
+        >
           {/* TAB 1: CARTAS QUE PROCURO */}
           {activeTab === 'wishlist' && (
             <div>

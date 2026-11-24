@@ -44,7 +44,7 @@ export const LoreView = ({
   tourForceView
 }: {
   onClose: () => void;
-  tourForceView?: 'home' | 'cosmic_map' | 'relations_tree' | 'daily_quiz' | 'music';
+  tourForceView?: 'home' | 'cosmic_map' | 'relations_tree' | 'daily_quiz' | 'music' | 'archives';
 }) => {
   const { cards, archetypes } = useCards();
   const { isAdmin: isMasterAdmin, isCollaborator, canEditLore, collaboratorProfile } = useAuth();
@@ -78,9 +78,14 @@ export const LoreView = ({
   const [selectedMacroverse, setSelectedMacroverse] = useState<'macroverso_13' | 'macroverso_1'>('macroverso_13');
 
   // Navigation State ('cosmic_map', 'relations_tree', 'daily_quiz', 'music' alongside 'home', 'tab_view', 'item_detail')
-  const [currentView, setCurrentView] = useState<'home' | 'cosmic_map' | 'relations_tree' | 'daily_quiz' | 'music' | 'tab_view' | 'item_detail'>(tourForceView || 'home');
+  const [currentView, setCurrentView] = useState<'home' | 'cosmic_map' | 'relations_tree' | 'daily_quiz' | 'music' | 'tab_view' | 'item_detail'>(
+    tourForceView === 'archives' ? 'tab_view' : tourForceView || 'home'
+  );
   const [isTopNavCollapsed, setIsTopNavCollapsed] = useState<boolean>(false);
-  const [activeTabId, setActiveTabId] = useState<string>('');
+  const [activeTabId, setActiveTabId] = useState<string>(() => {
+    const initialTabs = readBrowserCache<any[]>('ld_cache_wbTabs_v2') || [];
+    return initialTabs[0]?.id || '';
+  });
   const [selectedItem, setSelectedItem] = useState<any>(null);
 
   // Linha do Tempo Retrátil no Mapa 3D (somente Macroverso 13) - inicia vazia sem dados pré-preenchidos
@@ -92,16 +97,25 @@ export const LoreView = ({
   const [editingM13Epoch, setEditingM13Epoch] = useState<(Macroverse13Epoch & { isNew?: boolean }) | null>(null);
   const [savingM13Timeline, setSavingM13Timeline] = useState<boolean>(false);
 
-  useEffect(() => {
+  const prevTourForceViewRef = React.useRef<string | undefined>(tourForceView);
+  if (prevTourForceViewRef.current !== tourForceView) {
+    prevTourForceViewRef.current = tourForceView;
     if (tourForceView) {
       setSelectedItem(null);
       setIsTopNavCollapsed(false);
-      setCurrentView(tourForceView);
+      if (tourForceView === 'archives') {
+        if (!activeTabId && wbTabs.length > 0) {
+          setActiveTabId(wbTabs[0].id);
+        }
+        setCurrentView('tab_view');
+      } else {
+        setCurrentView(tourForceView);
+      }
       if (tourForceView === 'cosmic_map') {
         setIsMapTimelineExpanded(true);
       }
     }
-  }, [tourForceView]);
+  }
 
   // In-page Rich Editor state for standard Lore Items & Timeline
   const [isEditingItemDetail, setIsEditingItemDetail] = useState(false);
@@ -529,9 +543,17 @@ export const LoreView = ({
     return { isIframe: false, src: url };
   };
 
-  const currentTab = wbTabs.find(t => t.id === activeTabId);
-  const currentTabItems = wbItems.filter(i => i.tabId === activeTabId);
-  const currentTabEvents = wbTimelineEvents.filter(te => te.tabId === activeTabId);
+  const currentTab =
+    wbTabs.find(t => t.id === activeTabId) ||
+    wbTabs[0] || {
+      id: 'default_archives',
+      name: 'Arquivos & Crônicas',
+      hasItems: true,
+      hasTimeline: true
+    };
+  const effectiveTabId = currentTab.id;
+  const currentTabItems = wbItems.filter(i => i.tabId === effectiveTabId);
+  const currentTabEvents = wbTimelineEvents.filter(te => te.tabId === effectiveTabId);
 
   const TopNav = () => {
     if (isTopNavCollapsed) {
@@ -1309,21 +1331,28 @@ export const LoreView = ({
                     <Music size={17} className="text-cyan-400" /> Músicas
                   </button>
 
-                  {wbTabs.length > 0 ? (
-                    <button
-                      onClick={() => navToTab(wbTabs[0].id)}
-                      className="cyber-arcane-btn font-cinzel border border-theme/60 bg-[#090714] hover:bg-[rgba(var(--primary-rgb),0.15)] text-theme px-6 py-3.5 tracking-widest uppercase text-xs sm:text-sm font-bold transition duration-300"
-                    >
-                      Abrir Arquivos & Crônicas
-                    </button>
-                  ) : isAdmin ? (
+                  <button
+                    onClick={() => {
+                      if (wbTabs.length > 0) {
+                        navToTab(wbTabs[0].id);
+                      } else {
+                        setSelectedItem(null);
+                        setCurrentView('tab_view');
+                      }
+                    }}
+                    className="cyber-arcane-btn font-cinzel border border-theme/60 bg-[#090714] hover:bg-[rgba(var(--primary-rgb),0.15)] text-theme px-6 py-3.5 tracking-widest uppercase text-xs sm:text-sm font-bold transition duration-300"
+                  >
+                    Abrir Arquivos & Crônicas
+                  </button>
+
+                  {isAdmin && wbTabs.length === 0 && (
                     <button
                       onClick={() => setIsAdminOpen(true)}
                       className="cyber-arcane-btn font-cinzel border border-purple-500 text-purple-400 px-6 py-3.5 tracking-widest uppercase text-xs sm:text-sm font-bold transition hover:bg-purple-900/30"
                     >
                       Configurar Área do Mestre
                     </button>
-                  ) : null}
+                  )}
                 </div>
               </div>
             </div>
@@ -1332,6 +1361,24 @@ export const LoreView = ({
           {/* TAB VIEW (Grid and/or Timeline with Admin Direct Reordering) */}
           {currentView === 'tab_view' && currentTab && (
             <div className="animate-fade-in pb-32 pt-10 relative max-w-7xl mx-auto px-6">
+              {wbTabs.length > 1 && (
+                <div className="flex flex-wrap items-center justify-center gap-2 mb-10">
+                  {wbTabs.map(t => (
+                    <button
+                      key={t.id}
+                      type="button"
+                      onClick={() => navToTab(t.id)}
+                      className={`cyber-arcane-btn px-4 py-2 text-xs font-cinzel font-bold uppercase tracking-widest border transition ${
+                        effectiveTabId === t.id
+                          ? 'bg-[rgba(var(--primary-rgb),0.22)] text-white border-[var(--primary-color)] shadow-[0_0_15px_rgba(var(--primary-rgb),0.3)]'
+                          : 'bg-[#090714]/90 border-white/15 text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      {t.name}
+                    </button>
+                  ))}
+                </div>
+              )}
               <div className="text-center mb-20 relative">
                 <h2 className="font-cinzel text-5xl md:text-7xl font-black text-theme drop-shadow-theme uppercase tracking-wider">
                   {currentTab.name}

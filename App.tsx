@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from "motion/react";
 import { 
   Zap, Heart, Layers, Hexagon, BookOpen,
@@ -1058,9 +1058,14 @@ const CatalogModal = ({
     return () => observer.disconnect();
   }, [isOpen, visibleCount, activeGridCards.length]);
 
+  const [isTopBarMinimized, setIsTopBarMinimized] = useState(false);
+
   const handleCatalogScroll = (e: React.UIEvent<HTMLDivElement>) => {
-    if (visibleCount >= activeGridCards.length) return;
     const el = e.currentTarget;
+    if (el.scrollTop > 35 && !isTopBarMinimized) {
+      setIsTopBarMinimized(true);
+    }
+    if (visibleCount >= activeGridCards.length) return;
     if (el.scrollTop + el.clientHeight >= el.scrollHeight - 600) {
       setVisibleCount((prev) => Math.min(prev + 40, activeGridCards.length));
     }
@@ -1068,8 +1073,9 @@ const CatalogModal = ({
 
   const displayedCards = activeGridCards.slice(0, visibleCount);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!isOpen) return;
+    setIsTopBarMinimized(false);
     if (tourAutoOpenCard) {
       const sample = displayedCards[0] || allCards[0] || null;
       if (sample) {
@@ -1122,55 +1128,76 @@ const CatalogModal = ({
         </div>
       )}
 
-      <div className="bg-[#070510]/95 border-b border-amber-500/35 p-4 flex flex-wrap justify-between items-center gap-3 shadow-[0_10px_30px_rgba(0,0,0,0.85)] z-20 relative">
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="p-2 bg-purple-950/80 border border-amber-500/45 text-amber-300 shadow-[0_0_12px_rgba(212,175,55,0.25)]">
-            <BookOpen size={20} className="shrink-0" />
-          </div>
-          <div>
-            <div className="text-[10px] font-mono uppercase tracking-[0.24em] text-cyan-400">
-              MATRIZ DE DADOS // GRIMÓRIO DE CARTAS
-            </div>
-            <h2 className="text-xl sm:text-2xl font-cinzel font-black text-amber-50 flex flex-wrap items-center gap-2.5">
-              <span>Catálogo de Cartas</span>
-              <span className="text-amber-300 text-xs font-mono font-bold bg-purple-950/80 border border-amber-500/40 px-2.5 py-0.5">
-                {totalVariationsCount} REGISTROS
-              </span>
-              {isAdmin && !expandVariations && totalVariationsCount !== filteredCards.length && (
-                <span className="text-slate-500 text-xs font-mono font-normal">
-                  ({filteredCards.length} cartas base agrupadas)
-                </span>
-              )}
-            </h2>
-          </div>
-        </div>
-        <div className="flex items-center gap-2 sm:gap-3">
+      {isTopBarMinimized ? (
+        <div className="bg-[#070510]/95 border-b border-amber-500/35 px-3 py-1 flex items-center justify-center shrink-0 relative z-20 shadow-md">
           <button
-            onClick={() => setExpandVariations(prev => !prev)}
-            className={`cyber-arcane-btn px-3.5 py-1.5 text-xs font-cyber font-bold uppercase tracking-wider border transition flex items-center gap-1.5 ${
-              expandVariations
-                ? 'bg-purple-900/60 border-amber-400 text-amber-200 shadow-[0_0_15px_rgba(212,175,55,0.3)]'
-                : 'bg-[#0c0a18] border-purple-500/35 text-slate-300 hover:text-white hover:border-amber-400/60'
-            }`}
-            title={expandVariations ? 'Agrupar variações na mesma carta' : 'Mostrar todas as variações individualmente na grade'}
+            type="button"
+            onClick={() => setIsTopBarMinimized(false)}
+            className="px-4 py-0.5 rounded-full bg-purple-950/80 hover:bg-purple-900 border border-amber-500/45 text-amber-300 hover:text-white transition flex items-center gap-1.5 text-[10px] font-cyber font-bold uppercase tracking-wider shadow cursor-pointer"
+            title="Expandir barra superior do Catálogo"
           >
-            <Layers size={14} className={expandVariations ? 'text-amber-400' : 'text-cyan-400'} />
-            {expandVariations ? 'Agrupar Variações' : 'Mostrar Todas as Variações'}
-          </button>
-          {isAdmin && (
-            <button 
-              onClick={onOpenAdmin} 
-              className="p-2 bg-[#0c0a18] border border-purple-500/35 hover:border-amber-400/60 text-slate-400 hover:text-amber-200 transition"
-              title="Admin do Catálogo"
-            >
-              <Settings size={18} />
-            </button>
-          )}
-          <button onClick={onClose} className="p-2 bg-[#0c0a18] border border-amber-500/35 hover:border-rose-500/60 text-slate-300 hover:text-white transition">
-            <X size={20} />
+            <ChevronDown size={15} className="text-amber-400 animate-bounce" />
           </button>
         </div>
-      </div>
+      ) : (
+        <>
+          <div className="bg-[#070510]/95 border-b border-amber-500/35 p-4 flex flex-wrap justify-between items-center gap-3 shadow-[0_10px_30px_rgba(0,0,0,0.85)] z-20 relative">
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="p-2 bg-purple-950/80 border border-amber-500/45 text-amber-300 shadow-[0_0_12px_rgba(212,175,55,0.25)]">
+                <BookOpen size={20} className="shrink-0" />
+              </div>
+              <div>
+                <div className="text-[10px] font-mono uppercase tracking-[0.24em] text-cyan-400">
+                  MATRIZ DE DADOS // GRIMÓRIO DE CARTAS
+                </div>
+                <h2 className="text-xl sm:text-2xl font-cinzel font-black text-amber-50 flex flex-wrap items-center gap-2.5">
+                  <span>Catálogo de Cartas</span>
+                  <span className="text-amber-300 text-xs font-mono font-bold bg-purple-950/80 border border-amber-500/40 px-2.5 py-0.5">
+                    {totalVariationsCount} REGISTROS
+                  </span>
+                  {isAdmin && !expandVariations && totalVariationsCount !== filteredCards.length && (
+                    <span className="text-slate-500 text-xs font-mono font-normal">
+                      ({filteredCards.length} cartas base agrupadas)
+                    </span>
+                  )}
+                </h2>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 sm:gap-3">
+              <button
+                onClick={() => setExpandVariations(prev => !prev)}
+                className={`cyber-arcane-btn px-3.5 py-1.5 text-xs font-cyber font-bold uppercase tracking-wider border transition flex items-center gap-1.5 ${
+                  expandVariations
+                    ? 'bg-purple-900/60 border-amber-400 text-amber-200 shadow-[0_0_15px_rgba(212,175,55,0.3)]'
+                    : 'bg-[#0c0a18] border-purple-500/35 text-slate-300 hover:text-white hover:border-amber-400/60'
+                }`}
+                title={expandVariations ? 'Agrupar variações na mesma carta' : 'Mostrar todas as variações individualmente na grade'}
+              >
+                <Layers size={14} className={expandVariations ? 'text-amber-400' : 'text-cyan-400'} />
+                {expandVariations ? 'Agrupar Variações' : 'Mostrar Todas as Variações'}
+              </button>
+              {isAdmin && (
+                <button 
+                  onClick={onOpenAdmin} 
+                  className="p-2 bg-[#0c0a18] border border-purple-500/35 hover:border-amber-400/60 text-slate-400 hover:text-amber-200 transition"
+                  title="Admin do Catálogo"
+                >
+                  <Settings size={18} />
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setIsTopBarMinimized(true)}
+                className="p-2 bg-[#0c0a18] border border-purple-500/35 hover:border-amber-400/60 text-slate-400 hover:text-amber-200 transition"
+                title="Minimizar barra superior"
+              >
+                <ChevronUp size={18} />
+              </button>
+              <button onClick={onClose} className="p-2 bg-[#0c0a18] border border-amber-500/35 hover:border-rose-500/60 text-slate-300 hover:text-white transition">
+                <X size={20} />
+              </button>
+            </div>
+          </div>
 
       <div className="bg-[#080612]/90 border-b border-purple-500/25 p-4 flex flex-col xl:flex-row gap-4 z-10">
         <div className="flex items-center bg-[#05040a] border border-amber-500/35 overflow-hidden w-full xl:w-80 shrink-0">
@@ -1323,6 +1350,8 @@ const CatalogModal = ({
           </div>
         </div>
       </div>
+      </>
+      )}
 
       <div
         ref={scrollContainerRef}
@@ -1738,7 +1767,7 @@ export default function App() {
   // Check for game mode in URL
   const [isGameMode, setIsGameMode] = useState(false);
   const [isDuelBotOpen, setIsDuelBotOpen] = useState(false);
-  const { textures, saveTextureSlot, showPlaceholdersUI, setShowPlaceholdersUI } = useThemeTextures();
+  const { textures, saveTextureSlot, showPlaceholdersUI, setShowPlaceholdersUI, isChristmasTheme } = useThemeTextures();
   const [isTextureModalOpen, setIsTextureModalOpen] = useState(false);
   const [textureModalSlotId, setTextureModalSlotId] = useState<string | null>(null);
 
@@ -2041,57 +2070,64 @@ export default function App() {
     handleDeclineWelcomePrompt,
     tourSettings,
     saveBlairStepPng,
-    saveDefaultBlairPng
+    saveDefaultBlairPng,
+    saveBlairStepContent,
+    saveWelcomePromptContent
   } = useBlairSiteTour();
 
   const activeTourSlide = isTourModalOpen ? BLAIR_TOUR_SLIDES[tourSlideIndex] : undefined;
   const activeTourEnvView = activeTourSlide?.envView;
 
-  // Abre e navega automaticamente pelas janelas do site conforme o passo atual da apresentação da Blair
-  useEffect(() => {
-    if (!isTourModalOpen || !activeTourEnvView) return;
+  // Abre e navega sincronamente pelas janelas do site conforme o passo atual da apresentação da Blair
+  const [prevTourSyncKey, setPrevTourSyncKey] = useState<string>('');
+  const currentTourSyncKey = isTourModalOpen && activeTourEnvView ? `${tourSlideIndex}:${activeTourEnvView}` : '';
+  if (currentTourSyncKey !== prevTourSyncKey) {
+    setPrevTourSyncKey(currentTourSyncKey);
+    if (isTourModalOpen && activeTourEnvView) {
+      setIsManualOpen(false);
+      setIsAlbumOpen(false);
+      setIsSavedDecksOpen(false);
+      setIsCollectorsRankingOpen(false);
+      setIsChampionshipHistoryOpen(false);
+      setIsUserProfileOpen(false);
+      setIsDuelBotOpen(false);
+      setAdminMode('none');
+      setSelectedType(null);
+      setSelectedProduct(null);
 
-    setIsManualOpen(false);
-    setIsAlbumOpen(false);
-    setIsSavedDecksOpen(false);
-    setIsCollectorsRankingOpen(false);
-    setIsChampionshipHistoryOpen(false);
-    setIsUserProfileOpen(false);
-    setIsDuelBotOpen(false);
-    setAdminMode('none');
-    setSelectedType(null);
-    setSelectedProduct(null);
-
-    setIsCatalogOpen(
-      activeTourEnvView === 'catalog_grid' || activeTourEnvView === 'catalog_card_open'
-    );
-    setIsLoreOpen(
-      activeTourEnvView === 'lore_home' ||
-        activeTourEnvView === 'lore_map' ||
-        activeTourEnvView === 'lore_relations' ||
-        activeTourEnvView === 'lore_quiz'
-    );
-    setIsGameOpen(activeTourEnvView === 'game_setup' || activeTourEnvView === 'game_board');
-    setIsTournamentOpen(
-      activeTourEnvView === 'tournament_config' || activeTourEnvView === 'tournament_bracket'
-    );
-    setIsDeckBuilderOpen(
-      activeTourEnvView === 'deckbuilder_build' ||
-        activeTourEnvView === 'deckbuilder_mulligan' ||
-        activeTourEnvView === 'deckbuilder_neural' ||
-        activeTourEnvView === 'deckbuilder_compare' ||
-        activeTourEnvView === 'deckbuilder_stats'
-    );
-    setIsPopularCardsOpen(activeTourEnvView === 'popular_modal');
-    setIsUserMenuOpen(activeTourEnvView === 'home_account');
-    if (activeTourEnvView === 'store_modal') {
-      setStoreInitialOrderId(null);
-      setStoreInitialTab('vitrine');
-      setIsBuyModalOpen(true);
-    } else {
-      setIsBuyModalOpen(false);
+      setIsCatalogOpen(
+        activeTourEnvView === 'catalog_grid' || activeTourEnvView === 'catalog_card_open'
+      );
+      setIsLoreOpen(
+        activeTourEnvView === 'lore_home' ||
+          activeTourEnvView === 'lore_map' ||
+          activeTourEnvView === 'lore_relations' ||
+          activeTourEnvView === 'lore_quiz' ||
+          activeTourEnvView === 'lore_music' ||
+          activeTourEnvView === 'lore_archives'
+      );
+      setIsGameOpen(activeTourEnvView === 'game_setup' || activeTourEnvView === 'game_board');
+      setIsTournamentOpen(
+        activeTourEnvView === 'tournament_config' || activeTourEnvView === 'tournament_bracket'
+      );
+      setIsDeckBuilderOpen(
+        activeTourEnvView === 'deckbuilder_build' ||
+          activeTourEnvView === 'deckbuilder_mulligan' ||
+          activeTourEnvView === 'deckbuilder_neural' ||
+          activeTourEnvView === 'deckbuilder_compare' ||
+          activeTourEnvView === 'deckbuilder_stats'
+      );
+      setIsPopularCardsOpen(activeTourEnvView === 'popular_modal');
+      setIsUserMenuOpen(activeTourEnvView === 'home_account');
+      if (activeTourEnvView === 'store_modal') {
+        setStoreInitialOrderId(null);
+        setStoreInitialTab('vitrine');
+        setIsBuyModalOpen(true);
+      } else {
+        setIsBuyModalOpen(false);
+      }
     }
-  }, [isTourModalOpen, activeTourEnvView]);
+  }
 
   const handleCloseTour = () => {
     setIsTourModalOpen(false);
@@ -2276,6 +2312,10 @@ export default function App() {
               ? 'relations_tree'
               : activeTourEnvView === 'lore_quiz'
               ? 'daily_quiz'
+              : activeTourEnvView === 'lore_music'
+              ? 'music'
+              : activeTourEnvView === 'lore_archives'
+              ? 'archives'
               : activeTourEnvView === 'lore_home'
               ? 'home'
               : undefined
@@ -2469,7 +2509,7 @@ export default function App() {
       />
 
       {/* Navbar Cyber-Arcana (Dark Magic x High Magic x Cyberpunk) - Oculta quando outra janela está aberta */}
-      <nav className={`${isOnHomePage ? 'fixed' : 'hidden'} w-full z-50 transition-all duration-300 border-b ${scrolled ? 'bg-[#05040a]/95 border-amber-500/30 py-2.5 shadow-[0_10px_35px_rgba(0,0,0,0.85)] backdrop-blur-xl' : 'bg-gradient-to-b from-[#05040a]/95 via-[#05040a]/75 to-transparent border-amber-500/15 py-3.5'}`}>
+      <nav className={`${isOnHomePage ? 'fixed' : 'hidden'} w-full z-50 transition-all duration-300 border-b ${scrolled ? (isChristmasTheme ? 'bg-[#0b0305]/95 border-red-500/45 py-2.5 shadow-[0_10px_35px_rgba(220,38,38,0.22)] backdrop-blur-xl' : 'bg-[#05040a]/95 border-amber-500/30 py-2.5 shadow-[0_10px_35px_rgba(0,0,0,0.85)] backdrop-blur-xl') : (isChristmasTheme ? 'bg-gradient-to-b from-[#0b0305]/95 via-[#0b0305]/75 to-transparent border-red-500/25 py-3.5' : 'bg-gradient-to-b from-[#05040a]/95 via-[#05040a]/75 to-transparent border-amber-500/15 py-3.5')}`}>
         <ArcaneCyberTextureLayer
           slot={textures.navbar_hud_texture}
           variant="cyber-grid"
@@ -2592,14 +2632,16 @@ export default function App() {
                   setIsTextureModalOpen(true);
                 }}
                 className={`cyber-arcane-btn px-2.5 py-1.5 text-[10px] font-mono font-bold uppercase tracking-wider border transition flex items-center gap-1 whitespace-nowrap ${
-                  showPlaceholdersUI
+                  isChristmasTheme
+                    ? 'bg-red-600/30 border-red-400 text-red-100 shadow-[0_0_14px_rgba(239,68,68,0.45)]'
+                    : showPlaceholdersUI
                     ? 'bg-amber-500/25 border-amber-400 text-amber-200 shadow-[0_0_12px_rgba(245,158,11,0.3)]'
                     : 'bg-[#0d0b18]/90 border-amber-500/40 text-amber-300 hover:bg-amber-950/50'
                 }`}
-                title="Gerenciar Texturas & Placeholders do Tema (TEX-01..07)"
+                title="Gerenciar Temas Animados & Texturas (TEX-01..11)"
               >
-                <Sparkles size={12} className="text-amber-400" />
-                <span>Texturas</span>
+                <Sparkles size={12} className={isChristmasTheme ? 'text-red-300' : 'text-amber-400'} />
+                <span>{isChristmasTheme ? '🎄 Tema Natalino' : 'Temas & Texturas'}</span>
               </button>
             )}
 
@@ -3070,12 +3112,12 @@ export default function App() {
         <div data-tour-id="tour-hero-main" className="container mx-auto px-4 sm:px-6 relative z-20 text-center">
           {homeSettings ? (
             <div className="max-w-4xl mx-auto relative py-6 px-4 sm:px-8">
-              <div className="inline-flex items-center gap-2.5 px-3.5 py-1 mb-5 bg-[#090714]/85 border border-amber-500/35 shadow-[0_0_25px_rgba(168,85,247,0.2)]">
-                <span className={`w-1.5 h-1.5 rotate-45 bg-cyan-400 ${siteEffectsEnabled ? 'animate-pulse' : ''}`} />
-                <h2 className="font-mono text-[11px] sm:text-xs tracking-[0.28em] uppercase drop-shadow-md" style={{ color: homeSettings.primaryColor || '#e2c15a' }}>
+              <div className={`inline-flex items-center gap-2.5 px-3.5 py-1 mb-5 bg-[#090714]/85 border ${isChristmasTheme ? 'border-red-500/50 shadow-[0_0_25px_rgba(239,68,68,0.3)]' : 'border-amber-500/35 shadow-[0_0_25px_rgba(168,85,247,0.2)]'}`}>
+                <span className={`w-1.5 h-1.5 rotate-45 ${isChristmasTheme ? 'bg-red-500' : 'bg-cyan-400'} ${siteEffectsEnabled ? 'animate-pulse' : ''}`} />
+                <h2 className="font-mono text-[11px] sm:text-xs tracking-[0.28em] uppercase drop-shadow-md" style={{ color: isChristmasTheme ? '#fca5a5' : (homeSettings.primaryColor || '#e2c15a') }}>
                   {homeSettings.topSubtitle ?? ''}
                 </h2>
-                <span className={`w-1.5 h-1.5 rotate-45 bg-amber-400 ${siteEffectsEnabled ? 'animate-pulse' : ''}`} />
+                <span className={`w-1.5 h-1.5 rotate-45 ${isChristmasTheme ? 'bg-amber-400' : 'bg-amber-400'} ${siteEffectsEnabled ? 'animate-pulse' : ''}`} />
               </div>
 
               {/* Título Principal + SideText em layout flexível responsivo (sem estourar nem sobrepor) */}
@@ -3084,9 +3126,9 @@ export default function App() {
                   className={`font-cinzel text-4xl sm:text-6xl md:text-8xl font-black tracking-tight ${siteEffectsEnabled ? (homeSettings.titleEffect === 'glitch' ? 'glitch-text' : homeSettings.titleEffect === 'pulse' ? 'animate-pulse' : '') : ''}`} 
                   data-text={homeSettings.title ?? ''}
                   style={{
-                    color: homeSettings.primaryColor || '#d4af37',
+                    color: isChristmasTheme ? '#ef4444' : (homeSettings.primaryColor || '#d4af37'),
                     filter: siteEffectsEnabled
-                      ? `drop-shadow(0 0 ${homeSettings.titleShadowIntensity ?? 18}px ${homeSettings.titleShadowColor || homeSettings.primaryColor || '#9333ea'})`
+                      ? `drop-shadow(0 0 ${homeSettings.titleShadowIntensity ?? 18}px ${isChristmasTheme ? '#dc2626' : (homeSettings.titleShadowColor || homeSettings.primaryColor || '#9333ea')})`
                       : 'none'
                   }}
                 >
@@ -3097,9 +3139,9 @@ export default function App() {
                     className={`text-2xl sm:text-4xl md:text-6xl font-cyber font-bold tracking-wider pointer-events-none ${siteEffectsEnabled ? (homeSettings.sideTextEffect === 'flicker' ? 'animate-flicker-rare' : homeSettings.sideTextEffect === 'pulse' ? 'animate-pulse' : homeSettings.sideTextEffect === 'glitch' ? 'glitch-text' : '') : ''}`} 
                     data-text={homeSettings.sideText}
                     style={{ 
-                      color: homeSettings.sideTextColor || '#22d3ee',
+                      color: isChristmasTheme ? '#fbbf24' : (homeSettings.sideTextColor || '#22d3ee'),
                       filter: siteEffectsEnabled
-                        ? `drop-shadow(0 0 ${homeSettings.sideTextShadowIntensity ?? 12}px ${homeSettings.sideTextShadowColor || homeSettings.sideTextColor || '#06b6d4'})`
+                        ? `drop-shadow(0 0 ${homeSettings.sideTextShadowIntensity ?? 12}px ${isChristmasTheme ? '#ef4444' : (homeSettings.sideTextShadowColor || homeSettings.sideTextColor || '#06b6d4')})`
                         : 'none'
                     }}
                   >
@@ -3294,10 +3336,14 @@ export default function App() {
         onAccept={handleAcceptWelcomePrompt}
         onDecline={handleDeclineWelcomePrompt}
         blairPngUrl={
+          tourSettings.welcomePromptPngUrl ||
           tourSettings.stepBlairPngUrls?.['step_01_welcome'] ||
           tourSettings.defaultBlairPngUrl ||
           ''
         }
+        isAdmin={isAdmin}
+        tourSettings={tourSettings}
+        onSaveWelcomePrompt={saveWelcomePromptContent}
       />
 
       {/* Apresentação Dinâmica "Conheça o Site" Guiada pela Blair */}
@@ -3310,6 +3356,7 @@ export default function App() {
         tourSettings={tourSettings}
         onSaveStepPng={saveBlairStepPng}
         onSaveDefaultPng={saveDefaultBlairPng}
+        onSaveStepContent={saveBlairStepContent}
       />
     </div>
   );

@@ -9,7 +9,8 @@ import {
   Wand2,
   MousePointer,
   Zap,
-  ZapOff
+  ZapOff,
+  Gift
 } from 'lucide-react';
 import { doc, onSnapshot, setDoc } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
@@ -21,6 +22,7 @@ export type TextureAnimationEffect =
   | 'abyssal_embers'
   | 'cyber_circuit_pulse'
   | 'ether_distortion'
+  | 'christmas_festive'
   | 'none';
 
 export type ImageMotionEffect =
@@ -41,7 +43,12 @@ export interface ThemeTextureSlot {
   id: string;
   code: string;
   label: string;
-  themePillar: 'Dark Magic' | 'Alta Magia' | 'Cyberpunk Futurista' | 'Híbrido Cyber-Arcano';
+  themePillar:
+    | 'Dark Magic'
+    | 'Alta Magia'
+    | 'Cyberpunk Futurista'
+    | 'Híbrido Cyber-Arcano'
+    | 'Natalino Festivo';
   recommendedSize: string;
   description: string;
   imageUrl: string;
@@ -56,6 +63,8 @@ export interface ThemeTextureSlot {
 }
 
 export const TEXTURE_ANIMATION_LABELS: Record<TextureAnimationEffect, string> = {
+  christmas_festive:
+    '🎄 Tema Natalino • Flocos de Neve, Bolas de Natal Animadas & Brilho Vermelho',
   arcane_matrix_hybrid: 'Fusão Cyber-Arcana (Runas Giratórias + Circuitos Neon + Brasas)',
   runic_astrolabe: 'Alta Magia • Astrolábio Alquímico & Anéis Rúnicos Giratórios',
   abyssal_embers: 'Dark Magic • Névoa Abissal, Sigilos Ocultos & Brasas Ascendentes',
@@ -281,6 +290,26 @@ export const DEFAULT_THEME_TEXTURES: Record<string, ThemeTextureSlot> = {
   }
 };
 
+const syncChristmasThemeDomClass = (isChristmas: boolean) => {
+  if (typeof document === 'undefined') return;
+  document.documentElement.classList.toggle('ld-theme-christmas', isChristmas);
+  if (document.body) {
+    document.body.classList.toggle('ld-theme-christmas', isChristmas);
+  }
+};
+
+export const isChristmasThemeActiveInSlots = (
+  slots: Record<string, ThemeTextureSlot>
+): boolean => {
+  const list = Object.values(slots);
+  if (list.length === 0) return false;
+  const christmasCount = list.filter((s) => s?.animationEffect === 'christmas_festive').length;
+  return (
+    slots.hero_bg_texture?.animationEffect === 'christmas_festive' ||
+    christmasCount >= Math.ceil(list.length / 2)
+  );
+};
+
 export const useThemeTextures = () => {
   const [textures, setTextures] = useState<Record<string, ThemeTextureSlot>>(() => {
     const cached = readBrowserCache<Record<string, ThemeTextureSlot>>('ld_theme_textures_v3');
@@ -297,6 +326,11 @@ export const useThemeTextures = () => {
   });
 
   const [showPlaceholdersUI, setShowPlaceholdersUI] = useState<boolean>(false);
+  const isChristmasTheme = isChristmasThemeActiveInSlots(textures);
+
+  useEffect(() => {
+    syncChristmasThemeDomClass(isChristmasTheme);
+  }, [isChristmasTheme]);
 
   useEffect(() => {
     const unsub = onSnapshot(
@@ -312,6 +346,7 @@ export const useThemeTextures = () => {
           });
           setTextures(merged);
           writeBrowserCache('ld_theme_textures_v3', merged);
+          syncChristmasThemeDomClass(isChristmasThemeActiveInSlots(merged));
         }
       },
       (err) => {
@@ -332,6 +367,7 @@ export const useThemeTextures = () => {
     };
     setTextures(updated);
     writeBrowserCache('ld_theme_textures_v3', updated);
+    syncChristmasThemeDomClass(isChristmasThemeActiveInSlots(updated));
     await setDoc(doc(db, 'settings', 'theme_textures'), updated, { merge: true });
   };
 
@@ -339,7 +375,8 @@ export const useThemeTextures = () => {
     textures,
     saveTextureSlot,
     showPlaceholdersUI,
-    setShowPlaceholdersUI
+    setShowPlaceholdersUI,
+    isChristmasTheme
   };
 };
 
@@ -467,6 +504,7 @@ interface SparkTrailParticle {
   life: number;
   maxLife: number;
   color: string;
+  isSnowflake?: boolean;
 }
 
 interface ShockwaveRipple {
@@ -479,14 +517,237 @@ interface ShockwaveRipple {
 }
 
 /**
+ * Helper to draw a detailed 6-branched crystalline snowflake on Canvas
+ */
+const drawCrystalSnowflake = (
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  radius: number,
+  rotation: number,
+  alpha: number,
+  tintColor: string = '#ffffff'
+) => {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(rotation);
+  ctx.globalAlpha = Math.min(1, Math.max(0.05, alpha));
+  ctx.strokeStyle = tintColor;
+  ctx.lineWidth = Math.max(1, radius * 0.16);
+  ctx.lineCap = 'round';
+
+  for (let i = 0; i < 6; i++) {
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(0, -radius);
+
+    // Side crystalline branches
+    const b1 = radius * 0.52;
+    const b1Len = radius * 0.34;
+    ctx.moveTo(0, -b1);
+    ctx.lineTo(-b1Len * 0.7, -b1 - b1Len * 0.7);
+    ctx.moveTo(0, -b1);
+    ctx.lineTo(b1Len * 0.7, -b1 - b1Len * 0.7);
+
+    if (radius > 5.5) {
+      const b2 = radius * 0.78;
+      const b2Len = radius * 0.22;
+      ctx.moveTo(0, -b2);
+      ctx.lineTo(-b2Len * 0.7, -b2 - b2Len * 0.7);
+      ctx.moveTo(0, -b2);
+      ctx.lineTo(b2Len * 0.7, -b2 - b2Len * 0.7);
+    }
+
+    ctx.stroke();
+    ctx.rotate(Math.PI / 3);
+  }
+
+  // Glowing center crystal core
+  ctx.fillStyle = '#ffffff';
+  ctx.beginPath();
+  ctx.arc(0, 0, Math.max(1, radius * 0.18), 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+};
+
+/**
+ * Helper to draw an animated 3D-shaded hanging or floating Christmas Bauble (Bola de Natal)
+ */
+const drawChristmasBauble = (
+  ctx: CanvasRenderingContext2D,
+  anchorX: number,
+  anchorY: number,
+  ballX: number,
+  ballY: number,
+  radius: number,
+  angle: number,
+  styleIndex: number,
+  elapsed: number,
+  hasString: boolean
+) => {
+  ctx.save();
+
+  // 1. Hanging Golden Cord from top
+  if (hasString) {
+    const cordGrad = ctx.createLinearGradient(anchorX, anchorY, ballX, ballY - radius);
+    cordGrad.addColorStop(0, 'rgba(251, 191, 36, 0.35)');
+    cordGrad.addColorStop(0.5, 'rgba(239, 68, 68, 0.75)');
+    cordGrad.addColorStop(1, 'rgba(251, 191, 36, 0.95)');
+    ctx.beginPath();
+    ctx.strokeStyle = cordGrad;
+    ctx.lineWidth = 1.35;
+    ctx.moveTo(anchorX, anchorY);
+    ctx.lineTo(ballX, ballY - radius * 0.95);
+    ctx.stroke();
+
+    // Small festive bow / pin at anchor
+    ctx.fillStyle = '#ef4444';
+    ctx.beginPath();
+    ctx.arc(anchorX, anchorY + 2, 2.6, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  ctx.translate(ballX, ballY);
+  ctx.rotate(angle);
+
+  // 2. Soft Crimson / Gold Festive Aura Glow behind Bauble
+  const isGoldVariant = styleIndex % 4 === 2;
+  const isRubyStripeVariant = styleIndex % 4 === 1;
+  const glowRadius = radius * 2.15;
+  const aura = ctx.createRadialGradient(0, 0, radius * 0.3, 0, 0, glowRadius);
+  if (isGoldVariant) {
+    aura.addColorStop(0, 'rgba(251, 191, 36, 0.38)');
+    aura.addColorStop(0.5, 'rgba(239, 68, 68, 0.18)');
+    aura.addColorStop(1, 'rgba(0, 0, 0, 0)');
+  } else {
+    aura.addColorStop(0, 'rgba(239, 68, 68, 0.45)');
+    aura.addColorStop(0.55, 'rgba(220, 38, 38, 0.18)');
+    aura.addColorStop(1, 'rgba(0, 0, 0, 0)');
+  }
+  ctx.fillStyle = aura;
+  ctx.beginPath();
+  ctx.arc(0, 0, glowRadius, 0, Math.PI * 2);
+  ctx.fill();
+
+  // 3. Golden Crown Cap & Hanging Ring at top of Christmas Ball
+  const capW = Math.max(5, radius * 0.46);
+  const capH = Math.max(3.5, radius * 0.28);
+  ctx.strokeStyle = '#fbbf24';
+  ctx.lineWidth = 1.25;
+  ctx.beginPath();
+  ctx.arc(0, -radius - capH * 0.75, capW * 0.28, 0, Math.PI * 2);
+  ctx.stroke();
+
+  const capGrad = ctx.createLinearGradient(-capW / 2, -radius - capH, capW / 2, -radius);
+  capGrad.addColorStop(0, '#fde68a');
+  capGrad.addColorStop(0.5, '#d97706');
+  capGrad.addColorStop(1, '#fbbf24');
+  ctx.fillStyle = capGrad;
+  ctx.fillRect(-capW / 2, -radius - capH * 0.55, capW, capH * 0.75);
+
+  // 4. Main 3D Metallic Sphere Body (Primary Color = Vibrant Christmas Red)
+  const sphereGrad = ctx.createRadialGradient(
+    -radius * 0.34,
+    -radius * 0.34,
+    radius * 0.08,
+    0,
+    0,
+    radius
+  );
+  if (isGoldVariant) {
+    sphereGrad.addColorStop(0, '#fffbeb');
+    sphereGrad.addColorStop(0.25, '#fbbf24');
+    sphereGrad.addColorStop(0.68, '#d97706');
+    sphereGrad.addColorStop(1, '#78350f');
+  } else if (isRubyStripeVariant) {
+    sphereGrad.addColorStop(0, '#ffe4e6');
+    sphereGrad.addColorStop(0.22, '#f43f5e');
+    sphereGrad.addColorStop(0.65, '#be123c');
+    sphereGrad.addColorStop(1, '#4c0519');
+  } else {
+    sphereGrad.addColorStop(0, '#fecaca');
+    sphereGrad.addColorStop(0.22, '#ef4444');
+    sphereGrad.addColorStop(0.65, '#b91c1c');
+    sphereGrad.addColorStop(1, '#450a0a');
+  }
+
+  ctx.beginPath();
+  ctx.arc(0, 0, radius, 0, Math.PI * 2);
+  ctx.fillStyle = sphereGrad;
+  ctx.fill();
+
+  // Clip inside sphere for festive bands & motifs
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(0, 0, radius, 0, Math.PI * 2);
+  ctx.clip();
+
+  // Festive Gold / White Equatorial Band & Pattern on the Christmas Ball
+  ctx.strokeStyle = isGoldVariant ? 'rgba(220, 38, 38, 0.85)' : 'rgba(253, 224, 71, 0.85)';
+  ctx.lineWidth = Math.max(1.4, radius * 0.15);
+  ctx.beginPath();
+  ctx.moveTo(-radius * 1.1, 0);
+  ctx.quadraticCurveTo(0, radius * 0.24, radius * 1.1, 0);
+  ctx.stroke();
+
+  if (radius >= 11) {
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.55)';
+    ctx.lineWidth = 0.9;
+    ctx.setLineDash([2.5, 2.5]);
+    ctx.beginPath();
+    ctx.moveTo(-radius * 1.1, -radius * 0.24);
+    ctx.quadraticCurveTo(0, 0, radius * 1.1, -radius * 0.24);
+    ctx.moveTo(-radius * 1.1, radius * 0.24);
+    ctx.quadraticCurveTo(0, radius * 0.48, radius * 1.1, radius * 0.24);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+  ctx.restore();
+
+  // 5. Outer Metallic Rim Highlight
+  ctx.strokeStyle = isGoldVariant ? 'rgba(253, 224, 71, 0.65)' : 'rgba(248, 113, 113, 0.65)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.arc(0, 0, radius, 0, Math.PI * 2);
+  ctx.stroke();
+
+  // 6. Specular Glossy Light Reflection & Twinkle Star
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.68)';
+  ctx.beginPath();
+  ctx.ellipse(
+    -radius * 0.34,
+    -radius * 0.34,
+    radius * 0.22,
+    radius * 0.12,
+    -Math.PI / 4,
+    0,
+    Math.PI * 2
+  );
+  ctx.fill();
+
+  const twinkle = 0.4 + 0.6 * Math.abs(Math.sin(elapsed * 3.2 + styleIndex * 1.7));
+  if (twinkle > 0.65) {
+    ctx.strokeStyle = `rgba(255, 255, 255, ${twinkle})`;
+    ctx.lineWidth = 1.1;
+    const sx = -radius * 0.36;
+    const sy = -radius * 0.36;
+    const sr = radius * 0.24 * twinkle;
+    ctx.beginPath();
+    ctx.moveTo(sx - sr, sy);
+    ctx.lineTo(sx + sr, sy);
+    ctx.moveTo(sx, sy - sr);
+    ctx.lineTo(sx, sy + sr);
+    ctx.stroke();
+  }
+
+  ctx.restore();
+};
+
+/**
  * Real-Time HTML5 Canvas Procedural Texture & Mouse-Reactive Shader-Like Engine
  * Renders live animated Dark Magic embers, High Magic stardust & sigil orbits,
- * Cyberpunk neon circuit data packets, AND interactive mouse effects:
- * - Cursor Vortex / Gravitational Repulsion on particles
- * - Neural / Alchemical Constellation tethers connecting nearby nodes to the cursor
- * - Trailing arcane sparks emitted along the cursor path
- * - Expanding shockwave ripples on mouse click or fast swipe
- * - Rotating Runic / Cyber HUD reticle tracking the cursor
+ * Cyberpunk neon circuit data packets, Festive Christmas Snowflakes & Swinging Christmas Ornaments,
+ * AND interactive mouse effects.
  */
 const ProceduralAnimatedCanvas: React.FC<{
   effect: TextureAnimationEffect;
@@ -535,16 +796,23 @@ const ProceduralAnimatedCanvas: React.FC<{
 
     const spawnTrailSpark = (x: number, y: number, mvx: number, mvy: number) => {
       if (trailSparks.length > 48) return;
-      const palette = ['#d4af37', '#06b6d4', '#a855f7', '#f43f5e'];
+      const palette =
+        effect === 'christmas_festive'
+          ? ['#ef4444', '#ffffff', '#fbbf24', '#f43f5e']
+          : ['#d4af37', '#06b6d4', '#a855f7', '#f43f5e'];
       trailSparks.push({
         x: x + (Math.random() - 0.5) * 14,
         y: y + (Math.random() - 0.5) * 14,
         vx: (Math.random() - 0.5) * 1.4 - mvx * 0.08,
-        vy: -0.6 - Math.random() * 1.2 - mvy * 0.08,
-        r: 1.2 + Math.random() * 2.2,
+        vy:
+          effect === 'christmas_festive'
+            ? 0.4 + Math.random() * 1.1 - mvy * 0.06
+            : -0.6 - Math.random() * 1.2 - mvy * 0.08,
+        r: 1.5 + Math.random() * 2.6,
         life: 0,
-        maxLife: 24 + Math.random() * 22,
-        color: palette[Math.floor(Math.random() * palette.length)]
+        maxLife: 26 + Math.random() * 22,
+        color: palette[Math.floor(Math.random() * palette.length)],
+        isSnowflake: effect === 'christmas_festive' && Math.random() > 0.35
       });
     };
 
@@ -556,7 +824,14 @@ const ProceduralAnimatedCanvas: React.FC<{
         radius: 6,
         maxRadius: maxR,
         alpha: 0.85,
-        color: Math.random() > 0.5 ? '#06b6d4' : '#d4af37'
+        color:
+          effect === 'christmas_festive'
+            ? Math.random() > 0.35
+              ? '#ef4444'
+              : '#fbbf24'
+            : Math.random() > 0.5
+            ? '#06b6d4'
+            : '#d4af37'
       });
     };
 
@@ -649,21 +924,67 @@ const ProceduralAnimatedCanvas: React.FC<{
     window.addEventListener('pointermove', handleWindowPointerMove, { passive: true });
     window.addEventListener('pointerdown', handleWindowPointerDown, { passive: true });
 
-    // 1. Particles (Embers / Stardust / Void Motes)
-    const particleCount = Math.min(64, Math.max(22, Math.floor((width * height) / 15000)));
+    // 1. Particles (Embers / Stardust / Void Motes / Crystalline Snowflakes)
+    const isChristmas = effect === 'christmas_festive';
+    const particleCount = isChristmas
+      ? Math.min(78, Math.max(28, Math.floor((width * height) / 11500)))
+      : Math.min(64, Math.max(22, Math.floor((width * height) / 15000)));
+
     const particles = Array.from({ length: particleCount }, (_, i) => ({
       x: Math.random() * width,
       y: Math.random() * height,
-      r: 1.1 + Math.random() * 2.4,
-      vx: (Math.random() - 0.5) * 0.48,
-      vy: -0.35 - Math.random() * 0.75,
+      r: isChristmas
+        ? i % 3 === 0
+          ? 4.5 + Math.random() * 5.2
+          : 1.6 + Math.random() * 2.8
+        : 1.1 + Math.random() * 2.4,
+      vx: (Math.random() - 0.5) * (isChristmas ? 0.65 : 0.48),
+      vy: isChristmas
+        ? 0.45 + Math.random() * 1.15 // Falling snow downward
+        : -0.35 - Math.random() * 0.75,
       pushVx: 0,
       pushVy: 0,
       phase: Math.random() * Math.PI * 2,
-      colorType: i % 3 // 0: gold, 1: cyan, 2: violet/crimson
+      rotation: Math.random() * Math.PI * 2,
+      rotSpeed: (Math.random() - 0.5) * 1.6,
+      isCrystalSnowflake: isChristmas && i % 2 === 0,
+      colorType: i % 3 // 0: primary, 1: secondary, 2: accent
     }));
 
-    // 2. Cyberpunk Circuit Data Pulses
+    // 2. Animated Hanging & Floating Christmas Baubles (Bolas de Natal)
+    const hangingBaubleCount = isChristmas
+      ? Math.min(11, Math.max(4, Math.floor(width / 155)))
+      : 0;
+    const hangingBaubles = Array.from({ length: hangingBaubleCount }, (_, i) => {
+      const spacing = width / (hangingBaubleCount + 1);
+      return {
+        anchorXRatio: (i + 1) / (hangingBaubleCount + 1),
+        anchorX: spacing * (i + 1),
+        stringLen: 24 + (i % 3) * 18 + (i % 2) * 10,
+        radius: 10 + (i % 3) * 3.5,
+        swingFreq: 1.35 + (i % 4) * 0.22,
+        swingAmp: 0.16 + (i % 3) * 0.05,
+        swingPhase: i * 1.15,
+        mouseVelAngle: 0,
+        mouseOffsetAngle: 0,
+        styleIndex: i
+      };
+    });
+
+    const floatingBaubleCount = isChristmas
+      ? Math.min(8, Math.max(3, Math.floor((width * height) / 95000)))
+      : 0;
+    const floatingBaubles = Array.from({ length: floatingBaubleCount }, (_, i) => ({
+      x: Math.random() * width,
+      y: height * 0.25 + Math.random() * (height * 0.65),
+      vx: (Math.random() - 0.5) * 0.35,
+      vy: (Math.random() - 0.5) * 0.25,
+      radius: 7.5 + (i % 3) * 2.8,
+      phase: i * 1.4,
+      styleIndex: i + 1
+    }));
+
+    // 3. Cyberpunk Circuit Data Pulses
     const pulseCount =
       effect === 'cyber_circuit_pulse' || effect === 'arcane_matrix_hybrid' ? 12 : 4;
     const circuitPulses = Array.from({ length: pulseCount }, (_, i) => ({
@@ -686,7 +1007,7 @@ const ProceduralAnimatedCanvas: React.FC<{
       mouse.x += (mouse.targetX - mouse.x) * 0.18;
       mouse.y += (mouse.targetY - mouse.y) * 0.18;
 
-      // A. MOUSE-REACTIVE ARCANE LANTERN / SPOTLIGHT GLOW
+      // A. MOUSE-REACTIVE ARCANE / FESTIVE CRIMSON LANTERN GLOW
       if (mouse.isInside && mouseEffect !== 'none') {
         const spotRadius = Math.min(340, Math.max(180, width * 0.24));
         const spotGrad = ctx.createRadialGradient(
@@ -697,7 +1018,12 @@ const ProceduralAnimatedCanvas: React.FC<{
           mouse.y,
           spotRadius
         );
-        if (mouseEffect === 'cyber_scanner_lock') {
+        if (effect === 'christmas_festive') {
+          spotGrad.addColorStop(0, 'rgba(239, 68, 68, 0.28)');
+          spotGrad.addColorStop(0.45, 'rgba(251, 191, 36, 0.12)');
+          spotGrad.addColorStop(0.8, 'rgba(255, 255, 255, 0.06)');
+          spotGrad.addColorStop(1, 'rgba(5, 4, 10, 0)');
+        } else if (mouseEffect === 'cyber_scanner_lock') {
           spotGrad.addColorStop(0, 'rgba(6, 182, 212, 0.22)');
           spotGrad.addColorStop(0.45, 'rgba(212, 175, 55, 0.09)');
           spotGrad.addColorStop(1, 'rgba(5, 4, 10, 0)');
@@ -717,11 +1043,12 @@ const ProceduralAnimatedCanvas: React.FC<{
         ctx.fill();
       }
 
-      // B. ABYSSAL MIASMA / ETHER WAVES (also bends near the mouse!)
+      // B. ABYSSAL MIASMA / ETHER WAVES / FESTIVE CRIMSON RIBBONS
       if (
         effect === 'abyssal_embers' ||
         effect === 'ether_distortion' ||
-        effect === 'arcane_matrix_hybrid'
+        effect === 'arcane_matrix_hybrid' ||
+        effect === 'christmas_festive'
       ) {
         const waveCount = effect === 'ether_distortion' ? 3 : 2;
         for (let w = 0; w < waveCount; w++) {
@@ -745,15 +1072,104 @@ const ProceduralAnimatedCanvas: React.FC<{
             if (x === 0) ctx.moveTo(x, y);
             else ctx.lineTo(x, y);
           }
-          ctx.strokeStyle =
-            w === 0
-              ? 'rgba(168, 85, 247, 0.22)'
-              : w === 1
-              ? 'rgba(6, 182, 212, 0.18)'
-              : 'rgba(225, 29, 72, 0.18)';
+          if (effect === 'christmas_festive') {
+            ctx.strokeStyle =
+              w === 0 ? 'rgba(239, 68, 68, 0.28)' : 'rgba(251, 191, 36, 0.22)';
+          } else {
+            ctx.strokeStyle =
+              w === 0
+                ? 'rgba(168, 85, 247, 0.22)'
+                : w === 1
+                ? 'rgba(6, 182, 212, 0.18)'
+                : 'rgba(225, 29, 72, 0.18)';
+          }
           ctx.lineWidth = 2;
           ctx.stroke();
         }
+      }
+
+      // B2. CHRISTMAS FESTIVE GARLAND LIGHTS & ANIMATED BAUBLES (BOLAS DE NATAL)
+      if (effect === 'christmas_festive') {
+        // Twinkling festive light garland along top edge
+        if (hangingBaubles.length > 1) {
+          ctx.beginPath();
+          for (let i = 0; i <= width; i += 24) {
+            const sag = Math.sin((i / Math.max(1, width)) * Math.PI * 3) * 10 + 6;
+            if (i === 0) ctx.moveTo(i, sag);
+            else ctx.lineTo(i, sag);
+          }
+          ctx.strokeStyle = 'rgba(239, 68, 68, 0.32)';
+          ctx.lineWidth = 1.2;
+          ctx.stroke();
+        }
+
+        // Floating background Christmas ornaments
+        floatingBaubles.forEach((fb) => {
+          fb.x += fb.vx * speed + Math.sin(elapsed * 0.9 + fb.phase) * 0.22;
+          fb.y += fb.vy * speed + Math.cos(elapsed * 1.1 + fb.phase) * 0.22;
+          if (fb.x < -25) fb.x = width + 25;
+          if (fb.x > width + 25) fb.x = -25;
+          if (fb.y < 20) fb.y = height - 20;
+          if (fb.y > height - 15) fb.y = 25;
+
+          const tilt = Math.sin(elapsed * 1.3 + fb.phase) * 0.22;
+          drawChristmasBauble(
+            ctx,
+            fb.x,
+            0,
+            fb.x,
+            fb.y,
+            fb.radius,
+            tilt,
+            fb.styleIndex,
+            elapsed,
+            false
+          );
+        });
+
+        // Hanging swinging 3D Christmas baubles at the top (reactive to mouse!)
+        hangingBaubles.forEach((hb) => {
+          hb.anchorX = hb.anchorXRatio * width;
+          const baseAngle =
+            Math.sin(elapsed * hb.swingFreq + hb.swingPhase) * hb.swingAmp;
+          const totalAngle = baseAngle + hb.mouseOffsetAngle;
+
+          const ballX = hb.anchorX + Math.sin(totalAngle) * hb.stringLen;
+          const ballY = Math.cos(totalAngle) * hb.stringLen + hb.radius;
+
+          // Mouse collision / brush physics makes the Christmas ball swing dynamically!
+          if (mouse.isInside) {
+            const dx = ballX - mouse.x;
+            const dy = ballY - mouse.y;
+            const dist = Math.hypot(dx, dy);
+            const hitRadius = hb.radius * 3.2 + 28;
+            if (dist < hitRadius) {
+              const push = (1 - dist / hitRadius) * 0.045;
+              hb.mouseVelAngle += (dx >= 0 ? 1 : -1) * push + mouse.vx * 0.0012;
+            }
+          }
+
+          // Spring-damper physics on mouse-induced swing
+          hb.mouseVelAngle += -hb.mouseOffsetAngle * 0.06;
+          hb.mouseVelAngle *= 0.92;
+          hb.mouseOffsetAngle = Math.max(
+            -0.75,
+            Math.min(0.75, hb.mouseOffsetAngle + hb.mouseVelAngle)
+          );
+
+          drawChristmasBauble(
+            ctx,
+            hb.anchorX,
+            0,
+            ballX,
+            ballY,
+            hb.radius,
+            -totalAngle * 0.85,
+            hb.styleIndex,
+            elapsed,
+            true
+          );
+        });
       }
 
       // C. CYBERPUNK CIRCUIT DATA PULSES
@@ -813,7 +1229,7 @@ const ProceduralAnimatedCanvas: React.FC<{
         });
       }
 
-      // D. FLOATING ARCANE EMBERS / STARDUST PARTICLES + MOUSE VORTEX / REPULSION / CONSTELLATION
+      // D. FLOATING ARCANE EMBERS / STARDUST / CRYSTALLINE SNOWFLAKES + MOUSE VORTEX
       const interactRadius = 155;
       particles.forEach((pt) => {
         // Mouse physics interaction
@@ -828,29 +1244,27 @@ const ProceduralAnimatedCanvas: React.FC<{
             const ny = dy / dist;
 
             if (mouseEffect === 'repel_shockwave') {
-              // Strong radial gravitational push away from cursor
               pt.pushVx += nx * nearMouseFactor * 0.65;
               pt.pushVy += ny * nearMouseFactor * 0.65;
             } else if (mouseEffect === 'vortex_constellation') {
-              // Arcane orbital swirl around cursor + gentle outward pressure
               const tx = -ny;
               const ty = nx;
               pt.pushVx += (tx * 0.45 + nx * 0.18) * nearMouseFactor;
               pt.pushVy += (ty * 0.45 + ny * 0.18) * nearMouseFactor;
             } else if (mouseEffect === 'cyber_scanner_lock') {
-              // Snap slightly toward cursor scan grid
               pt.pushVx -= nx * nearMouseFactor * 0.22;
               pt.pushVy -= ny * nearMouseFactor * 0.22;
             }
 
-            // Draw glowing constellation / neural tether line to cursor
             if (
               mouseEffect === 'vortex_constellation' ||
               mouseEffect === 'cyber_scanner_lock'
             ) {
               ctx.beginPath();
               ctx.strokeStyle =
-                mouseEffect === 'cyber_scanner_lock'
+                effect === 'christmas_festive'
+                  ? `rgba(239, 68, 68, ${nearMouseFactor * 0.45})`
+                  : mouseEffect === 'cyber_scanner_lock'
                   ? `rgba(6, 182, 212, ${nearMouseFactor * 0.42})`
                   : `rgba(212, 175, 55, ${nearMouseFactor * 0.38})`;
               ctx.lineWidth = 0.8 + nearMouseFactor * 0.8;
@@ -865,21 +1279,61 @@ const ProceduralAnimatedCanvas: React.FC<{
         pt.pushVx *= 0.9;
         pt.pushVy *= 0.9;
 
-        pt.x += pt.vx * speed + pt.pushVx + Math.sin(elapsed * 1.4 + pt.phase) * 0.25;
-        pt.y += pt.vy * speed + pt.pushVy;
+        const windSway =
+          effect === 'christmas_festive'
+            ? Math.sin(elapsed * 1.3 + pt.phase) * 0.55
+            : Math.sin(elapsed * 1.4 + pt.phase) * 0.25;
 
-        if (pt.y < -12) {
-          pt.y = height + 12;
+        pt.x += pt.vx * speed + pt.pushVx + windSway;
+        pt.y += pt.vy * speed + pt.pushVy;
+        pt.rotation += pt.rotSpeed * 0.02 * speed;
+
+        if (pt.y < -16) {
+          pt.y = height + 16;
           pt.x = Math.random() * width;
-        } else if (pt.y > height + 12) {
-          pt.y = -12;
+        } else if (pt.y > height + 16) {
+          pt.y = -16;
           pt.x = Math.random() * width;
         }
-        if (pt.x < -12) pt.x = width + 12;
-        if (pt.x > width + 12) pt.x = -12;
+        if (pt.x < -16) pt.x = width + 16;
+        if (pt.x > width + 16) pt.x = -16;
 
         const baseAlpha = 0.35 + 0.55 * (0.5 + 0.5 * Math.sin(elapsed * 2.5 + pt.phase));
         const alpha = Math.min(1, baseAlpha + nearMouseFactor * 0.5);
+
+        if (effect === 'christmas_festive') {
+          if (pt.isCrystalSnowflake) {
+            const flakeTint =
+              pt.colorType === 0
+                ? '#ffffff'
+                : pt.colorType === 1
+                ? '#fecaca'
+                : '#fef08a';
+            drawCrystalSnowflake(
+              ctx,
+              pt.x,
+              pt.y,
+              pt.r * (1 + nearMouseFactor * 0.35),
+              pt.rotation,
+              alpha,
+              flakeTint
+            );
+          } else {
+            // Glowing snow mote / crimson festive ember
+            const fill =
+              pt.colorType === 0
+                ? `rgba(255, 255, 255, ${alpha})`
+                : pt.colorType === 1
+                ? `rgba(239, 68, 68, ${alpha})`
+                : `rgba(251, 191, 36, ${alpha})`;
+            ctx.beginPath();
+            ctx.fillStyle = fill;
+            ctx.arc(pt.x, pt.y, pt.r * (1 + nearMouseFactor * 0.8), 0, Math.PI * 2);
+            ctx.fill();
+          }
+          return;
+        }
+
         let fill = `rgba(212, 175, 55, ${alpha})`;
         if (nearMouseFactor > 0.45) {
           fill = `rgba(34, 211, 238, ${alpha})`;
@@ -910,7 +1364,7 @@ const ProceduralAnimatedCanvas: React.FC<{
         ctx.fill();
       });
 
-      // E. TRAILING CURSOR SPARKS
+      // E. TRAILING CURSOR SPARKS / SNOWFLAKES
       for (let i = trailSparks.length - 1; i >= 0; i--) {
         const sp = trailSparks[i];
         sp.x += sp.vx;
@@ -921,16 +1375,28 @@ const ProceduralAnimatedCanvas: React.FC<{
           continue;
         }
         const norm = 1 - sp.life / sp.maxLife;
-        ctx.save();
-        ctx.globalAlpha = norm * 0.85;
-        ctx.fillStyle = sp.color;
-        ctx.beginPath();
-        ctx.arc(sp.x, sp.y, sp.r * norm, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.restore();
+        if (sp.isSnowflake) {
+          drawCrystalSnowflake(
+            ctx,
+            sp.x,
+            sp.y,
+            sp.r * 2.1 * norm,
+            sp.life * 0.1,
+            norm * 0.9,
+            sp.color
+          );
+        } else {
+          ctx.save();
+          ctx.globalAlpha = norm * 0.85;
+          ctx.fillStyle = sp.color;
+          ctx.beginPath();
+          ctx.arc(sp.x, sp.y, sp.r * norm, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+        }
       }
 
-      // F. EXPANDING ARCANE / CYBER SHOCKWAVE RIPPLES
+      // F. EXPANDING ARCANE / CYBER / FESTIVE SHOCKWAVE RIPPLES
       for (let i = ripples.length - 1; i >= 0; i--) {
         const rp = ripples[i];
         rp.radius += (rp.maxRadius - rp.radius) * 0.11 + 1.8;
@@ -949,7 +1415,7 @@ const ProceduralAnimatedCanvas: React.FC<{
         ctx.restore();
       }
 
-      // G. INTERACTIVE CURSOR RUNIC SIGIL / CYBER HUD RETICLE
+      // G. INTERACTIVE CURSOR RUNIC SIGIL / CYBER HUD / CHRISTMAS SNOWFLAKE RETICLE
       if (
         mouse.isInside &&
         (mouseEffect === 'vortex_constellation' ||
@@ -960,9 +1426,10 @@ const ProceduralAnimatedCanvas: React.FC<{
         ctx.translate(mouse.x, mouse.y);
         ctx.rotate(elapsed * (mouseEffect === 'cyber_scanner_lock' ? -1.4 : 0.9));
 
-        // Outer Dashed Sigil/Scanner Circle
         ctx.strokeStyle =
-          mouseEffect === 'cyber_scanner_lock'
+          effect === 'christmas_festive'
+            ? 'rgba(239, 68, 68, 0.5)'
+            : mouseEffect === 'cyber_scanner_lock'
             ? 'rgba(6, 182, 212, 0.42)'
             : 'rgba(212, 175, 55, 0.38)';
         ctx.lineWidth = 1.1;
@@ -971,11 +1438,12 @@ const ProceduralAnimatedCanvas: React.FC<{
         ctx.arc(0, 0, 34, 0, Math.PI * 2);
         ctx.stroke();
 
-        // Inner Diamond / Crosshair
         ctx.setLineDash([]);
         ctx.rotate(-elapsed * 1.8);
         ctx.strokeStyle =
-          mouseEffect === 'repel_shockwave'
+          effect === 'christmas_festive'
+            ? 'rgba(251, 191, 36, 0.5)'
+            : mouseEffect === 'repel_shockwave'
             ? 'rgba(225, 29, 72, 0.45)'
             : 'rgba(168, 85, 247, 0.45)';
         ctx.strokeRect(-13, -13, 26, 26);
@@ -1077,6 +1545,7 @@ export const ArcaneCyberTextureLayer: React.FC<{
   const speed = slot?.animationSpeed ?? 1.0;
   const intensity = slot?.effectIntensity ?? 0.85;
   const showOverlay = slot?.showProceduralOverlayWithImage ?? true;
+  const isChristmas = resolvedAnimEffect === 'christmas_festive';
 
   // Direct DOM parallax update for zero-lag 60fps mouse parallax shift
   const handleMouseNormUpdate = (nx: number, ny: number, active: boolean) => {
@@ -1137,7 +1606,7 @@ export const ArcaneCyberTextureLayer: React.FC<{
         </div>
       )}
 
-      {/* 2. Procedural Animated SVG Geometric / Runic / Circuit Layer + Mouse-Reactive Canvas */}
+      {/* 2. Procedural Animated SVG Geometric / Runic / Christmas Layer + Mouse-Reactive Canvas */}
       {siteEffectsEnabled &&
         (!hasCustomImage || showOverlay) &&
         (resolvedAnimEffect !== 'none' || resolvedMouseEffect !== 'none') && (
@@ -1149,7 +1618,7 @@ export const ArcaneCyberTextureLayer: React.FC<{
                 : Math.min(0.96, (slot?.opacity ?? 0.55) * (0.65 + intensity * 0.5))
             }}
           >
-            {/* Base Pattern Grid (Cyber Hex / Runic Sigil / Circuit Traces) */}
+            {/* Base Pattern Grid (Cyber Hex / Runic Sigil / Festive Crimson Snowflake Grid) */}
             <svg className="w-full h-full" xmlns="http://www.w3.org/2000/svg">
               <defs>
                 <pattern
@@ -1161,21 +1630,32 @@ export const ArcaneCyberTextureLayer: React.FC<{
                   <path
                     d="M36 0 L72 18 L72 54 L36 72 L0 54 L0 18 Z"
                     fill="none"
-                    stroke="rgba(212,175,55,0.13)"
+                    stroke={isChristmas ? 'rgba(239,68,68,0.18)' : 'rgba(212,175,55,0.13)'}
                     strokeWidth="0.8"
                   />
                   <path
                     d="M0 36 H22 L28 30 H44 L50 36 H72 M36 0 V20 M36 52 V72"
                     fill="none"
-                    stroke="rgba(6,182,212,0.14)"
+                    stroke={isChristmas ? 'rgba(251,191,36,0.16)' : 'rgba(6,182,212,0.14)'}
                     strokeWidth="0.75"
                   />
-                  <circle cx="36" cy="36" r="2" fill="rgba(168,85,247,0.35)" />
+                  <circle
+                    cx="36"
+                    cy="36"
+                    r="2.2"
+                    fill={isChristmas ? 'rgba(239,68,68,0.45)' : 'rgba(168,85,247,0.35)'}
+                  />
                 </pattern>
 
                 <radialGradient id={`glow-${slot?.id || variant}`} cx="50%" cy="50%" r="55%">
-                  <stop offset="0%" stopColor="rgba(147,51,234,0.22)" />
-                  <stop offset="50%" stopColor="rgba(6,182,212,0.09)" />
+                  <stop
+                    offset="0%"
+                    stopColor={isChristmas ? 'rgba(220,38,38,0.28)' : 'rgba(147,51,234,0.22)'}
+                  />
+                  <stop
+                    offset="50%"
+                    stopColor={isChristmas ? 'rgba(185,28,28,0.12)' : 'rgba(6,182,212,0.09)'}
+                  />
                   <stop offset="100%" stopColor="rgba(5,4,10,0)" />
                 </radialGradient>
               </defs>
@@ -1184,10 +1664,11 @@ export const ArcaneCyberTextureLayer: React.FC<{
               <rect width="100%" height="100%" fill={`url(#glow-${slot?.id || variant})`} />
             </svg>
 
-            {/* Rotating High-Magic Astrolabe & Alchemical Runic Rings (with 3D Mouse Parallax) */}
+            {/* Rotating High-Magic Astrolabe OR Festive Crimson Christmas Snowflake Mandala */}
             {(resolvedAnimEffect === 'runic_astrolabe' ||
               resolvedAnimEffect === 'arcane_matrix_hybrid' ||
-              resolvedAnimEffect === 'ether_distortion') && (
+              resolvedAnimEffect === 'ether_distortion' ||
+              resolvedAnimEffect === 'christmas_festive') && (
               <div
                 ref={parallaxAstrolabeRef}
                 className="absolute inset-0 flex items-center justify-center overflow-hidden transition-transform duration-300 ease-out"
@@ -1197,31 +1678,30 @@ export const ArcaneCyberTextureLayer: React.FC<{
                   viewBox="0 0 600 600"
                   fill="none"
                 >
-                  {/* Outer Clockwise Runic Astrolabe Ring */}
+                  {/* Outer Clockwise Ring */}
                   <g className="ld-anim-spin-cw" style={{ transformOrigin: '300px 300px' }}>
                     <circle
                       cx="300"
                       cy="300"
                       r="265"
-                      stroke="rgba(212,175,55,0.34)"
-                      strokeWidth="1.2"
+                      stroke={isChristmas ? 'rgba(239,68,68,0.45)' : 'rgba(212,175,55,0.34)'}
+                      strokeWidth="1.3"
                       strokeDasharray="10 8 2 8"
                     />
                     <circle
                       cx="300"
                       cy="300"
                       r="248"
-                      stroke="rgba(6,182,212,0.26)"
-                      strokeWidth="0.9"
+                      stroke={isChristmas ? 'rgba(251,191,36,0.34)' : 'rgba(6,182,212,0.26)'}
+                      strokeWidth="1"
                       strokeDasharray="36 14 6 14"
                     />
-                    {/* Inscribed Octagram / Alchemical Square */}
                     <rect
                       x="125"
                       y="125"
                       width="350"
                       height="350"
-                      stroke="rgba(212,175,55,0.18)"
+                      stroke={isChristmas ? 'rgba(239,68,68,0.26)' : 'rgba(212,175,55,0.18)'}
                       strokeWidth="0.9"
                     />
                     <rect
@@ -1230,18 +1710,18 @@ export const ArcaneCyberTextureLayer: React.FC<{
                       width="350"
                       height="350"
                       transform="rotate(45 300 300)"
-                      stroke="rgba(168,85,247,0.24)"
+                      stroke={isChristmas ? 'rgba(255,255,255,0.22)' : 'rgba(168,85,247,0.24)'}
                       strokeWidth="0.9"
                     />
                   </g>
 
-                  {/* Inner Counter-Clockwise Cyber-Arcane Telemetry Ring */}
+                  {/* Inner Counter-Clockwise Ring / Crystalline Star */}
                   <g className="ld-anim-spin-ccw" style={{ transformOrigin: '300px 300px' }}>
                     <circle
                       cx="300"
                       cy="300"
                       r="185"
-                      stroke="rgba(6,182,212,0.34)"
+                      stroke={isChristmas ? 'rgba(239,68,68,0.42)' : 'rgba(6,182,212,0.34)'}
                       strokeWidth="1.3"
                       strokeDasharray="22 10 4 10"
                     />
@@ -1249,20 +1729,20 @@ export const ArcaneCyberTextureLayer: React.FC<{
                       cx="300"
                       cy="300"
                       r="135"
-                      stroke="rgba(212,175,55,0.3)"
+                      stroke={isChristmas ? 'rgba(251,191,36,0.36)' : 'rgba(212,175,55,0.3)'}
                       strokeWidth="1"
                       strokeDasharray="6 6"
                     />
                     <polygon
                       points="300,115 460,392 140,392"
-                      stroke="rgba(212,175,55,0.22)"
-                      strokeWidth="0.9"
+                      stroke={isChristmas ? 'rgba(239,68,68,0.32)' : 'rgba(212,175,55,0.22)'}
+                      strokeWidth="1"
                       fill="none"
                     />
                     <polygon
                       points="300,485 460,208 140,208"
-                      stroke="rgba(6,182,212,0.22)"
-                      strokeWidth="0.9"
+                      stroke={isChristmas ? 'rgba(255,255,255,0.26)' : 'rgba(6,182,212,0.22)'}
+                      strokeWidth="1"
                       fill="none"
                     />
                   </g>
@@ -1270,7 +1750,7 @@ export const ArcaneCyberTextureLayer: React.FC<{
               </div>
             )}
 
-            {/* Real-Time Canvas Particle, Circuit Pulse & Mouse-Reactive Shader Layer */}
+            {/* Real-Time Canvas Particle, Snowflakes, Christmas Baubles & Mouse-Reactive Shader Layer */}
             <ProceduralAnimatedCanvas
               effect={resolvedAnimEffect}
               mouseEffect={resolvedMouseEffect}
@@ -1339,12 +1819,12 @@ export const CyberArcaneCornerFrame: React.FC<{
 }> = ({ accent = 'gold', className = '' }) => {
   const strokeColor =
     accent === 'gold'
-      ? '#d4af37'
+      ? 'var(--ld-arcane-gold, #d4af37)'
       : accent === 'cyan'
-      ? '#06b6d4'
+      ? 'var(--ld-cyber-cyan, #06b6d4)'
       : accent === 'crimson'
-      ? '#f43f5e'
-      : '#a855f7';
+      ? '#ef4444'
+      : 'var(--ld-dark-magic, #a855f7)';
 
   return (
     <div className={`absolute inset-0 pointer-events-none overflow-hidden ${className}`}>
@@ -1378,7 +1858,8 @@ export const CyberArcaneCornerFrame: React.FC<{
 
 /**
  * Modal for the Admin to configure live Procedural Texture Animations, Mouse-Reactive Effects,
- * Shader-like Motion Effects, and Custom Texture Images for all 11 Slots (TEX-01 to TEX-11).
+ * Shader-like Motion Effects, Global Animated Themes (including the Red Christmas Theme),
+ * and Custom Texture Images for all 11 Slots (TEX-01 to TEX-11).
  */
 export const ThemeTexturesManagerModal: React.FC<{
   isOpen: boolean;
@@ -1405,6 +1886,7 @@ export const ThemeTexturesManagerModal: React.FC<{
   if (!isOpen) return null;
 
   const activeHighlightId = initialSlotId || initialSelectedSlotId || null;
+  const isChristmasActive = isChristmasThemeActiveInSlots(textures);
 
   const slotList = Object.values(DEFAULT_THEME_TEXTURES).map((def) => ({
     ...def,
@@ -1430,6 +1912,7 @@ export const ThemeTexturesManagerModal: React.FC<{
   const handleApplyAnimatedPresetsAll = async () => {
     for (const def of Object.values(DEFAULT_THEME_TEXTURES)) {
       await onSaveSlot(def.id, {
+        themePillar: def.themePillar,
         animationEffect: def.animationEffect,
         imageMotionEffect: def.imageMotionEffect,
         mouseReactiveEffect: def.mouseReactiveEffect,
@@ -1439,8 +1922,29 @@ export const ThemeTexturesManagerModal: React.FC<{
         showProceduralOverlayWithImage: true
       });
     }
-    setFeedback('Animações procedurais e reação ao mouse ativadas em todos os 11 slots do site!');
+    setFeedback(
+      'Tema Padrão Cyber-Arcano restaurado com animações e reação ao mouse em todos os 11 slots!'
+    );
     setTimeout(() => setFeedback(null), 3500);
+  };
+
+  const handleApplyChristmasThemeAll = async () => {
+    for (const def of Object.values(DEFAULT_THEME_TEXTURES)) {
+      await onSaveSlot(def.id, {
+        themePillar: 'Natalino Festivo',
+        animationEffect: 'christmas_festive',
+        imageMotionEffect: 'pan_drift',
+        mouseReactiveEffect: 'vortex_constellation',
+        animationSpeed: 1.0,
+        effectIntensity: 0.92,
+        opacity: Math.max(0.55, def.opacity),
+        showProceduralOverlayWithImage: true
+      });
+    }
+    setFeedback(
+      '🎄 Tema Natalino ativado em todo o site! Cor principal Vermelha, Flocos de Neve e Bolas de Natal animadas!'
+    );
+    setTimeout(() => setFeedback(null), 4000);
   };
 
   return (
@@ -1452,22 +1956,34 @@ export const ThemeTexturesManagerModal: React.FC<{
             'polygon(16px 0, 100% 0, 100% calc(100% - 16px), calc(100% - 16px) 100%, 0 100%, 0 16px)'
         }}
       >
-        <CyberArcaneCornerFrame accent="gold" />
+        <CyberArcaneCornerFrame accent={isChristmasActive ? 'crimson' : 'gold'} />
 
         {/* Header */}
         <div className="p-5 bg-[#0b0916] border-b border-[#d4af37]/30 flex flex-wrap items-center justify-between gap-3 shrink-0">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-[#141026] border border-[#d4af37]/60 flex items-center justify-center text-[#d4af37]">
-              <Wand2 size={20} />
+            <div
+              className={`w-10 h-10 border flex items-center justify-center ${
+                isChristmasActive
+                  ? 'bg-red-950/80 border-red-500 text-red-400 shadow-[0_0_15px_rgba(239,68,68,0.35)]'
+                  : 'bg-[#141026] border-[#d4af37]/60 text-[#d4af37]'
+              }`}
+            >
+              {isChristmasActive ? <Gift size={20} /> : <Wand2 size={20} />}
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <span className="text-[10px] font-mono uppercase tracking-[0.25em] text-cyan-400">
-                  Motor de Texturas Animadas & Reativas ao Mouse • Dark Magic × Alta Magia × Cyberpunk
+                <span
+                  className={`text-[10px] font-mono uppercase tracking-[0.25em] ${
+                    isChristmasActive ? 'text-red-400' : 'text-cyan-400'
+                  }`}
+                >
+                  {isChristmasActive
+                    ? '🎄 TEMA NATALINO ATIVO (COR PRINCIPAL: VERMELHA • NEVE & BOLAS DE NATAL)'
+                    : 'Motor de Temas Animados & Reativos ao Mouse • Dark Magic × Alta Magia × Cyberpunk'}
                 </span>
               </div>
               <h3 className="font-cinzel text-lg sm:text-xl font-black text-white uppercase tracking-wider">
-                Animações de Texturas & Efeitos Interativos (TEX-01 a TEX-11)
+                Temas Animados, Texturas & Efeitos Interativos (TEX-01 a TEX-11)
               </h3>
             </div>
           </div>
@@ -1475,12 +1991,26 @@ export const ThemeTexturesManagerModal: React.FC<{
           <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
+              onClick={handleApplyChristmasThemeAll}
+              className={`cyber-arcane-btn px-3.5 py-1.5 text-xs font-cinzel font-black uppercase tracking-wider flex items-center gap-1.5 transition ${
+                isChristmasActive
+                  ? 'bg-gradient-to-r from-red-600 via-rose-500 to-amber-400 text-white ring-2 ring-red-400 shadow-[0_0_24px_rgba(239,68,68,0.65)]'
+                  : 'bg-gradient-to-r from-red-700 to-rose-600 hover:from-red-600 hover:to-rose-500 text-white border border-red-400/60 shadow-[0_0_16px_rgba(239,68,68,0.35)]'
+              }`}
+              title="Ativar Tema Natalino Animado em todo o site (Cor principal vermelha, flocos de neve e bolas de natal animadas)"
+            >
+              <Gift size={14} />
+              <span>🎄 Ativar Tema Natalino (Vermelho)</span>
+            </button>
+
+            <button
+              type="button"
               onClick={handleApplyAnimatedPresetsAll}
               className="cyber-arcane-btn px-3 py-1.5 text-xs font-cinzel font-black uppercase tracking-wider bg-gradient-to-r from-amber-500 to-cyan-400 text-slate-950 flex items-center gap-1.5 shadow-[0_0_15px_rgba(6,182,212,0.3)] transition"
-              title="Restaurar e ativar as animações e reação ao mouse em todas as 11 áreas do site"
+              title="Restaurar o Tema Padrão Cyber-Arcano em todas as 11 áreas do site"
             >
               <Sparkles size={14} />
-              <span>Ativar Preset Animado + Mouse em Tudo</span>
+              <span>Tema Padrão Cyber-Arcano</span>
             </button>
 
             <button
@@ -1517,11 +2047,27 @@ export const ThemeTexturesManagerModal: React.FC<{
 
         {/* Body */}
         <div className="flex-1 overflow-y-auto p-5 space-y-4 custom-scrollbar">
-          <div className="p-3.5 bg-[#0e0b1c] border border-cyan-500/30 text-xs text-slate-300 leading-relaxed">
-            Passe o mouse sobre os blocos de preview abaixo (ou por qualquer área do site) para ver a{' '}
-            <strong className="text-amber-300">Reação Interativa ao Cursor</strong>: vórtice de
-            partículas arcanas, feixes de constelação neural conectando ao mouse, lanterna de éter,
-            mira holográfica giratória, parallax 3D e ondas de choque ao clicar!
+          {/* Quick Global Theme Selector Banner */}
+          <div className="p-4 bg-gradient-to-r from-[#16080c] via-[#0e0b1c] to-[#16080c] border border-red-500/40 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+            <div className="text-xs text-slate-200 leading-relaxed">
+              <div className="font-cinzel font-black text-sm text-red-400 uppercase tracking-wider flex items-center gap-2 mb-1">
+                <Gift size={15} className="text-red-400" />
+                <span>Novo Tema Animado: Natalino Dinâmico (Cor Principal Vermelha)</span>
+              </div>
+              Inclui <strong className="text-white">flocos de neve cristalinos caindo</strong>,{' '}
+              <strong className="text-red-400">bolas de natal 3D animadas</strong> que balançam ao
+              passar o mouse, luzes festivas e{' '}
+              <strong className="text-red-400">identidade visual vermelha</strong> em todo o site!
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={handleApplyChristmasThemeAll}
+                className="cyber-arcane-btn px-4 py-2 text-xs font-cinzel font-black uppercase tracking-wider bg-red-600 hover:bg-red-500 text-white border border-red-300/60 shadow-[0_0_20px_rgba(239,68,68,0.5)] transition whitespace-nowrap"
+              >
+                🎄 Aplicar Tema Natalino Agora
+              </button>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -1540,6 +2086,8 @@ export const ThemeTexturesManagerModal: React.FC<{
                   className={`p-4 bg-[#0c0a18] border transition flex flex-col justify-between gap-3 relative ${
                     isHighlighted
                       ? 'border-cyan-400 ring-1 ring-cyan-400/50'
+                      : currentAnim === 'christmas_festive'
+                      ? 'border-red-500/70 shadow-[0_0_20px_rgba(239,68,68,0.15)]'
                       : hasImg
                       ? 'border-[#d4af37]/60'
                       : 'border-white/15 hover:border-[#d4af37]/40'
@@ -1547,8 +2095,17 @@ export const ThemeTexturesManagerModal: React.FC<{
                 >
                   <div className="space-y-2.5">
                     <div className="flex items-center justify-between gap-2">
-                      <span className="px-2 py-0.5 bg-[#191330] border border-[#d4af37]/50 text-[#d4af37] font-mono text-[10px] font-bold">
-                        {slot.code} • {slot.themePillar}
+                      <span
+                        className={`px-2 py-0.5 border font-mono text-[10px] font-bold ${
+                          currentAnim === 'christmas_festive'
+                            ? 'bg-red-950/80 border-red-500/60 text-red-300'
+                            : 'bg-[#191330] border-[#d4af37]/50 text-[#d4af37]'
+                        }`}
+                      >
+                        {slot.code} •{' '}
+                        {currentAnim === 'christmas_festive'
+                          ? 'Natalino Festivo (Vermelho)'
+                          : slot.themePillar}
                       </span>
                       <span className="text-[10px] font-mono text-cyan-300 flex items-center gap-1">
                         <MousePointer size={11} />
@@ -1597,15 +2154,20 @@ export const ThemeTexturesManagerModal: React.FC<{
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                       <div>
                         <label className="block text-[10px] font-mono uppercase text-amber-300 mb-1">
-                          Animação Procedural (Canvas/Runas)
+                          Tema Animado Procedural (Canvas/Runas)
                         </label>
                         <select
                           value={currentAnim}
-                          onChange={(e) =>
+                          onChange={(e) => {
+                            const nextAnim = e.target.value as TextureAnimationEffect;
                             onSaveSlot(slot.id, {
-                              animationEffect: e.target.value as TextureAnimationEffect
-                            })
-                          }
+                              animationEffect: nextAnim,
+                              themePillar:
+                                nextAnim === 'christmas_festive'
+                                  ? 'Natalino Festivo'
+                                  : DEFAULT_THEME_TEXTURES[slot.id]?.themePillar || slot.themePillar
+                            });
+                          }}
                           className="w-full bg-[#06050c] border border-purple-500/40 px-2 py-1.5 text-xs text-white outline-none focus:border-cyan-400"
                         >
                           {Object.entries(TEXTURE_ANIMATION_LABELS).map(([k, lbl]) => (
@@ -1760,3 +2322,4 @@ export const ThemeTexturesManagerModal: React.FC<{
     </div>
   );
 };
+

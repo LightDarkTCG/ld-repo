@@ -800,35 +800,40 @@ export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
     faq: false
   });
 
-  // Garante que qualquer menu retrátil do Manual mostrado durante o tutorial esteja ABERTO
-  useEffect(() => {
-    if (!tourOpenManualSection) return;
-    if (tourOpenManualSection === 'turnos_regras') {
-      setOpenSections({
-        patch: false,
-        basico: false,
-        cartas: false,
-        turnos: true,
-        regras: true,
-        arquetipos: false,
-        campos: false,
-        raridades: false,
-        faq: false
-      });
-    } else {
-      setOpenSections({
-        patch: tourOpenManualSection === 'patch',
-        basico: tourOpenManualSection === 'basico',
-        cartas: tourOpenManualSection === 'cartas',
-        turnos: tourOpenManualSection === 'turnos',
-        regras: tourOpenManualSection === 'regras',
-        arquetipos: tourOpenManualSection === 'arquetipos',
-        campos: tourOpenManualSection === 'campos',
-        raridades: tourOpenManualSection === 'raridades',
-        faq: tourOpenManualSection === 'faq'
-      });
+  // Garante sincronamente na renderização que qualquer menu retrátil do Manual mostrado durante o tutorial já esteja ABERTO no frame 1
+  const [prevTourManualSection, setPrevTourManualSection] = useState<string | null | undefined>(
+    tourOpenManualSection
+  );
+  if (tourOpenManualSection !== prevTourManualSection) {
+    setPrevTourManualSection(tourOpenManualSection);
+    if (tourOpenManualSection) {
+      if (tourOpenManualSection === 'turnos_regras') {
+        setOpenSections({
+          patch: false,
+          basico: false,
+          cartas: false,
+          turnos: true,
+          regras: true,
+          arquetipos: false,
+          campos: false,
+          raridades: false,
+          faq: false
+        });
+      } else {
+        setOpenSections({
+          patch: tourOpenManualSection === 'patch',
+          basico: tourOpenManualSection === 'basico',
+          cartas: tourOpenManualSection === 'cartas',
+          turnos: tourOpenManualSection === 'turnos',
+          regras: tourOpenManualSection === 'regras',
+          arquetipos: tourOpenManualSection === 'arquetipos',
+          campos: tourOpenManualSection === 'campos',
+          raridades: tourOpenManualSection === 'raridades',
+          faq: tourOpenManualSection === 'faq'
+        });
+      }
     }
-  }, [tourOpenManualSection]);
+  }
 
   // Raridades data & state (Frame Moderno & Frame Legado)
   const [rarityItems, setRarityItems] = useState<RarityGuideItem[]>(() => readBrowserCache<RarityGuideItem[]>('ld_cache_rarities_v2') || defaultRarityItems);

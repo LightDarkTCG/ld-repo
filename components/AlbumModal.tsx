@@ -25,7 +25,9 @@ import {
   ShoppingCart,
   Copy,
   ShieldAlert,
-  UserCheck
+  UserCheck,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 import { CardData, MarketplaceListing, RarePrintOwner } from '../types';
 import { useCards, cleanCardCode, getBaseCardCode, getCardDisplayPriority, resolveModernFrameOnly } from '../CardContext';
@@ -203,8 +205,11 @@ export const AlbumModal: React.FC<AlbumModalProps> = ({ isOpen, onClose, onSelec
 
   // Anúncios ativos do Mercado para cruzar com a Lista de Desejos e Fichário
   const [marketListings, setMarketListings] = useState<MarketplaceListing[]>([]);
+  const [isTopBarMinimized, setIsTopBarMinimized] = useState(false);
+
   React.useEffect(() => {
     if (!isOpen) return;
+    setIsTopBarMinimized(false);
     const unsub = subscribeMarketplaceListings(list => {
       setMarketListings(list.filter(item => item.status === 'active' && item.stockQuantity > 0));
     });
@@ -754,6 +759,19 @@ export const AlbumModal: React.FC<AlbumModalProps> = ({ isOpen, onClose, onSelec
     <div className="fixed inset-0 z-[70] flex items-center justify-center p-0 sm:p-4 bg-black/85 backdrop-blur-md animate-in fade-in duration-200">
       <div className="bg-[#0b0f19] w-full max-w-7xl h-full sm:h-[94vh] rounded-none sm:rounded-2xl border-0 sm:border border-purple-900/40 shadow-2xl flex flex-col overflow-hidden relative">
         
+        {isTopBarMinimized ? (
+          <div className="bg-[#0a0d17] border-b border-purple-500/35 px-3 py-1 flex items-center justify-center shrink-0 relative z-20 shadow-md">
+            <button
+              type="button"
+              onClick={() => setIsTopBarMinimized(false)}
+              className="px-4 py-0.5 rounded-full bg-purple-950/80 hover:bg-purple-900 border border-amber-500/45 text-amber-300 hover:text-white transition flex items-center gap-1.5 text-[10px] font-cyber font-bold uppercase tracking-wider shadow cursor-pointer"
+              title="Expandir barra superior do Meu Álbum"
+            >
+              <ChevronDown size={15} className="text-amber-400 animate-bounce" />
+            </button>
+          </div>
+        ) : (
+          <>
         {/* ============================================================== */}
         {/* INTERFACE EXCLUSIVA PARA CELULAR (COMPACTA, RÁPIDA E DIRETA)   */}
         {/* ============================================================== */}
@@ -1445,9 +1463,18 @@ export const AlbumModal: React.FC<AlbumModalProps> = ({ isOpen, onClose, onSelec
           })}
         </div>
       </div> {/* Fim de INTERFACE DESKTOP */}
+      </>
+      )}
 
         {/* LISTA / GRID DE CARTAS */}
-        <div className="flex-1 overflow-y-auto p-2 sm:p-6 bg-[#070a12]">
+        <div
+          className="flex-1 overflow-y-auto p-2 sm:p-6 bg-[#070a12]"
+          onScroll={(e) => {
+            if (e.currentTarget.scrollTop > 35 && !isTopBarMinimized) {
+              setIsTopBarMinimized(true);
+            }
+          }}
+        >
           {/* BANNER DE INSERÇÃO RÁPIDA QUANDO UMA COLEÇÃO ESPECÍFICA ESTÁ SELECIONADA */}
           {currentCollectionData && (
             <div className="mb-3 sm:mb-4 p-2.5 sm:p-4 rounded-xl sm:rounded-2xl bg-gradient-to-r from-purple-950/70 via-slate-900 to-slate-950 border border-purple-500/40 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-lg">
