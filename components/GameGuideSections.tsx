@@ -763,6 +763,7 @@ interface GameGuideSectionsProps {
   panelTextureSlot?: ThemeTextureSlot;
   showPlaceholderBadge?: boolean;
   onConfigureTexture?: (slotId: string) => void;
+  tourOpenManualSection?: string | null;
 }
 
 export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
@@ -774,7 +775,8 @@ export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
   textureSlot,
   panelTextureSlot,
   showPlaceholderBadge,
-  onConfigureTexture
+  onConfigureTexture,
+  tourOpenManualSection
 }) => {
   const [data, setData] = useState<GameManualData>(() => readBrowserCache<GameManualData>('ld_cache_gameManual_v3') || defaultManualData);
   const [isLoading, setIsLoading] = useState(true);
@@ -797,6 +799,36 @@ export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
     raridades: true,
     faq: false
   });
+
+  // Garante que qualquer menu retrátil do Manual mostrado durante o tutorial esteja ABERTO
+  useEffect(() => {
+    if (!tourOpenManualSection) return;
+    if (tourOpenManualSection === 'turnos_regras') {
+      setOpenSections({
+        patch: false,
+        basico: false,
+        cartas: false,
+        turnos: true,
+        regras: true,
+        arquetipos: false,
+        campos: false,
+        raridades: false,
+        faq: false
+      });
+    } else {
+      setOpenSections({
+        patch: tourOpenManualSection === 'patch',
+        basico: tourOpenManualSection === 'basico',
+        cartas: tourOpenManualSection === 'cartas',
+        turnos: tourOpenManualSection === 'turnos',
+        regras: tourOpenManualSection === 'regras',
+        arquetipos: tourOpenManualSection === 'arquetipos',
+        campos: tourOpenManualSection === 'campos',
+        raridades: tourOpenManualSection === 'raridades',
+        faq: tourOpenManualSection === 'faq'
+      });
+    }
+  }, [tourOpenManualSection]);
 
   // Raridades data & state (Frame Moderno & Frame Legado)
   const [rarityItems, setRarityItems] = useState<RarityGuideItem[]>(() => readBrowserCache<RarityGuideItem[]>('ld_cache_rarities_v2') || defaultRarityItems);
@@ -1225,7 +1257,7 @@ export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
         )}
 
         {/* Section Header */}
-        <div className={`flex flex-col lg:flex-row lg:items-end justify-between gap-5 mb-10 pb-6 border-b ${isMesaoMode ? 'border-emerald-500/40' : 'border-amber-500/25'}`}>
+        <div data-tour-id="tour-manual-header" className={`flex flex-col lg:flex-row lg:items-end justify-between gap-5 mb-10 pb-6 border-b ${isMesaoMode ? 'border-emerald-500/40' : 'border-amber-500/25'}`}>
           <div className="flex-1 min-w-0">
             <div className={`flex items-center gap-2 text-xs font-mono uppercase tracking-[0.22em] mb-2 ${isMesaoMode ? 'text-emerald-400' : 'text-cyan-400'}`}>
               {isMesaoMode ? <Users size={15} className="shrink-0" /> : <BookOpen size={15} className="shrink-0 text-amber-400" />}

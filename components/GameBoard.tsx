@@ -6,9 +6,10 @@ import { storage, db } from '../firebase';
 
 interface GameBoardProps {
   onClose: () => void;
+  tourForceShowSetup?: boolean;
 }
 
-export default function GameBoard({ onClose }: GameBoardProps) {
+export default function GameBoard({ onClose, tourForceShowSetup }: GameBoardProps) {
   const [themes, setThemes] = useState([
     { id: 'default', name: 'Padrão', url: null }
   ]);
@@ -65,7 +66,13 @@ export default function GameBoard({ onClose }: GameBoardProps) {
   const [showThemeModal, setShowThemeModal] = useState(false);
   const [themeTargetPlayer, setThemeTargetPlayer] = useState<1 | 2 | 3 | 4 | null>(null);
   const [isLogOpen, setIsLogOpen] = useState(false);
-  const [showSetup, setShowSetup] = useState(true);
+  const [showSetup, setShowSetup] = useState(tourForceShowSetup ?? true);
+
+  useEffect(() => {
+    if (typeof tourForceShowSetup === 'boolean') {
+      setShowSetup(tourForceShowSetup);
+    }
+  }, [tourForceShowSetup]);
 
   // Match settings
   const [p1Name, setP1Name] = useState('Jogador 1');
@@ -1121,12 +1128,12 @@ export default function GameBoard({ onClose }: GameBoardProps) {
   const myBoardProps = getPlayerProps(myPlayerSlot);
 
   return (
-    <div className="fixed inset-0 z-[100] h-screen w-full bg-[#0f172a] flex flex-col overflow-hidden font-sans">
+    <div data-tour-id="tour-gameboard-active" className="fixed inset-0 z-[100] h-screen w-full bg-[#0f172a] flex flex-col overflow-hidden font-sans">
       
       {/* Starting Setup Modal */}
       {showSetup && (
         <div className="absolute inset-0 z-[200] bg-black/90 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-300 overflow-y-auto">
-          <div className="bg-[#1e293b] w-full max-w-lg rounded-3xl border-2 border-purple-500/50 shadow-[0_0_40px_rgba(168,85,247,0.3)] p-5 sm:p-7 my-auto">
+          <div data-tour-id="tour-gameboard-setup" className="bg-[#1e293b] w-full max-w-lg rounded-3xl border-2 border-purple-500/50 shadow-[0_0_40px_rgba(168,85,247,0.3)] p-5 sm:p-7 my-auto">
             <div className="flex items-center justify-between mb-4">
               <div className="w-8" />
               <h2 className="text-xl sm:text-2xl font-black text-white text-center tracking-tighter flex items-center justify-center gap-2">

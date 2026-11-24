@@ -35,17 +35,25 @@ import { GameGuideSections } from './components/GameGuideSections';
 import { StoreModal } from './components/StoreModal';
 import { addToCart, getCartItems, toProductSlug } from './storeService';
 import { DuelBotModal } from './duel-bot/DuelBotModal';
-import { BoosterOpenerModal } from './components/BoosterOpenerModal';
 import { NavbarSpotifyMicroPlayer } from './components/SpotifySoundtrackSection';
 import { downloadPresentationGuidePdf } from './utils/presentationPdfGenerator';
 import {
   useThemeTextures,
+  useSiteEffects,
+  SiteEffectsToggleButton,
   ArcaneCyberTextureLayer,
   CyberArcaneCornerFrame,
   ThemeTexturesManagerModal,
   ThemeTextureSlot,
   DEFAULT_THEME_TEXTURES
 } from './components/ArcaneCyberTheme';
+import {
+  useBlairSiteTour,
+  ConhecaOSiteNavbarButton,
+  BlairFirstVisitPromptModal,
+  BlairSiteTourModal,
+  BLAIR_TOUR_SLIDES
+} from './components/BlairSiteTourModal';
 
 // --- SUB-COMPONENTS ---
 
@@ -618,13 +626,15 @@ const CatalogModal = ({
   onClose, 
   onOpenAdmin, 
   onOpenAuth,
-  isAdmin
+  isAdmin,
+  tourAutoOpenCard = false
 }: { 
   isOpen: boolean; 
   onClose: () => void; 
   onOpenAdmin: () => void; 
   onOpenAuth?: () => void;
   isAdmin?: boolean;
+  tourAutoOpenCard?: boolean;
 }) => {
   const { cards: allCards, collections, archetypes } = useCards();
   const [searchTerm, setSearchTerm] = useState("");
@@ -1058,10 +1068,22 @@ const CatalogModal = ({
 
   const displayedCards = activeGridCards.slice(0, visibleCount);
 
+  useEffect(() => {
+    if (!isOpen) return;
+    if (tourAutoOpenCard) {
+      const sample = displayedCards[0] || allCards[0] || null;
+      if (sample) {
+        setSelectedCard(sample);
+      }
+    } else {
+      setSelectedCard(null);
+    }
+  }, [isOpen, tourAutoOpenCard]);
+
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[70] flex flex-col bg-slate-950 animate-in fade-in duration-200">
+    <div data-tour-id="tour-catalog-open-view" className="fixed inset-0 z-[70] flex flex-col bg-slate-950 animate-in fade-in duration-200">
       
       {/* Use the new extracted component */}
       {selectedCard && (
@@ -1311,7 +1333,12 @@ const CatalogModal = ({
           <>
             <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-2 md:gap-8 justify-items-center">
               {displayedCards.map((card, idx) => (
-                <div key={`${card.code || card.name}_${card.imageUrl || ''}_${card.frame || ''}_${idx}`} className="scale-[0.65] md:scale-90 origin-top w-full flex justify-center -mb-24 md:mb-0" onClick={() => handleCardClick(card)}>
+                <div
+                  key={`${card.code || card.name}_${card.imageUrl || ''}_${card.frame || ''}_${idx}`}
+                  data-tour-id={idx === 0 ? 'tour-catalog-first-card' : undefined}
+                  className="scale-[0.65] md:scale-90 origin-top w-full flex justify-center -mb-24 md:mb-0"
+                  onClick={() => handleCardClick(card)}
+                >
                    <Card {...card} priority={idx < 28} />
                 </div>
               ))}
@@ -1468,7 +1495,6 @@ export default function App() {
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const [isGameOpen, setIsGameOpen] = useState(false);
-  const [isBoosterOpenerOpen, setIsBoosterOpenerOpen] = useState(false);
   const [isTournamentOpen, setIsTournamentOpen] = useState(false);
   const [activeTournamentId, setActiveTournamentId] = useState<string | undefined>(undefined);
   const [isChampionshipHistoryOpen, setIsChampionshipHistoryOpen] = useState(false);
@@ -2003,12 +2029,83 @@ export default function App() {
     }
   }, [currentVideoIndex, backgroundVideos]);
   
+  const { siteEffectsEnabled } = useSiteEffects();
+  const {
+    isWelcomePromptOpen,
+    isTourModalOpen,
+    setIsTourModalOpen,
+    currentSlideIndex: tourSlideIndex,
+    setCurrentSlideIndex: setTourSlideIndex,
+    openTourAtSlide,
+    handleAcceptWelcomePrompt,
+    handleDeclineWelcomePrompt,
+    tourSettings,
+    saveBlairStepPng,
+    saveDefaultBlairPng
+  } = useBlairSiteTour();
+
+  const activeTourSlide = isTourModalOpen ? BLAIR_TOUR_SLIDES[tourSlideIndex] : undefined;
+  const activeTourEnvView = activeTourSlide?.envView;
+
+  // Abre e navega automaticamente pelas janelas do site conforme o passo atual da apresentação da Blair
+  useEffect(() => {
+    if (!isTourModalOpen || !activeTourEnvView) return;
+
+    setIsManualOpen(false);
+    setIsAlbumOpen(false);
+    setIsSavedDecksOpen(false);
+    setIsCollectorsRankingOpen(false);
+    setIsChampionshipHistoryOpen(false);
+    setIsUserProfileOpen(false);
+    setIsDuelBotOpen(false);
+    setAdminMode('none');
+    setSelectedType(null);
+    setSelectedProduct(null);
+
+    setIsCatalogOpen(
+      activeTourEnvView === 'catalog_grid' || activeTourEnvView === 'catalog_card_open'
+    );
+    setIsLoreOpen(
+      activeTourEnvView === 'lore_home' ||
+        activeTourEnvView === 'lore_map' ||
+        activeTourEnvView === 'lore_relations' ||
+        activeTourEnvView === 'lore_quiz'
+    );
+    setIsGameOpen(activeTourEnvView === 'game_setup' || activeTourEnvView === 'game_board');
+    setIsTournamentOpen(
+      activeTourEnvView === 'tournament_config' || activeTourEnvView === 'tournament_bracket'
+    );
+    setIsDeckBuilderOpen(
+      activeTourEnvView === 'deckbuilder_build' ||
+        activeTourEnvView === 'deckbuilder_mulligan' ||
+        activeTourEnvView === 'deckbuilder_neural' ||
+        activeTourEnvView === 'deckbuilder_compare' ||
+        activeTourEnvView === 'deckbuilder_stats'
+    );
+    setIsPopularCardsOpen(activeTourEnvView === 'popular_modal');
+    setIsUserMenuOpen(activeTourEnvView === 'home_account');
+    if (activeTourEnvView === 'store_modal') {
+      setStoreInitialOrderId(null);
+      setStoreInitialTab('vitrine');
+      setIsBuyModalOpen(true);
+    } else {
+      setIsBuyModalOpen(false);
+    }
+  }, [isTourModalOpen, activeTourEnvView]);
+
+  const handleCloseTour = () => {
+    setIsTourModalOpen(false);
+    setIsUserMenuOpen(false);
+    clearAllActiveModals();
+  };
   const videoRefs = useRef<(HTMLVideoElement | null)[]>([]);
 
   useEffect(() => {
     videoRefs.current.forEach((vid, i) => {
       if (vid) {
-        if (i === currentVideoIndex) {
+        if (!siteEffectsEnabled) {
+          vid.pause();
+        } else if (i === currentVideoIndex) {
           vid.currentTime = 0;
           vid.play().catch(e => console.log('Autoplay prevented', e));
         } else {
@@ -2016,7 +2113,7 @@ export default function App() {
         }
       }
     });
-  }, [currentVideoIndex]);
+  }, [currentVideoIndex, siteEffectsEnabled]);
 
   useEffect(() => {
     setCurrentVideoIndex(Math.floor(Math.random() * backgroundVideos.length));
@@ -2092,7 +2189,6 @@ export default function App() {
     isCollectorsRankingOpen ||
     isGameOpen ||
     isDuelBotOpen ||
-    isBoosterOpenerOpen ||
     isTournamentOpen ||
     isChampionshipHistoryOpen ||
     isUserProfileOpen ||
@@ -2101,10 +2197,10 @@ export default function App() {
     selectedProduct !== null
   );
 
-  // Bloqueia o scroll da página inicial sempre que qualquer janela/aba própria estiver aberta
+  // Bloqueia o scroll da página inicial sempre que qualquer janela/aba própria ou o tutorial estiver aberto
   useEffect(() => {
     if (typeof document === 'undefined') return;
-    if (!isOnHomePage) {
+    if (!isOnHomePage || isTourModalOpen || isWelcomePromptOpen) {
       document.body.style.overflow = 'hidden';
       document.documentElement.style.overflow = 'hidden';
     } else {
@@ -2115,7 +2211,7 @@ export default function App() {
       document.body.style.overflow = '';
       document.documentElement.style.overflow = '';
     };
-  }, [isOnHomePage]);
+  }, [isOnHomePage, isTourModalOpen, isWelcomePromptOpen]);
 
   if (isGameMode) {
     return <GameBoard onClose={() => window.close()} />;
@@ -2156,15 +2252,60 @@ export default function App() {
         initialListingId={storeInitialListingId}
         initialVariationIdx={storeInitialVariationIdx}
       />
-      <CatalogModal isOpen={isCatalogOpen} onClose={closeCurrentModal} isAdmin={isAdmin} onOpenAdmin={() => { 
-        if (isAdmin) {
-          navigateToModal(() => {
-            setAdminMode('catalog');
-          });
+      <CatalogModal
+        isOpen={isCatalogOpen}
+        onClose={closeCurrentModal}
+        isAdmin={isAdmin}
+        tourAutoOpenCard={activeTourEnvView === 'catalog_card_open'}
+        onOpenAdmin={() => { 
+          if (isAdmin) {
+            navigateToModal(() => {
+              setAdminMode('catalog');
+            });
+          }
+        }}
+        onOpenAuth={() => setIsAuthModalOpen(true)}
+      />
+      {isLoreOpen && (
+        <LoreView
+          onClose={closeCurrentModal}
+          tourForceView={
+            activeTourEnvView === 'lore_map'
+              ? 'cosmic_map'
+              : activeTourEnvView === 'lore_relations'
+              ? 'relations_tree'
+              : activeTourEnvView === 'lore_quiz'
+              ? 'daily_quiz'
+              : activeTourEnvView === 'lore_home'
+              ? 'home'
+              : undefined
+          }
+        />
+      )}
+      <DeckBuilderModal
+        isOpen={isDeckBuilderOpen}
+        onClose={closeCurrentModal}
+        tourForceReady={
+          activeTourEnvView === 'deckbuilder_build' ||
+          activeTourEnvView === 'deckbuilder_mulligan' ||
+          activeTourEnvView === 'deckbuilder_neural' ||
+          activeTourEnvView === 'deckbuilder_compare' ||
+          activeTourEnvView === 'deckbuilder_stats'
         }
-      }} onOpenAuth={() => setIsAuthModalOpen(true)} />
-      {isLoreOpen && <LoreView onClose={closeCurrentModal} />}
-      <DeckBuilderModal isOpen={isDeckBuilderOpen} onClose={closeCurrentModal} />
+        tourForceTab={
+          activeTourEnvView === 'deckbuilder_build'
+            ? 'build'
+            : activeTourEnvView === 'deckbuilder_mulligan'
+            ? 'mulligan'
+            : activeTourEnvView === 'deckbuilder_neural'
+            ? 'neural'
+            : activeTourEnvView === 'deckbuilder_compare'
+            ? 'compare'
+            : activeTourEnvView === 'deckbuilder_stats'
+            ? 'stats'
+            : undefined
+        }
+      />
       <AlbumModal 
         isOpen={isAlbumOpen} 
         onClose={closeCurrentModal} 
@@ -2239,6 +2380,13 @@ export default function App() {
           onClose={closeCurrentModal}
           onOpenAuth={() => setIsAuthModalOpen(true)}
           allCards={allCards}
+          tourForceTab={
+            activeTourEnvView === 'tournament_config'
+              ? 'config'
+              : activeTourEnvView === 'tournament_bracket'
+              ? 'bracket'
+              : undefined
+          }
         />
       )}
       <ChampionshipHistoryModal
@@ -2253,9 +2401,19 @@ export default function App() {
         onOpenAuth={() => setIsAuthModalOpen(true)}
       />
       <TypeModal type={selectedType} onClose={closeCurrentModal} />
-      {isGameOpen && <GameBoard onClose={closeCurrentModal} />}
+      {isGameOpen && (
+        <GameBoard
+          onClose={closeCurrentModal}
+          tourForceShowSetup={
+            activeTourEnvView === 'game_setup'
+              ? true
+              : activeTourEnvView === 'game_board'
+              ? false
+              : undefined
+          }
+        />
+      )}
       <DuelBotModal isOpen={isDuelBotOpen} onClose={() => setIsDuelBotOpen(false)} />
-      <BoosterOpenerModal isOpen={isBoosterOpenerOpen} onClose={() => setIsBoosterOpenerOpen(false)} isAdmin={isAdmin} />
       {adminMode !== 'none' && isAdmin && <AdminPanel adminType={adminMode} onClose={closeCurrentModal} />}
 
       {/* Camada Global de Textura / Placeholder para as Abas Secundárias (TEX-08 a TEX-11) */}
@@ -2279,7 +2437,7 @@ export default function App() {
           />
         </div>
       )}
-      {(isBuyModalOpen || isBoosterOpenerOpen || isTournamentOpen || isChampionshipHistoryOpen || isAlbumOpen || isCollectorsRankingOpen || isUserProfileOpen) && textures.store_booster_texture && (
+      {(isBuyModalOpen || isTournamentOpen || isChampionshipHistoryOpen || isAlbumOpen || isCollectorsRankingOpen || isUserProfileOpen) && textures.store_booster_texture && (
         <div className="fixed inset-0 z-[125] pointer-events-none">
           <ArcaneCyberTextureLayer
             slot={textures.store_booster_texture}
@@ -2318,7 +2476,7 @@ export default function App() {
           showPlaceholderBadge={showPlaceholdersUI}
           onOpenConfig={handleOpenTextureSlotConfig}
         />
-        <div className="container mx-auto px-3 sm:px-6 relative z-10 flex items-center justify-between gap-3">
+        <div data-tour-id="tour-mobile-nav-bar" className="container mx-auto px-3 sm:px-6 relative z-10 flex items-center justify-between gap-3">
           {/* Logo */}
           <div 
             className="flex items-center gap-2.5 cursor-pointer shrink-0 group"
@@ -2333,9 +2491,12 @@ export default function App() {
 
           {/* Desktop / Laptop Navigation - Wrap responsivo sem sobrepor botões */}
           <div className="hidden md:flex items-center justify-end flex-wrap gap-1.5 lg:gap-2 flex-1 min-w-0">
-            <NavbarSpotifyMicroPlayer isHomePage={isOnHomePage} />
+            <ConhecaOSiteNavbarButton onClick={() => openTourAtSlide(0)} />
+            <SiteEffectsToggleButton />
+            <NavbarSpotifyMicroPlayer isHomePage={isOnHomePage && !isWelcomePromptOpen && !isTourModalOpen} />
             <button 
               type="button"
+              data-tour-id="tour-btn-manual"
               onClick={() => {
                 document.getElementById('manual-regras')?.scrollIntoView({ behavior: 'smooth' });
               }}
@@ -2344,24 +2505,28 @@ export default function App() {
               <BookOpen size={13} className="text-amber-400" /> Manual
             </button>
             <button 
+              data-tour-id="tour-btn-catalog"
               onClick={() => setIsCatalogOpen(true)}
               className="cyber-arcane-btn bg-[#0d0b18]/90 hover:bg-[#17132b] text-slate-100 border border-purple-500/35 hover:border-amber-400/60 px-2.5 py-1.5 text-[11px] font-cyber font-bold uppercase tracking-wider transition-all duration-200 flex items-center gap-1.5 active:scale-95 whitespace-nowrap"
             >
               <Search size={13} className="text-purple-400" /> Catálogo
             </button>
             <button 
+              data-tour-id="tour-btn-lore"
               onClick={() => setIsLoreOpen(true)}
               className="cyber-arcane-btn bg-[#0d0b18]/90 hover:bg-[#17132b] text-slate-100 border border-cyan-500/35 hover:border-cyan-400/70 px-2.5 py-1.5 text-[11px] font-cyber font-bold uppercase tracking-wider transition-all duration-200 flex items-center gap-1.5 active:scale-95 whitespace-nowrap"
             >
               <BookOpen size={13} className="text-cyan-400" /> Lore
             </button>
             <button 
+              data-tour-id="tour-btn-duelo"
               onClick={() => setIsGameOpen(true)}
               className="cyber-arcane-btn bg-[#0d0b18]/90 hover:bg-[#17132b] text-slate-100 border border-purple-500/35 hover:border-purple-400/70 px-2.5 py-1.5 text-[11px] font-cyber font-bold uppercase tracking-wider transition-all duration-200 flex items-center gap-1.5 active:scale-95 whitespace-nowrap"
             >
               <Zap size={13} className="text-purple-400" /> App Duelo
             </button>
             <button 
+              data-tour-id="tour-btn-duel-ia"
               onClick={() => setIsDuelBotOpen(true)}
               className="cyber-arcane-btn bg-gradient-to-r from-purple-950 via-indigo-950 to-cyan-950 hover:from-purple-900 hover:to-cyan-900 text-cyan-200 px-2.5 py-1.5 text-[11px] font-cyber font-bold uppercase tracking-wider transition-all duration-200 flex items-center gap-1.5 active:scale-95 whitespace-nowrap border border-cyan-400/45 shadow-[0_0_12px_rgba(6,182,212,0.2)]"
               title="Simulador de Duelo contra IA (Deck Insanis)"
@@ -2369,32 +2534,28 @@ export default function App() {
               <Sword size={13} className="text-amber-300" /> Duelo vs IA
             </button>
             <button 
+              data-tour-id="tour-btn-torneio"
               onClick={() => setIsTournamentOpen(true)}
               className="cyber-arcane-btn bg-[#0d0b18]/90 hover:bg-[#17132b] text-slate-100 border border-amber-500/35 hover:border-amber-400/70 px-2.5 py-1.5 text-[11px] font-cyber font-bold uppercase tracking-wider transition-all duration-200 flex items-center gap-1.5 active:scale-95 whitespace-nowrap"
             >
               <Crown size={13} className="text-amber-400" /> Torneio
             </button>
             <button 
+              data-tour-id="tour-btn-deckbuilder"
               onClick={() => setIsDeckBuilderOpen(true)} 
               className="cyber-arcane-btn bg-[#0d0b18]/90 hover:bg-[#17132b] text-slate-100 border border-purple-500/35 hover:border-amber-400/60 px-2.5 py-1.5 text-[11px] font-cyber font-bold uppercase tracking-wider transition-all duration-200 flex items-center gap-1.5 active:scale-95 whitespace-nowrap"
             >
               <Layers size={13} className="text-purple-400" /> DeckBuilder
             </button>
             <button 
+              data-tour-id="tour-btn-populares"
               onClick={() => setIsPopularCardsOpen(true)} 
               className="cyber-arcane-btn bg-[#0d0b18]/90 hover:bg-[#17132b] text-slate-100 border border-rose-500/35 hover:border-rose-400/70 px-2.5 py-1.5 text-[11px] font-cyber font-bold uppercase tracking-wider transition-all duration-200 flex items-center gap-1.5 active:scale-95 whitespace-nowrap"
               title="Cartas Populares da Comunidade (Meta)"
             >
               <Flame size={13} className="text-rose-400" /> Populares
             </button>
-            <button 
-              onClick={() => setIsBoosterOpenerOpen(true)} 
-              className="cyber-arcane-btn bg-gradient-to-r from-amber-500/90 to-yellow-500/90 hover:from-amber-400 hover:to-yellow-400 text-slate-950 px-2.5 py-1.5 text-[11px] font-cinzel font-black uppercase tracking-wider transition-all duration-200 flex items-center gap-1.5 shadow-[0_0_15px_rgba(245,158,11,0.3)] active:scale-95 whitespace-nowrap"
-              title="Simulador de Abertura de Booster (Pack Opener)"
-            >
-              <Sparkles size={13} className="text-slate-950" /> Booster
-            </button>
-            <div className="flex items-center gap-1">
+            <div data-tour-id="tour-btn-mercado" className="flex items-center gap-1">
               <button 
                 onClick={() => {
                   setStoreInitialOrderId(null);
@@ -2443,34 +2604,44 @@ export default function App() {
             )}
 
             {/* Conta / Perfil */}
-            {!user ? (
+            {!user && activeTourEnvView !== 'home_account' ? (
               <button 
+                data-tour-id="tour-btn-conta"
                 onClick={() => setIsAuthModalOpen(true)}
                 className="cyber-arcane-btn bg-gradient-to-r from-purple-700 to-indigo-700 hover:from-purple-600 hover:to-indigo-600 text-white border border-purple-400/40 px-3 py-1.5 text-[11px] font-cyber font-bold uppercase tracking-wider transition-all duration-200 flex items-center gap-1.5 shadow-md shadow-purple-900/40 active:scale-95 whitespace-nowrap"
               >
                 <LogIn size={13} /> Entrar
               </button>
             ) : (
-              <div className="relative">
+              <div data-tour-id="tour-btn-conta" className="relative">
                 <button
-                  onClick={() => setIsUserMenuOpen(prev => !prev)}
+                  onClick={() => {
+                    if (!user) {
+                      setIsAuthModalOpen(true);
+                    } else {
+                      setIsUserMenuOpen(prev => !prev);
+                    }
+                  }}
                   className="bg-[#0d0b18]/95 hover:bg-[#17132b] text-amber-100 border border-amber-500/40 px-2.5 py-1 text-xs font-cyber font-bold transition flex items-center gap-2 shadow-sm"
                 >
-                  {user.photoURL ? (
+                  {user?.photoURL ? (
                     <img src={user.photoURL} alt={user.displayName || 'Jogador'} className="w-5 h-5 rounded-full border border-amber-400" />
                   ) : (
                     <div className="w-5 h-5 rounded-full bg-purple-800 border border-amber-400/50 flex items-center justify-center text-[10px] text-amber-200 font-bold">
-                      {(user.displayName || 'J')[0]}
+                      {(user?.displayName || 'J')[0]}
                     </div>
                   )}
-                  <span className="max-w-[95px] truncate hidden xl:inline">{user.displayName || 'Conta'}</span>
+                  <span className="max-w-[95px] truncate hidden xl:inline">{user?.displayName || 'Sua Conta'}</span>
                   <ChevronDown size={13} className="text-amber-400" />
                 </button>
 
-                {isUserMenuOpen && (
-                  <div className="absolute right-0 mt-2 w-64 bg-[#07060e] border border-amber-500/40 shadow-2xl py-2 z-50 flex flex-col gap-1 animate-in fade-in zoom-in-95 duration-150">
+                {(isUserMenuOpen || activeTourEnvView === 'home_account') && (
+                  <div
+                    data-tour-id="tour-account-menu-dropdown"
+                    className="absolute right-0 mt-2 w-64 bg-[#07060e] border border-amber-500/40 shadow-2xl py-2 z-50 flex flex-col gap-1 animate-in fade-in zoom-in-95 duration-150"
+                  >
                     <div className="px-3 py-2 border-b border-slate-800/80 mb-1">
-                      {isEditingDisplayName ? (
+                      {user && isEditingDisplayName ? (
                         <div className="flex flex-col gap-1.5 py-1">
                           <span className="text-[10px] text-purple-400 font-semibold uppercase tracking-wider">Mudar Nome de Exibição</span>
                           <div className="flex items-center gap-1.5">
@@ -2507,27 +2678,33 @@ export default function App() {
                       ) : (
                         <div className="flex items-center justify-between gap-1">
                           <div className="min-w-0 flex-1">
-                            <div className="text-xs font-bold text-white truncate" title={user.displayName || 'Jogador'}>
-                              {user.displayName || 'Jogador'}
+                            <div className="text-xs font-bold text-white truncate" title={user?.displayName || 'Duelista'}>
+                              {user?.displayName || 'Sua Conta de Duelista'}
                             </div>
-                            <div className="text-[10px] text-slate-400 truncate">{user.email}</div>
+                            <div className="text-[10px] text-slate-400 truncate">{user?.email || 'Perfil, Álbum & Coleção'}</div>
                           </div>
-                          <button
-                            onClick={() => {
-                              setTempDisplayName(user.displayName || '');
-                              setIsEditingDisplayName(true);
-                            }}
-                            className="p-1.5 text-slate-400 hover:text-purple-300 hover:bg-purple-950/50 rounded-lg transition shrink-0"
-                            title="Alterar nome de usuário"
-                          >
-                            <Edit2 size={13} />
-                          </button>
+                          {user && (
+                            <button
+                              onClick={() => {
+                                setTempDisplayName(user.displayName || '');
+                                setIsEditingDisplayName(true);
+                              }}
+                              className="p-1.5 text-slate-400 hover:text-purple-300 hover:bg-purple-950/50 rounded-lg transition shrink-0"
+                              title="Alterar nome de usuário"
+                            >
+                              <Edit2 size={13} />
+                            </button>
+                          )}
                         </div>
                       )}
                     </div>
 
                     <button
                       onClick={() => {
+                        if (!user) {
+                          setIsAuthModalOpen(true);
+                          return;
+                        }
                         setTempDisplayName(user.displayName || '');
                         setIsEditingDisplayName(true);
                       }}
@@ -2654,6 +2831,17 @@ export default function App() {
         {/* Mobile Menu */}
         {isMenuOpen && (
              <div className="md:hidden absolute top-full left-0 w-full bg-[#0a0a0c] border-b border-slate-800 p-4 flex flex-col gap-2.5 shadow-2xl animate-in slide-in-from-top-2">
+                <ConhecaOSiteNavbarButton
+                  onClick={() => {
+                    setIsMenuOpen(false);
+                    openTourAtSlide(0);
+                  }}
+                  className="w-full justify-center py-2"
+                />
+                <div className="flex items-center gap-2 flex-wrap">
+                  <SiteEffectsToggleButton className="flex-1 justify-between" />
+                  <NavbarSpotifyMicroPlayer isHomePage={isOnHomePage && !isWelcomePromptOpen && !isTourModalOpen} />
+                </div>
                 <button 
                   type="button"
                   className="bg-purple-600 hover:bg-purple-500 text-white px-3.5 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 shadow-sm shadow-purple-900/40" 
@@ -2705,12 +2893,6 @@ export default function App() {
                   className="bg-slate-100 hover:bg-white text-slate-950 px-3.5 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 shadow-sm text-left"
                 >
                   <Flame size={15} className="text-red-500 fill-red-500/20" /> Cartas Populares (Meta)
-                </button>
-                <button 
-                  onClick={() => { setIsBoosterOpenerOpen(true); setIsMenuOpen(false); }} 
-                  className="bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-slate-950 px-3.5 py-2 rounded-lg text-xs font-black transition flex items-center gap-2 shadow-sm text-left"
-                >
-                  <Sparkles size={15} className="text-slate-950" /> Simulador de Booster (Pack Opener)
                 </button>
                 <div className="flex items-center gap-2">
                   <button 
@@ -2845,7 +3027,7 @@ export default function App() {
       {/* 1. Hero Section — Dark Magic x High Magic x Cyberpunk */}
       <header className="relative pt-28 pb-24 lg:pt-36 lg:pb-32 overflow-hidden min-h-[70vh] lg:min-h-[78vh] flex items-center">
         <div className="absolute top-0 left-0 w-full h-full z-0 overflow-hidden bg-[#05040a]">
-          {backgroundVideos.map((vid: any, i: number) => {
+          {siteEffectsEnabled && backgroundVideos.map((vid: any, i: number) => {
             const isActive = i === currentVideoIndex;
             const resolvedPosition =
               !vid.position || vid.position === 'center' ? 'center top' : vid.position;
@@ -2877,42 +3059,48 @@ export default function App() {
             showPlaceholderBadge={showPlaceholdersUI}
             onOpenConfig={handleOpenTextureSlotConfig}
           />
-          <div className="absolute inset-0 cyber-scanlines opacity-35 pointer-events-none" />
+          {siteEffectsEnabled && (
+            <div className="absolute inset-0 cyber-scanlines opacity-35 pointer-events-none" />
+          )}
           {/* Suave escurecimento no topo para leitura da navbar e gradiente intenso na base para não dar corte abrupto */}
           <div className="absolute inset-0 bg-gradient-to-b from-[#05040a]/80 via-[#05040a]/25 to-[#05040a] pointer-events-none"></div>
           <div className="absolute bottom-0 left-0 right-0 h-48 sm:h-64 md:h-72 bg-gradient-to-t from-[#05040a] via-[#05040a]/90 to-transparent pointer-events-none z-10"></div>
         </div>
 
-        <div className="container mx-auto px-4 sm:px-6 relative z-20 text-center">
+        <div data-tour-id="tour-hero-main" className="container mx-auto px-4 sm:px-6 relative z-20 text-center">
           {homeSettings ? (
             <div className="max-w-4xl mx-auto relative py-6 px-4 sm:px-8">
               <div className="inline-flex items-center gap-2.5 px-3.5 py-1 mb-5 bg-[#090714]/85 border border-amber-500/35 shadow-[0_0_25px_rgba(168,85,247,0.2)]">
-                <span className="w-1.5 h-1.5 rotate-45 bg-cyan-400 animate-pulse" />
+                <span className={`w-1.5 h-1.5 rotate-45 bg-cyan-400 ${siteEffectsEnabled ? 'animate-pulse' : ''}`} />
                 <h2 className="font-mono text-[11px] sm:text-xs tracking-[0.28em] uppercase drop-shadow-md" style={{ color: homeSettings.primaryColor || '#e2c15a' }}>
                   {homeSettings.topSubtitle ?? ''}
                 </h2>
-                <span className="w-1.5 h-1.5 rotate-45 bg-amber-400 animate-pulse" />
+                <span className={`w-1.5 h-1.5 rotate-45 bg-amber-400 ${siteEffectsEnabled ? 'animate-pulse' : ''}`} />
               </div>
 
               {/* Título Principal + SideText em layout flexível responsivo (sem estourar nem sobrepor) */}
               <div className="flex flex-wrap items-baseline justify-center gap-x-4 gap-y-2 mb-6">
                 <h1 
-                  className={`font-cinzel text-4xl sm:text-6xl md:text-8xl font-black tracking-tight ${homeSettings.titleEffect === 'glitch' ? 'glitch-text' : homeSettings.titleEffect === 'pulse' ? 'animate-pulse' : ''}`} 
+                  className={`font-cinzel text-4xl sm:text-6xl md:text-8xl font-black tracking-tight ${siteEffectsEnabled ? (homeSettings.titleEffect === 'glitch' ? 'glitch-text' : homeSettings.titleEffect === 'pulse' ? 'animate-pulse' : '') : ''}`} 
                   data-text={homeSettings.title ?? ''}
                   style={{
                     color: homeSettings.primaryColor || '#d4af37',
-                    filter: `drop-shadow(0 0 ${homeSettings.titleShadowIntensity ?? 18}px ${homeSettings.titleShadowColor || homeSettings.primaryColor || '#9333ea'})`
+                    filter: siteEffectsEnabled
+                      ? `drop-shadow(0 0 ${homeSettings.titleShadowIntensity ?? 18}px ${homeSettings.titleShadowColor || homeSettings.primaryColor || '#9333ea'})`
+                      : 'none'
                   }}
                 >
                   {homeSettings.title ?? ''}
                 </h1>
                 {homeSettings.sideText && (
                   <span 
-                    className={`text-2xl sm:text-4xl md:text-6xl font-cyber font-bold tracking-wider pointer-events-none ${homeSettings.sideTextEffect === 'flicker' ? 'animate-flicker-rare' : homeSettings.sideTextEffect === 'pulse' ? 'animate-pulse' : homeSettings.sideTextEffect === 'glitch' ? 'glitch-text' : ''}`} 
+                    className={`text-2xl sm:text-4xl md:text-6xl font-cyber font-bold tracking-wider pointer-events-none ${siteEffectsEnabled ? (homeSettings.sideTextEffect === 'flicker' ? 'animate-flicker-rare' : homeSettings.sideTextEffect === 'pulse' ? 'animate-pulse' : homeSettings.sideTextEffect === 'glitch' ? 'glitch-text' : '') : ''}`} 
                     data-text={homeSettings.sideText}
                     style={{ 
                       color: homeSettings.sideTextColor || '#22d3ee',
-                      filter: `drop-shadow(0 0 ${homeSettings.sideTextShadowIntensity ?? 12}px ${homeSettings.sideTextShadowColor || homeSettings.sideTextColor || '#06b6d4'})`
+                      filter: siteEffectsEnabled
+                        ? `drop-shadow(0 0 ${homeSettings.sideTextShadowIntensity ?? 12}px ${homeSettings.sideTextShadowColor || homeSettings.sideTextColor || '#06b6d4'})`
+                        : 'none'
                     }}
                   >
                     {homeSettings.sideText}
@@ -2935,34 +3123,39 @@ export default function App() {
       </header>
 
       {/* 2. ABAIXO: NOVIDADES */}
-      <NovidadesSection 
-        products={homeSettings?.exclusiveProducts || []} 
-        onOpenProductModal={(product, variationIndex) => {
-          setSelectedProduct(product);
-          setSelectedProductVariationIndex(variationIndex);
-        }}
-        onOpenStoreCheckout={(product, variationIdx) => {
-          if (product && typeof product === 'object') {
-            addToCart(product, variationIdx, 1);
-          }
-          setStoreInitialOrderId(null);
-          setStoreInitialTab('carrinho');
-          setIsBuyModalOpen(true);
-        }}
-        allCards={allCards}
-        textureSlot={textures.novidades_cyber_texture}
-        showPlaceholderBadge={showPlaceholdersUI}
-        onConfigureTexture={handleOpenTextureSlotConfig}
-      />
+      <div data-tour-id="tour-sec-novidades">
+        <NovidadesSection 
+          products={homeSettings?.exclusiveProducts || []} 
+          onOpenProductModal={(product, variationIndex) => {
+            setSelectedProduct(product);
+            setSelectedProductVariationIndex(variationIndex);
+          }}
+          onOpenStoreCheckout={(product, variationIdx) => {
+            if (product && typeof product === 'object') {
+              addToCart(product, variationIdx, 1);
+            }
+            setStoreInitialOrderId(null);
+            setStoreInitialTab('carrinho');
+            setIsBuyModalOpen(true);
+          }}
+          allCards={allCards}
+          textureSlot={textures.novidades_cyber_texture}
+          showPlaceholderBadge={showPlaceholdersUI}
+          onConfigureTexture={handleOpenTextureSlotConfig}
+        />
+      </div>
 
       {/* 3. ABAIXO: SOBRE LIGHT DARK */}
-      <GameLore
-        textureSlot={textures.lore_grimoire_texture}
-        showPlaceholderBadge={showPlaceholdersUI}
-        onConfigureTexture={handleOpenTextureSlotConfig}
-      />
+      <div data-tour-id="tour-sec-sobre">
+        <GameLore
+          textureSlot={textures.lore_grimoire_texture}
+          showPlaceholderBadge={showPlaceholdersUI}
+          onConfigureTexture={handleOpenTextureSlotConfig}
+        />
+      </div>
 
       {/* 4. ABAIXO: MANUAL E REGRAS (PATCH ATUAL:) + Tipos de Cartas + RESTANTE DO MANUAL */}
+      <div data-tour-id="tour-sec-manual">
       <GameGuideSections 
         archetypes={archetypes} 
         isAdmin={isAdmin} 
@@ -2971,8 +3164,9 @@ export default function App() {
         panelTextureSlot={textures.panel_card_texture}
         showPlaceholderBadge={showPlaceholdersUI}
         onConfigureTexture={handleOpenTextureSlotConfig}
+        tourOpenManualSection={activeTourSlide?.manualSection || null}
         cardTypesShowcase={
-          <div id="cartas" className="py-10 px-4 sm:px-8 cyber-arcane-box relative overflow-hidden">
+          <div id="cartas" data-tour-id="tour-sec-cartas" className="py-10 px-4 sm:px-8 cyber-arcane-box relative overflow-hidden">
             <ArcaneCyberTextureLayer
               slot={textures.card_altar_texture}
               variant="high-magic"
@@ -3017,6 +3211,7 @@ export default function App() {
           </div>
         }
       />
+      </div>
 
       {/* Footer */}
       <footer className="bg-black py-12 border-t border-slate-900">
@@ -3092,6 +3287,30 @@ export default function App() {
           onOpenAuth={() => setIsAuthModalOpen(true)}
         />
       )}
+
+      {/* Janela de Primeira Visita ou Longo Tempo sem Entrar ("Primeira vez no site? Deseja conhecer a plataforma?") */}
+      <BlairFirstVisitPromptModal
+        isOpen={isWelcomePromptOpen}
+        onAccept={handleAcceptWelcomePrompt}
+        onDecline={handleDeclineWelcomePrompt}
+        blairPngUrl={
+          tourSettings.stepBlairPngUrls?.['step_01_welcome'] ||
+          tourSettings.defaultBlairPngUrl ||
+          ''
+        }
+      />
+
+      {/* Apresentação Dinâmica "Conheça o Site" Guiada pela Blair */}
+      <BlairSiteTourModal
+        isOpen={isTourModalOpen}
+        onClose={handleCloseTour}
+        currentSlideIndex={tourSlideIndex}
+        onChangeSlideIndex={setTourSlideIndex}
+        isAdmin={isAdmin}
+        tourSettings={tourSettings}
+        onSaveStepPng={saveBlairStepPng}
+        onSaveDefaultPng={saveDefaultBlairPng}
+      />
     </div>
   );
 }

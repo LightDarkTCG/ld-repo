@@ -38,7 +38,7 @@ import {
 import { doc, getDoc, setDoc, updateDoc, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase';
 import { CardData } from '../cardService';
-import { Match, Participant, Referee } from '../tournamentService';
+import { Match, Participant, Referee, setTournamentMatchLiveStatus } from '../tournamentService';
 
 export interface OnlineDuelBroadcastModalProps {
   isOpen: boolean;
@@ -51,6 +51,8 @@ export interface OnlineDuelBroadcastModalProps {
   currentUserUid?: string;
   currentUserName?: string;
   referees?: Referee[];
+  initialRole?: 'p1' | 'p2' | 'admin' | 'spectator';
+  onLiveStatusChange?: (matchId: string, isLive: boolean) => void;
   onSaveMatchScore?: (
     matchId: string,
     score1: number,
@@ -133,6 +135,8 @@ export const OnlineDuelBroadcastModal: React.FC<OnlineDuelBroadcastModalProps> =
   isAdminOrCreator,
   currentUserUid,
   currentUserName,
+  initialRole,
+  onLiveStatusChange,
   onSaveMatchScore
 }) => {
   const roomId = useMemo(
@@ -140,22 +144,28 @@ export const OnlineDuelBroadcastModal: React.FC<OnlineDuelBroadcastModalProps> =
     [tournamentId, match.id, match.liveRoomId]
   );
 
-  // Determine default role based on linked account
-  const detectedRole = useMemo<'p1' | 'p2' | 'admin'>(() => {
+  // Determine default role: guests default to 'spectator' so they immediately watch the live broadcast
+  const detectedRole = useMemo<'p1' | 'p2' | 'admin' | 'spectator'>(() => {
+    if (initialRole) return initialRole;
     if (currentUserUid && match.player1?.userId === currentUserUid) return 'p1';
     if (currentUserUid && match.player2?.userId === currentUserUid) return 'p2';
     if (isAdminOrCreator) return 'admin';
-    return 'p1';
-  }, [currentUserUid, match.player1?.userId, match.player2?.userId, isAdminOrCreator]);
+    return 'spectator';
+  }, [initialRole, currentUserUid, match.player1?.userId, match.player2?.userId, isAdminOrCreator]);
 
   const [myRole, setMyRole] = useState<'p1' | 'p2' | 'admin' | 'spectator'>(detectedRole);
+  const [spectatorInspectedCard, setSpectatorInspectedCard] = useState<SpotlightCardState | null>(null);
+
+  useEffect(() => {
+    setMyRole(detectedRole);
+  }, [detectedRole]);
 
   // Room synced state
   const [roomState, setRoomState] = useState<LiveDuelRoomState>({
     roomId,
     tournamentId,
     matchId: match.id,
-    isLiveBroadcast: false,
+    isLiveBroadcast: Boolean(match.isLive),
     broadcastTitle: `${tournamentName || 'Copa Light Dark'} • Rodada ${match.round}`,
     broadcastBannerText: 'TRANSMISSÃO OFICIAL MD3 • VITÓRIA = 3 PTS | EMPATE = 1 PT | W.O. = 3 PTS',
     adminSwapSides: false,
@@ -305,6 +315,14 @@ export const OnlineDuelBroadcastModal: React.FC<OnlineDuelBroadcastModalProps> =
     };
   }, [isOpen]);
 
+  const handleToggleLiveBroadcast = async (nextLive: boolean) => {
+    await patchRoom({ isLiveBroadcast: nextLive });
+    if (onLiveStatusChange) {
+      onLiveStatusChange(match.id, nextLive);
+    }
+    await setTournamentMatchLiveStatus(tournamentId, match.id, nextLive);
+  };
+
   // Start / Stop Deck Camera (Camera 1 - Mandatory for player table/deck)
   const startDeckCamera = async (customDeviceId?: string) => {
     setCameraError(null);
@@ -324,6 +342,9 @@ export const OnlineDuelBroadcastModal: React.FC<OnlineDuelBroadcastModalProps> =
         await deckVideoRef.current.play().catch(() => {});
       }
       setIsDeckCamActive(true);
+      if (!roomState.isLiveBroadcast) {
+        handleToggleLiveBroadcast(true);
+      }
       await refreshVideoDevices();
     } catch (err: any) {
       console.error('Erro ao abrir câmera do deck:', err);
@@ -600,6 +621,7 @@ export const OnlineDuelBroadcastModal: React.FC<OnlineDuelBroadcastModalProps> =
 
   const handleFinishMd3FromStudio = (woWinnerId?: string | null) => {
     if (!onSaveMatchScore) return;
+    handleToggleLiveBroadcast(false);
     if (woWinnerId) {
       const isP1 = woWinnerId === match.player1?.id;
       onSaveMatchScore(match.id, isP1 ? 2 : 0, isP1 ? 0 : 2, {
@@ -1336,34 +1358,49 @@ export const OnlineDuelBroadcastModal: React.FC<OnlineDuelBroadcastModalProps> =
 
         {/* CENTER ROUND / TURN / RECORDING CONTROLS */}
         <div className="flex flex-wrap items-center gap-2">
-          {/* Role Switcher */}
+          {/* Role Switcher (Espectador Convidado / Jogador 1 / Jogador 2 / Admin) */}
           <div className="flex items-center bg-black/70 p-1 rounded-xl border border-purple-500/30 text-[10px] font-bold">
+            <button
+              onClick={() => setMyRole('spectator')}
+              className={`px-2.5 py-1 rounded-lg transition flex items-center gap-1 ${
+                myRole === 'spectator'
+                  ? 'bg-emerald-500 text-slate-950 font-black shadow'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+              title="Modo Espectador para convidados assistirem a transmissão ao vivo"
+            >
+              <Eye size={11} /> Assistindo (Convidado)
+            </button>
             <button
               onClick={() => setMyRole('p1')}
               className={`px-2.5 py-1 rounded-lg transition ${
                 myRole === 'p1' ? 'bg-purple-600 text-white' : 'text-slate-400 hover:text-white'
               }`}
+              title="Entrar como Jogador 1 para transmitir sua câmera"
             >
-              Visão P1
+              Sou P1 ({roomState.p1Name.split(' ')[0]})
             </button>
             <button
               onClick={() => setMyRole('p2')}
               className={`px-2.5 py-1 rounded-lg transition ${
                 myRole === 'p2' ? 'bg-cyan-600 text-slate-950 font-black' : 'text-slate-400 hover:text-white'
               }`}
+              title="Entrar como Jogador 2 para transmitir sua câmera"
             >
-              Visão P2
+              Sou P2 ({roomState.p2Name.split(' ')[0]})
             </button>
-            <button
-              onClick={() => setMyRole('admin')}
-              className={`px-2.5 py-1 rounded-lg transition flex items-center gap-1 ${
-                myRole === 'admin'
-                  ? 'bg-amber-500 text-slate-950 font-black'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              <Tv size={11} /> Admin / Juiz
-            </button>
+            {isAdminOrCreator && (
+              <button
+                onClick={() => setMyRole('admin')}
+                className={`px-2.5 py-1 rounded-lg transition flex items-center gap-1 ${
+                  myRole === 'admin'
+                    ? 'bg-amber-500 text-slate-950 font-black'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <Tv size={11} /> Admin / Juiz
+              </button>
+            )}
           </div>
 
           {/* Recording Controls */}
@@ -1406,7 +1443,11 @@ export const OnlineDuelBroadcastModal: React.FC<OnlineDuelBroadcastModalProps> =
             }`}
           >
             <Sliders size={13} />
-            <span>Painel de Transmissão & Cartas</span>
+            <span>
+              {myRole === 'spectator'
+                ? 'Cartas & Log da Partida'
+                : 'Painel de Transmissão & Cartas'}
+            </span>
           </button>
 
           <button
@@ -1436,7 +1477,7 @@ export const OnlineDuelBroadcastModal: React.FC<OnlineDuelBroadcastModalProps> =
         <div className="flex-1 flex flex-col overflow-y-auto p-3 sm:p-4 space-y-3 relative">
           {/* MATCH SCOREBOARD & TURN BAR */}
           <div className="bg-gradient-to-r from-purple-950/70 via-[#120b24] to-cyan-950/70 border border-amber-500/40 rounded-2xl p-2.5 sm:px-5 flex flex-wrap items-center justify-between gap-3 shadow-lg">
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 flex-wrap">
               <div className="px-3 py-1 rounded-xl bg-black/70 border border-amber-500/40 text-center">
                 <span className="block text-[9px] font-mono text-slate-400 uppercase">RODADA</span>
                 <span className="text-lg sm:text-xl font-black font-mono text-amber-300">
@@ -1444,22 +1485,42 @@ export const OnlineDuelBroadcastModal: React.FC<OnlineDuelBroadcastModalProps> =
                 </span>
               </div>
 
-              <button
-                onClick={handlePassTurn}
-                className="px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-slate-950 font-black text-xs uppercase tracking-wider flex items-center gap-1.5 shadow-md active:scale-95 transition"
-              >
-                <Zap size={14} className="fill-slate-950" />
-                <span>Passar Turno (+Mana Virada)</span>
-              </button>
+              {myRole === 'spectator' ? (
+                <div className="flex items-center gap-2">
+                  <span className="px-3 py-1.5 rounded-xl bg-emerald-950/80 border border-emerald-400/50 text-emerald-300 font-mono font-black text-xs flex items-center gap-1.5">
+                    <Eye size={13} className="text-emerald-400" />
+                    <span>MODO ESPECTADOR • TRANSMISSÃO AO VIVO</span>
+                  </span>
+                  <span className="px-3 py-1.5 rounded-xl bg-amber-500/20 border border-amber-400/50 text-amber-200 font-bold text-xs flex items-center gap-1.5">
+                    <Zap size={13} className="text-amber-400" />
+                    <span>
+                      Turno Ativo:{' '}
+                      <b className="text-white">
+                        {roomState.activePlayer === 1 ? roomState.p1Name : roomState.p2Name}
+                      </b>
+                    </span>
+                  </span>
+                </div>
+              ) : (
+                <>
+                  <button
+                    onClick={handlePassTurn}
+                    className="px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-slate-950 font-black text-xs uppercase tracking-wider flex items-center gap-1.5 shadow-md active:scale-95 transition"
+                  >
+                    <Zap size={14} className="fill-slate-950" />
+                    <span>Passar Turno (+Mana Virada)</span>
+                  </button>
 
-              <button
-                onClick={() => handleResetGameCounters(1)}
-                className="px-3 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-700 text-xs font-bold flex items-center gap-1.5 transition"
-                title="Resetar Vida (20) e Mana (12) para o próximo jogo da MD3"
-              >
-                <RotateCcw size={13} />
-                <span className="hidden sm:inline">Novo Jogo MD3</span>
-              </button>
+                  <button
+                    onClick={() => handleResetGameCounters(1)}
+                    className="px-3 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-700 text-xs font-bold flex items-center gap-1.5 transition"
+                    title="Resetar Vida (20) e Mana (12) para o próximo jogo da MD3"
+                  >
+                    <RotateCcw size={13} />
+                    <span className="hidden sm:inline">Novo Jogo MD3</span>
+                  </button>
+                </>
+              )}
             </div>
 
             {/* Central Placar MD3 */}
@@ -1489,13 +1550,15 @@ export const OnlineDuelBroadcastModal: React.FC<OnlineDuelBroadcastModalProps> =
                 >
                   {showSpotlightOverlay ? <EyeOff size={13} /> : <Eye size={13} />}
                 </button>
-                <button
-                  onClick={clearSpotlightCard}
-                  className="text-red-400 hover:text-red-300 p-0.5"
-                  title="Remover carta da tela"
-                >
-                  <X size={13} />
-                </button>
+                {myRole !== 'spectator' && (
+                  <button
+                    onClick={clearSpotlightCard}
+                    className="text-red-400 hover:text-red-300 p-0.5"
+                    title="Remover carta da tela"
+                  >
+                    <X size={13} />
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -1520,383 +1583,557 @@ export const OnlineDuelBroadcastModal: React.FC<OnlineDuelBroadcastModalProps> =
           </div>
 
           {/* FLOATING CARD SPOTLIGHT OVERLAY ON BROADCAST SCREEN */}
-          {roomState.spotlightCard && showSpotlightOverlay && (
+          {(spectatorInspectedCard || (roomState.spotlightCard && showSpotlightOverlay)) && (
             <div className="fixed bottom-5 left-5 z-[170] w-72 sm:w-80 bg-[#0b0618]/95 backdrop-blur-xl border-2 border-amber-400 rounded-2xl shadow-[0_0_40px_rgba(251,191,36,0.45)] overflow-hidden animate-in zoom-in-95 duration-200">
-              <div className="px-3 py-2 bg-gradient-to-r from-amber-500 to-yellow-500 text-slate-950 flex items-center justify-between">
-                <div className="flex items-center gap-1.5 font-black text-[11px] uppercase tracking-wider">
-                  <Sparkles size={13} className="fill-slate-950" />
-                  <span>CARTA EM USO NA PARTIDA</span>
-                </div>
-                <button
-                  onClick={clearSpotlightCard}
-                  className="p-0.5 rounded bg-black/20 hover:bg-black/30 text-slate-950"
-                  title="Fechar destaque da carta"
-                >
-                  <X size={14} />
-                </button>
-              </div>
-
-              <div className="p-3 flex gap-3 items-start">
-                {roomState.spotlightCard.imageUrl ? (
-                  <img
-                    src={roomState.spotlightCard.imageUrl}
-                    alt={roomState.spotlightCard.name}
-                    className="w-28 sm:w-32 aspect-[704/987] object-cover rounded-lg border border-amber-400/60 shadow-lg shrink-0"
-                  />
-                ) : (
-                  <div className="w-28 aspect-[704/987] rounded-lg bg-purple-950 border border-amber-400/40 flex items-center justify-center text-center p-2 text-xs font-cinzel font-bold text-amber-200 shrink-0">
-                    {roomState.spotlightCard.name}
-                  </div>
-                )}
-
-                <div className="flex-1 min-w-0 space-y-1.5">
-                  <div>
-                    <span className="text-[9px] font-mono uppercase px-1.5 py-0.5 rounded bg-purple-900/80 text-purple-200 border border-purple-500/40">
-                      {roomState.spotlightCard.type} • CT {roomState.spotlightCard.ct}
-                    </span>
-                    <h4 className="font-cinzel font-black text-white text-sm sm:text-base mt-1 leading-tight">
-                      {roomState.spotlightCard.name}
-                    </h4>
-                  </div>
-
-                  {(roomState.spotlightCard.attack !== undefined ||
-                    roomState.spotlightCard.defense !== undefined) && (
-                    <div className="flex items-center gap-2 text-xs font-mono font-bold">
-                      <span className="text-red-400">ATK {roomState.spotlightCard.attack ?? 0}</span>
-                      <span className="text-cyan-300">DEF {roomState.spotlightCard.defense ?? 0}</span>
+              {(() => {
+                const activeCard = spectatorInspectedCard || roomState.spotlightCard!;
+                return (
+                  <>
+                    <div className="px-3 py-2 bg-gradient-to-r from-amber-500 to-yellow-500 text-slate-950 flex items-center justify-between">
+                      <div className="flex items-center gap-1.5 font-black text-[11px] uppercase tracking-wider">
+                        <Sparkles size={13} className="fill-slate-950" />
+                        <span>
+                          {spectatorInspectedCard ? 'INSPECIONANDO CARTA' : 'CARTA EM USO NA PARTIDA'}
+                        </span>
+                      </div>
+                      <button
+                        onClick={() => {
+                          if (spectatorInspectedCard) {
+                            setSpectatorInspectedCard(null);
+                          } else if (myRole === 'spectator') {
+                            setShowSpotlightOverlay(false);
+                          } else {
+                            clearSpotlightCard();
+                          }
+                        }}
+                        className="p-0.5 rounded bg-black/20 hover:bg-black/30 text-slate-950"
+                        title="Fechar destaque da carta"
+                      >
+                        <X size={14} />
+                      </button>
                     </div>
-                  )}
 
-                  <p className="text-[11px] text-slate-300 leading-snug max-h-28 overflow-y-auto pr-1">
-                    {roomState.spotlightCard.description || 'Sem descrição adicional.'}
-                  </p>
+                    <div className="p-3 flex gap-3 items-start">
+                      {activeCard.imageUrl ? (
+                        <img
+                          src={activeCard.imageUrl}
+                          alt={activeCard.name}
+                          className="w-28 sm:w-32 aspect-[704/987] object-cover rounded-lg border border-amber-400/60 shadow-lg shrink-0"
+                        />
+                      ) : (
+                        <div className="w-28 aspect-[704/987] rounded-lg bg-purple-950 border border-amber-400/40 flex items-center justify-center text-center p-2 text-xs font-cinzel font-bold text-amber-200 shrink-0">
+                          {activeCard.name}
+                        </div>
+                      )}
 
-                  <div className="text-[9px] font-mono text-amber-300/80 pt-1 border-t border-white/10">
-                    {roomState.spotlightCard.source === 'camera_ai'
-                      ? '📷 Reconhecida via Câmera'
-                      : '⚡ Exibida pela Mesa de Transmissão'}
-                  </div>
-                </div>
-              </div>
+                      <div className="flex-1 min-w-0 space-y-1.5">
+                        <div>
+                          <span className="text-[9px] font-mono uppercase px-1.5 py-0.5 rounded bg-purple-900/80 text-purple-200 border border-purple-500/40">
+                            {activeCard.type} • CT {activeCard.ct}
+                          </span>
+                          <h4 className="font-cinzel font-black text-white text-sm sm:text-base mt-1 leading-tight">
+                            {activeCard.name}
+                          </h4>
+                        </div>
+
+                        {(activeCard.attack !== undefined || activeCard.defense !== undefined) && (
+                          <div className="flex items-center gap-2 text-xs font-mono font-bold">
+                            <span className="text-red-400">ATK {activeCard.attack ?? 0}</span>
+                            <span className="text-cyan-300">DEF {activeCard.defense ?? 0}</span>
+                          </div>
+                        )}
+
+                        <p className="text-[11px] text-slate-300 leading-snug max-h-28 overflow-y-auto pr-1">
+                          {activeCard.description || 'Sem descrição adicional.'}
+                        </p>
+
+                        <div className="text-[9px] font-mono text-amber-300/80 pt-1 border-t border-white/10">
+                          {activeCard.source === 'camera_ai'
+                            ? '📷 Reconhecida via Câmera'
+                            : '⚡ Exibida pela Mesa de Transmissão'}
+                        </div>
+                      </div>
+                    </div>
+                  </>
+                );
+              })()}
             </div>
           )}
         </div>
 
-        {/* RIGHT SIDEBAR: ADMIN BROADCAST CONTROLS & CARD RECOGNITION / QUICK SEARCH */}
+        {/* RIGHT SIDEBAR: SPECTATOR LIVE FEED OR ADMIN/PLAYER BROADCAST CONTROLS */}
         {showAdminControlDrawer && (
           <div className="w-full lg:w-96 bg-[#0a0614] border-t lg:border-t-0 lg:border-l border-purple-500/35 flex flex-col overflow-y-auto shrink-0">
-            {/* Section 1: Card Display on Screen (Camera Recognition + Admin Fast Search) */}
-            <div className="p-4 border-b border-purple-500/30 space-y-3">
-              <div className="flex items-center justify-between">
-                <h3 className="font-cinzel font-black text-xs sm:text-sm text-amber-300 uppercase tracking-wider flex items-center gap-1.5">
-                  <ScanLine size={15} className="text-cyan-400" />
-                  <span>Mostrar Carta em Uso na Tela</span>
-                </h3>
-                {roomState.spotlightCard && (
-                  <button
-                    onClick={clearSpotlightCard}
-                    className="text-[10px] font-bold text-red-400 hover:text-red-300 underline"
-                  >
-                    Ocultar Atual
-                  </button>
-                )}
-              </div>
-
-              {/* Camera Recognition Box */}
-              <div className="p-3 rounded-xl bg-gradient-to-br from-purple-950/70 to-slate-900 border border-cyan-500/40 space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-[11px] font-bold text-cyan-300 flex items-center gap-1">
-                    <Wand2 size={13} /> 1. Reconhecimento por Câmera
-                  </span>
-                  <div className="flex items-center gap-1 text-[10px]">
-                    <button
-                      onClick={() => setScanTargetSide('p1')}
-                      className={`px-2 py-0.5 rounded font-bold ${
-                        scanTargetSide === 'p1'
-                          ? 'bg-purple-600 text-white'
-                          : 'bg-slate-800 text-slate-400'
-                      }`}
-                    >
-                      Cam P1
-                    </button>
-                    <button
-                      onClick={() => setScanTargetSide('p2')}
-                      className={`px-2 py-0.5 rounded font-bold ${
-                        scanTargetSide === 'p2'
-                          ? 'bg-cyan-600 text-slate-950'
-                          : 'bg-slate-800 text-slate-400'
-                      }`}
-                    >
-                      Cam P2
-                    </button>
+            {myRole === 'spectator' ? (
+              /* PAINEL DO ESPECTADOR (CONVIDADO ASSISTINDO AO VIVO) */
+              <div className="p-4 space-y-4 flex-1">
+                <div className="p-3.5 rounded-2xl bg-gradient-to-br from-emerald-950/60 via-[#120b24] to-purple-950/50 border border-emerald-500/40 space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-mono font-black uppercase tracking-wider text-emerald-300 flex items-center gap-1.5">
+                      <Radio size={13} className="text-red-400 animate-pulse" /> TRANSMISSÃO PARA CONVIDADOS
+                    </span>
+                    <span className="text-[10px] font-mono text-amber-300">Rodada {roomState.rounds}</span>
                   </div>
+                  <h3 className="font-cinzel font-black text-sm text-white">
+                    {roomState.p1Name} vs {roomState.p2Name}
+                  </h3>
+                  <p className="text-[11px] text-slate-300 leading-relaxed">
+                    Acompanhe em tempo real as câmeras de campo/rosto, marcadores de Vida, Mana, Runas, Sanidade e as cartas jogadas na mesa!
+                  </p>
                 </div>
 
-                <button
-                  onClick={handleRecognizeCardFromCamera}
-                  disabled={isScanningCamera}
-                  className="w-full py-2 px-3 rounded-lg bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 text-slate-950 font-black text-xs flex items-center justify-center gap-1.5 shadow transition"
-                >
-                  <ScanLine size={14} />
-                  <span>
-                    {isScanningCamera
-                      ? 'Escaneando Câmera do Deck...'
-                      : `Escanear Carta da Câmera (${scanTargetSide === 'p1' ? roomState.p1Name : roomState.p2Name})`}
-                  </span>
-                </button>
+                {/* Buscar qualquer carta do jogo para ler o efeito enquanto assiste */}
+                <div className="space-y-2">
+                  <label className="block text-[11px] font-bold text-amber-200">
+                    Consultar Efeito de Carta (Inspecionar na Sua Tela):
+                  </label>
+                  <div className="relative">
+                    <Search
+                      size={14}
+                      className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+                    />
+                    <input
+                      type="text"
+                      value={cardSearchQuery}
+                      onChange={(e) => setCardSearchQuery(e.target.value)}
+                      placeholder="Buscar carta para ler efeito..."
+                      className="w-full bg-black border border-purple-500/50 focus:border-amber-400 rounded-xl pl-8 pr-8 py-2 text-xs text-white outline-none"
+                    />
+                    {cardSearchQuery && (
+                      <button
+                        onClick={() => setCardSearchQuery('')}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
+                      >
+                        <X size={13} />
+                      </button>
+                    )}
+                  </div>
 
-                {scanResultMsg && (
-                  <p className="text-[10px] text-amber-200 bg-black/50 p-1.5 rounded border border-amber-500/30">
-                    {scanResultMsg}
-                  </p>
-                )}
-              </div>
-
-              {/* Fast Admin Type-and-Click Search Fallback */}
-              <div className="space-y-2">
-                <label className="block text-[11px] font-bold text-amber-200">
-                  2. Busca Rápida do Admin / Jogador (Digite e clique para exibir):
-                </label>
-                <div className="relative">
-                  <Search
-                    size={14}
-                    className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
-                  />
-                  <input
-                    type="text"
-                    value={cardSearchQuery}
-                    onChange={(e) => setCardSearchQuery(e.target.value)}
-                    placeholder="Digite o nome da carta rapidamente..."
-                    className="w-full bg-black border border-purple-500/50 focus:border-amber-400 rounded-xl pl-8 pr-8 py-2 text-xs text-white outline-none"
-                  />
-                  {cardSearchQuery && (
-                    <button
-                      onClick={() => setCardSearchQuery('')}
-                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
-                    >
-                      <X size={13} />
-                    </button>
+                  {cardSearchQuery.trim() && (
+                    <div className="max-h-44 overflow-y-auto space-y-1 pr-1 divide-y divide-white/5 bg-black/50 rounded-xl border border-white/10 p-1.5">
+                      {filteredSpotlightCards.map((c) => (
+                        <button
+                          key={`${c.code}-${c.name}`}
+                          onClick={() =>
+                            setSpectatorInspectedCard({
+                              code: c.code || 'LD',
+                              name: c.name,
+                              type: c.type || 'Combatente',
+                              archetype: c.archetype || 'Neutro',
+                              ct: c.ct ?? 0,
+                              attack: c.attack,
+                              defense: c.defense,
+                              description: c.description || '',
+                              imageUrl: c.imageUrl || '',
+                              shownBy: 'Espectador',
+                              shownAt: Date.now(),
+                              source: 'player'
+                            })
+                          }
+                          className="w-full flex items-center gap-2.5 p-1.5 rounded-lg text-left hover:bg-purple-950/60 transition"
+                        >
+                          {c.imageUrl ? (
+                            <img
+                              src={c.imageUrl}
+                              alt={c.name}
+                              className="w-8 h-11 object-cover rounded border border-white/20 shrink-0"
+                            />
+                          ) : (
+                            <div className="w-8 h-11 rounded bg-purple-900 flex items-center justify-center text-[9px] font-bold text-white shrink-0">
+                              LD
+                            </div>
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <div className="text-xs font-bold text-white truncate">{c.name}</div>
+                            <div className="text-[10px] text-slate-400 truncate">
+                              {c.type} • CT {c.ct}
+                            </div>
+                          </div>
+                          <span className="px-2 py-1 rounded bg-cyan-500 text-slate-950 font-black text-[10px] shrink-0">
+                            Ver Carta
+                          </span>
+                        </button>
+                      ))}
+                    </div>
                   )}
                 </div>
 
-                {/* Instant Clickable Card List */}
-                <div className="max-h-52 overflow-y-auto space-y-1 pr-1 divide-y divide-white/5 bg-black/50 rounded-xl border border-white/10 p-1.5">
-                  {filteredSpotlightCards.map((c) => {
-                    const isCurrentlyShown = roomState.spotlightCard?.name === c.name;
-                    return (
+                {/* Cartas Jogadas Recentemente na Partida */}
+                <div>
+                  <span className="block text-[10px] font-mono uppercase text-amber-300 font-bold mb-1.5">
+                    Cartas Jogadas na Partida (Clique para Ler):
+                  </span>
+                  {roomState.spotlightHistory && roomState.spotlightHistory.length > 0 ? (
+                    <div className="grid grid-cols-1 gap-1.5 max-h-48 overflow-y-auto pr-1">
+                      {roomState.spotlightHistory.map((h, i) => (
+                        <button
+                          key={`${h.code}-${i}`}
+                          onClick={() => {
+                            setSpectatorInspectedCard(h);
+                            setShowSpotlightOverlay(true);
+                          }}
+                          className="flex items-center gap-2.5 p-2 rounded-xl bg-purple-950/50 hover:bg-purple-900/70 border border-purple-500/30 text-left transition"
+                        >
+                          {h.imageUrl ? (
+                            <img
+                              src={h.imageUrl}
+                              alt={h.name}
+                              className="w-8 h-11 object-cover rounded border border-amber-400/50 shrink-0"
+                            />
+                          ) : (
+                            <div className="w-8 h-11 rounded bg-purple-900 flex items-center justify-center text-[9px] font-bold text-amber-200 shrink-0">
+                              LD
+                            </div>
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <div className="text-xs font-bold text-white truncate">{h.name}</div>
+                            <div className="text-[10px] text-slate-400 truncate">
+                              {h.type} • CT {h.ct}
+                            </div>
+                          </div>
+                          <Eye size={13} className="text-amber-300 shrink-0" />
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-slate-500 italic bg-black/40 p-3 rounded-xl border border-white/5">
+                      Nenhuma carta destacada na tela ainda.
+                    </p>
+                  )}
+                </div>
+
+                {/* Log em Tempo Real do Duelo */}
+                <div>
+                  <span className="block text-[10px] font-mono uppercase text-slate-400 mb-1.5 flex items-center gap-1">
+                    <History size={11} /> Histórico Ao Vivo de Jogadas & Contadores:
+                  </span>
+                  <div className="space-y-1 max-h-60 overflow-y-auto text-[10px] font-mono bg-black/60 p-2.5 rounded-xl border border-white/10">
+                    {(roomState.actionLogs || []).length === 0 ? (
+                      <span className="text-slate-500">Aguardando início das ações do duelo...</span>
+                    ) : (
+                      roomState.actionLogs.map((log, i) => (
+                        <div key={i} className="text-slate-300 border-b border-white/5 pb-1">
+                          <span className="text-amber-400">[R{log.round}]</span> {log.text}
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <>
+                {/* Section 1: Card Display on Screen (Camera Recognition + Admin Fast Search) */}
+                <div className="p-4 border-b border-purple-500/30 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h3 className="font-cinzel font-black text-xs sm:text-sm text-amber-300 uppercase tracking-wider flex items-center gap-1.5">
+                      <ScanLine size={15} className="text-cyan-400" />
+                      <span>Mostrar Carta em Uso na Tela</span>
+                    </h3>
+                    {roomState.spotlightCard && (
                       <button
-                        key={`${c.code}-${c.name}`}
-                        onClick={() => triggerSpotlightCard(c, 'admin_search')}
-                        className={`w-full flex items-center gap-2.5 p-1.5 rounded-lg text-left transition ${
-                          isCurrentlyShown
-                            ? 'bg-amber-500/25 border border-amber-400'
-                            : 'hover:bg-purple-950/60'
+                        onClick={clearSpotlightCard}
+                        className="text-[10px] font-bold text-red-400 hover:text-red-300 underline"
+                      >
+                        Ocultar Atual
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Camera Recognition Box */}
+                  <div className="p-3 rounded-xl bg-gradient-to-br from-purple-950/70 to-slate-900 border border-cyan-500/40 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-bold text-cyan-300 flex items-center gap-1">
+                        <Wand2 size={13} /> 1. Reconhecimento por Câmera
+                      </span>
+                      <div className="flex items-center gap-1 text-[10px]">
+                        <button
+                          onClick={() => setScanTargetSide('p1')}
+                          className={`px-2 py-0.5 rounded font-bold ${
+                            scanTargetSide === 'p1'
+                              ? 'bg-purple-600 text-white'
+                              : 'bg-slate-800 text-slate-400'
+                          }`}
+                        >
+                          Cam P1
+                        </button>
+                        <button
+                          onClick={() => setScanTargetSide('p2')}
+                          className={`px-2 py-0.5 rounded font-bold ${
+                            scanTargetSide === 'p2'
+                              ? 'bg-cyan-600 text-slate-950'
+                              : 'bg-slate-800 text-slate-400'
+                          }`}
+                        >
+                          Cam P2
+                        </button>
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={handleRecognizeCardFromCamera}
+                      disabled={isScanningCamera}
+                      className="w-full py-2 px-3 rounded-lg bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 text-slate-950 font-black text-xs flex items-center justify-center gap-1.5 shadow transition"
+                    >
+                      <ScanLine size={14} />
+                      <span>
+                        {isScanningCamera
+                          ? 'Escaneando Câmera do Deck...'
+                          : `Escanear Carta da Câmera (${scanTargetSide === 'p1' ? roomState.p1Name : roomState.p2Name})`}
+                      </span>
+                    </button>
+
+                    {scanResultMsg && (
+                      <p className="text-[10px] text-amber-200 bg-black/50 p-1.5 rounded border border-amber-500/30">
+                        {scanResultMsg}
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Fast Admin Type-and-Click Search Fallback */}
+                  <div className="space-y-2">
+                    <label className="block text-[11px] font-bold text-amber-200">
+                      2. Busca Rápida do Admin / Jogador (Digite e clique para exibir):
+                    </label>
+                    <div className="relative">
+                      <Search
+                        size={14}
+                        className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+                      />
+                      <input
+                        type="text"
+                        value={cardSearchQuery}
+                        onChange={(e) => setCardSearchQuery(e.target.value)}
+                        placeholder="Digite o nome da carta rapidamente..."
+                        className="w-full bg-black border border-purple-500/50 focus:border-amber-400 rounded-xl pl-8 pr-8 py-2 text-xs text-white outline-none"
+                      />
+                      {cardSearchQuery && (
+                        <button
+                          onClick={() => setCardSearchQuery('')}
+                          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
+                        >
+                          <X size={13} />
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Instant Clickable Card List */}
+                    <div className="max-h-52 overflow-y-auto space-y-1 pr-1 divide-y divide-white/5 bg-black/50 rounded-xl border border-white/10 p-1.5">
+                      {filteredSpotlightCards.map((c) => {
+                        const isCurrentlyShown = roomState.spotlightCard?.name === c.name;
+                        return (
+                          <button
+                            key={`${c.code}-${c.name}`}
+                            onClick={() => triggerSpotlightCard(c, 'admin_search')}
+                            className={`w-full flex items-center gap-2.5 p-1.5 rounded-lg text-left transition ${
+                              isCurrentlyShown
+                                ? 'bg-amber-500/25 border border-amber-400'
+                                : 'hover:bg-purple-950/60'
+                            }`}
+                          >
+                            {c.imageUrl ? (
+                              <img
+                                src={c.imageUrl}
+                                alt={c.name}
+                                className="w-8 h-11 object-cover rounded border border-white/20 shrink-0"
+                              />
+                            ) : (
+                              <div className="w-8 h-11 rounded bg-purple-900 flex items-center justify-center text-[9px] font-bold text-white shrink-0">
+                                LD
+                              </div>
+                            )}
+                            <div className="flex-1 min-w-0">
+                              <div className="text-xs font-bold text-white truncate">{c.name}</div>
+                              <div className="text-[10px] text-slate-400 truncate">
+                                {c.type} • CT {c.ct} {c.archetype ? `• ${c.archetype}` : ''}
+                              </div>
+                            </div>
+                            <span className="px-2 py-1 rounded bg-amber-500 text-slate-950 font-black text-[10px] shrink-0">
+                              {isCurrentlyShown ? 'Na Tela' : 'Mostrar'}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Section 2: Admin Broadcast Controls */}
+                <div className="p-4 border-b border-purple-500/30 space-y-3">
+                  <h3 className="font-cinzel font-black text-xs sm:text-sm text-purple-300 uppercase tracking-wider flex items-center gap-1.5">
+                    <Tv size={15} className="text-amber-400" />
+                    <span>Controles do Admin da Transmissão</span>
+                  </h3>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      onClick={() => handleToggleLiveBroadcast(!roomState.isLiveBroadcast)}
+                      className={`py-2 px-3 rounded-xl font-black text-xs flex items-center justify-center gap-1.5 border transition ${
+                        roomState.isLiveBroadcast
+                          ? 'bg-red-600 border-red-300 text-white'
+                          : 'bg-slate-900 border-slate-700 text-slate-300 hover:text-white'
+                      }`}
+                    >
+                      <Radio size={13} />
+                      <span>{roomState.isLiveBroadcast ? 'Encerrar Live' : 'Iniciar Ao Vivo'}</span>
+                    </button>
+
+                    <button
+                      onClick={() =>
+                        patchRoom({ adminSwapSides: !roomState.adminSwapSides })
+                      }
+                      className="py-2 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 font-bold text-xs flex items-center justify-center gap-1.5 transition"
+                    >
+                      <RefreshCw size={13} />
+                      <span>Inverter Lados</span>
+                    </button>
+                  </div>
+
+                  {/* Camera Focus Mode */}
+                  <div>
+                    <label className="block text-[10px] font-mono uppercase text-slate-400 mb-1">
+                      Enquadramento das Câmeras na Transmissão:
+                    </label>
+                    <div className="grid grid-cols-3 gap-1.5">
+                      <button
+                        onClick={() => patchRoom({ adminFocusTarget: 'split' })}
+                        className={`py-1.5 rounded-lg text-[10px] font-bold border ${
+                          roomState.adminFocusTarget === 'split'
+                            ? 'bg-purple-600 border-purple-300 text-white'
+                            : 'bg-slate-900 border-slate-700 text-slate-400'
                         }`}
                       >
-                        {c.imageUrl ? (
-                          <img
-                            src={c.imageUrl}
-                            alt={c.name}
-                            className="w-8 h-11 object-cover rounded border border-white/20 shrink-0"
-                          />
-                        ) : (
-                          <div className="w-8 h-11 rounded bg-purple-900 flex items-center justify-center text-[9px] font-bold text-white shrink-0">
-                            LD
-                          </div>
-                        )}
-                        <div className="flex-1 min-w-0">
-                          <div className="text-xs font-bold text-white truncate">{c.name}</div>
-                          <div className="text-[10px] text-slate-400 truncate">
-                            {c.type} • CT {c.ct} {c.archetype ? `• ${c.archetype}` : ''}
-                          </div>
-                        </div>
-                        <span className="px-2 py-1 rounded bg-amber-500 text-slate-950 font-black text-[10px] shrink-0">
-                          {isCurrentlyShown ? 'Na Tela' : 'Mostrar'}
+                        Tela Dividida
+                      </button>
+                      <button
+                        onClick={() => patchRoom({ adminFocusTarget: 'p1_deck' })}
+                        className={`py-1.5 rounded-lg text-[10px] font-bold border truncate px-1 ${
+                          roomState.adminFocusTarget === 'p1_deck'
+                            ? 'bg-purple-600 border-purple-300 text-white'
+                            : 'bg-slate-900 border-slate-700 text-slate-400'
+                        }`}
+                      >
+                        Foco {roomState.p1Name}
+                      </button>
+                      <button
+                        onClick={() => patchRoom({ adminFocusTarget: 'p2_deck' })}
+                        className={`py-1.5 rounded-lg text-[10px] font-bold border truncate px-1 ${
+                          roomState.adminFocusTarget === 'p2_deck'
+                            ? 'bg-cyan-600 border-cyan-300 text-slate-950'
+                            : 'bg-slate-900 border-slate-700 text-slate-400'
+                        }`}
+                      >
+                        Foco {roomState.p2Name}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Referee & Ticker Text */}
+                  <div className="space-y-2">
+                    <div>
+                      <label className="block text-[10px] font-mono uppercase text-slate-400 mb-0.5">
+                        Juiz da Partida:
+                      </label>
+                      <input
+                        type="text"
+                        value={roomState.refereeName}
+                        onChange={(e) => patchRoom({ refereeName: e.target.value })}
+                        className="w-full bg-black border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white"
+                        placeholder="Nome do Juiz..."
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-mono uppercase text-slate-400 mb-0.5">
+                        Letreiro da Transmissão:
+                      </label>
+                      <input
+                        type="text"
+                        value={roomState.broadcastBannerText}
+                        onChange={(e) => patchRoom({ broadcastBannerText: e.target.value })}
+                        className="w-full bg-black border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Officialize MD3 Result or W.O. directly from Studio */}
+                  {onSaveMatchScore && (
+                    <div className="pt-2 border-t border-white/10 space-y-2">
+                      <span className="block text-[10px] font-mono uppercase text-amber-300 font-bold">
+                        Homologar Resultado Oficial da Partida (MD3):
+                      </span>
+                      <button
+                        onClick={() => handleFinishMd3FromStudio()}
+                        className="w-full py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black text-xs flex items-center justify-center gap-1.5 shadow-md"
+                      >
+                        <CheckCircle2 size={14} />
+                        <span>
+                          Encerrar MD3 ({roomState.p1Wins} x {roomState.p2Wins}) & Computar Pontos
                         </span>
                       </button>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
 
-            {/* Section 2: Admin Broadcast Controls */}
-            <div className="p-4 border-b border-purple-500/30 space-y-3">
-              <h3 className="font-cinzel font-black text-xs sm:text-sm text-purple-300 uppercase tracking-wider flex items-center gap-1.5">
-                <Tv size={15} className="text-amber-400" />
-                <span>Controles do Admin da Transmissão</span>
-              </h3>
-
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  onClick={() =>
-                    patchRoom({ isLiveBroadcast: !roomState.isLiveBroadcast })
-                  }
-                  className={`py-2 px-3 rounded-xl font-black text-xs flex items-center justify-center gap-1.5 border transition ${
-                    roomState.isLiveBroadcast
-                      ? 'bg-red-600 border-red-300 text-white'
-                      : 'bg-slate-900 border-slate-700 text-slate-300 hover:text-white'
-                  }`}
-                >
-                  <Radio size={13} />
-                  <span>{roomState.isLiveBroadcast ? 'Encerrar Live' : 'Iniciar Ao Vivo'}</span>
-                </button>
-
-                <button
-                  onClick={() =>
-                    patchRoom({ adminSwapSides: !roomState.adminSwapSides })
-                  }
-                  className="py-2 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 font-bold text-xs flex items-center justify-center gap-1.5 transition"
-                >
-                  <RefreshCw size={13} />
-                  <span>Inverter Lados</span>
-                </button>
-              </div>
-
-              {/* Camera Focus Mode */}
-              <div>
-                <label className="block text-[10px] font-mono uppercase text-slate-400 mb-1">
-                  Enquadramento das Câmeras na Transmissão:
-                </label>
-                <div className="grid grid-cols-3 gap-1.5">
-                  <button
-                    onClick={() => patchRoom({ adminFocusTarget: 'split' })}
-                    className={`py-1.5 rounded-lg text-[10px] font-bold border ${
-                      roomState.adminFocusTarget === 'split'
-                        ? 'bg-purple-600 border-purple-300 text-white'
-                        : 'bg-slate-900 border-slate-700 text-slate-400'
-                    }`}
-                  >
-                    Tela Dividida
-                  </button>
-                  <button
-                    onClick={() => patchRoom({ adminFocusTarget: 'p1_deck' })}
-                    className={`py-1.5 rounded-lg text-[10px] font-bold border truncate px-1 ${
-                      roomState.adminFocusTarget === 'p1_deck'
-                        ? 'bg-purple-600 border-purple-300 text-white'
-                        : 'bg-slate-900 border-slate-700 text-slate-400'
-                    }`}
-                  >
-                    Foco {roomState.p1Name}
-                  </button>
-                  <button
-                    onClick={() => patchRoom({ adminFocusTarget: 'p2_deck' })}
-                    className={`py-1.5 rounded-lg text-[10px] font-bold border truncate px-1 ${
-                      roomState.adminFocusTarget === 'p2_deck'
-                        ? 'bg-cyan-600 border-cyan-300 text-slate-950'
-                        : 'bg-slate-900 border-slate-700 text-slate-400'
-                    }`}
-                  >
-                    Foco {roomState.p2Name}
-                  </button>
-                </div>
-              </div>
-
-              {/* Referee & Ticker Text */}
-              <div className="space-y-2">
-                <div>
-                  <label className="block text-[10px] font-mono uppercase text-slate-400 mb-0.5">
-                    Juiz da Partida:
-                  </label>
-                  <input
-                    type="text"
-                    value={roomState.refereeName}
-                    onChange={(e) => patchRoom({ refereeName: e.target.value })}
-                    className="w-full bg-black border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white"
-                    placeholder="Nome do Juiz..."
-                  />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-mono uppercase text-slate-400 mb-0.5">
-                    Letreiro da Transmissão:
-                  </label>
-                  <input
-                    type="text"
-                    value={roomState.broadcastBannerText}
-                    onChange={(e) => patchRoom({ broadcastBannerText: e.target.value })}
-                    className="w-full bg-black border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white"
-                  />
-                </div>
-              </div>
-
-              {/* Officialize MD3 Result or W.O. directly from Studio */}
-              {onSaveMatchScore && (
-                <div className="pt-2 border-t border-white/10 space-y-2">
-                  <span className="block text-[10px] font-mono uppercase text-amber-300 font-bold">
-                    Homologar Resultado Oficial da Partida (MD3):
-                  </span>
-                  <button
-                    onClick={() => handleFinishMd3FromStudio()}
-                    className="w-full py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black text-xs flex items-center justify-center gap-1.5 shadow-md"
-                  >
-                    <CheckCircle2 size={14} />
-                    <span>
-                      Encerrar MD3 ({roomState.p1Wins} x {roomState.p2Wins}) & Computar Pontos
-                    </span>
-                  </button>
-
-                  <div className="grid grid-cols-2 gap-1.5">
-                    {match.player1 && (
-                      <button
-                        onClick={() => handleFinishMd3FromStudio(match.player1!.id)}
-                        className="py-1.5 px-2 rounded-lg bg-amber-950/80 hover:bg-amber-900 border border-amber-500/40 text-amber-300 text-[10px] font-bold truncate"
-                        title="W.O. concede 3 pontos para quem compareceu"
-                      >
-                        W.O. p/ {roomState.p1Name} (+3 pts)
-                      </button>
-                    )}
-                    {match.player2 && (
-                      <button
-                        onClick={() => handleFinishMd3FromStudio(match.player2!.id)}
-                        className="py-1.5 px-2 rounded-lg bg-amber-950/80 hover:bg-amber-900 border border-amber-500/40 text-amber-300 text-[10px] font-bold truncate"
-                        title="W.O. concede 3 pontos para quem compareceu"
-                      >
-                        W.O. p/ {roomState.p2Name} (+3 pts)
-                      </button>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Section 3: Match History & Recently Shown Cards */}
-            <div className="p-4 space-y-3 flex-1">
-              {roomState.spotlightHistory && roomState.spotlightHistory.length > 0 && (
-                <div>
-                  <span className="block text-[10px] font-mono uppercase text-slate-400 mb-1.5">
-                    Cartas Exibidas Recentemente (Clique p/ Reexibir):
-                  </span>
-                  <div className="flex flex-wrap gap-1.5">
-                    {roomState.spotlightHistory.map((h, i) => (
-                      <button
-                        key={`${h.code}-${i}`}
-                        onClick={() => patchRoom({ spotlightCard: h })}
-                        className="px-2 py-1 rounded-lg bg-purple-950/70 hover:bg-purple-800 border border-purple-500/30 text-[10px] font-bold text-purple-200 truncate max-w-[140px]"
-                      >
-                        {h.name}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              <div>
-                <span className="block text-[10px] font-mono uppercase text-slate-400 mb-1.5 flex items-center gap-1">
-                  <History size={11} /> Log de Ações do Duelo:
-                </span>
-                <div className="space-y-1 max-h-40 overflow-y-auto text-[10px] font-mono bg-black/60 p-2 rounded-xl border border-white/10">
-                  {(roomState.actionLogs || []).length === 0 ? (
-                    <span className="text-slate-500">Nenhuma ação registrada ainda.</span>
-                  ) : (
-                    roomState.actionLogs.map((log, i) => (
-                      <div key={i} className="text-slate-300 border-b border-white/5 pb-1">
-                        <span className="text-amber-400">[R{log.round}]</span> {log.text}
+                      <div className="grid grid-cols-2 gap-1.5">
+                        {match.player1 && (
+                          <button
+                            onClick={() => handleFinishMd3FromStudio(match.player1!.id)}
+                            className="py-1.5 px-2 rounded-lg bg-amber-950/80 hover:bg-amber-900 border border-amber-500/40 text-amber-300 text-[10px] font-bold truncate"
+                            title="W.O. concede 3 pontos para quem compareceu"
+                          >
+                            W.O. p/ {roomState.p1Name} (+3 pts)
+                          </button>
+                        )}
+                        {match.player2 && (
+                          <button
+                            onClick={() => handleFinishMd3FromStudio(match.player2!.id)}
+                            className="py-1.5 px-2 rounded-lg bg-amber-950/80 hover:bg-amber-900 border border-amber-500/40 text-amber-300 text-[10px] font-bold truncate"
+                            title="W.O. concede 3 pontos para quem compareceu"
+                          >
+                            W.O. p/ {roomState.p2Name} (+3 pts)
+                          </button>
+                        )}
                       </div>
-                    ))
+                    </div>
                   )}
                 </div>
-              </div>
-            </div>
+
+                {/* Section 3: Match History & Recently Shown Cards */}
+                <div className="p-4 space-y-3 flex-1">
+                  {roomState.spotlightHistory && roomState.spotlightHistory.length > 0 && (
+                    <div>
+                      <span className="block text-[10px] font-mono uppercase text-slate-400 mb-1.5">
+                        Cartas Exibidas Recentemente (Clique p/ Reexibir):
+                      </span>
+                      <div className="flex flex-wrap gap-1.5">
+                        {roomState.spotlightHistory.map((h, i) => (
+                          <button
+                            key={`${h.code}-${i}`}
+                            onClick={() => patchRoom({ spotlightCard: h })}
+                            className="px-2 py-1 rounded-lg bg-purple-950/70 hover:bg-purple-800 border border-purple-500/30 text-[10px] font-bold text-purple-200 truncate max-w-[140px]"
+                          >
+                            {h.name}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  <div>
+                    <span className="block text-[10px] font-mono uppercase text-slate-400 mb-1.5 flex items-center gap-1">
+                      <History size={11} /> Log de Ações do Duelo:
+                    </span>
+                    <div className="space-y-1 max-h-40 overflow-y-auto text-[10px] font-mono bg-black/60 p-2 rounded-xl border border-white/10">
+                      {(roomState.actionLogs || []).length === 0 ? (
+                        <span className="text-slate-500">Nenhuma ação registrada ainda.</span>
+                      ) : (
+                        roomState.actionLogs.map((log, i) => (
+                          <div key={i} className="text-slate-300 border-b border-white/5 pb-1">
+                            <span className="text-amber-400">[R{log.round}]</span> {log.text}
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </>
+            )}
           </div>
         )}
       </div>

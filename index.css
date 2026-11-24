@@ -329,4 +329,42 @@ div.fixed.inset-0 textarea:focus {
   transform-origin: center;
 }
 
+/* ==================== ULTRA-LIGHTWEIGHT MODE (EFEITOS DO SITE: OFF) ==================== */
+html.ld-effects-disabled *:not([data-blair-tour-blur="true"]),
+html.ld-effects-disabled *::before,
+html.ld-effects-disabled *::after {
+  animation: none !important;
+  animation-duration: 0s !important;
+  transition: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  filter: none !important;
+  text-shadow: none !important;
+  box-shadow: none !important;
+  mix-blend-mode: normal !important;
+}
 
+html.ld-effects-disabled .cyber-scanlines,
+html.ld-effects-disabled .glitch-text::before,
+html.ld-effects-disabled .glitch-text::after,
+html.ld-effects-disabled .foil-card-rainbow::after,
+html.ld-effects-disabled .foil-card-gold::after,
+html.ld-effects-disabled .foil-card-silver::after,
+html.ld-effects-disabled .animate-flicker-rare,
+html.ld-effects-disabled .ld-light-fx-only {
+  display: none !important;
+}
+
+html.ld-effects-disabled .cyber-arcane-modal-bg,
+html.ld-effects-disabled div.fixed.inset-0.bg-slate-950,
+html.ld-effects-disabled div.fixed.inset-0 > div.bg-slate-950,
+html.ld-effects-disabled div.fixed.inset-0 > div.bg-slate-900 {
+  background-color: #05040a !important;
+  background-image: none !important;
+}
+
+html.ld-effects-disabled .cyber-arcane-box,
+html.ld-effects-disabled .cyber-arcane-box-sm {
+  background: #090713 !important;
+  box-shadow: none !important;
+}

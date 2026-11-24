@@ -461,6 +461,7 @@ export const NavbarSpotifyMicroPlayer: React.FC<NavbarSpotifyMicroPlayerProps> =
 
   return (
     <div
+      data-tour-id="tour-music-player"
       className="flex items-center gap-1 bg-slate-950/90 border border-slate-800 rounded-lg px-2 py-1 h-[30px] shrink-0 relative"
       title={`${currentTrack.fullTitle} (${currentTrack.durationLabel}) • Volume 40%`}
     >

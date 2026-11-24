@@ -18,9 +18,16 @@ import { DeckComparatorView } from './DeckComparatorModal';
 interface DeckBuilderModalProps {
   isOpen: boolean;
   onClose: () => void;
+  tourForceReady?: boolean;
+  tourForceTab?: 'build' | 'mulligan' | 'neural' | 'compare' | 'stats';
 }
 
-export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onClose }) => {
+export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({
+  isOpen,
+  onClose,
+  tourForceReady = false,
+  tourForceTab
+}) => {
   const { cards: allCards } = useCards();
   const [deck, setDeck] = useState<CardData[]>([]);
   const [sideDeck, setSideDeck] = useState<CardData[]>([]);
@@ -46,17 +53,34 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
 
   const [isFiltersCollapsed, setIsFiltersCollapsed] = useState(false);
   const [isDeckCollapsed, setIsDeckCollapsed] = useState(false);
+  const [isTopBarMinimized, setIsTopBarMinimized] = useState(false);
   const [deckMode, setDeckMode] = useState<'normal' | 'mesao'>('normal');
-  const [hasSelectedMode, setHasSelectedMode] = useState<boolean>(false);
+  const [hasSelectedMode, setHasSelectedMode] = useState<boolean>(tourForceReady);
 
   const minMainCards = deckMode === 'mesao' ? 35 : 30;
   const maxMainCards = deckMode === 'mesao' ? 40 : 35;
 
   useEffect(() => {
     if (isOpen) {
-      setHasSelectedMode(false);
+      setIsTopBarMinimized(false);
+      if (tourForceReady || tourForceTab) {
+        setHasSelectedMode(true);
+        setIsFiltersCollapsed(false);
+        setIsDeckCollapsed(false);
+        if (tourForceTab) {
+          setActiveTab(tourForceTab);
+        }
+        if (deck.length === 0 && allCards.length > 0) {
+          const insanis = getStructuralDeck('Insanis', allCards);
+          if (insanis.mainDeck.length > 0) {
+            setDeckMode('normal');
+            setDeck(insanis.mainDeck);
+            setSideDeck(insanis.sideDeck);
+          }
+        }
+      }
     }
-  }, [isOpen]);
+  }, [isOpen, tourForceReady, tourForceTab, allCards.length]);
 
   // Helper to determine Hero Identity
   const getIdentity = (name: string) => {
@@ -321,7 +345,7 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[100] flex flex-col bg-[#0a0a0c] animate-in fade-in zoom-in duration-200">
+    <div data-tour-id="tour-deckbuilder-main" className="fixed inset-0 z-[100] flex flex-col bg-[#0a0a0c] animate-in fade-in zoom-in duration-200">
       
       {/* Tela Inicial de Escolha do Formato: Deck Normal ou Deck Mesão */}
       {!hasSelectedMode && (
@@ -460,137 +484,158 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
       />
 
       {/* Header */}
-      <div className="bg-[#070510]/95 border-b border-amber-500/35 p-2 md:p-4 flex flex-col md:flex-row justify-between items-center shadow-[0_10px_30px_rgba(0,0,0,0.85)] gap-2 md:gap-0 shrink-0 relative">
-        <div className="flex flex-col md:flex-row items-center gap-2 md:gap-4 w-full md:w-auto">
-          <div className="flex items-center gap-2.5">
-            <div className="cyber-arcane-btn w-8 h-8 bg-purple-950/80 border border-amber-500/40 flex items-center justify-center text-amber-400 shrink-0">
-              <Save size={16} />
-            </div>
-            <div>
-              <span className="block text-[9px] font-mono uppercase tracking-[0.22em] text-cyan-400">
-                FORJA DE GRIMÓRIO // DECKBUILDER
-              </span>
-              <h2 className="text-base md:text-xl font-cinzel font-black text-white tracking-wider whitespace-nowrap">
-                MONTE SEU DECK
-              </h2>
-            </div>
-          </div>
-          <div className="flex bg-[#0c0918] border border-purple-500/30 p-1 w-full md:w-auto overflow-x-auto gap-1">
-            <button 
-              onClick={() => setActiveTab('build')}
-              className={`cyber-arcane-btn flex-1 md:flex-none px-2.5 md:px-3.5 py-1.5 text-[10px] md:text-xs font-cyber font-bold uppercase tracking-wider transition whitespace-nowrap ${activeTab === 'build' ? 'bg-purple-700 text-white border border-amber-400/50 shadow-[0_0_12px_rgba(168,85,247,0.4)]' : 'text-slate-400 hover:text-white'}`}
-            >
-              Montar
-            </button>
-            <button 
-              onClick={() => setActiveTab('mulligan')}
-              className={`cyber-arcane-btn flex-1 md:flex-none px-2.5 md:px-3.5 py-1.5 text-[10px] md:text-xs font-cyber font-bold uppercase tracking-wider transition whitespace-nowrap flex items-center justify-center gap-1.5 ${activeTab === 'mulligan' ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-lg shadow-emerald-950/50 border border-emerald-400/50' : 'text-emerald-300 hover:text-white'}`}
-              title="Simular Mão Inicial de 5 cartas, Mulligan 1x e Probabilidades exatas"
-            >
-              <Dices size={14} className={activeTab === 'mulligan' ? 'text-white' : 'text-emerald-400'} />
-              <span>Mão Inicial / Mulligan</span>
-            </button>
-            <button 
-              onClick={() => setActiveTab('neural')}
-              className={`cyber-arcane-btn flex-1 md:flex-none px-2.5 md:px-3.5 py-1.5 text-[10px] md:text-xs font-cyber font-bold uppercase tracking-wider transition whitespace-nowrap flex items-center justify-center gap-1.5 ${activeTab === 'neural' ? 'bg-gradient-to-r from-purple-700 to-indigo-700 text-white shadow-lg shadow-purple-900/50 border border-cyan-400/50' : 'text-slate-400 hover:text-white'}`}
-              title="Visualizar Mapa Neural interativo de sinergias do Deck"
-            >
-              <Network size={14} className={activeTab === 'neural' ? 'text-cyan-300 animate-pulse' : 'text-cyan-400'} />
-              <span>Mapa Neural</span>
-            </button>
-            <button 
-              onClick={() => setActiveTab('compare')}
-              className={`cyber-arcane-btn flex-1 md:flex-none px-2.5 md:px-3.5 py-1.5 text-[10px] md:text-xs font-cyber font-bold uppercase tracking-wider transition whitespace-nowrap flex items-center justify-center gap-1.5 ${activeTab === 'compare' ? 'bg-gradient-to-r from-cyan-600 to-blue-600 text-white shadow-lg shadow-cyan-950/50 border border-cyan-400/50' : 'text-cyan-300 hover:text-white'}`}
-              title="Comparar dois decks lado a lado (Cartas em comum, exclusivas e curva CT)"
-            >
-              <GitCompare size={14} className={activeTab === 'compare' ? 'text-white' : 'text-cyan-400'} />
-              <span>Comparar Decks</span>
-            </button>
-            <button 
-              onClick={() => setActiveTab('stats')}
-              className={`cyber-arcane-btn flex-1 md:flex-none px-2.5 md:px-3.5 py-1.5 text-[10px] md:text-xs font-cyber font-bold uppercase tracking-wider transition whitespace-nowrap ${activeTab === 'stats' ? 'bg-purple-700 text-white border border-amber-400/50' : 'text-slate-400 hover:text-white'}`}
-            >
-              Estatísticas
-            </button>
-            <button 
-              onClick={() => setActiveTab('save')}
-              className={`cyber-arcane-btn flex-1 md:flex-none px-2.5 md:px-3.5 py-1.5 text-[10px] md:text-xs font-cyber font-bold uppercase tracking-wider transition whitespace-nowrap ${activeTab === 'save' ? 'bg-purple-700 text-white border border-amber-400/50' : 'text-slate-400 hover:text-white'}`}
-            >
-              Salvar/Carregar
-            </button>
-            <button 
-              onClick={() => setShowCommunityDecksModal(true)}
-              className="cyber-arcane-btn flex-1 md:flex-none px-2.5 md:px-3 py-1.5 text-[10px] md:text-xs font-cyber font-bold uppercase tracking-wider transition whitespace-nowrap flex items-center justify-center gap-1.5 bg-gradient-to-r from-amber-600/30 to-purple-800/70 text-amber-200 hover:text-white border border-amber-500/40 shadow-sm active:scale-95"
-              title="Explorar e publicar Decklists no Mural da Comunidade"
-            >
-              <Users size={13} className="text-amber-300" />
-              <span>Mural de Decks</span>
-            </button>
-            <button 
-              onClick={() => setShowCloudDecksModal(true)}
-              className="cyber-arcane-btn flex-1 md:flex-none px-2.5 md:px-3 py-1.5 text-[10px] md:text-xs font-cyber font-bold uppercase tracking-wider transition whitespace-nowrap flex items-center justify-center gap-1.5 bg-gradient-to-r from-purple-800 to-indigo-800 text-purple-200 hover:text-white border border-purple-600/40 shadow-sm active:scale-95"
-              title="Acessar meus decks salvos na nuvem"
-            >
-              <Cloud size={13} className="text-purple-300" />
-              <span>Decks na Nuvem</span>
-            </button>
-            <button 
-              onClick={() => setShowPopularModal(true)}
-              className="cyber-arcane-btn flex-1 md:flex-none px-2.5 md:px-3 py-1.5 text-[10px] md:text-xs font-cyber font-bold uppercase tracking-wider transition whitespace-nowrap flex items-center justify-center gap-1.5 bg-gradient-to-r from-red-950/80 to-amber-950/80 text-amber-200 hover:text-white border border-amber-600/40 shadow-sm active:scale-95"
-              title="Ver as 10 cartas mais usadas no Meta por categoria"
-            >
-              <Flame size={13} className="text-red-400" />
-              <span>Cartas Populares</span>
-            </button>
-            <button 
-              onClick={() => setShowDeckImageModal(true)}
-              className="cyber-arcane-btn flex-1 md:flex-none px-2.5 md:px-3 py-1.5 text-[10px] md:text-xs font-cyber font-bold uppercase tracking-wider transition whitespace-nowrap flex items-center justify-center gap-1.5 bg-gradient-to-r from-emerald-800 to-teal-800 text-emerald-100 hover:text-white border border-emerald-500/40 shadow-sm active:scale-95"
-              title="Gerar Lista de Deck para Torneio + Imagem do Deck (PDF / PNG)"
-            >
-              <FileText size={13} className="text-emerald-300" />
-              <span>Lista & Imagem p/ Torneio (PDF)</span>
-            </button>
-          </div>
-        </div>
-        
-        <div className="flex items-center gap-2 md:gap-3 w-full md:w-auto justify-between md:justify-end">
-          {/* Seletor de Formato de Deck: Normal (30-35) vs Mesão (35-40) */}
-          <div className="flex bg-[#0c0918] p-0.5 border border-purple-500/35">
-            <button
-              type="button"
-              onClick={() => setDeckMode('normal')}
-              className={`cyber-arcane-btn px-2 md:px-2.5 py-1 text-[10px] md:text-xs font-cyber font-bold uppercase tracking-wider transition whitespace-nowrap ${
-                deckMode === 'normal'
-                  ? 'bg-purple-700 text-white border border-purple-400/50 shadow'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-              title="Deck Normal: 30 a 35 cartas no Deck Principal (contando com Heróis)"
-            >
-              Deck Normal
-            </button>
-            <button
-              type="button"
-              onClick={() => setDeckMode('mesao')}
-              className={`cyber-arcane-btn px-2 md:px-2.5 py-1 text-[10px] md:text-xs font-cyber font-bold uppercase tracking-wider transition whitespace-nowrap ${
-                deckMode === 'mesao'
-                  ? 'bg-amber-500 text-slate-950 border border-amber-300 shadow'
-                  : 'text-amber-300/80 hover:text-amber-200'
-              }`}
-              title="Deck Mesão: 35 a 40 cartas no Deck Principal (contando com Heróis)"
-            >
-              Deck Mesão
-            </button>
-          </div>
-
-          <div className={`cyber-arcane-btn px-2.5 md:px-3 py-1 border flex items-center gap-2 ${isValidDeckSize ? 'bg-emerald-950/60 border-emerald-500/60 text-emerald-400' : 'bg-red-950/60 border-red-500/60 text-red-400'}`}>
-            <span className="font-mono font-bold text-sm md:text-lg">{deck.length}</span>
-            <span className="text-[10px] md:text-xs font-mono uppercase">/ {minMainCards}-{maxMainCards} Cartas</span>
-          </div>
-          <button onClick={onClose} className="cyber-arcane-btn p-2 bg-[#0c0918] hover:bg-red-950/60 border border-amber-500/30 hover:border-red-500/50 text-slate-300 hover:text-white transition">
-            <X size={20} />
+      {isTopBarMinimized ? (
+        <div className="bg-[#070510]/95 border-b border-amber-500/35 px-3 py-1 flex items-center justify-center shrink-0 relative z-30 shadow-md">
+          <button
+            type="button"
+            onClick={() => setIsTopBarMinimized(false)}
+            className="px-4 py-0.5 rounded-full bg-purple-950/80 hover:bg-purple-900 border border-amber-500/45 text-amber-300 hover:text-white transition flex items-center gap-1.5 text-[10px] font-cyber font-bold uppercase tracking-wider shadow cursor-pointer"
+            title="Expandir barra superior do Monte Seu Deck"
+          >
+            <ChevronDown size={15} className="text-amber-400 animate-bounce" />
           </button>
         </div>
-      </div>
+      ) : (
+        <div data-tour-id="tour-deckbuilder-tools" className="bg-[#070510]/95 border-b border-amber-500/35 p-2 md:p-4 flex flex-col md:flex-row justify-between items-center shadow-[0_10px_30px_rgba(0,0,0,0.85)] gap-2 md:gap-0 shrink-0 relative">
+          <div className="flex flex-col md:flex-row items-center gap-2 md:gap-4 w-full md:w-auto">
+            <div className="flex items-center gap-2.5">
+              <div className="cyber-arcane-btn w-8 h-8 bg-purple-950/80 border border-amber-500/40 flex items-center justify-center text-amber-400 shrink-0">
+                <Save size={16} />
+              </div>
+              <div>
+                <span className="block text-[9px] font-mono uppercase tracking-[0.22em] text-cyan-400">
+                  FORJA DE GRIMÓRIO // DECKBUILDER
+                </span>
+                <h2 className="text-base md:text-xl font-cinzel font-black text-white tracking-wider whitespace-nowrap">
+                  MONTE SEU DECK
+                </h2>
+              </div>
+            </div>
+            <div className="flex bg-[#0c0918] border border-purple-500/30 p-1 w-full md:w-auto overflow-x-auto gap-1">
+              <button 
+                onClick={() => setActiveTab('build')}
+                className={`cyber-arcane-btn flex-1 md:flex-none px-2.5 md:px-3.5 py-1.5 text-[10px] md:text-xs font-cyber font-bold uppercase tracking-wider transition whitespace-nowrap ${activeTab === 'build' ? 'bg-purple-700 text-white border border-amber-400/50 shadow-[0_0_12px_rgba(168,85,247,0.4)]' : 'text-slate-400 hover:text-white'}`}
+              >
+                Montar
+              </button>
+              <button 
+                onClick={() => setActiveTab('mulligan')}
+                className={`cyber-arcane-btn flex-1 md:flex-none px-2.5 md:px-3.5 py-1.5 text-[10px] md:text-xs font-cyber font-bold uppercase tracking-wider transition whitespace-nowrap flex items-center justify-center gap-1.5 ${activeTab === 'mulligan' ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-lg shadow-emerald-950/50 border border-emerald-400/50' : 'text-emerald-300 hover:text-white'}`}
+                title="Simular Mão Inicial de 5 cartas, Mulligan 1x e Probabilidades exatas"
+              >
+                <Dices size={14} className={activeTab === 'mulligan' ? 'text-white' : 'text-emerald-400'} />
+                <span>Mão Inicial / Mulligan</span>
+              </button>
+              <button 
+                onClick={() => setActiveTab('neural')}
+                className={`cyber-arcane-btn flex-1 md:flex-none px-2.5 md:px-3.5 py-1.5 text-[10px] md:text-xs font-cyber font-bold uppercase tracking-wider transition whitespace-nowrap flex items-center justify-center gap-1.5 ${activeTab === 'neural' ? 'bg-gradient-to-r from-purple-700 to-indigo-700 text-white shadow-lg shadow-purple-900/50 border border-cyan-400/50' : 'text-slate-400 hover:text-white'}`}
+                title="Visualizar Mapa Neural interativo de sinergias do Deck"
+              >
+                <Network size={14} className={activeTab === 'neural' ? 'text-cyan-300 animate-pulse' : 'text-cyan-400'} />
+                <span>Mapa Neural</span>
+              </button>
+              <button 
+                onClick={() => setActiveTab('compare')}
+                className={`cyber-arcane-btn flex-1 md:flex-none px-2.5 md:px-3.5 py-1.5 text-[10px] md:text-xs font-cyber font-bold uppercase tracking-wider transition whitespace-nowrap flex items-center justify-center gap-1.5 ${activeTab === 'compare' ? 'bg-gradient-to-r from-cyan-600 to-blue-600 text-white shadow-lg shadow-cyan-950/50 border border-cyan-400/50' : 'text-cyan-300 hover:text-white'}`}
+                title="Comparar dois decks lado a lado (Cartas em comum, exclusivas e curva CT)"
+              >
+                <GitCompare size={14} className={activeTab === 'compare' ? 'text-white' : 'text-cyan-400'} />
+                <span>Comparar Decks</span>
+              </button>
+              <button 
+                onClick={() => setActiveTab('stats')}
+                className={`cyber-arcane-btn flex-1 md:flex-none px-2.5 md:px-3.5 py-1.5 text-[10px] md:text-xs font-cyber font-bold uppercase tracking-wider transition whitespace-nowrap ${activeTab === 'stats' ? 'bg-purple-700 text-white border border-amber-400/50' : 'text-slate-400 hover:text-white'}`}
+              >
+                Estatísticas
+              </button>
+              <button 
+                onClick={() => setActiveTab('save')}
+                className={`cyber-arcane-btn flex-1 md:flex-none px-2.5 md:px-3.5 py-1.5 text-[10px] md:text-xs font-cyber font-bold uppercase tracking-wider transition whitespace-nowrap ${activeTab === 'save' ? 'bg-purple-700 text-white border border-amber-400/50' : 'text-slate-400 hover:text-white'}`}
+              >
+                Salvar/Carregar
+              </button>
+              <button 
+                onClick={() => setShowCommunityDecksModal(true)}
+                className="cyber-arcane-btn flex-1 md:flex-none px-2.5 md:px-3 py-1.5 text-[10px] md:text-xs font-cyber font-bold uppercase tracking-wider transition whitespace-nowrap flex items-center justify-center gap-1.5 bg-gradient-to-r from-amber-600/30 to-purple-800/70 text-amber-200 hover:text-white border border-amber-500/40 shadow-sm active:scale-95"
+                title="Explorar e publicar Decklists no Mural da Comunidade"
+              >
+                <Users size={13} className="text-amber-300" />
+                <span>Mural de Decks</span>
+              </button>
+              <button 
+                onClick={() => setShowCloudDecksModal(true)}
+                className="cyber-arcane-btn flex-1 md:flex-none px-2.5 md:px-3 py-1.5 text-[10px] md:text-xs font-cyber font-bold uppercase tracking-wider transition whitespace-nowrap flex items-center justify-center gap-1.5 bg-gradient-to-r from-purple-800 to-indigo-800 text-purple-200 hover:text-white border border-purple-600/40 shadow-sm active:scale-95"
+                title="Acessar meus decks salvos na nuvem"
+              >
+                <Cloud size={13} className="text-purple-300" />
+                <span>Decks na Nuvem</span>
+              </button>
+              <button 
+                onClick={() => setShowPopularModal(true)}
+                className="cyber-arcane-btn flex-1 md:flex-none px-2.5 md:px-3 py-1.5 text-[10px] md:text-xs font-cyber font-bold uppercase tracking-wider transition whitespace-nowrap flex items-center justify-center gap-1.5 bg-gradient-to-r from-red-950/80 to-amber-950/80 text-amber-200 hover:text-white border border-amber-600/40 shadow-sm active:scale-95"
+                title="Ver as 10 cartas mais usadas no Meta por categoria"
+              >
+                <Flame size={13} className="text-red-400" />
+                <span>Cartas Populares</span>
+              </button>
+              <button 
+                onClick={() => setShowDeckImageModal(true)}
+                className="cyber-arcane-btn flex-1 md:flex-none px-2.5 md:px-3 py-1.5 text-[10px] md:text-xs font-cyber font-bold uppercase tracking-wider transition whitespace-nowrap flex items-center justify-center gap-1.5 bg-gradient-to-r from-emerald-800 to-teal-800 text-emerald-100 hover:text-white border border-emerald-500/40 shadow-sm active:scale-95"
+                title="Gerar Lista de Deck para Torneio + Imagem do Deck (PDF / PNG)"
+              >
+                <FileText size={13} className="text-emerald-300" />
+                <span>Lista & Imagem p/ Torneio (PDF)</span>
+              </button>
+            </div>
+          </div>
+          
+          <div className="flex items-center gap-2 md:gap-3 w-full md:w-auto justify-between md:justify-end">
+            {/* Seletor de Formato de Deck: Normal (30-35) vs Mesão (35-40) */}
+            <div className="flex bg-[#0c0918] p-0.5 border border-purple-500/35">
+              <button
+                type="button"
+                onClick={() => setDeckMode('normal')}
+                className={`cyber-arcane-btn px-2 md:px-2.5 py-1 text-[10px] md:text-xs font-cyber font-bold uppercase tracking-wider transition whitespace-nowrap ${
+                  deckMode === 'normal'
+                    ? 'bg-purple-700 text-white border border-purple-400/50 shadow'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+                title="Deck Normal: 30 a 35 cartas no Deck Principal (contando com Heróis)"
+              >
+                Deck Normal
+              </button>
+              <button
+                type="button"
+                onClick={() => setDeckMode('mesao')}
+                className={`cyber-arcane-btn px-2 md:px-2.5 py-1 text-[10px] md:text-xs font-cyber font-bold uppercase tracking-wider transition whitespace-nowrap ${
+                  deckMode === 'mesao'
+                    ? 'bg-amber-500 text-slate-950 border border-amber-300 shadow'
+                    : 'text-amber-300/80 hover:text-amber-200'
+                }`}
+                title="Deck Mesão: 35 a 40 cartas no Deck Principal (contando com Heróis)"
+              >
+                Deck Mesão
+              </button>
+            </div>
+
+            <div className={`cyber-arcane-btn px-2.5 md:px-3 py-1 border flex items-center gap-2 ${isValidDeckSize ? 'bg-emerald-950/60 border-emerald-500/60 text-emerald-400' : 'bg-red-950/60 border-red-500/60 text-red-400'}`}>
+              <span className="font-mono font-bold text-sm md:text-lg">{deck.length}</span>
+              <span className="text-[10px] md:text-xs font-mono uppercase">/ {minMainCards}-{maxMainCards} Cartas</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsTopBarMinimized(true)}
+              className="cyber-arcane-btn p-2 bg-[#0c0918] hover:bg-purple-950/60 border border-purple-500/30 text-slate-400 hover:text-amber-300 transition"
+              title="Minimizar barra superior"
+            >
+              <ChevronUp size={18} />
+            </button>
+            <button onClick={onClose} className="cyber-arcane-btn p-2 bg-[#0c0918] hover:bg-red-950/60 border border-amber-500/30 hover:border-red-500/50 text-slate-300 hover:text-white transition">
+              <X size={20} />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Content Area */}
       <div className="flex-1 flex flex-col md:flex-row overflow-hidden relative">
@@ -613,119 +658,129 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
         {activeTab === 'build' && (
           <div className={`flex flex-col border-r border-slate-800 bg-[#0f0f13] transition-all duration-300 min-h-0 ${isDeckCollapsed ? 'w-full flex-1' : 'w-full md:w-1/2 h-1/2 md:h-full'}`}>
             {/* Filters */}
-            <div className="border-b border-slate-800 bg-slate-900/30">
-              <div 
-                className="p-2 md:p-4 flex justify-between items-center cursor-pointer md:cursor-default"
-                onClick={() => setIsFiltersCollapsed(!isFiltersCollapsed)}
-              >
-                <div className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2">
-                  <Search size={14} /> Filtros
-                </div>
-                <button className="md:hidden text-slate-400">
-                  {isFiltersCollapsed ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
-                </button>
-              </div>
-              
-              {!isFiltersCollapsed && (
-                <div className="p-2 md:p-4 pt-0 space-y-2 md:space-y-3 animate-in slide-in-from-top-2">
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={16} />
-                    <input 
-                      type="text" 
-                      placeholder="Nome ou Código..." 
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                      className="w-full bg-slate-900 border border-slate-700 rounded-lg py-2 pl-10 pr-4 text-white text-sm focus:border-purple-500 outline-none"
-                    />
+            {!isTopBarMinimized && (
+              <div className="border-b border-slate-800 bg-slate-900/30">
+                <div 
+                  className="p-2 md:p-4 flex justify-between items-center cursor-pointer md:cursor-default"
+                  onClick={() => setIsFiltersCollapsed(!isFiltersCollapsed)}
+                >
+                  <div className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2">
+                    <Search size={14} /> Filtros
                   </div>
-                  
-                    <div className="flex flex-wrap gap-2">
-                      <select 
-                        className="bg-slate-900 text-xs text-white border border-slate-700 rounded px-2 py-1 outline-none flex-1 min-w-[80px]"
-                        value={filters.frame} onChange={(e) => setFilters({...filters, frame: e.target.value})}
-                      >
-                        <option value="Todos">Frame: Todos</option>
-                        <option value="Legado">Legado</option>
-                        <option value="Moderno">Moderno</option>
+                  <button className="md:hidden text-slate-400">
+                    {isFiltersCollapsed ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
+                  </button>
+                </div>
+                
+                {!isFiltersCollapsed && (
+                  <div className="p-2 md:p-4 pt-0 space-y-2 md:space-y-3 animate-in slide-in-from-top-2">
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={16} />
+                      <input 
+                        type="text" 
+                        placeholder="Nome ou Código..." 
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        className="w-full bg-slate-900 border border-slate-700 rounded-lg py-2 pl-10 pr-4 text-white text-sm focus:border-purple-500 outline-none"
+                      />
+                    </div>
+                    
+                      <div className="flex flex-wrap gap-2">
+                        <select 
+                          className="bg-slate-900 text-xs text-white border border-slate-700 rounded px-2 py-1 outline-none flex-1 min-w-[80px]"
+                          value={filters.frame} onChange={(e) => setFilters({...filters, frame: e.target.value})}
+                        >
+                          <option value="Todos">Frame: Todos</option>
+                          <option value="Legado">Legado</option>
+                          <option value="Moderno">Moderno</option>
+                        </select>
+
+                        <select 
+                          className="bg-slate-900 text-xs text-white border border-slate-700 rounded px-2 py-1 outline-none flex-1 min-w-[80px]"
+                          value={filters.type} onChange={(e) => setFilters({...filters, type: e.target.value})}
+                        >
+                        <option value="Todos">Tipo: Todos</option>
+                        <option value="Herói">Herói</option>
+                        <option value="Combatente">Combatente</option>
+                        <option value="Equipamento">Equipamento</option>
+                        <option value="Efeito">Efeito</option>
+                        <option value="Token">Token</option>
                       </select>
 
                       <select 
-                        className="bg-slate-900 text-xs text-white border border-slate-700 rounded px-2 py-1 outline-none flex-1 min-w-[80px]"
-                        value={filters.type} onChange={(e) => setFilters({...filters, type: e.target.value})}
+                        className="bg-slate-900 text-xs text-white border border-slate-700 rounded px-2 py-1 outline-none flex-1 min-w-[100px]"
+                        value={filters.archetype} onChange={(e) => setFilters({...filters, archetype: e.target.value})}
                       >
-                      <option value="Todos">Tipo: Todos</option>
-                      <option value="Herói">Herói</option>
-                      <option value="Combatente">Combatente</option>
-                      <option value="Equipamento">Equipamento</option>
-                      <option value="Efeito">Efeito</option>
-                      <option value="Token">Token</option>
-                    </select>
+                        <option value="Todos">Arq: Todos</option>
+                        {Array.from(new Set(allCards.map(c => c.archetype).filter(Boolean).flatMap(a => a?.split(' / ') || []))).sort().map(a => <option key={a} value={a}>{a}</option>)}
+                      </select>
 
-                    <select 
-                      className="bg-slate-900 text-xs text-white border border-slate-700 rounded px-2 py-1 outline-none flex-1 min-w-[100px]"
-                      value={filters.archetype} onChange={(e) => setFilters({...filters, archetype: e.target.value})}
+                      <select 
+                        className="bg-slate-900 text-xs text-white border border-slate-700 rounded px-2 py-1 outline-none w-16"
+                        value={filters.ct} onChange={(e) => setFilters({...filters, ct: e.target.value})}
+                      >
+                        <option value="Todos">CT</option>
+                        {[...Array(21)].map((_, i) => <option key={i} value={i}>{i}</option>)}
+                      </select>
+                    </div>
+
+                    <div className="flex gap-2">
+                       <select 
+                        className="bg-slate-900 text-xs text-white border border-slate-700 rounded px-2 py-1 outline-none flex-1"
+                        value={filters.collection} onChange={(e) => setFilters({...filters, collection: e.target.value})}
+                      >
+                        <option value="Todos">Coleção: Todas</option>
+                        {Array.from(new Set(allCards.map(c => c.collection).filter(Boolean))).sort().map(c => <option key={c} value={c}>{c}</option>)}
+                      </select>
+
+                      <input 
+                        type="number" 
+                        placeholder="ATK" 
+                        className="w-14 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs text-white focus:border-red-500 outline-none"
+                        value={filters.minAtk}
+                        onChange={(e) => setFilters({...filters, minAtk: e.target.value})}
+                      />
+                      
+                      <input 
+                        type="number" 
+                        placeholder="VIDA" 
+                        className="w-14 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs text-white focus:border-blue-500 outline-none"
+                        value={filters.minDef}
+                        onChange={(e) => setFilters({...filters, minDef: e.target.value})}
+                      />
+                    </div>
+
+                    <div className="flex gap-2">
+                      <input 
+                        type="text" 
+                        placeholder="Palavra no Efeito (ex: Qualquer momento)" 
+                        className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs text-white focus:border-purple-500 outline-none"
+                        value={filters.effectWord}
+                        onChange={(e) => setFilters({...filters, effectWord: e.target.value})}
+                      />
+                    </div>
+
+                    <button 
+                      onClick={() => setFilters({ type: "Todos", archetype: "Todos", collection: "Todos", frame: "Todos", ct: "Todos", minAtk: "", minDef: "", effectWord: "" })}
+                      className="w-full text-center text-xs text-slate-500 hover:text-white underline py-1"
                     >
-                      <option value="Todos">Arq: Todos</option>
-                      {Array.from(new Set(allCards.map(c => c.archetype).filter(Boolean).flatMap(a => a?.split(' / ') || []))).sort().map(a => <option key={a} value={a}>{a}</option>)}
-                    </select>
-
-                    <select 
-                      className="bg-slate-900 text-xs text-white border border-slate-700 rounded px-2 py-1 outline-none w-16"
-                      value={filters.ct} onChange={(e) => setFilters({...filters, ct: e.target.value})}
-                    >
-                      <option value="Todos">CT</option>
-                      {[...Array(21)].map((_, i) => <option key={i} value={i}>{i}</option>)}
-                    </select>
+                      Limpar Filtros
+                    </button>
                   </div>
-
-                  <div className="flex gap-2">
-                     <select 
-                      className="bg-slate-900 text-xs text-white border border-slate-700 rounded px-2 py-1 outline-none flex-1"
-                      value={filters.collection} onChange={(e) => setFilters({...filters, collection: e.target.value})}
-                    >
-                      <option value="Todos">Coleção: Todas</option>
-                      {Array.from(new Set(allCards.map(c => c.collection).filter(Boolean))).sort().map(c => <option key={c} value={c}>{c}</option>)}
-                    </select>
-
-                    <input 
-                      type="number" 
-                      placeholder="ATK" 
-                      className="w-14 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs text-white focus:border-red-500 outline-none"
-                      value={filters.minAtk}
-                      onChange={(e) => setFilters({...filters, minAtk: e.target.value})}
-                    />
-                    
-                    <input 
-                      type="number" 
-                      placeholder="VIDA" 
-                      className="w-14 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs text-white focus:border-blue-500 outline-none"
-                      value={filters.minDef}
-                      onChange={(e) => setFilters({...filters, minDef: e.target.value})}
-                    />
-                  </div>
-
-                  <div className="flex gap-2">
-                    <input 
-                      type="text" 
-                      placeholder="Palavra no Efeito (ex: Qualquer momento)" 
-                      className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs text-white focus:border-purple-500 outline-none"
-                      value={filters.effectWord}
-                      onChange={(e) => setFilters({...filters, effectWord: e.target.value})}
-                    />
-                  </div>
-
-                  <button 
-                    onClick={() => setFilters({ type: "Todos", archetype: "Todos", collection: "Todos", frame: "Todos", ct: "Todos", minAtk: "", minDef: "", effectWord: "" })}
-                    className="w-full text-center text-xs text-slate-500 hover:text-white underline py-1"
-                  >
-                    Limpar Filtros
-                  </button>
-                </div>
-              )}
-            </div>
+                )}
+              </div>
+            )}
 
             {/* List */}
-            <div ref={poolScrollContainerRef} className="flex-1 overflow-y-auto p-2 md:p-4">
+            <div
+              ref={poolScrollContainerRef}
+              onScroll={(e) => {
+                if (!tourForceReady && e.currentTarget.scrollTop > 35 && !isTopBarMinimized) {
+                  setIsTopBarMinimized(true);
+                }
+              }}
+              className="flex-1 overflow-y-auto p-2 md:p-4"
+            >
               <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-2 md:gap-3">
                 {displayedPool.map((card, idx) => {
                   const isInMain = deck.some(c => c.name === card.name);
@@ -831,7 +886,14 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
               </div>
 
               {!isDeckCollapsed && (
-                <div className="flex-1 overflow-y-auto p-2 md:p-4 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')] min-h-0 flex flex-col gap-6">
+                <div
+                  onScroll={(e) => {
+                    if (!tourForceReady && e.currentTarget.scrollTop > 35 && !isTopBarMinimized) {
+                      setIsTopBarMinimized(true);
+                    }
+                  }}
+                  className="flex-1 overflow-y-auto p-2 md:p-4 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')] min-h-0 flex flex-col gap-6"
+                >
                   {deck.length === 0 && sideDeck.length === 0 ? (
                     <div className="h-full flex flex-col items-center justify-center text-slate-600">
                       <div className="bg-slate-900 p-4 rounded-full mb-4">
@@ -956,7 +1018,14 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
           )}
 
           {activeTab === 'mulligan' && (
-            <div className="w-full h-full min-h-0 flex-1 overflow-y-auto p-3 md:p-6 bg-[#0a0a0f]">
+            <div
+              onScroll={(e) => {
+                if (!tourForceReady && e.currentTarget.scrollTop > 35 && !isTopBarMinimized) {
+                  setIsTopBarMinimized(true);
+                }
+              }}
+              className="w-full h-full min-h-0 flex-1 overflow-y-auto p-3 md:p-6 bg-[#0a0a0f]"
+            >
               <div className="max-w-6xl mx-auto">
                 <MulliganSimulator
                   deck={deck}
@@ -1010,7 +1079,14 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
           )}
 
           {activeTab === 'stats' && (
-            <div className="p-2 md:p-8 max-w-4xl mx-auto w-full overflow-y-auto">
+            <div
+              onScroll={(e) => {
+                if (!tourForceReady && e.currentTarget.scrollTop > 35 && !isTopBarMinimized) {
+                  setIsTopBarMinimized(true);
+                }
+              }}
+              className="p-2 md:p-8 max-w-4xl mx-auto w-full overflow-y-auto"
+            >
               <h3 className="text-lg md:text-2xl font-bold text-white mb-4 md:mb-8 flex items-center gap-2">
                 <BarChart3 className="text-purple-500" /> Análise do Deck
               </h3>

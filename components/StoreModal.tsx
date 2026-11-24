@@ -31,6 +31,8 @@ import {
   SlidersHorizontal,
   User as UserIcon,
   ChevronRight,
+  ChevronDown,
+  ChevronUp,
   Share2
 } from 'lucide-react';
 import {
@@ -284,6 +286,11 @@ export const StoreModal: React.FC<StoreModalProps> = ({
   const [activeOrder, setActiveOrder] = useState<StoreOrder | null>(null);
   const [copiedPix, setCopiedPix] = useState(false);
   const [isCheckingPayment, setIsCheckingPayment] = useState(false);
+  const [isTopBarMinimized, setIsTopBarMinimized] = useState(false);
+
+  useEffect(() => {
+    if (isOpen) setIsTopBarMinimized(false);
+  }, [isOpen]);
 
   // Sync user data into customer form
   useEffect(() => {
@@ -755,238 +762,269 @@ export const StoreModal: React.FC<StoreModalProps> = ({
     STORE_CATEGORIES.find((c) => c.id === selectedCategory) || STORE_CATEGORIES[0];
 
   return (
-    <div className="fixed inset-0 z-[70] bg-[#0a0a0c] text-slate-200 flex flex-col overflow-hidden animate-in fade-in duration-200">
-      {/* ================= TOP ANNOUNCEMENT BAR ================= */}
-      {storeSettings.freeShippingThreshold > 0 && (
-        <div className="bg-slate-950 border-b border-slate-800/80 px-4 sm:px-8 py-2 flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 text-xs shrink-0">
-          <div className="flex items-center gap-2 text-slate-300">
-            <ShieldCheck size={14} className="text-emerald-400 shrink-0" />
-            <span className="truncate">
-              {storeSettings.storeNotice ||
-                'Mercado Light Dark TCG · Produtos Oficiais & Cartas/Coleções de Jogadores · Pagamento seguro via Mercado Pago'}
-            </span>
-          </div>
-          <div className="font-mono text-xs shrink-0">
-            {subtotal === 0 ? (
-              <span className="text-amber-300">
-                Frete Grátis em compras acima de{' '}
-                <strong>{formatBRL(storeSettings.freeShippingThreshold)}</strong>
-              </span>
-            ) : freeShippingRemaining > 0 ? (
-              <span className="text-amber-300">
-                Faltam <strong className="tabular-nums">{formatBRL(freeShippingRemaining)}</strong> para{' '}
-                <strong>Frete Grátis</strong>!
-              </span>
-            ) : (
-              <span className="text-emerald-400 font-bold">
-                ✓ Você desbloqueou Frete Grátis neste pedido!
-              </span>
-            )}
-          </div>
+    <div data-tour-id="tour-store-main" className="fixed inset-0 z-[70] bg-[#0a0a0c] text-slate-200 flex flex-col overflow-hidden animate-in fade-in duration-200">
+      {isTopBarMinimized ? (
+        <div className="bg-[#070510]/95 border-b border-amber-500/35 px-3 py-1 flex items-center justify-center shrink-0 relative z-30 shadow-md">
+          <button
+            type="button"
+            onClick={() => setIsTopBarMinimized(false)}
+            className="px-4 py-0.5 rounded-full bg-purple-950/80 hover:bg-purple-900 border border-amber-500/45 text-amber-300 hover:text-white transition flex items-center gap-1.5 text-[10px] font-cyber font-bold uppercase tracking-wider shadow cursor-pointer"
+            title="Expandir barra superior do Mercado"
+          >
+            <ChevronDown size={15} className="text-amber-400 animate-bounce" />
+          </button>
         </div>
-      )}
-
-      {/* ================= MAIN STORE HEADER ================= */}
-      <header className="bg-[#070510]/95 border-b border-amber-500/35 px-4 sm:px-8 py-3.5 shrink-0 shadow-[0_10px_30px_rgba(0,0,0,0.85)]">
-        <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-3 sm:gap-6">
-          {/* Left: Back to Site + Store Brand */}
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={onClose}
-              className="cyber-arcane-btn px-3 py-2 bg-[#0d0a1a] hover:bg-purple-950/60 text-amber-200 hover:text-white border border-amber-500/35 transition flex items-center gap-2 text-xs font-cyber font-bold uppercase tracking-wider cursor-pointer"
-              title="Voltar para a página inicial"
-            >
-              <ArrowLeft size={16} />
-              <span className="hidden sm:inline">Voltar ao Site</span>
-            </button>
-
-            <div className="flex items-center gap-2.5">
-              <img
-                src="https://i.imgur.com/cDLxOtO.png"
-                alt="Light Dark TCG"
-                className="h-9 w-auto object-contain hidden sm:block"
-              />
-              <div>
-                <span className="block text-[9px] font-mono uppercase tracking-[0.22em] text-cyan-400">
-                   EMPÓRIO MACROVERSAL // INTERCÂMBIO
+      ) : (
+        <>
+          {/* ================= TOP ANNOUNCEMENT BAR ================= */}
+          {storeSettings.freeShippingThreshold > 0 && (
+            <div className="bg-slate-950 border-b border-slate-800/80 px-4 sm:px-8 py-2 flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 text-xs shrink-0">
+              <div className="flex items-center gap-2 text-slate-300">
+                <ShieldCheck size={14} className="text-emerald-400 shrink-0" />
+                <span className="truncate">
+                  {storeSettings.storeNotice ||
+                    'Mercado Light Dark TCG · Produtos Oficiais & Cartas/Coleções de Jogadores · Pagamento seguro via Mercado Pago'}
                 </span>
-                <h1 className="text-base sm:text-xl font-cinzel font-black text-white tracking-wider leading-none mt-0.5">
-                  MERCADO
-                </h1>
+              </div>
+              <div className="font-mono text-xs shrink-0">
+                {subtotal === 0 ? (
+                  <span className="text-amber-300">
+                    Frete Grátis em compras acima de{' '}
+                    <strong>{formatBRL(storeSettings.freeShippingThreshold)}</strong>
+                  </span>
+                ) : freeShippingRemaining > 0 ? (
+                  <span className="text-amber-300">
+                    Faltam <strong className="tabular-nums">{formatBRL(freeShippingRemaining)}</strong> para{' '}
+                    <strong>Frete Grátis</strong>!
+                  </span>
+                ) : (
+                  <span className="text-emerald-400 font-bold">
+                    ✓ Você desbloqueou Frete Grátis neste pedido!
+                  </span>
+                )}
               </div>
             </div>
-          </div>
+          )}
 
-          {/* Center: Mode Switcher (Produtos Oficiais vs Cartas & Coleções de Usuários vs Área do Cliente) */}
-          <div className="order-3 md:order-2 w-full md:w-auto flex flex-wrap items-center gap-1.5 bg-[#0c0918] p-1.5 border border-purple-500/35">
-            <button
-              type="button"
-              onClick={() => setMarketSection('official')}
-              className={`cyber-arcane-btn px-3.5 py-2 text-xs font-cyber font-bold uppercase tracking-wider transition flex items-center gap-2 cursor-pointer ${
-                marketSection === 'official'
-                  ? 'bg-purple-700 text-white border border-amber-400/50 shadow-md shadow-purple-950/50'
-                  : 'text-slate-300 hover:text-white hover:bg-purple-950/40'
-              }`}
-            >
-              <Package size={15} />
-              <span>Produtos Oficiais ({activeProducts.length})</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setMarketSection('community')}
-              className={`cyber-arcane-btn px-3.5 py-2 text-xs font-cyber font-bold uppercase tracking-wider transition flex items-center gap-2 cursor-pointer ${
-                marketSection === 'community'
-                  ? 'bg-emerald-600 text-white border border-emerald-300/50 shadow-md shadow-emerald-950/50'
-                  : 'text-emerald-300 hover:text-white hover:bg-emerald-950/40'
-              }`}
-            >
-              <Sparkles size={15} />
-              <span>
-                Cartas & Coleções de Jogadores (
-                {communityListings.filter((l) => l.status === 'active' && l.stockQuantity > 0).length}
-                )
-              </span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setMarketSection('customer_area')}
-              className={`cyber-arcane-btn px-3.5 py-2 text-xs font-cyber font-bold uppercase tracking-wider transition flex items-center gap-2 cursor-pointer ${
-                marketSection === 'customer_area'
-                  ? 'bg-cyan-600 text-white border border-cyan-300/50 shadow-md shadow-cyan-950/50'
-                  : 'text-cyan-300 hover:text-white hover:bg-cyan-950/40'
-              }`}
-              title="Acompanhar minhas compras, etapas de separação e códigos de rastreio"
-            >
-              <Truck size={15} />
-              <span>Área do Cliente (Minhas Compras)</span>
-            </button>
-          </div>
-
-          {/* Right: Sell Button, Admin Button & Cart Icon */}
-          <div className="order-2 md:order-3 flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => {
-                setMarketSection('community');
-                setOpenSellTrigger((prev) => prev + 1);
-              }}
-              className={`cyber-arcane-btn px-3 py-2.5 text-xs font-cyber font-bold uppercase tracking-wider transition flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
-                isAdmin
-                  ? 'bg-amber-500 hover:bg-amber-400 text-slate-950 border border-amber-300 shadow-md shadow-amber-950/50'
-                  : 'bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/40'
-              }`}
-              title={
-                isAdmin
-                  ? 'Cadastrar Produto Oficial (Deck por Código, Coleção de Booster ou Carta Oficial)'
-                  : 'Vender suas cartas avulsas, deck por código ou coleções no Mercado'
-              }
-            >
-              <Plus size={14} />
-              <span className="hidden sm:inline">
-                {isAdmin ? 'Adicionar Produto Oficial' : 'Vender Cartas / Coleção'}
-              </span>
-            </button>
-
-            {isAdmin && onOpenAdminStore && (
-              <button
-                type="button"
-                onClick={onOpenAdminStore}
-                className="cyber-arcane-btn px-3 py-2.5 text-xs font-cyber font-bold uppercase tracking-wider bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/40 transition flex items-center gap-1.5 whitespace-nowrap cursor-pointer"
-                title="Gerenciar Pedidos, Comissões de 10%, Frete e Produtos no Painel Admin"
-              >
-                <Settings size={15} />
-                <span className="hidden lg:inline">Gerenciar Mercado</span>
-              </button>
-            )}
-
-            {/* Cart Icon Button */}
-            <button
-              type="button"
-              onClick={() => {
-                setCartStep(activeOrder && cart.length === 0 ? 'payment' : 'cart');
-                setIsCartDrawerOpen(true);
-              }}
-              className="cyber-arcane-btn relative p-2.5 bg-[#0d0a1a] hover:bg-emerald-950/50 border border-emerald-500/40 hover:border-emerald-400 transition flex items-center justify-center group cursor-pointer"
-              title="Abrir Carrinho e Calcular Frete"
-            >
-              <ShoppingCart
-                size={20}
-                className="text-emerald-400 group-hover:scale-105 transition-transform"
-              />
-              {totalItemsCount > 0 && (
-                <span className="absolute -top-1.5 -right-1.5 min-w-[20px] h-[20px] px-1 bg-emerald-500 text-slate-950 text-[10px] font-black font-mono flex items-center justify-center tabular-nums shadow">
-                  {totalItemsCount}
-                </span>
-              )}
-            </button>
-          </div>
-        </div>
-
-        {/* ================= HORIZONTAL CATEGORY BAR (FOR OFFICIAL PRODUCTS) ================= */}
-        {marketSection === 'official' && (
-          <div className="max-w-7xl mx-auto mt-3 pt-2.5 border-t border-purple-500/25 flex flex-wrap items-center justify-between gap-2">
-            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
-              {STORE_CATEGORIES.map((cat) => {
-                const isSelected = selectedCategory === cat.id;
-                const count = categoryCounts[cat.id];
-                return (
-                  <button
-                    key={cat.id}
-                    type="button"
-                    onClick={() => setSelectedCategory(cat.id)}
-                    className={`cyber-arcane-btn px-3.5 py-2 text-xs font-cyber font-bold uppercase tracking-wider transition flex items-center gap-2 whitespace-nowrap shrink-0 cursor-pointer ${
-                      isSelected
-                        ? 'bg-purple-700 text-white border border-amber-400/50 shadow-md shadow-purple-950/50'
-                        : 'bg-[#0d0a1a]/90 hover:bg-purple-950/50 text-slate-300 hover:text-white border border-purple-500/30'
-                    }`}
-                  >
-                    {getCategoryIcon(cat.id, 14)}
-                    <span>{cat.label}</span>
-                    <span
-                      className={`text-[10px] font-mono px-1.5 py-0.2 tabular-nums ${
-                        isSelected
-                          ? 'bg-black/40 text-amber-300 font-black'
-                          : 'bg-slate-950 text-slate-400'
-                      }`}
-                    >
-                      {count}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-
-            <div className="relative w-full sm:w-72">
-              <Search
-                size={14}
-                className="text-amber-400/70 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
-              />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Buscar produto oficial..."
-                className="w-full bg-[#090612] border border-purple-500/35 focus:border-amber-400 pl-9 pr-8 py-1.5 text-xs text-white placeholder-slate-500 outline-none transition"
-              />
-              {searchQuery && (
+          {/* ================= MAIN STORE HEADER ================= */}
+          <header className="bg-[#070510]/95 border-b border-amber-500/35 px-4 sm:px-8 py-3.5 shrink-0 shadow-[0_10px_30px_rgba(0,0,0,0.85)]">
+            <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-3 sm:gap-6">
+              {/* Left: Back to Site + Store Brand */}
+              <div className="flex items-center gap-3">
                 <button
                   type="button"
-                  onClick={() => setSearchQuery('')}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white"
+                  onClick={onClose}
+                  className="cyber-arcane-btn px-3 py-2 bg-[#0d0a1a] hover:bg-purple-950/60 text-amber-200 hover:text-white border border-amber-500/35 transition flex items-center gap-2 text-xs font-cyber font-bold uppercase tracking-wider cursor-pointer"
+                  title="Voltar para a página inicial"
                 >
-                  <X size={13} />
+                  <ArrowLeft size={16} />
+                  <span className="hidden sm:inline">Voltar ao Site</span>
                 </button>
-              )}
+
+                <div className="flex items-center gap-2.5">
+                  <img
+                    src="https://i.imgur.com/cDLxOtO.png"
+                    alt="Light Dark TCG"
+                    className="h-9 w-auto object-contain hidden sm:block"
+                  />
+                  <div>
+                    <span className="block text-[9px] font-mono uppercase tracking-[0.22em] text-cyan-400">
+                       EMPÓRIO MACROVERSAL // INTERCÂMBIO
+                    </span>
+                    <h1 className="text-base sm:text-xl font-cinzel font-black text-white tracking-wider leading-none mt-0.5">
+                      MERCADO
+                    </h1>
+                  </div>
+                </div>
+              </div>
+
+              {/* Center: Mode Switcher (Produtos Oficiais vs Cartas & Coleções de Usuários vs Área do Cliente) */}
+              <div className="order-3 md:order-2 w-full md:w-auto flex flex-wrap items-center gap-1.5 bg-[#0c0918] p-1.5 border border-purple-500/35">
+                <button
+                  type="button"
+                  onClick={() => setMarketSection('official')}
+                  className={`cyber-arcane-btn px-3.5 py-2 text-xs font-cyber font-bold uppercase tracking-wider transition flex items-center gap-2 cursor-pointer ${
+                    marketSection === 'official'
+                      ? 'bg-purple-700 text-white border border-amber-400/50 shadow-md shadow-purple-950/50'
+                      : 'text-slate-300 hover:text-white hover:bg-purple-950/40'
+                  }`}
+                >
+                  <Package size={15} />
+                  <span>Produtos Oficiais ({activeProducts.length})</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setMarketSection('community')}
+                  className={`cyber-arcane-btn px-3.5 py-2 text-xs font-cyber font-bold uppercase tracking-wider transition flex items-center gap-2 cursor-pointer ${
+                    marketSection === 'community'
+                      ? 'bg-emerald-600 text-white border border-emerald-300/50 shadow-md shadow-emerald-950/50'
+                      : 'text-emerald-300 hover:text-white hover:bg-emerald-950/40'
+                  }`}
+                >
+                  <Sparkles size={15} />
+                  <span>
+                    Cartas & Coleções de Jogadores (
+                    {communityListings.filter((l) => l.status === 'active' && l.stockQuantity > 0).length}
+                    )
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setMarketSection('customer_area')}
+                  className={`cyber-arcane-btn px-3.5 py-2 text-xs font-cyber font-bold uppercase tracking-wider transition flex items-center gap-2 cursor-pointer ${
+                    marketSection === 'customer_area'
+                      ? 'bg-cyan-600 text-white border border-cyan-300/50 shadow-md shadow-cyan-950/50'
+                      : 'text-cyan-300 hover:text-white hover:bg-cyan-950/40'
+                  }`}
+                  title="Acompanhar minhas compras, etapas de separação e códigos de rastreio"
+                >
+                  <Truck size={15} />
+                  <span>Área do Cliente (Minhas Compras)</span>
+                </button>
+              </div>
+
+              {/* Right: Sell Button, Admin Button & Cart Icon */}
+              <div className="order-2 md:order-3 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMarketSection('community');
+                    setOpenSellTrigger((prev) => prev + 1);
+                  }}
+                  className={`cyber-arcane-btn px-3 py-2.5 text-xs font-cyber font-bold uppercase tracking-wider transition flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                    isAdmin
+                      ? 'bg-amber-500 hover:bg-amber-400 text-slate-950 border border-amber-300 shadow-md shadow-amber-950/50'
+                      : 'bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/40'
+                  }`}
+                  title={
+                    isAdmin
+                      ? 'Cadastrar Produto Oficial (Deck por Código, Coleção de Booster ou Carta Oficial)'
+                      : 'Vender suas cartas avulsas, deck por código ou coleções no Mercado'
+                  }
+                >
+                  <Plus size={14} />
+                  <span className="hidden sm:inline">
+                    {isAdmin ? 'Adicionar Produto Oficial' : 'Vender Cartas / Coleção'}
+                  </span>
+                </button>
+
+                {isAdmin && onOpenAdminStore && (
+                  <button
+                    type="button"
+                    onClick={onOpenAdminStore}
+                    className="cyber-arcane-btn px-3 py-2.5 text-xs font-cyber font-bold uppercase tracking-wider bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/40 transition flex items-center gap-1.5 whitespace-nowrap cursor-pointer"
+                    title="Gerenciar Pedidos, Comissões de 10%, Frete e Produtos no Painel Admin"
+                  >
+                    <Settings size={15} />
+                    <span className="hidden lg:inline">Gerenciar Mercado</span>
+                  </button>
+                )}
+
+                {/* Cart Icon Button */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCartStep(activeOrder && cart.length === 0 ? 'payment' : 'cart');
+                    setIsCartDrawerOpen(true);
+                  }}
+                  className="cyber-arcane-btn relative p-2.5 bg-[#0d0a1a] hover:bg-emerald-950/50 border border-emerald-500/40 hover:border-emerald-400 transition flex items-center justify-center group cursor-pointer"
+                  title="Abrir Carrinho e Calcular Frete"
+                >
+                  <ShoppingCart
+                    size={20}
+                    className="text-emerald-400 group-hover:scale-105 transition-transform"
+                  />
+                  {totalItemsCount > 0 && (
+                    <span className="absolute -top-1.5 -right-1.5 min-w-[20px] h-[20px] px-1 bg-emerald-500 text-slate-950 text-[10px] font-black font-mono flex items-center justify-center tabular-nums shadow">
+                      {totalItemsCount}
+                    </span>
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setIsTopBarMinimized(true)}
+                  className="cyber-arcane-btn p-2.5 bg-[#0d0a1a] hover:bg-purple-950/50 border border-purple-500/35 text-slate-400 hover:text-amber-300 transition flex items-center justify-center cursor-pointer"
+                  title="Minimizar barra superior"
+                >
+                  <ChevronUp size={18} />
+                </button>
+              </div>
             </div>
-          </div>
-        )}
-      </header>
+
+            {/* ================= HORIZONTAL CATEGORY BAR (FOR OFFICIAL PRODUCTS) ================= */}
+            {marketSection === 'official' && (
+              <div className="max-w-7xl mx-auto mt-3 pt-2.5 border-t border-purple-500/25 flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+                  {STORE_CATEGORIES.map((cat) => {
+                    const isSelected = selectedCategory === cat.id;
+                    const count = categoryCounts[cat.id];
+                    return (
+                      <button
+                        key={cat.id}
+                        type="button"
+                        onClick={() => setSelectedCategory(cat.id)}
+                        className={`cyber-arcane-btn px-3.5 py-2 text-xs font-cyber font-bold uppercase tracking-wider transition flex items-center gap-2 whitespace-nowrap shrink-0 cursor-pointer ${
+                          isSelected
+                            ? 'bg-purple-700 text-white border border-amber-400/50 shadow-md shadow-purple-950/50'
+                            : 'bg-[#0d0a1a]/90 hover:bg-purple-950/50 text-slate-300 hover:text-white border border-purple-500/30'
+                        }`}
+                      >
+                        {getCategoryIcon(cat.id, 14)}
+                        <span>{cat.label}</span>
+                        <span
+                          className={`text-[10px] font-mono px-1.5 py-0.2 tabular-nums ${
+                            isSelected
+                              ? 'bg-black/40 text-amber-300 font-black'
+                              : 'bg-slate-950 text-slate-400'
+                          }`}
+                        >
+                          {count}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div className="relative w-full sm:w-72">
+                  <Search
+                    size={14}
+                    className="text-amber-400/70 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
+                  />
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Buscar produto oficial..."
+                    className="w-full bg-[#090612] border border-purple-500/35 focus:border-amber-400 pl-9 pr-8 py-1.5 text-xs text-white placeholder-slate-500 outline-none transition"
+                  />
+                  {searchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => setSearchQuery('')}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white"
+                    >
+                      <X size={13} />
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+          </header>
+        </>
+      )}
 
       {/* ================= MAIN FULL-PAGE STORE BODY ================= */}
-      <div className="flex-1 overflow-y-auto custom-scrollbar">
+      <div
+        className="flex-1 overflow-y-auto custom-scrollbar"
+        onScroll={(e) => {
+          if (e.currentTarget.scrollTop > 35 && !isTopBarMinimized) {
+            setIsTopBarMinimized(true);
+          }
+        }}
+      >
         <div className="max-w-7xl mx-auto px-4 sm:px-8 py-6 sm:py-8">
           {marketSection === 'customer_area' ? (
             <CustomerOrdersArea

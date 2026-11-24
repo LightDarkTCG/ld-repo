@@ -7,7 +7,9 @@ import {
   Eye,
   EyeOff,
   Wand2,
-  MousePointer
+  MousePointer,
+  Zap,
+  ZapOff
 } from 'lucide-react';
 import { doc, onSnapshot, setDoc } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
@@ -341,6 +343,121 @@ export const useThemeTextures = () => {
   };
 };
 
+const SITE_EFFECTS_STORAGE_KEY = 'ld_site_effects_enabled';
+const SITE_EFFECTS_EVENT = 'ld-site-effects-change';
+
+const syncSiteEffectsDomClass = (enabled: boolean) => {
+  if (typeof document === 'undefined') return;
+  document.documentElement.classList.toggle('ld-effects-disabled', !enabled);
+  if (document.body) {
+    document.body.classList.toggle('ld-effects-disabled', !enabled);
+  }
+};
+
+export const getInitialSiteEffectsEnabled = (): boolean => {
+  if (typeof window === 'undefined') return true;
+  try {
+    const raw = window.localStorage.getItem(SITE_EFFECTS_STORAGE_KEY);
+    if (raw === 'false') return false;
+    return true;
+  } catch {
+    return true;
+  }
+};
+
+// Inicializa imediatamente a classe no DOM caso já esteja salvo como desativado
+if (typeof window !== 'undefined') {
+  syncSiteEffectsDomClass(getInitialSiteEffectsEnabled());
+}
+
+export const useSiteEffects = () => {
+  const [siteEffectsEnabled, setSiteEffectsState] = useState<boolean>(() =>
+    getInitialSiteEffectsEnabled()
+  );
+
+  useEffect(() => {
+    syncSiteEffectsDomClass(siteEffectsEnabled);
+  }, [siteEffectsEnabled]);
+
+  useEffect(() => {
+    const handleSync = (e: Event) => {
+      const custom = e as CustomEvent<boolean>;
+      if (typeof custom.detail === 'boolean') {
+        setSiteEffectsState(custom.detail);
+        syncSiteEffectsDomClass(custom.detail);
+      } else {
+        const current = getInitialSiteEffectsEnabled();
+        setSiteEffectsState(current);
+        syncSiteEffectsDomClass(current);
+      }
+    };
+    window.addEventListener(SITE_EFFECTS_EVENT, handleSync);
+    return () => window.removeEventListener(SITE_EFFECTS_EVENT, handleSync);
+  }, []);
+
+  const setSiteEffectsEnabled = (next: boolean | ((prev: boolean) => boolean)) => {
+    const resolved = typeof next === 'function' ? next(siteEffectsEnabled) : next;
+    try {
+      window.localStorage.setItem(SITE_EFFECTS_STORAGE_KEY, String(resolved));
+    } catch {
+      // ignore storage errors
+    }
+    setSiteEffectsState(resolved);
+    syncSiteEffectsDomClass(resolved);
+    window.dispatchEvent(new CustomEvent<boolean>(SITE_EFFECTS_EVENT, { detail: resolved }));
+  };
+
+  const toggleSiteEffects = () => {
+    setSiteEffectsEnabled(!siteEffectsEnabled);
+  };
+
+  return {
+    siteEffectsEnabled,
+    setSiteEffectsEnabled,
+    toggleSiteEffects
+  };
+};
+
+export const SiteEffectsToggleButton: React.FC<{ className?: string }> = ({ className = '' }) => {
+  const { siteEffectsEnabled, toggleSiteEffects } = useSiteEffects();
+
+  return (
+    <button
+      type="button"
+      data-tour-id="tour-btn-effects"
+      onClick={toggleSiteEffects}
+      title={
+        siteEffectsEnabled
+          ? 'Desativar efeitos de luz, animação e interação com o mouse para deixar o site bem leve'
+          : 'Ativar efeitos visuais de luz, animação e interação com o mouse'
+      }
+      className={`flex items-center gap-2 bg-[#0c0918]/90 border px-2.5 py-1.5 cyber-arcane-btn shrink-0 transition ${
+        siteEffectsEnabled
+          ? 'border-[#d4af37]/45 hover:border-cyan-400/70 text-slate-100 shadow-[0_0_12px_rgba(212,175,55,0.15)]'
+          : 'border-slate-700/80 hover:border-slate-500 text-slate-400 bg-[#080610]'
+      } ${className}`}
+    >
+      {siteEffectsEnabled ? (
+        <Zap size={13} className="text-amber-400 shrink-0" />
+      ) : (
+        <ZapOff size={13} className="text-slate-500 shrink-0" />
+      )}
+      <span className="text-[11px] font-bold tracking-wide whitespace-nowrap">
+        Efeitos do Site
+      </span>
+      <span
+        className={`inline-flex items-center px-1.5 py-0.5 text-[9px] font-mono font-black uppercase tracking-wider rounded-sm border transition ${
+          siteEffectsEnabled
+            ? 'bg-emerald-500/20 text-emerald-300 border-emerald-400/50'
+            : 'bg-slate-800 text-slate-400 border-slate-600/60'
+        }`}
+      >
+        {siteEffectsEnabled ? 'ON' : 'OFF'}
+      </span>
+    </button>
+  );
+};
+
 interface SparkTrailParticle {
   x: number;
   y: number;
@@ -443,7 +560,23 @@ const ProceduralAnimatedCanvas: React.FC<{
       });
     };
 
-    const handleWindowMouseMove = (e: MouseEvent) => {
+    const canUseFineMouse = () => {
+      if (typeof window === 'undefined') return false;
+      if (window.matchMedia && window.matchMedia('(hover: none) and (pointer: coarse)').matches) {
+        return false;
+      }
+      return true;
+    };
+
+    const handleWindowPointerMove = (e: PointerEvent) => {
+      // Ignora completamente eventos de touch / caneta em celulares e tablets (somente mouse)
+      if ((e.pointerType && e.pointerType !== 'mouse') || !canUseFineMouse()) {
+        if (mouse.isInside) {
+          mouse.isInside = false;
+          onMouseNormUpdateRef.current?.(0, 0, false);
+        }
+        return;
+      }
       if (!canvas) return;
       const rect = canvas.getBoundingClientRect();
       // Only process if container is visible in viewport
@@ -492,7 +625,9 @@ const ProceduralAnimatedCanvas: React.FC<{
       }
     };
 
-    const handleWindowMouseDown = (e: MouseEvent) => {
+    const handleWindowPointerDown = (e: PointerEvent) => {
+      // Ignora completamente toques em celulares (somente clique real de mouse)
+      if ((e.pointerType && e.pointerType !== 'mouse') || !canUseFineMouse()) return;
       if (mouseEffect === 'none' || !canvas) return;
       const rect = canvas.getBoundingClientRect();
       const localX = e.clientX - rect.left;
@@ -511,8 +646,8 @@ const ProceduralAnimatedCanvas: React.FC<{
       }
     };
 
-    window.addEventListener('mousemove', handleWindowMouseMove, { passive: true });
-    window.addEventListener('mousedown', handleWindowMouseDown, { passive: true });
+    window.addEventListener('pointermove', handleWindowPointerMove, { passive: true });
+    window.addEventListener('pointerdown', handleWindowPointerDown, { passive: true });
 
     // 1. Particles (Embers / Stardust / Void Motes)
     const particleCount = Math.min(64, Math.max(22, Math.floor((width * height) / 15000)));
@@ -855,8 +990,8 @@ const ProceduralAnimatedCanvas: React.FC<{
     return () => {
       cancelAnimationFrame(animId);
       window.removeEventListener('resize', handleResize);
-      window.removeEventListener('mousemove', handleWindowMouseMove);
-      window.removeEventListener('mousedown', handleWindowMouseDown);
+      window.removeEventListener('pointermove', handleWindowPointerMove);
+      window.removeEventListener('pointerdown', handleWindowPointerDown);
     };
   }, [effect, mouseEffect, speed, intensity]);
 
@@ -901,28 +1036,43 @@ export const ArcaneCyberTextureLayer: React.FC<{
   onOpenConfig,
   className = ''
 }) => {
+  const { siteEffectsEnabled } = useSiteEffects();
   const parallaxImgRef = useRef<HTMLDivElement | null>(null);
   const parallaxAstrolabeRef = useRef<HTMLDivElement | null>(null);
 
   const hasCustomImage = Boolean(slot?.imageUrl && slot.imageUrl.trim() !== '');
   const handleTriggerConfig = onOpenConfig || onOpenTextureManager;
 
+  useEffect(() => {
+    if (!siteEffectsEnabled) {
+      if (parallaxImgRef.current) {
+        parallaxImgRef.current.style.transform = 'translate3d(0px, 0px, 0)';
+      }
+      if (parallaxAstrolabeRef.current) {
+        parallaxAstrolabeRef.current.style.transform = 'translate3d(0px, 0px, 0)';
+      }
+    }
+  }, [siteEffectsEnabled]);
+
   // Resolve active animation preset from slot or fallback based on variant
-  const resolvedAnimEffect: TextureAnimationEffect =
-    slot?.animationEffect ||
-    (variant === 'high-magic' || variant === 'altar'
-      ? 'runic_astrolabe'
-      : variant === 'dark-magic' || variant === 'grimoire' || variant === 'panel'
-      ? 'abyssal_embers'
-      : variant === 'cyber-grid' || variant === 'cyber' || variant === 'navbar'
-      ? 'cyber_circuit_pulse'
-      : 'arcane_matrix_hybrid');
+  const resolvedAnimEffect: TextureAnimationEffect = !siteEffectsEnabled
+    ? 'none'
+    : slot?.animationEffect ||
+      (variant === 'high-magic' || variant === 'altar'
+        ? 'runic_astrolabe'
+        : variant === 'dark-magic' || variant === 'grimoire' || variant === 'panel'
+        ? 'abyssal_embers'
+        : variant === 'cyber-grid' || variant === 'cyber' || variant === 'navbar'
+        ? 'cyber_circuit_pulse'
+        : 'arcane_matrix_hybrid');
 
-  const resolvedMotionEffect: ImageMotionEffect =
-    slot?.imageMotionEffect || 'pan_drift';
+  const resolvedMotionEffect: ImageMotionEffect = !siteEffectsEnabled
+    ? 'static'
+    : slot?.imageMotionEffect || 'pan_drift';
 
-  const resolvedMouseEffect: MouseReactiveEffect =
-    slot?.mouseReactiveEffect || 'vortex_constellation';
+  const resolvedMouseEffect: MouseReactiveEffect = !siteEffectsEnabled
+    ? 'none'
+    : slot?.mouseReactiveEffect || 'vortex_constellation';
 
   const speed = slot?.animationSpeed ?? 1.0;
   const intensity = slot?.effectIntensity ?? 0.85;
@@ -930,6 +1080,7 @@ export const ArcaneCyberTextureLayer: React.FC<{
 
   // Direct DOM parallax update for zero-lag 60fps mouse parallax shift
   const handleMouseNormUpdate = (nx: number, ny: number, active: boolean) => {
+    if (!siteEffectsEnabled) return;
     if (parallaxImgRef.current) {
       parallaxImgRef.current.style.transform = active
         ? `translate3d(${(-nx * 14).toFixed(1)}px, ${(-ny * 14).toFixed(1)}px, 0)`
@@ -942,14 +1093,15 @@ export const ArcaneCyberTextureLayer: React.FC<{
     }
   };
 
-  const motionClass =
-    resolvedMotionEffect === 'pan_drift'
-      ? 'ld-anim-pan-drift'
-      : resolvedMotionEffect === 'energy_pulse'
-      ? 'ld-anim-energy-pulse'
-      : resolvedMotionEffect === 'heat_warp'
-      ? 'ld-anim-heat-warp'
-      : '';
+  const motionClass = !siteEffectsEnabled
+    ? ''
+    : resolvedMotionEffect === 'pan_drift'
+    ? 'ld-anim-pan-drift'
+    : resolvedMotionEffect === 'energy_pulse'
+    ? 'ld-anim-energy-pulse'
+    : resolvedMotionEffect === 'heat_warp'
+    ? 'ld-anim-heat-warp'
+    : '';
 
   const motionDurSec =
     resolvedMotionEffect === 'pan_drift'
@@ -968,25 +1120,26 @@ export const ArcaneCyberTextureLayer: React.FC<{
         } as React.CSSProperties
       }
     >
-      {/* 1. Custom Uploaded Texture Image (with animated motion + mouse parallax shift) */}
+      {/* 1. Custom Uploaded Texture Image (static & lightweight when siteEffectsEnabled is false) */}
       {hasCustomImage && (
         <div
           ref={parallaxImgRef}
-          className="absolute -inset-4 transition-transform duration-300 ease-out"
+          className="absolute -inset-4"
         >
           <div
-            className={`w-full h-full bg-cover bg-center bg-no-repeat transition-opacity duration-500 ${motionClass}`}
+            className={`w-full h-full bg-cover bg-center bg-no-repeat ${motionClass}`}
             style={{
               backgroundImage: `url("${slot!.imageUrl}")`,
-              opacity: slot?.opacity ?? 0.45,
-              mixBlendMode: (slot?.blendMode || 'screen') as any
+              opacity: siteEffectsEnabled ? (slot?.opacity ?? 0.45) : Math.min(0.28, (slot?.opacity ?? 0.45) * 0.65),
+              mixBlendMode: siteEffectsEnabled ? ((slot?.blendMode || 'screen') as any) : 'normal'
             }}
           />
         </div>
       )}
 
       {/* 2. Procedural Animated SVG Geometric / Runic / Circuit Layer + Mouse-Reactive Canvas */}
-      {(!hasCustomImage || showOverlay) &&
+      {siteEffectsEnabled &&
+        (!hasCustomImage || showOverlay) &&
         (resolvedAnimEffect !== 'none' || resolvedMouseEffect !== 'none') && (
           <div
             className={`absolute inset-0 ${!hasCustomImage ? motionClass : ''}`}
@@ -1129,8 +1282,9 @@ export const ArcaneCyberTextureLayer: React.FC<{
         )}
 
       {/* 3. Holographic Laser Scanline Sweep */}
-      {(resolvedMotionEffect === 'hologram_scan' ||
-        resolvedAnimEffect === 'cyber_circuit_pulse') && (
+      {siteEffectsEnabled &&
+        (resolvedMotionEffect === 'hologram_scan' ||
+          resolvedAnimEffect === 'cyber_circuit_pulse') && (
         <div
           className="absolute left-0 right-0 h-16 bg-gradient-to-b from-transparent via-cyan-400/15 to-amber-400/20 border-b border-cyan-400/35 pointer-events-none"
           style={{

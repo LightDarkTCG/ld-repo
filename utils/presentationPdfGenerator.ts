@@ -65,20 +65,20 @@ export const PRESENTATION_GUIDE_SECTIONS: GuideSection[] = [
   },
   {
     number: '04',
-    title: 'MONTE SEU DECK, FERRAMENTAS PRO & PDF/IMAGEM EM CASCATA',
-    subtitle: 'Deck Builder na nuvem, Simulador de Mulligan, Comparador, Decks da Comunidade e Exportação Anti-Pirataria',
+    title: 'MONTE SEU DECK, FERRAMENTAS PRO & LISTA/IMAGEM DE TORNEIO',
+    subtitle: 'Deck Builder na nuvem, Simulador de Mulligan, Comparador, Decks da Comunidade e Exportação PDF/PNG',
     route: 'Botão "Monte seu Deck" (/decks) e "Populares" (/populares)',
     TalkingPoints: [
-      'No construtor "Monte seu Deck", o jogador monta seu Deck Principal (30 a 35 cartas), seu Deck Auxiliar (até 10 cartas) e inclui seus Tokens no Deck de Heróis (até 15 Tokens) com validação automática das regras oficiais (sem banlist, respeitando o limite de 1 cópia por carta pelo nome base).',
+      'No construtor "Monte seu Deck", o jogador monta seu Deck Principal (30 a 35 cartas no Modo Normal ou 35 a 40 no Modo Mesão) e Side Deck (até 5 cartas) com validação automática das regras oficiais.',
       'O jogador logado pode salvar múltiplos decks na nuvem ("Meus Decks Salvos") para acessar de qualquer dispositivo, bem como importar e exportar listas instantaneamente via Código do Deck (LDT:...).',
       'Decks da Comunidade: galeria integrada onde os jogadores publicam seus decks para a comunidade, dão curtidas nas melhores listas, copiam o código ou abrem direto no construtor.',
       'Simulador de Mão Inicial & Mulligan: permite sortear mãos de 5 cartas, escolher quais cartas devolver ao deck para testar o Mulligan oficial e consultar a probabilidade matemática de comprar cartas de custo baixo no turno 1.',
       'Comparador de Decks (Lado a Lado): compara duas listas quaisquer mostrando a taxa de similaridade (%), cartas em comum, cartas exclusivas de cada deck e o comparativo de curva de custo (CT).',
-      'Imagem do Deck & PDF Oficial de Torneio Unificado: gera tanto a Imagem PNG do Deck quanto o PDF Oficial A4 de Torneio. No PDF, a Página 1 traz a lista formal de cartas (Principal, Auxiliar e Tokens) pronta para a arbitragem, e a última página traz a Imagem Visual do Deck com o Código do Deck e as cartas reais sobrepostas em cascata (mostrando arte, status e nome da carta, mas ocultando a metade inferior do efeito para evitar pirataria).',
+      'Imagem do Deck & PDF Oficial de Torneio Unificado: gera tanto a Imagem PNG do Deck quanto o PDF Oficial A4 de Torneio com a lista formal de cartas e visualização do deck.',
       'Na aba "Populares" (/populares), qualquer pessoa pode consultar o termômetro do Meta: o ranking em tempo real das cartas mais usadas nos decks salvos pelos jogadores.'
     ],
     PublicHighlights: [
-      'Exportação unificada: Lista A4 de Torneio na Página 1 + Imagem Visual do Deck em Cascata Anti-Pirataria na última página.',
+      'Exportação unificada: Lista A4 de Torneio e Imagem Visual do Deck.',
       'Ferramentas competitivas completas: Simulador de Mulligan, Comparador de Decks e Galeria de Decks da Comunidade.'
     ]
   },
@@ -101,17 +101,15 @@ export const PRESENTATION_GUIDE_SECTIONS: GuideSection[] = [
   },
   {
     number: '06',
-    title: 'SIMULADOR DE BOOSTER, APP DUELO & DUELO VS IA',
-    subtitle: 'Ferramentas interativas para abrir pacotes virtuais, treinar contra robô e marcar partidas',
-    route: 'Botões "Booster", "App Duelo" (/duelo) e "Duelo vs IA" (/duelo-ia)',
+    title: 'APP DUELO & DUELO VS IA',
+    subtitle: 'Marcador de partidas local e online para Modo Normal e Modo Mesão',
+    route: 'Botões "App Duelo" (/duelo) e "Duelo vs IA" (/duelo-ia)',
     TalkingPoints: [
-      'Simulador de Abertura de Booster (botão dourado "Booster"): o público escolhe entre os pacotes configurados e abre boosters virtuais gratuitamente para testar a sorte, com animação de revelação carta a carta, efeitos de brilho por raridade e resumo do pacote.',
-      'App Duelo (/duelo): o marcador de partida companheiro para jogos físicos ou remotos. Controla os 20 Pontos de Vida, progressão de Mana (1 a 10), ativação das 3 Runas, contadores de turno, rolagem de dados e suporta tanto duelos 1v1 quanto partidas em dupla (2v2).',
-      'Duelo vs IA (/duelo-ia): simulador de partida completo dentro do navegador onde o jogador enfrenta uma Inteligência Artificial programada (Deck Insanis). Ideal para novos jogadores aprenderem na prática como funcionam as fases do turno, invocação, equipamentos, combate e correntes.'
+      'App Duelo (/duelo): o marcador de partida companheiro para jogos físicos ou remotos. Controla Pontos de Vida, Mana, Runas, Redução de CT, Dano Primordial, Sanidade e rodadas, suportando Modo Normal (1v1) e Modo Mesão (4 jogadores), tanto no mesmo aparelho quanto em Sala Online sincronizada entre celulares.',
+      'Duelo vs IA (/duelo-ia): área reservada para o simulador de partida contra Inteligência Artificial.'
     ],
     PublicHighlights: [
-      'Abertura de pacotes (Pack Opener) com taxas reais de raridade e coleções específicas.',
-      'Marcador de Partida completo (1v1 e 2v2) e Treino solo contra IA direto no navegador sem precisar instalar nada.'
+      'Marcador de Partida completo (Modo Normal e Modo Mesão) com salas online sincronizadas em tempo real.'
     ]
   },
   {

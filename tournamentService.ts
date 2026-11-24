@@ -56,6 +56,7 @@ export interface Match {
   isWO?: boolean;
   woWinnerId?: string | null;
   liveRoomId?: string; // ID da sala de duelo online/transmissão vinculada
+  isLive?: boolean; // Indica se a partida está sendo transmitida ao vivo no momento
   notes?: string;
   // Liga (Pontos de Liga / Rating Dinâmico)
   p1LeagueDelta?: number;
@@ -129,6 +130,13 @@ export function calculateDynamicLeagueDelta(
   };
 }
 
+export interface TournamentPrizes {
+  top1?: string;
+  top2?: string;
+  top3?: string;
+  top4to8?: string;
+}
+
 export interface TournamentData {
   id: string;
   name: string;
@@ -141,6 +149,10 @@ export interface TournamentData {
   status: 'draft' | 'in_progress' | 'completed';
   currentRound: number;
   totalRounds: number;
+  // Datas & Premiações Oficiais
+  startDate?: string;
+  endDate?: string;
+  prizes?: TournamentPrizes;
   // Swiss Config
   swissPtsWin?: string;
   swissPtsTie?: string;
@@ -548,7 +560,7 @@ export async function finalizeTournamentAndRecordHistory(
       let label = `${idx + 1}º Lugar`;
       if (idx === 0) label = 'Campeão 🏆';
       else if (idx === 1) label = 'Vice-Campeão 🥈';
-      else if (idx === 2) label = '3º Lugar 🥉';
+      else if (idx === 2) label = '3º Lugar ������';
 
       const s = statsMap.get(p.id);
 
@@ -658,10 +670,155 @@ export async function fetchUserChampionshipHistory(userId: string): Promise<User
 }
 
 /**
- * Gera URL de compartilhamento do torneio
+ * Inscreve um jogador convidado diretamente no torneio via link de convite (sem alterar configurações)
+ */
+export async function registerGuestPlayerInTournament(
+  tournamentId: string,
+  playerName: string,
+  user?: User | null
+): Promise<Participant> {
+  const ref = doc(db, 'tournaments', tournamentId);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) {
+    throw new Error('Campeonato não encontrado na nuvem. Peça ao organizador para salvar o campeonato primeiro.');
+  }
+
+  const data = snap.data() as TournamentData;
+  const currentParticipants: Participant[] = data.participants || [];
+
+  // Se o usuário logado já estiver vinculado, retorna o participante existente
+  if (user?.uid) {
+    const existingByUid = currentParticipants.find((p) => p.userId === user.uid);
+    if (existingByUid) return existingByUid;
+  }
+
+  const cleanName = playerName.trim() || user?.displayName || 'Jogador';
+  const startPoints = data.format === 'liga_pontos' ? (data.leagueInitialPoints || 1000) : 0;
+
+  const newParticipant: Participant = {
+    id: Math.random().toString(36).substr(2, 9),
+    seed: currentParticipants.length + 1,
+    name: cleanName,
+    points: startPoints,
+    wins: 0,
+    losses: 0,
+    ties: 0,
+    matchesPlayed: 0,
+    ...(user?.uid
+      ? {
+          userId: user.uid,
+          userEmail: user.email || '',
+          userPhoto: user.photoURL || ''
+        }
+      : {})
+  };
+
+  const updatedParticipants = [...currentParticipants, newParticipant];
+
+  await updateDoc(ref, {
+    participants: updatedParticipants,
+    updatedAt: new Date().toISOString()
+  });
+
+  return newParticipant;
+}
+
+/**
+ * Gera URL de convite de jogadores para entrar no campeonato (Modo Convidado)
  */
 export function getTournamentShareUrl(tournamentId: string): string {
   const origin = typeof window !== 'undefined' ? window.location.origin : '';
   const pathname = typeof window !== 'undefined' ? window.location.pathname : '';
-  return `${origin}${pathname}?torneio=${encodeURIComponent(tournamentId)}`;
+  return `${origin}${pathname}?torneio=${encodeURIComponent(tournamentId)}&convite=1`;
 }
+
+/**
+ * Atualiza o status "Ao Vivo" (isLive) de uma partida específica dentro do documento do campeonato
+ */
+export async function setTournamentMatchLiveStatus(
+  tournamentId: string,
+  matchId: string,
+  isLive: boolean
+): Promise<void> {
+  if (!tournamentId || !matchId) return;
+  try {
+    const ref = doc(db, 'tournaments', tournamentId);
+    const snap = await getDoc(ref);
+    if (!snap.exists()) return;
+    const data = snap.data() as TournamentData;
+    const currentMatches = data.matches || [];
+    const updatedMatches = currentMatches.map((m) =>
+      m.id === matchId ? { ...m, isLive } : m
+    );
+    await updateDoc(ref, {
+      matches: updatedMatches,
+      updatedAt: new Date().toISOString()
+    });
+  } catch (err) {
+    console.warn('Erro ao atualizar status ao vivo da partida:', err);
+  }
+}
+
+export interface LiveRoomSummary {
+  roomId: string;
+  tournamentId: string;
+  matchId: string;
+  isLiveBroadcast: boolean;
+  p1Name: string;
+  p2Name: string;
+  p1Wins: number;
+  p2Wins: number;
+  p1Life: number;
+  p2Life: number;
+  rounds: number;
+  refereeName?: string;
+  hasActiveCamera: boolean;
+  spotlightCardName?: string;
+  updatedAt: number;
+}
+
+/**
+ * Escuta em tempo real todas as salas de duelo online (duelRooms) vinculadas a este campeonato
+ * para exibir aos convidados quais partidas estão ao vivo no momento.
+ */
+export function subscribeTournamentLiveRooms(
+  tournamentId: string,
+  onUpdate: (liveRoomsByMatchId: Record<string, LiveRoomSummary>) => void
+): () => void {
+  if (!tournamentId) return () => {};
+  const q = query(collection(db, 'duelRooms'), where('tournamentId', '==', tournamentId));
+  return onSnapshot(
+    q,
+    (snap) => {
+      const map: Record<string, LiveRoomSummary> = {};
+      snap.forEach((docSnap) => {
+        const d = docSnap.data() as any;
+        if (!d || !d.matchId) return;
+        const hasCam = Boolean(d.p1DeckFrame || d.p2DeckFrame || d.p1FaceFrame || d.p2FaceFrame);
+        map[d.matchId] = {
+          roomId: d.roomId || docSnap.id,
+          tournamentId: d.tournamentId,
+          matchId: d.matchId,
+          isLiveBroadcast: Boolean(d.isLiveBroadcast),
+          p1Name: d.p1Name || 'Jogador 1',
+          p2Name: d.p2Name || 'Jogador 2',
+          p1Wins: d.p1Wins ?? 0,
+          p2Wins: d.p2Wins ?? 0,
+          p1Life: d.p1Life ?? 20,
+          p2Life: d.p2Life ?? 20,
+          rounds: d.rounds ?? 1,
+          refereeName: d.refereeName,
+          hasActiveCamera: hasCam,
+          spotlightCardName: d.spotlightCard?.name,
+          updatedAt: d.updatedAt || 0
+        };
+      });
+      onUpdate(map);
+    },
+    (err) => {
+      console.warn('Erro ao ouvir salas de duelo ao vivo:', err);
+    }
+  );
+}
+
+

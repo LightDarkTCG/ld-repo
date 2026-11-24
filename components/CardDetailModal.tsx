@@ -800,10 +800,10 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card: initialC
         </button>
       </div>
 
-      <div className="w-full max-w-6xl max-h-[90vh] overflow-y-auto grid grid-cols-1 lg:grid-cols-2 gap-8 p-4 lg:p-8 custom-scrollbar">
+      <div data-tour-id="tour-card-detail-modal" className="w-full max-w-6xl max-h-[90vh] overflow-y-auto grid grid-cols-1 lg:grid-cols-2 gap-8 p-4 lg:p-8 custom-scrollbar">
         
         {/* Left Column: Image & Variations */}
-        <div className="flex flex-col items-center gap-4">
+        <div data-tour-id="tour-card-detail-left" className="flex flex-col items-center gap-4">
           <div className="scale-110 origin-center relative">
             <Card {...card} priority={true} />
             {isUserAdmin(user) && isCurrentCover && (

@@ -55,34 +55,61 @@ export const DeckComparatorView: React.FC<DeckComparatorProps> = ({
   const { user } = useAuth();
   const { decks: cloudDecks } = useSavedDecks(user?.uid);
 
-  const [deckA, setDeckA] = useState<ComparedDeckState>({
-    title: 'Deck A (Em Montagem)',
-    main: currentMainDeck,
-    side: currentSideDeck
+  const [deckA, setDeckA] = useState<ComparedDeckState>(() => {
+    if (currentMainDeck && currentMainDeck.length > 0) {
+      return {
+        title: 'Deck Estrutural: Insanis',
+        main: currentMainDeck,
+        side: currentSideDeck
+      };
+    }
+    const structA = getStructuralDeck('Insanis', allCards);
+    return {
+      title: 'Deck Estrutural: Insanis',
+      main: structA.mainDeck,
+      side: structA.sideDeck
+    };
   });
 
   const [deckB, setDeckB] = useState<ComparedDeckState>(() => {
-    const struct = getStructuralDeck('Insanis', allCards);
+    const structB = getStructuralDeck('Príncipe do Macroverso', allCards);
     return {
-      title: 'Deck B (Estrutural: Insanis)',
-      main: struct.mainDeck,
-      side: struct.sideDeck
+      title: 'Deck Estrutural: Príncipe do Macroverso',
+      main: structB.mainDeck,
+      side: structB.sideDeck
     };
   });
 
   const [codeInputA, setCodeInputA] = useState('');
   const [codeInputB, setCodeInputB] = useState('');
 
-  // Se o deckA estava vazio quando abriu e o usuário tem cartas no construtor, sincroniza
+  // Sincroniza caso allCards termine de carregar após a montagem inicial
   useEffect(() => {
-    if (deckA.main.length === 0 && currentMainDeck.length > 0) {
-      setDeckA({
-        title: 'Deck Atual em Montagem',
-        main: currentMainDeck,
-        side: currentSideDeck
+    if (deckA.main.length === 0 && allCards.length > 0) {
+      if (currentMainDeck.length > 0) {
+        setDeckA({
+          title: 'Deck Estrutural: Insanis',
+          main: currentMainDeck,
+          side: currentSideDeck
+        });
+      } else {
+        const structA = getStructuralDeck('Insanis', allCards);
+        setDeckA({
+          title: 'Deck Estrutural: Insanis',
+          main: structA.mainDeck,
+          side: structA.sideDeck
+        });
+      }
+    }
+    if (deckB.main.length === 0 && allCards.length > 0) {
+      const structB = getStructuralDeck('Príncipe do Macroverso', allCards);
+      setDeckB({
+        title: 'Deck Estrutural: Príncipe do Macroverso',
+        main: structB.mainDeck,
+        side: structB.sideDeck
       });
     }
-  }, [currentMainDeck, currentSideDeck]);
+  }, [currentMainDeck, currentSideDeck, allCards.length]);
 
   const reconstructFromSaved = (saved: UserSavedDeck): { main: CardData[]; side: CardData[] } => {
     const mainList: CardData[] = [];

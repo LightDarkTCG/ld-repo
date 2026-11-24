@@ -39,7 +39,13 @@ export interface Macroverse13Epoch {
   customTerritories?: CosmicTerritoryData[];
 }
 
-export const LoreView = ({ onClose }: { onClose: () => void }) => {
+export const LoreView = ({
+  onClose,
+  tourForceView
+}: {
+  onClose: () => void;
+  tourForceView?: 'home' | 'cosmic_map' | 'relations_tree' | 'daily_quiz' | 'music';
+}) => {
   const { cards, archetypes } = useCards();
   const { isAdmin: isMasterAdmin, isCollaborator, canEditLore, collaboratorProfile } = useAuth();
   const isAdmin = canEditLore;
@@ -72,7 +78,7 @@ export const LoreView = ({ onClose }: { onClose: () => void }) => {
   const [selectedMacroverse, setSelectedMacroverse] = useState<'macroverso_13' | 'macroverso_1'>('macroverso_13');
 
   // Navigation State ('cosmic_map', 'relations_tree', 'daily_quiz', 'music' alongside 'home', 'tab_view', 'item_detail')
-  const [currentView, setCurrentView] = useState<'home' | 'cosmic_map' | 'relations_tree' | 'daily_quiz' | 'music' | 'tab_view' | 'item_detail'>('home');
+  const [currentView, setCurrentView] = useState<'home' | 'cosmic_map' | 'relations_tree' | 'daily_quiz' | 'music' | 'tab_view' | 'item_detail'>(tourForceView || 'home');
   const [isTopNavCollapsed, setIsTopNavCollapsed] = useState<boolean>(false);
   const [activeTabId, setActiveTabId] = useState<string>('');
   const [selectedItem, setSelectedItem] = useState<any>(null);
@@ -82,9 +88,20 @@ export const LoreView = ({ onClose }: { onClose: () => void }) => {
     return readBrowserCache<Macroverse13Epoch[]>('ld_cache_m13Timeline_v2') || [];
   });
   const [selectedM13EpochId, setSelectedM13EpochId] = useState<string | null>(null);
-  const [isMapTimelineExpanded, setIsMapTimelineExpanded] = useState<boolean>(false);
+  const [isMapTimelineExpanded, setIsMapTimelineExpanded] = useState<boolean>(tourForceView === 'cosmic_map');
   const [editingM13Epoch, setEditingM13Epoch] = useState<(Macroverse13Epoch & { isNew?: boolean }) | null>(null);
   const [savingM13Timeline, setSavingM13Timeline] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (tourForceView) {
+      setSelectedItem(null);
+      setIsTopNavCollapsed(false);
+      setCurrentView(tourForceView);
+      if (tourForceView === 'cosmic_map') {
+        setIsMapTimelineExpanded(true);
+      }
+    }
+  }, [tourForceView]);
 
   // In-page Rich Editor state for standard Lore Items & Timeline
   const [isEditingItemDetail, setIsEditingItemDetail] = useState(false);
@@ -517,27 +534,16 @@ export const LoreView = ({ onClose }: { onClose: () => void }) => {
   const currentTabEvents = wbTimelineEvents.filter(te => te.tabId === activeTabId);
 
   const TopNav = () => {
-    if (currentView === 'cosmic_map' && isTopNavCollapsed) {
+    if (isTopNavCollapsed) {
       return (
-        <div className="fixed top-2 right-3 z-[100] flex items-center gap-1.5">
+        <div className="fixed top-0 left-1/2 -translate-x-1/2 z-[100] flex items-center justify-center pt-1">
           <button
             type="button"
             onClick={() => setIsTopNavCollapsed(false)}
-            className="bg-[#060608]/90 hover:bg-[#12121a] border border-[rgba(var(--primary-rgb),0.4)] text-[var(--primary-color)] px-3 py-1 rounded-lg text-[11px] font-cinzel font-bold uppercase tracking-wider flex items-center gap-1.5 shadow-xl transition"
-            title="Expandir menu superior do Archivum"
+            className="bg-[#05040a]/95 hover:bg-purple-950/90 border border-amber-500/45 text-amber-300 hover:text-white px-4 py-0.5 rounded-full text-[10px] font-cyber font-bold uppercase tracking-wider flex items-center gap-1.5 shadow-xl transition cursor-pointer"
+            title="Expandir barra superior do Archivum"
           >
-            <ChevronDown size={13} />
-            <span>Menu {wbSettings.mainTitle || 'ARCHIVUM'}</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setIsTopNavCollapsed(false);
-              setCurrentView('home');
-            }}
-            className="bg-[#060608]/90 hover:bg-[#12121a] border border-white/15 text-slate-300 hover:text-white px-2.5 py-1 rounded-lg text-[11px] font-bold uppercase tracking-wider flex items-center gap-1 shadow-xl transition"
-          >
-            <X size={13} /> Voltar
+            <ChevronDown size={15} className="text-amber-400 animate-bounce" />
           </button>
         </div>
       );
@@ -686,16 +692,14 @@ export const LoreView = ({ onClose }: { onClose: () => void }) => {
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          {currentView === 'cosmic_map' && (
-            <button
-              type="button"
-              onClick={() => setIsTopNavCollapsed(true)}
-              className="text-slate-300 hover:text-white transition flex items-center gap-1 text-[11px] tracking-wider uppercase font-bold border border-white/15 px-2.5 py-1.5 rounded hover:bg-white/5"
-              title="Recolher barra superior para ampliar o Mapa 3D"
-            >
-              <ChevronUp size={14} /> <span className="hidden sm:inline">Recolher Topo</span>
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={() => setIsTopNavCollapsed(true)}
+            className="text-slate-300 hover:text-amber-300 transition flex items-center gap-1 text-[11px] tracking-wider uppercase font-bold border border-white/15 px-2 py-1.5 rounded hover:bg-white/5"
+            title="Minimizar barra superior"
+          >
+            <ChevronUp size={15} />
+          </button>
           <button
             onClick={() => {
               if (currentView === 'item_detail') {
@@ -731,13 +735,19 @@ export const LoreView = ({ onClose }: { onClose: () => void }) => {
     isAdminOpen ||
     isCollaboratorsModalOpen;
 
-  return (
-    <div
-      className={`fixed inset-0 z-[90] bg-[#060608] text-slate-300 ${
-        isStandaloneSubWindow ? 'overflow-hidden' : 'overflow-y-auto custom-scrollbar'
-      }`}
-      style={styleVars}
-    >
+    return (
+      <div
+        data-tour-id="tour-lore-main"
+        className={`fixed inset-0 z-[90] bg-[#060608] text-slate-300 ${
+          isStandaloneSubWindow ? 'overflow-hidden' : 'overflow-y-auto custom-scrollbar'
+        }`}
+        style={styleVars}
+        onScroll={(e) => {
+          if (!tourForceView && e.currentTarget.scrollTop > 35 && !isTopNavCollapsed) {
+            setIsTopNavCollapsed(true);
+          }
+        }}
+      >
       <style dangerouslySetInnerHTML={{__html: `
         .font-cinzel { font-family: 'Cinzel', serif; }
         .font-playfair { font-family: 'Playfair Display', serif; }

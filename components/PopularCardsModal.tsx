@@ -15,7 +15,9 @@ import {
   TrendingUp,
   BarChart3,
   Zap,
-  Info
+  Info,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 import { CardData, CardType } from '../types';
 import { 
@@ -49,6 +51,7 @@ export const PopularCardsModal: React.FC<PopularCardsModalProps> = ({
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
+  const [isTopBarMinimized, setIsTopBarMinimized] = useState<boolean>(false);
 
   const allCardsRef = useRef(allCards);
   allCardsRef.current = allCards;
@@ -72,6 +75,7 @@ export const PopularCardsModal: React.FC<PopularCardsModalProps> = ({
 
   useEffect(() => {
     if (isOpen) {
+      setIsTopBarMinimized(false);
       loadData();
     }
   }, [isOpen, loadData]);
@@ -98,182 +102,213 @@ export const PopularCardsModal: React.FC<PopularCardsModalProps> = ({
   return (
     <div className="fixed inset-0 z-[120] bg-black/90 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 animate-in fade-in duration-200">
       <div 
+        data-tour-id="tour-popular-modal"
         className="cyber-arcane-box bg-[#070510]/95 border border-amber-500/40 w-full max-w-6xl max-h-[92vh] shadow-[0_0_60px_rgba(0,0,0,0.95)] flex flex-col overflow-hidden text-white"
         onClick={e => e.stopPropagation()}
       >
-        {/* CABEÇALHO */}
-        <div className="p-4 sm:p-6 border-b border-amber-500/30 bg-gradient-to-r from-[#070510] via-purple-950/40 to-[#070510] flex flex-wrap items-center justify-between gap-4">
-          <div className="flex items-center gap-3.5">
-            <div className="cyber-arcane-btn w-11 h-11 sm:w-12 sm:h-12 bg-gradient-to-br from-amber-500/30 to-red-600/30 border border-amber-500/50 flex items-center justify-center text-amber-300 shadow-lg shadow-red-950/60 shrink-0">
-              <Flame size={26} className="animate-pulse" />
-            </div>
-            <div>
-              <span className="block text-[10px] font-mono uppercase tracking-[0.22em] text-cyan-400 mb-0.5">
-                TELEMETRIA DO META // TOP 10 CARTAS
-              </span>
+        {isTopBarMinimized ? (
+          <div className="bg-[#070510]/95 border-b border-amber-500/35 px-3 py-1 flex items-center justify-center shrink-0 relative z-30 shadow-md">
+            <button
+              type="button"
+              onClick={() => setIsTopBarMinimized(false)}
+              className="px-4 py-0.5 rounded-full bg-purple-950/80 hover:bg-purple-900 border border-amber-500/45 text-amber-300 hover:text-white transition flex items-center gap-1.5 text-[10px] font-cyber font-bold uppercase tracking-wider shadow cursor-pointer"
+              title="Expandir barra superior de Cartas Populares"
+            >
+              <ChevronDown size={15} className="text-amber-400 animate-bounce" />
+            </button>
+          </div>
+        ) : (
+          <>
+            {/* CABEÇALHO */}
+            <div className="p-4 sm:p-6 border-b border-amber-500/30 bg-gradient-to-r from-[#070510] via-purple-950/40 to-[#070510] flex flex-wrap items-center justify-between gap-4 shrink-0">
+              <div className="flex items-center gap-3.5">
+                <div className="cyber-arcane-btn w-11 h-11 sm:w-12 sm:h-12 bg-gradient-to-br from-amber-500/30 to-red-600/30 border border-amber-500/50 flex items-center justify-center text-amber-300 shadow-lg shadow-red-950/60 shrink-0">
+                  <Flame size={26} className="animate-pulse" />
+                </div>
+                <div>
+                  <span className="block text-[10px] font-mono uppercase tracking-[0.22em] text-cyan-400 mb-0.5">
+                    TELEMETRIA DO META // TOP 10 CARTAS
+                  </span>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h2 className="text-lg sm:text-2xl font-cinzel font-black tracking-wider text-white flex items-center gap-2">
+                      CARTAS POPULARES — {popularMode === 'mesao' ? 'MODO MESÃO' : 'MODO NORMAL'}
+                    </h2>
+                    <span className="cyber-arcane-btn px-2.5 py-0.5 text-[10px] font-mono font-extrabold uppercase tracking-wider bg-red-950/80 border border-red-500/50 text-red-300">
+                      Últimos 30 Dias
+                    </span>
+                  </div>
+                  <p className="text-xs sm:text-sm text-slate-400 mt-0.5">
+                    Top 10 cartas dos decks {popularMode === 'mesao' ? 'de Mesão (35-40 cartas)' : 'Normais (30-35 cartas)'} nos últimos 30 dias
+                  </p>
+                </div>
+              </div>
+
               <div className="flex items-center gap-2 flex-wrap">
-                <h2 className="text-lg sm:text-2xl font-cinzel font-black tracking-wider text-white flex items-center gap-2">
-                  CARTAS POPULARES — {popularMode === 'mesao' ? 'MODO MESÃO' : 'MODO NORMAL'}
-                </h2>
-                <span className="cyber-arcane-btn px-2.5 py-0.5 text-[10px] font-mono font-extrabold uppercase tracking-wider bg-red-950/80 border border-red-500/50 text-red-300">
-                  Últimos 30 Dias
-                </span>
-              </div>
-              <p className="text-xs sm:text-sm text-slate-400 mt-0.5">
-                Top 10 cartas dos decks {popularMode === 'mesao' ? 'de Mesão (35-40 cartas)' : 'Normais (30-35 cartas)'} nos últimos 30 dias
-              </p>
-            </div>
-          </div>
+                {/* Divisão: Cartas Populares Normais vs Mesão */}
+                <div className="flex bg-[#0d0a1a] p-1 border border-purple-500/35">
+                  <button
+                    type="button"
+                    onClick={() => setPopularMode('normal')}
+                    className={`cyber-arcane-btn px-3 py-1.5 text-xs font-cyber font-black uppercase tracking-wider transition whitespace-nowrap ${
+                      popularMode === 'normal'
+                        ? 'bg-purple-700 text-white border border-purple-400/50 shadow'
+                        : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    Modo Normal
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPopularMode('mesao')}
+                    className={`cyber-arcane-btn px-3 py-1.5 text-xs font-cyber font-black uppercase tracking-wider transition whitespace-nowrap ${
+                      popularMode === 'mesao'
+                        ? 'bg-amber-500 text-slate-950 border border-amber-300 shadow'
+                        : 'text-amber-300/80 hover:text-amber-200'
+                    }`}
+                  >
+                    Modo Mesão
+                  </button>
+                </div>
 
-          <div className="flex items-center gap-2 flex-wrap">
-            {/* Divisão: Cartas Populares Normais vs Mesão */}
-            <div className="flex bg-[#0d0a1a] p-1 border border-purple-500/35">
+                <button
+                  onClick={loadData}
+                  disabled={isLoading}
+                  className="cyber-arcane-btn p-2 sm:px-3 sm:py-2 bg-[#0d0a1a] hover:bg-purple-950/50 border border-purple-500/35 text-slate-300 hover:text-white transition flex items-center gap-1.5 text-xs font-cyber font-bold uppercase tracking-wider disabled:opacity-50"
+                  title="Recarregar estatísticas da comunidade"
+                >
+                  <RefreshCw size={14} className={isLoading ? 'animate-spin text-purple-400' : ''} />
+                  <span className="hidden sm:inline">Atualizar</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsTopBarMinimized(true)}
+                  className="cyber-arcane-btn p-2 bg-[#0d0a1a] hover:bg-purple-950/50 border border-purple-500/35 text-slate-400 hover:text-amber-300 transition"
+                  title="Minimizar barra superior"
+                >
+                  <ChevronUp size={18} />
+                </button>
+                <button
+                  onClick={onClose}
+                  className="cyber-arcane-btn p-2 bg-[#0d0a1a] text-slate-400 hover:text-white hover:bg-red-950/50 border border-amber-500/30 transition"
+                  title="Fechar"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+            </div>
+
+            {/* BARRA DE ESTATÍSTICAS RÁPIDAS & FILTROS */}
+            <div className="px-4 sm:px-6 py-3 bg-slate-900/60 border-b border-slate-800/80 flex flex-wrap items-center justify-between gap-3 text-xs shrink-0">
+              <div className="flex items-center gap-3 sm:gap-6 flex-wrap">
+                <div className="flex items-center gap-2 text-slate-300">
+                  <BarChart3 size={15} className="text-purple-400" />
+                  <span>Decks {popularMode === 'mesao' ? 'Mesão' : 'Normais'} Analisados:</span>
+                  <strong className="text-white font-mono bg-purple-950/80 px-2 py-0.5 rounded border border-purple-500/40">
+                    {report ? report.totalDecksAnalyzed : '...'}
+                  </strong>
+                </div>
+
+                {report?.topOverallCard && (
+                  <div className="hidden md:flex items-center gap-2 text-slate-300">
+                    <Crown size={15} className="text-amber-400" />
+                    <span>#1 Mais Usada ({popularMode === 'mesao' ? 'Mesão' : 'Normal'}):</span>
+                    <span className="text-amber-300 font-bold">
+                      {report.topOverallCard.card.name}
+                    </span>
+                    <span className="text-slate-500 text-[11px]">
+                      ({report.topOverallCard.usagePercentage}%)
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              {/* Busca rápida */}
+              <div className="relative w-full sm:w-64">
+                <Search size={14} className="absolute left-3 top-2.5 text-slate-500" />
+                <input
+                  type="text"
+                  value={searchTerm}
+                  onChange={e => setSearchTerm(e.target.value)}
+                  placeholder="Filtrar por nome ou arquétipo..."
+                  className="w-full bg-slate-950 border border-slate-800 focus:border-purple-500 rounded-xl py-1.5 pl-8 pr-3 text-xs text-white placeholder-slate-600 outline-none transition"
+                />
+              </div>
+            </div>
+
+            {/* ABAS POR CATEGORIA */}
+            <div className="px-4 sm:px-6 pt-3 border-b border-slate-800/80 flex items-center gap-1.5 sm:gap-2 overflow-x-auto scrollbar-none bg-slate-950 shrink-0">
               <button
-                type="button"
-                onClick={() => setPopularMode('normal')}
-                className={`cyber-arcane-btn px-3 py-1.5 text-xs font-cyber font-black uppercase tracking-wider transition whitespace-nowrap ${
-                  popularMode === 'normal'
-                    ? 'bg-purple-700 text-white border border-purple-400/50 shadow'
-                    : 'text-slate-400 hover:text-white'
+                onClick={() => setActiveTab('overview')}
+                className={`px-3 sm:px-4 py-2 rounded-t-xl text-xs font-bold transition flex items-center gap-1.5 whitespace-nowrap border-b-2 ${
+                  activeTab === 'overview'
+                    ? 'border-purple-500 text-purple-300 bg-purple-950/40'
+                    : 'border-transparent text-slate-400 hover:text-slate-200'
                 }`}
               >
-                Modo Normal
+                <TrendingUp size={14} />
+                <span>Visão Geral</span>
               </button>
+
               <button
-                type="button"
-                onClick={() => setPopularMode('mesao')}
-                className={`cyber-arcane-btn px-3 py-1.5 text-xs font-cyber font-black uppercase tracking-wider transition whitespace-nowrap ${
-                  popularMode === 'mesao'
-                    ? 'bg-amber-500 text-slate-950 border border-amber-300 shadow'
-                    : 'text-amber-300/80 hover:text-amber-200'
+                onClick={() => setActiveTab('heroi')}
+                className={`px-3 sm:px-4 py-2 rounded-t-xl text-xs font-bold transition flex items-center gap-1.5 whitespace-nowrap border-b-2 ${
+                  activeTab === 'heroi'
+                    ? 'border-amber-500 text-amber-300 bg-amber-950/30'
+                    : 'border-transparent text-slate-400 hover:text-slate-200'
                 }`}
               >
-                Modo Mesão
+                <Crown size={14} />
+                <span>Heróis (Top 10)</span>
+              </button>
+
+              <button
+                onClick={() => setActiveTab('combatente')}
+                className={`px-3 sm:px-4 py-2 rounded-t-xl text-xs font-bold transition flex items-center gap-1.5 whitespace-nowrap border-b-2 ${
+                  activeTab === 'combatente'
+                    ? 'border-red-500 text-red-300 bg-red-950/30'
+                    : 'border-transparent text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <Sword size={14} />
+                <span>Combatentes (Top 10)</span>
+              </button>
+
+              <button
+                onClick={() => setActiveTab('equipamento')}
+                className={`px-3 sm:px-4 py-2 rounded-t-xl text-xs font-bold transition flex items-center gap-1.5 whitespace-nowrap border-b-2 ${
+                  activeTab === 'equipamento'
+                    ? 'border-blue-500 text-blue-300 bg-blue-950/30'
+                    : 'border-transparent text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <Shield size={14} />
+                <span>Equipamentos (Top 10)</span>
+              </button>
+
+              <button
+                onClick={() => setActiveTab('efeito')}
+                className={`px-3 sm:px-4 py-2 rounded-t-xl text-xs font-bold transition flex items-center gap-1.5 whitespace-nowrap border-b-2 ${
+                  activeTab === 'efeito'
+                    ? 'border-emerald-500 text-emerald-300 bg-emerald-950/30'
+                    : 'border-transparent text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <Sparkles size={14} />
+                <span>Efeitos (Top 10)</span>
               </button>
             </div>
-
-            <button
-              onClick={loadData}
-              disabled={isLoading}
-              className="cyber-arcane-btn p-2 sm:px-3 sm:py-2 bg-[#0d0a1a] hover:bg-purple-950/50 border border-purple-500/35 text-slate-300 hover:text-white transition flex items-center gap-1.5 text-xs font-cyber font-bold uppercase tracking-wider disabled:opacity-50"
-              title="Recarregar estatísticas da comunidade"
-            >
-              <RefreshCw size={14} className={isLoading ? 'animate-spin text-purple-400' : ''} />
-              <span className="hidden sm:inline">Atualizar</span>
-            </button>
-            <button
-              onClick={onClose}
-              className="cyber-arcane-btn p-2 bg-[#0d0a1a] text-slate-400 hover:text-white hover:bg-red-950/50 border border-amber-500/30 transition"
-              title="Fechar"
-            >
-              <X size={20} />
-            </button>
-          </div>
-        </div>
-
-        {/* BARRA DE ESTATÍSTICAS RÁPIDAS & FILTROS */}
-        <div className="px-4 sm:px-6 py-3 bg-slate-900/60 border-b border-slate-800/80 flex flex-wrap items-center justify-between gap-3 text-xs">
-          <div className="flex items-center gap-3 sm:gap-6 flex-wrap">
-            <div className="flex items-center gap-2 text-slate-300">
-              <BarChart3 size={15} className="text-purple-400" />
-              <span>Decks {popularMode === 'mesao' ? 'Mesão' : 'Normais'} Analisados:</span>
-              <strong className="text-white font-mono bg-purple-950/80 px-2 py-0.5 rounded border border-purple-500/40">
-                {report ? report.totalDecksAnalyzed : '...'}
-              </strong>
-            </div>
-
-            {report?.topOverallCard && (
-              <div className="hidden md:flex items-center gap-2 text-slate-300">
-                <Crown size={15} className="text-amber-400" />
-                <span>#1 Mais Usada ({popularMode === 'mesao' ? 'Mesão' : 'Normal'}):</span>
-                <span className="text-amber-300 font-bold">
-                  {report.topOverallCard.card.name}
-                </span>
-                <span className="text-slate-500 text-[11px]">
-                  ({report.topOverallCard.usagePercentage}%)
-                </span>
-              </div>
-            )}
-          </div>
-
-          {/* Busca rápida */}
-          <div className="relative w-full sm:w-64">
-            <Search size={14} className="absolute left-3 top-2.5 text-slate-500" />
-            <input
-              type="text"
-              value={searchTerm}
-              onChange={e => setSearchTerm(e.target.value)}
-              placeholder="Filtrar por nome ou arquétipo..."
-              className="w-full bg-slate-950 border border-slate-800 focus:border-purple-500 rounded-xl py-1.5 pl-8 pr-3 text-xs text-white placeholder-slate-600 outline-none transition"
-            />
-          </div>
-        </div>
-
-        {/* ABAS POR CATEGORIA */}
-        <div className="px-4 sm:px-6 pt-3 border-b border-slate-800/80 flex items-center gap-1.5 sm:gap-2 overflow-x-auto scrollbar-none bg-slate-950">
-          <button
-            onClick={() => setActiveTab('overview')}
-            className={`px-3 sm:px-4 py-2 rounded-t-xl text-xs font-bold transition flex items-center gap-1.5 whitespace-nowrap border-b-2 ${
-              activeTab === 'overview'
-                ? 'border-purple-500 text-purple-300 bg-purple-950/40'
-                : 'border-transparent text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <TrendingUp size={14} />
-            <span>Visão Geral</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('heroi')}
-            className={`px-3 sm:px-4 py-2 rounded-t-xl text-xs font-bold transition flex items-center gap-1.5 whitespace-nowrap border-b-2 ${
-              activeTab === 'heroi'
-                ? 'border-amber-500 text-amber-300 bg-amber-950/30'
-                : 'border-transparent text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <Crown size={14} />
-            <span>Heróis (Top 10)</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('combatente')}
-            className={`px-3 sm:px-4 py-2 rounded-t-xl text-xs font-bold transition flex items-center gap-1.5 whitespace-nowrap border-b-2 ${
-              activeTab === 'combatente'
-                ? 'border-red-500 text-red-300 bg-red-950/30'
-                : 'border-transparent text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <Sword size={14} />
-            <span>Combatentes (Top 10)</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('equipamento')}
-            className={`px-3 sm:px-4 py-2 rounded-t-xl text-xs font-bold transition flex items-center gap-1.5 whitespace-nowrap border-b-2 ${
-              activeTab === 'equipamento'
-                ? 'border-blue-500 text-blue-300 bg-blue-950/30'
-                : 'border-transparent text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <Shield size={14} />
-            <span>Equipamentos (Top 10)</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('efeito')}
-            className={`px-3 sm:px-4 py-2 rounded-t-xl text-xs font-bold transition flex items-center gap-1.5 whitespace-nowrap border-b-2 ${
-              activeTab === 'efeito'
-                ? 'border-emerald-500 text-emerald-300 bg-emerald-950/30'
-                : 'border-transparent text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <Sparkles size={14} />
-            <span>Efeitos (Top 10)</span>
-          </button>
-        </div>
+          </>
+        )}
 
         {/* CONTEÚDO PRINCIPAL */}
-        <div className="flex-1 overflow-y-auto p-4 sm:p-6 bg-[#08080c] space-y-6">
+        <div
+          className="flex-1 overflow-y-auto p-4 sm:p-6 bg-[#08080c] space-y-6"
+          onScroll={(e) => {
+            if (e.currentTarget.scrollTop > 35 && !isTopBarMinimized) {
+              setIsTopBarMinimized(true);
+            }
+          }}
+        >
           {isLoading ? (
             <div className="py-20 flex flex-col items-center justify-center gap-3 text-slate-400">
               <RefreshCw size={28} className="animate-spin text-purple-500" />
