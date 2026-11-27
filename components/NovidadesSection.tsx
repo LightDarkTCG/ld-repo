@@ -188,7 +188,7 @@ export const NovidadesSection: React.FC<NovidadesSectionProps> = ({
                     {/* Preço ou Variações de Preço */}
                     {product.priceVariations && product.priceVariations.length > 0 ? (
                       <div className="flex flex-wrap items-center gap-2">
-                        {product.priceVariations.map((v, vIdx) => {
+                        {product.priceVariations.slice(0, 3).map((v, vIdx) => {
                           const isFoil = (v.name || '').toLowerCase().includes('foil') || 
                                          (v.badge || '').toLowerCase().includes('foil');
                           return (
@@ -207,13 +207,25 @@ export const NovidadesSection: React.FC<NovidadesSectionProps> = ({
                               title={`Clique para ver detalhes e comprar a ${v.name} (${v.price})`}
                             >
                               {isFoil && <Sparkles size={12} className="text-amber-400" />}
-                              <span>{v.name}:</span>
+                              <span className="truncate max-w-[140px]">{v.name}:</span>
                               <span className="text-emerald-300 font-black">
                                 {v.price.startsWith('R$') ? v.price : `R$ ${v.price}`}
                               </span>
                             </button>
                           );
                         })}
+                        {product.priceVariations.length > 3 && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onOpenProductModal(product, 0);
+                            }}
+                            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-amber-500/50 bg-amber-500/15 text-amber-300 text-xs font-mono font-bold hover:bg-amber-500/25 transition cursor-pointer"
+                          >
+                            <span>+{product.priceVariations.length - 3} versões</span>
+                          </button>
+                        )}
                       </div>
                     ) : (
                       product.price && product.price.trim() !== '' && (
@@ -477,7 +489,7 @@ export const NovidadesSection: React.FC<NovidadesSectionProps> = ({
                     {/* Preço ou Variações de Preço */}
                     {currentProduct.priceVariations && currentProduct.priceVariations.length > 0 ? (
                       <div className="flex flex-wrap items-center gap-2">
-                        {currentProduct.priceVariations.map((v, vIdx) => {
+                        {currentProduct.priceVariations.slice(0, 3).map((v, vIdx) => {
                           const isFoil = (v.name || '').toLowerCase().includes('foil') || 
                                          (v.badge || '').toLowerCase().includes('foil');
                           return (
@@ -496,13 +508,25 @@ export const NovidadesSection: React.FC<NovidadesSectionProps> = ({
                               title={`Clique para ver detalhes e comprar a ${v.name} (${v.price})`}
                             >
                               {isFoil && <Sparkles size={12} className="text-amber-400" />}
-                              <span>{v.name}:</span>
+                              <span className="truncate max-w-[140px]">{v.name}:</span>
                               <span className="text-emerald-300 font-black">
                                 {v.price.startsWith('R$') ? v.price : `R$ ${v.price}`}
                               </span>
                             </button>
                           );
                         })}
+                        {currentProduct.priceVariations.length > 3 && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onOpenProductModal(currentProduct, 0);
+                            }}
+                            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-amber-500/50 bg-amber-500/15 text-amber-300 text-xs font-mono font-bold hover:bg-amber-500/25 transition cursor-pointer"
+                          >
+                            <span>+{currentProduct.priceVariations.length - 3} versões</span>
+                          </button>
+                        )}
                       </div>
                     ) : (
                       currentProduct.price && currentProduct.price.trim() !== '' && (

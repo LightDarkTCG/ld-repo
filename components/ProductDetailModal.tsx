@@ -328,7 +328,30 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                       </span>
                     </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    {priceVariations.length > 4 && (
+                      <select
+                        value={activeVariationIndex}
+                        onChange={(e) => {
+                          setSelectedVariationIndex(Number(e.target.value));
+                          setShowingVariationPhoto(true);
+                        }}
+                        className="w-full bg-slate-950 border border-purple-500/40 focus:border-purple-400 rounded-xl px-3 py-2 text-xs text-white font-bold outline-none cursor-pointer"
+                      >
+                        {priceVariations.map((variation, idx) => {
+                          const vPriceStr = product.sameVariationPrice
+                            ? product.price || variation.price || ''
+                            : variation.price || product.price || '';
+                          const formattedP = vPriceStr.startsWith('R$') ? vPriceStr : `R$ ${vPriceStr}`;
+                          return (
+                            <option key={idx} value={idx}>
+                              {idx + 1}. {variation.name} — {formattedP}
+                            </option>
+                          );
+                        })}
+                      </select>
+                    )}
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-56 overflow-y-auto custom-scrollbar pr-1">
                       {priceVariations.map((variation, idx) => {
                         const isSelected = activeVariationIndex === idx;
                         const isFoil = (variation.name || '').toLowerCase().includes('foil') || 
@@ -344,7 +367,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                               setSelectedVariationIndex(idx);
                               setShowingVariationPhoto(true);
                             }}
-                            className={`p-3.5 rounded-xl border-2 transition-all duration-200 cursor-pointer relative flex flex-col justify-between gap-2 text-left ${
+                            className={`p-3 rounded-xl border-2 transition-all duration-200 cursor-pointer relative flex flex-col justify-between gap-1.5 text-left ${
                               isSelected
                                 ? 'bg-gradient-to-br from-purple-950/90 via-slate-900 to-indigo-950/90 border-purple-500 shadow-[0_0_20px_rgba(168,85,247,0.35)] ring-1 ring-purple-400'
                                 : 'bg-slate-900/70 border-slate-800 hover:border-slate-700 hover:bg-slate-850'
@@ -361,8 +384,10 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                                   <img
                                     src={variation.imageUrl}
                                     alt={variation.name}
+                                    loading="lazy"
+                                    decoding="async"
                                     referrerPolicy="no-referrer"
-                                    className="w-9 h-9 rounded-lg object-cover border border-white/20 shrink-0"
+                                    className="w-8 h-8 rounded-lg object-cover border border-white/20 shrink-0"
                                   />
                                 )}
                                 <span className={`font-bold text-sm truncate ${isSelected ? 'text-white' : 'text-slate-200'}`}>

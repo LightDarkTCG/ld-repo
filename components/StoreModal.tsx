@@ -889,42 +889,34 @@ export const StoreModal: React.FC<StoreModalProps> = ({
                 </button>
               </div>
 
-              {/* Right: Sell Button, Admin Button & Cart Icon */}
+              {/* Right: Sell Button (only for non-admin community players), Admin Button & Cart Icon */}
               <div className="order-2 md:order-3 flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMarketSection('community');
-                    setOpenSellTrigger((prev) => prev + 1);
-                  }}
-                  className={`cyber-arcane-btn px-3 py-2.5 text-xs font-cyber font-bold uppercase tracking-wider transition flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
-                    isAdmin
-                      ? 'bg-amber-500 hover:bg-amber-400 text-slate-950 border border-amber-300 shadow-md shadow-amber-950/50'
-                      : 'bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/40'
-                  }`}
-                  title={
-                    isAdmin
-                      ? 'Cadastrar Produto Oficial (Deck por Código, Coleção de Booster ou Carta Oficial)'
-                      : 'Vender suas cartas avulsas, deck por código ou coleções no Mercado'
-                  }
-                >
-                  <Plus size={14} />
-                  <span className="hidden sm:inline">
-                    {isAdmin ? 'Adicionar Produto Oficial' : 'Vender Cartas / Coleção'}
-                  </span>
-                </button>
+                {!isAdmin && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMarketSection('community');
+                      setOpenSellTrigger((prev) => prev + 1);
+                    }}
+                    className="cyber-arcane-btn px-3 py-2.5 text-xs font-cyber font-bold uppercase tracking-wider transition flex items-center gap-1.5 whitespace-nowrap cursor-pointer bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/40"
+                    title="Vender suas cartas avulsas, deck por código ou coleções no Mercado"
+                  >
+                    <Plus size={14} />
+                    <span className="hidden sm:inline">Vender Cartas / Coleção</span>
+                  </button>
+                )}
 
                 {isAdmin && onOpenAdminStore && (
                   <button
                     type="button"
                     onClick={onOpenAdminStore}
-                    className="cyber-arcane-btn px-3 py-2.5 text-xs font-cyber font-bold uppercase tracking-wider bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/40 transition flex items-center gap-1.5 whitespace-nowrap cursor-pointer"
-                    title="Abrir Central Tela Cheia de Produtos, Controle de Estoque, Pedidos e Frete (Fornecedores Terceiros)"
+                    className="cyber-arcane-btn px-3.5 py-2.5 text-xs font-cyber font-bold uppercase tracking-wider bg-amber-500 hover:bg-amber-400 text-slate-950 border border-amber-300 shadow-md shadow-amber-950/50 transition flex items-center gap-1.5 whitespace-nowrap cursor-pointer"
+                    title="Abrir Gerenciar Produtos, Controle de Estoque, Pedidos e Frete (Fornecedores Terceiros)"
                   >
                     <Settings size={15} />
-                    <span className="hidden lg:inline">Central de Produtos, Estoque & Frete</span>
+                    <span className="hidden sm:inline">Gerenciar Produtos, Estoque & Frete</span>
                     {hiddenProductsCount > 0 && (
-                      <span className="px-1.5 py-0.5 rounded bg-amber-500 text-slate-950 text-[10px] font-black font-mono">
+                      <span className="px-1.5 py-0.5 rounded bg-slate-950 text-amber-300 text-[10px] font-black font-mono">
                         {hiddenProductsCount} oculto(s)
                       </span>
                     )}
@@ -1280,7 +1272,7 @@ export const StoreModal: React.FC<StoreModalProps> = ({
 
               {/* Products Grid */}
               {filteredProducts.length > 0 ? (
-                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5 items-start">
                   {filteredProducts.map(({ prod, originalIdx: idx }) => {
                     const variations = Array.isArray(prod.priceVariations)
                       ? prod.priceVariations.filter((v) => v && v.name && v.name.trim() !== '')
@@ -1353,6 +1345,8 @@ export const StoreModal: React.FC<StoreModalProps> = ({
                               <img
                                 src={coverMedia.url}
                                 alt={prod.title}
+                                loading="lazy"
+                                decoding="async"
                                 referrerPolicy="no-referrer"
                                 className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                               />
@@ -1464,54 +1458,109 @@ export const StoreModal: React.FC<StoreModalProps> = ({
                               </div>
                             )}
 
-                            {/* Variations Selector */}
+                            {/* Compact Variations Selector (Zero Layout Stretch & Zero Heavy Multi-Image Decoding) */}
                             {hasVars && (
                               <div className="space-y-1.5 pt-1">
-                                <label className="text-[11px] text-slate-400 font-semibold block">
-                                  Escolha a Versão:
-                                </label>
-                                <div className="grid grid-cols-2 gap-1.5">
-                                  {variations.map((v, vIdx) => {
-                                    const isSel = activeVarIdx === vIdx;
-                                    const varDisplayPrice = prod.sameVariationPrice
-                                      ? formatBRL(parseBRLPrice(prod.price || v.price))
-                                      : formatBRL(parseBRLPrice(v.price || prod.price));
-                                    return (
-                                      <button
-                                        key={vIdx}
-                                        type="button"
-                                        onClick={() =>
-                                          setSelectedVariations((prev) => ({
-                                            ...prev,
-                                            [idx]: vIdx
-                                          }))
-                                        }
-                                        className={`p-2 rounded-lg border text-left transition cursor-pointer flex items-center gap-2 ${
-                                          isSel
-                                            ? 'bg-purple-950/80 border-purple-500 text-white'
-                                            : 'bg-slate-950/70 border-slate-800 text-slate-300 hover:border-slate-700'
-                                        }`}
-                                      >
-                                        {v.imageUrl && (
-                                          <img
-                                            src={v.imageUrl}
-                                            alt={v.name}
-                                            referrerPolicy="no-referrer"
-                                            className="w-8 h-8 rounded object-cover border border-white/20 shrink-0"
-                                          />
-                                        )}
-                                        <div className="min-w-0 flex-1">
+                                <div className="flex items-center justify-between gap-2">
+                                  <label className="text-[11px] text-slate-400 font-semibold">
+                                    Escolha a Versão ({variations.length}):
+                                  </label>
+                                  {variations.length > 2 && onOpenProductDetail && (
+                                    <button
+                                      type="button"
+                                      onClick={() => onOpenProductDetail(prod, activeVarIdx)}
+                                      className="text-[11px] text-purple-400 hover:text-purple-300 font-bold cursor-pointer"
+                                    >
+                                      Ver todas ({variations.length})
+                                    </button>
+                                  )}
+                                </div>
+
+                                {variations.length <= 2 ? (
+                                  <div className="grid grid-cols-2 gap-1.5">
+                                    {variations.map((v, vIdx) => {
+                                      const isSel = activeVarIdx === vIdx;
+                                      const varDisplayPrice = prod.sameVariationPrice
+                                        ? formatBRL(parseBRLPrice(prod.price || v.price))
+                                        : formatBRL(parseBRLPrice(v.price || prod.price));
+                                      return (
+                                        <button
+                                          key={vIdx}
+                                          type="button"
+                                          onClick={() =>
+                                            setSelectedVariations((prev) => ({
+                                              ...prev,
+                                              [idx]: vIdx
+                                            }))
+                                          }
+                                          className={`px-2.5 py-2 rounded-lg border text-left transition cursor-pointer ${
+                                            isSel
+                                              ? 'bg-purple-950/80 border-purple-500 text-white'
+                                              : 'bg-slate-950/70 border-slate-800 text-slate-300 hover:border-slate-700'
+                                          }`}
+                                        >
                                           <div className="text-[11px] font-bold truncate">
                                             {v.name}
                                           </div>
                                           <div className="text-xs font-mono font-bold text-emerald-400 tabular-nums">
                                             {varDisplayPrice}
                                           </div>
-                                        </div>
-                                      </button>
-                                    );
-                                  })}
-                                </div>
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                ) : (
+                                  <div className="flex items-center gap-1.5">
+                                    <select
+                                      value={activeVarIdx}
+                                      onChange={(e) =>
+                                        setSelectedVariations((prev) => ({
+                                          ...prev,
+                                          [idx]: Number(e.target.value)
+                                        }))
+                                      }
+                                      className="flex-1 min-w-0 bg-slate-950 border border-purple-500/40 focus:border-purple-400 rounded-xl px-3 py-2 text-xs text-white font-bold outline-none cursor-pointer truncate"
+                                    >
+                                      {variations.map((v, vIdx) => {
+                                        const varDisplayPrice = prod.sameVariationPrice
+                                          ? formatBRL(parseBRLPrice(prod.price || v.price))
+                                          : formatBRL(parseBRLPrice(v.price || prod.price));
+                                        return (
+                                          <option key={vIdx} value={vIdx}>
+                                            {vIdx + 1}. {v.name} — {varDisplayPrice}
+                                          </option>
+                                        );
+                                      })}
+                                    </select>
+
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        setSelectedVariations((prev) => ({
+                                          ...prev,
+                                          [idx]: (activeVarIdx - 1 + variations.length) % variations.length
+                                        }))
+                                      }
+                                      className="px-2.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 text-xs font-bold cursor-pointer shrink-0"
+                                      title="Versão anterior"
+                                    >
+                                      ‹
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        setSelectedVariations((prev) => ({
+                                          ...prev,
+                                          [idx]: (activeVarIdx + 1) % variations.length
+                                        }))
+                                      }
+                                      className="px-2.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 text-xs font-bold cursor-pointer shrink-0"
+                                      title="Próxima versão"
+                                    >
+                                      ›
+                                    </button>
+                                  </div>
+                                )}
                               </div>
                             )}
                           </div>

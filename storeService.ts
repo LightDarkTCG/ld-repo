@@ -1340,8 +1340,8 @@ export async function deleteMarketplaceSellerReview(reviewId: string): Promise<v
   }
 }
 
-// --- UPLOAD DE FOTO DE PRODUTO / VARIAÇÃO (FIREBASE STORAGE COM FALLBACK COMPRIMIDO) ---
-async function compressImageToDataUrl(file: File, maxDimension = 1000, quality = 0.82): Promise<string> {
+// --- UPLOAD DE FOTO DE PRODUTO / VARIAÇÃO (COM COMPRESSÃO AUTOMÁTICA WEBP/JPEG LEVE) ---
+async function compressImageToDataUrl(file: File, maxDimension = 720, quality = 0.74): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = (e) => {
@@ -1365,7 +1365,12 @@ async function compressImageToDataUrl(file: File, maxDimension = 1000, quality =
           return;
         }
         ctx.drawImage(img, 0, 0, width, height);
-        resolve(canvas.toDataURL('image/jpeg', quality));
+        const webpUrl = canvas.toDataURL('image/webp', quality);
+        if (webpUrl && webpUrl.startsWith('data:image/webp')) {
+          resolve(webpUrl);
+        } else {
+          resolve(canvas.toDataURL('image/jpeg', quality));
+        }
       };
       img.onerror = (err) => reject(err);
       img.src = String(e.target?.result || '');
@@ -1375,21 +1380,154 @@ async function compressImageToDataUrl(file: File, maxDimension = 1000, quality =
   });
 }
 
+async function compressImageFileToBlob(file: File, maxDimension = 1280, quality = 0.82): Promise<Blob> {
+  if (!file.type.startsWith('image/') || file.type === 'image/gif') {
+    return file;
+  }
+  return new Promise((resolve) => {
+    const objectUrl = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+      let width = img.width;
+      let height = img.height;
+      // Only resize if larger than maxDimension or file > 300KB
+      if (width <= maxDimension && height <= maxDimension && file.size <= 300 * 1024) {
+        resolve(file);
+        return;
+      }
+      if (width > height && width > maxDimension) {
+        height = Math.round((height * maxDimension) / width);
+        width = maxDimension;
+      } else if (height >= width && height > maxDimension) {
+        width = Math.round((width * maxDimension) / height);
+        height = maxDimension;
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        resolve(file);
+        return;
+      }
+      ctx.drawImage(img, 0, 0, width, height);
+      canvas.toBlob(
+        (blob) => {
+          if (blob && blob.size < file.size) {
+            resolve(blob);
+          } else {
+            resolve(file);
+          }
+        },
+        'image/webp',
+        quality
+      );
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      resolve(file);
+    };
+    img.src = objectUrl;
+  });
+}
+
 export async function uploadMarketplaceImage(
   file: File,
-  folder: string = 'product_media'
+  folder: string = 'home_images'
 ): Promise<string> {
-  const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-  const path = `${folder}/${Date.now()}_${Math.random().toString(36).slice(2, 7)}_${safeName}`;
+  const isVideo = file.type.startsWith('video/');
+  const targetFolder = isVideo ? 'home_videos' : folder === 'product_media' ? 'home_images' : folder;
+  const baseName = file.name.replace(/\.[^/.]+$/, '').replace(/[^a-zA-Z0-9._-]/g, '_');
   try {
+    const optimizedBlob = isVideo ? file : await compressImageFileToBlob(file, 1280, 0.82);
+    const ext = isVideo
+      ? file.name.split('.').pop() || 'mp4'
+      : optimizedBlob.type === 'image/webp'
+      ? 'webp'
+      : file.name.split('.').pop() || 'jpg';
+    const path = `home_images/${targetFolder}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}_${baseName}.${ext}`;
     const fileRef = storageRef(storage, path);
-    await uploadBytes(fileRef, file);
+    await uploadBytes(fileRef, optimizedBlob);
     const downloadUrl = await getDownloadURL(fileRef);
     return downloadUrl;
   } catch (storageErr) {
     console.warn('Fallback para imagem comprimida em base64 (Storage restrito ou indisponível):', storageErr);
-    return await compressImageToDataUrl(file, 900, 0.8);
+    return await compressImageToDataUrl(file, 680, 0.72);
   }
+}
+
+async function uploadDataUrlToStorageIfPossible(dataUrl: string, label: string): Promise<string> {
+  if (!dataUrl || !dataUrl.startsWith('data:image/')) return dataUrl;
+  try {
+    const res = await fetch(dataUrl);
+    const blob = await res.blob();
+    const path = `home_images/migrated_${Date.now()}_${Math.random().toString(36).slice(2, 7)}_${label}.webp`;
+    const fileRef = storageRef(storage, path);
+    await uploadBytes(fileRef, blob);
+    return await getDownloadURL(fileRef);
+  } catch {
+    return dataUrl;
+  }
+}
+
+export async function optimizeBase64ImagesInProducts(
+  products: ExclusiveProduct[]
+): Promise<{ nextProducts: ExclusiveProduct[]; changed: boolean }> {
+  if (!Array.isArray(products) || products.length === 0) {
+    return { nextProducts: products || [], changed: false };
+  }
+  let changed = false;
+  const nextProducts = await Promise.all(
+    products.map(async (prod, pIdx) => {
+      if (!prod) return prod;
+      const copy: ExclusiveProduct = { ...prod };
+
+      if (copy.mediaUrl && copy.mediaUrl.startsWith('data:image/')) {
+        const uploaded = await uploadDataUrlToStorageIfPossible(copy.mediaUrl, `cover_${pIdx}`);
+        if (uploaded !== copy.mediaUrl) {
+          copy.mediaUrl = uploaded;
+          changed = true;
+        }
+      }
+
+      if (Array.isArray(copy.mediaList) && copy.mediaList.length > 0) {
+        const nextMediaList = await Promise.all(
+          copy.mediaList.map(async (m, mIdx) => {
+            if (m?.url && m.url.startsWith('data:image/')) {
+              const uploaded = await uploadDataUrlToStorageIfPossible(m.url, `media_${pIdx}_${mIdx}`);
+              if (uploaded !== m.url) {
+                changed = true;
+                return { ...m, url: uploaded };
+              }
+            }
+            return m;
+          })
+        );
+        copy.mediaList = nextMediaList;
+      }
+
+      if (Array.isArray(copy.priceVariations) && copy.priceVariations.length > 0) {
+        const nextVars = await Promise.all(
+          copy.priceVariations.map(async (v, vIdx) => {
+            if (v?.imageUrl && v.imageUrl.startsWith('data:image/')) {
+              const uploaded = await uploadDataUrlToStorageIfPossible(v.imageUrl, `var_${pIdx}_${vIdx}`);
+              if (uploaded !== v.imageUrl) {
+                changed = true;
+                return { ...v, imageUrl: uploaded };
+              }
+            }
+            return v;
+          })
+        );
+        copy.priceVariations = nextVars;
+      }
+
+      return copy;
+    })
+  );
+
+  return { nextProducts, changed };
 }
 
 // --- ADICIONAR / ATUALIZAR / CONVERTER PRODUTO OFICIAL DIRETO NO CATÁLOGO OFICIAL (CONTA ADMIN) ---

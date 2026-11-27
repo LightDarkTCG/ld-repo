@@ -25,7 +25,7 @@ import { AdminPanel } from './components/AdminPanel';
 import { LoreView } from './components/LoreView';
 import { compareCardCodes } from './deckUtils';
 import { db, storage, readBrowserCache, writeBrowserCache } from './firebase';
-import { doc, onSnapshot } from 'firebase/firestore';
+import { doc, onSnapshot, setDoc } from 'firebase/firestore';
 import { ref, listAll, getDownloadURL } from 'firebase/storage';
 import { useCards, cleanCardCode, getBaseCardCode, getCardDisplayPriority, resolveModernFrameOnly, isLegacyCard } from './CardContext';
 import { CardData, CardType, ArchetypeData, ExclusiveProduct, LEGADO_RARITIES, MODERNO_RARITIES } from './types';
@@ -33,7 +33,7 @@ import { NovidadesSection } from './components/NovidadesSection';
 import { ProductDetailModal } from './components/ProductDetailModal';
 import { GameGuideSections } from './components/GameGuideSections';
 import { StoreModal } from './components/StoreModal';
-import { addToCart, getCartItems, toProductSlug } from './storeService';
+import { addToCart, getCartItems, optimizeBase64ImagesInProducts, toProductSlug } from './storeService';
 import { DuelBotModal } from './duel-bot/DuelBotModal';
 import { NavbarSpotifyMicroPlayer } from './components/SpotifySoundtrackSection';
 import { downloadPresentationGuidePdf } from './utils/presentationPdfGenerator';
@@ -1890,15 +1890,41 @@ export default function App() {
     applyUrlRoute();
     window.addEventListener('popstate', applyUrlRoute);
 
+    let didAutoOptimizeProducts = false;
     const unsubHomeSettings = onSnapshot(doc(db, 'homeSettings', 'global'), (snap) => {
       if (snap.exists()) {
         const data = snap.data();
+        const rawProducts: ExclusiveProduct[] = Array.isArray(data.exclusiveProducts)
+          ? data.exclusiveProducts
+          : [];
         const nextSettings = {
           ...data,
-          exclusiveProducts: Array.isArray(data.exclusiveProducts) ? data.exclusiveProducts : []
+          exclusiveProducts: rawProducts
         };
         setHomeSettings(nextSettings);
         writeBrowserCache('ld_cache_homeSettings_v2', nextSettings);
+
+        if (!didAutoOptimizeProducts && rawProducts.length > 0) {
+          const hasHeavyBase64 = rawProducts.some(
+            (p) =>
+              p?.mediaUrl?.startsWith('data:image/') ||
+              p?.mediaList?.some((m) => m?.url?.startsWith('data:image/')) ||
+              p?.priceVariations?.some((v) => v?.imageUrl?.startsWith('data:image/'))
+          );
+          if (hasHeavyBase64) {
+            didAutoOptimizeProducts = true;
+            optimizeBase64ImagesInProducts(rawProducts).then(({ nextProducts, changed }) => {
+              if (changed) {
+                const optimizedSettings = { ...nextSettings, exclusiveProducts: nextProducts };
+                setHomeSettings(optimizedSettings);
+                writeBrowserCache('ld_cache_homeSettings_v2', optimizedSettings);
+                setDoc(doc(db, 'homeSettings', 'global'), JSON.parse(JSON.stringify(optimizedSettings)), {
+                  merge: true
+                }).catch(() => {});
+              }
+            });
+          }
+        }
       }
     }, (err) => {
       console.error('Erro ao escutar homeSettings:', err);

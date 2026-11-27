@@ -42,6 +42,7 @@ import {
   formatCep,
   isProductVisibleInStore,
   lookupCepAddress,
+  optimizeBase64ImagesInProducts,
   saveStoreSettings,
   uploadMarketplaceImage
 } from '../storeService';
@@ -105,9 +106,44 @@ export const StoreProductManagerView: React.FC<StoreProductManagerViewProps> = (
   const [quickVarPrice, setQuickVarPrice] = useState('');
   const [catalogCardSearch, setCatalogCardSearch] = useState('');
 
+  // Multi-Photo Batch Upload & Organizer State
+  const [stagedPhotos, setStagedPhotos] = useState<
+    Array<{
+      id: string;
+      url: string;
+      name: string;
+      destination: 'product_gallery' | 'variation';
+      price: string;
+    }>
+  >([]);
+  const [batchUploadProgress, setBatchUploadProgress] = useState<{
+    current: number;
+    total: number;
+  } | null>(null);
+
   useEffect(() => {
     fetchStoreSettings().then(setStoreSettings);
   }, []);
+
+  // Automatically optimize any heavy inline Base64 images in existing products
+  const autoOptimizedRef = React.useRef(false);
+  useEffect(() => {
+    if (autoOptimizedRef.current || !Array.isArray(products) || products.length === 0) return;
+    const hasBase64 = products.some(
+      (p) =>
+        p?.mediaUrl?.startsWith('data:image/') ||
+        p?.mediaList?.some((m) => m?.url?.startsWith('data:image/')) ||
+        p?.priceVariations?.some((v) => v?.imageUrl?.startsWith('data:image/'))
+    );
+    if (!hasBase64) return;
+    autoOptimizedRef.current = true;
+    optimizeBase64ImagesInProducts(products).then(({ nextProducts, changed }) => {
+      if (changed) {
+        onChangeProducts(nextProducts);
+        onSaveProducts(nextProducts);
+      }
+    });
+  }, [products]);
 
   // Handle initial create new product trigger
   useEffect(() => {
@@ -337,6 +373,186 @@ export const StoreProductManagerView: React.FC<StoreProductManagerViewProps> = (
     } finally {
       setUploadingMediaKey(null);
     }
+  };
+
+  // Multi-Photo Batch Upload into the Organizer Tray
+  const handleBatchUploadToOrganizer = async (
+    prodIdx: number,
+    files: FileList,
+    defaultDestination: 'product_gallery' | 'variation'
+  ) => {
+    if (!files || files.length === 0) return;
+    const targetProd = products[prodIdx];
+    const basePrice = targetProd?.price || 'R$ 89,90';
+    setUploadingMediaKey(`batch-${prodIdx}`);
+    setBatchUploadProgress({ current: 0, total: files.length });
+
+    try {
+      const newStaged: Array<{
+        id: string;
+        url: string;
+        name: string;
+        destination: 'product_gallery' | 'variation';
+        price: string;
+      }> = [];
+
+      for (let fIdx = 0; fIdx < files.length; fIdx++) {
+        setBatchUploadProgress({ current: fIdx + 1, total: files.length });
+        const file = files[fIdx];
+        const url = await uploadMarketplaceImage(file, 'products');
+        const cleanName =
+          file.name
+            .replace(/\.[^/.]+$/, '')
+            .replace(/[_-]+/g, ' ')
+            .trim() || `Versão #${fIdx + 1}`;
+        newStaged.push({
+          id: `staged_${Date.now()}_${fIdx}`,
+          url,
+          name: cleanName,
+          destination: defaultDestination,
+          price: basePrice
+        });
+      }
+
+      setStagedPhotos((prev) => [...prev, ...newStaged]);
+    } finally {
+      setUploadingMediaKey(null);
+      setBatchUploadProgress(null);
+    }
+  };
+
+  // Apply the organized staged photos into Product Gallery (mediaList) and/or Variations (priceVariations)
+  const handleApplyStagedPhotos = (prodIdx: number) => {
+    if (stagedPhotos.length === 0) return;
+
+    updateProductAt(prodIdx, (prod) => {
+      const currentGallery =
+        prod.mediaList && prod.mediaList.length > 0
+          ? [...prod.mediaList]
+          : prod.mediaUrl
+          ? [{ type: prod.mediaType || ('image' as const), url: prod.mediaUrl }]
+          : [];
+      const currentVars = [...(prod.priceVariations || [])];
+      const basePrice = prod.price || 'R$ 89,90';
+
+      for (const item of stagedPhotos) {
+        if (item.destination === 'product_gallery') {
+          if (!currentGallery.some((m) => m.url === item.url)) {
+            currentGallery.push({ type: 'image', url: item.url });
+          }
+        } else {
+          currentVars.push({
+            id: `var_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+            name: item.name.trim() || `Versão #${currentVars.length + 1}`,
+            price: prod.sameVariationPrice ? basePrice : item.price.trim() || basePrice,
+            imageUrl: item.url,
+            badge: '',
+            description: '',
+            isDefault: currentVars.length === 0,
+            stock: prod.stock
+          });
+          // If the product has no main cover photo yet, use the first variation photo as cover
+          if (currentGallery.length === 0) {
+            currentGallery.push({ type: 'image', url: item.url });
+          }
+        }
+      }
+
+      return {
+        ...prod,
+        mediaList: currentGallery,
+        mediaUrl: currentGallery[0]?.url || prod.mediaUrl || '',
+        mediaType: currentGallery[0]?.type || 'image',
+        priceVariations: currentVars
+      };
+    });
+
+    const count = stagedPhotos.length;
+    setStagedPhotos([]);
+    setSavedBannerMsg(
+      `✓ ${count} foto(s) organizada(s) entre Fotos do Produto e Variações! Clique em "Salvar Alterações" para gravar.`
+    );
+    setTimeout(() => setSavedBannerMsg(null), 4000);
+  };
+
+  // Move or Convert an existing gallery photo into a Variation
+  const handleConvertGalleryPhotoToVariation = (
+    prodIdx: number,
+    mediaIdx: number,
+    removeFromGallery: boolean
+  ) => {
+    updateProductAt(prodIdx, (prod) => {
+      const list =
+        prod.mediaList && prod.mediaList.length > 0
+          ? [...prod.mediaList]
+          : prod.mediaUrl
+          ? [{ type: prod.mediaType || ('image' as const), url: prod.mediaUrl }]
+          : [];
+      const targetMedia = list[mediaIdx];
+      if (!targetMedia || !targetMedia.url) return prod;
+
+      const vars = [...(prod.priceVariations || [])];
+      const basePrice = prod.price || 'R$ 89,90';
+      vars.push({
+        id: `var_${Date.now()}_${vars.length}`,
+        name: `Versão #${vars.length + 1}`,
+        price: basePrice,
+        imageUrl: targetMedia.url,
+        badge: '',
+        description: '',
+        isDefault: vars.length === 0,
+        stock: prod.stock
+      });
+
+      const nextList =
+        removeFromGallery && list.length > 1
+          ? list.filter((_, idx) => idx !== mediaIdx)
+          : list;
+
+      return {
+        ...prod,
+        mediaList: nextList,
+        mediaUrl: nextList[0]?.url || targetMedia.url,
+        mediaType: nextList[0]?.type || 'image',
+        priceVariations: vars
+      };
+    });
+  };
+
+  // Move a variation's photo into the main Product Gallery (Fotos do Mesmo Produto)
+  const handleMoveVariationPhotoToGallery = (
+    prodIdx: number,
+    varIdx: number,
+    removeVariation: boolean
+  ) => {
+    updateProductAt(prodIdx, (prod) => {
+      const vars = [...(prod.priceVariations || [])];
+      const targetVar = vars[varIdx];
+      if (!targetVar || !targetVar.imageUrl) return prod;
+
+      const list =
+        prod.mediaList && prod.mediaList.length > 0
+          ? [...prod.mediaList]
+          : prod.mediaUrl
+          ? [{ type: prod.mediaType || ('image' as const), url: prod.mediaUrl }]
+          : [];
+
+      if (!list.some((m) => m.url === targetVar.imageUrl)) {
+        list.push({ type: 'image', url: targetVar.imageUrl });
+      }
+
+      const nextVars = removeVariation
+        ? vars.filter((_, idx) => idx !== varIdx)
+        : vars;
+
+      return {
+        ...prod,
+        mediaList: list,
+        mediaUrl: list[0]?.url || targetVar.imageUrl,
+        mediaType: list[0]?.type || 'image',
+        priceVariations: nextVars
+      };
+    });
   };
 
   const handleUploadCustomCardFiles = async (prodIdx: number, files: FileList) => {
@@ -930,29 +1146,235 @@ export const StoreProductManagerView: React.FC<StoreProductManagerViewProps> = (
                     </p>
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={() => {
-                      updateProductAt(i, (p) => {
-                        const vars = [...(p.priceVariations || [])];
-                        vars.push({
-                          name: '',
-                          price: p.price || 'R$ 89,90',
-                          badge: '',
-                          description: '',
-                          buttonLink: p.buttonLink || '',
-                          isDefault: vars.length === 0,
-                          stock: p.stock
+                  <div className="flex flex-wrap items-center gap-2 shrink-0">
+                    <label className="px-3.5 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-black transition flex items-center gap-1.5 cursor-pointer shadow-md">
+                      {uploadingMediaKey === `batch-${i}` ? (
+                        <Loader2 size={14} className="animate-spin" />
+                      ) : (
+                        <Upload size={14} />
+                      )}
+                      <span>
+                        {uploadingMediaKey === `batch-${i}` && batchUploadProgress
+                          ? `Subindo ${batchUploadProgress.current}/${batchUploadProgress.total}...`
+                          : '+ Subir Várias Fotos (Organizar / Variações)'}
+                      </span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        multiple
+                        className="hidden"
+                        onChange={(e) => {
+                          if (e.target.files && e.target.files.length > 0) {
+                            handleBatchUploadToOrganizer(i, e.target.files, 'variation');
+                            e.target.value = '';
+                          }
+                        }}
+                      />
+                    </label>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        updateProductAt(i, (p) => {
+                          const vars = [...(p.priceVariations || [])];
+                          vars.push({
+                            name: '',
+                            price: p.price || 'R$ 89,90',
+                            badge: '',
+                            description: '',
+                            buttonLink: p.buttonLink || '',
+                            isDefault: vars.length === 0,
+                            stock: p.stock
+                          });
+                          return { ...p, priceVariations: vars };
                         });
-                        return { ...p, priceVariations: vars };
-                      });
-                    }}
-                    className="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-black transition flex items-center gap-1.5 shrink-0 cursor-pointer"
-                  >
-                    <Plus size={14} />
-                    <span>+ Adicionar Versão</span>
-                  </button>
+                      }}
+                      className="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-black transition flex items-center gap-1.5 shrink-0 cursor-pointer"
+                    >
+                      <Plus size={14} />
+                      <span>+ Adicionar Versão</span>
+                    </button>
+                  </div>
                 </div>
+
+                {/* PAINEL ORGANIZADOR DE FOTOS SUBIDAS EM LOTE (GALERIA DO PRODUTO OU VARIAÇÕES) */}
+                {stagedPhotos.length > 0 && (
+                  <div className="bg-gradient-to-br from-purple-950/70 via-slate-950 to-amber-950/40 border-2 border-amber-400/70 rounded-2xl p-4 space-y-3.5 shadow-xl">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 border-b border-slate-800 pb-3">
+                      <div>
+                        <h5 className="text-xs sm:text-sm font-black uppercase tracking-wider text-amber-300 flex items-center gap-2">
+                          <Sparkles size={15} />
+                          <span>
+                            Organizar {stagedPhotos.length} Foto(s) Subida(s): Galeria do Produto ou Variações
+                          </span>
+                        </h5>
+                        <p className="text-[11px] text-slate-300 mt-0.5">
+                          Escolha abaixo para cada foto (ou todas de uma vez) se ela será uma <strong className="text-purple-300">Foto do Mesmo Produto (Galeria)</strong> ou uma <strong className="text-amber-300">Foto de Variação</strong>.
+                        </p>
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setStagedPhotos((prev) =>
+                              prev.map((item) => ({ ...item, destination: 'product_gallery' }))
+                            )
+                          }
+                          className="px-2.5 py-1.5 rounded-lg bg-purple-600/30 hover:bg-purple-600/50 border border-purple-400/60 text-purple-200 text-[11px] font-bold cursor-pointer transition"
+                        >
+                          Todas = Fotos do Mesmo Produto
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setStagedPhotos((prev) =>
+                              prev.map((item) => ({ ...item, destination: 'variation' }))
+                            )
+                          }
+                          className="px-2.5 py-1.5 rounded-lg bg-amber-500/25 hover:bg-amber-500/40 border border-amber-400/60 text-amber-200 text-[11px] font-bold cursor-pointer transition"
+                        >
+                          Todas = Fotos de Variações
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setStagedPhotos([])}
+                          className="px-2 py-1.5 rounded-lg bg-slate-900 hover:bg-red-950/50 border border-slate-700 text-slate-400 hover:text-red-300 text-[11px] font-bold cursor-pointer"
+                        >
+                          Limpar
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-80 overflow-y-auto custom-scrollbar pr-1">
+                      {stagedPhotos.map((sp, spIdx) => (
+                        <div
+                          key={sp.id}
+                          className={`p-2.5 rounded-xl border flex items-start gap-2.5 ${
+                            sp.destination === 'variation'
+                              ? 'bg-amber-950/25 border-amber-500/50'
+                              : 'bg-purple-950/25 border-purple-500/50'
+                          }`}
+                        >
+                          <img
+                            src={sp.url}
+                            alt={sp.name}
+                            className="w-14 h-14 rounded-lg object-cover bg-black border border-slate-700 shrink-0"
+                          />
+                          <div className="flex-1 min-w-0 space-y-1.5">
+                            <div className="flex items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setStagedPhotos((prev) =>
+                                    prev.map((item, idx) =>
+                                      idx === spIdx
+                                        ? { ...item, destination: 'product_gallery' }
+                                        : item
+                                    )
+                                  )
+                                }
+                                className={`flex-1 py-1 px-2 rounded text-[10px] font-bold border transition cursor-pointer ${
+                                  sp.destination === 'product_gallery'
+                                    ? 'bg-purple-600 text-white border-purple-400'
+                                    : 'bg-slate-900 text-slate-400 border-slate-800'
+                                }`}
+                              >
+                                Foto do Produto
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setStagedPhotos((prev) =>
+                                    prev.map((item, idx) =>
+                                      idx === spIdx ? { ...item, destination: 'variation' } : item
+                                    )
+                                  )
+                                }
+                                className={`flex-1 py-1 px-2 rounded text-[10px] font-bold border transition cursor-pointer ${
+                                  sp.destination === 'variation'
+                                    ? 'bg-amber-500 text-slate-950 border-amber-300'
+                                    : 'bg-slate-900 text-slate-400 border-slate-800'
+                                }`}
+                              >
+                                Variação
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setStagedPhotos((prev) => prev.filter((_, idx) => idx !== spIdx))
+                                }
+                                className="p-1 text-slate-500 hover:text-red-400 cursor-pointer"
+                                title="Remover da bandeja"
+                              >
+                                <X size={13} />
+                              </button>
+                            </div>
+
+                            {sp.destination === 'variation' ? (
+                              <div className="grid grid-cols-12 gap-1.5">
+                                <input
+                                  type="text"
+                                  value={sp.name}
+                                  onChange={(e) => {
+                                    const val = e.target.value;
+                                    setStagedPhotos((prev) =>
+                                      prev.map((item, idx) =>
+                                        idx === spIdx ? { ...item, name: val } : item
+                                      )
+                                    );
+                                  }}
+                                  placeholder="Nome da versão..."
+                                  className="col-span-7 bg-slate-900 border border-amber-500/40 rounded px-2 py-1 text-[11px] text-white font-bold outline-none"
+                                />
+                                <input
+                                  type="text"
+                                  value={sp.price}
+                                  onChange={(e) => {
+                                    const val = e.target.value;
+                                    setStagedPhotos((prev) =>
+                                      prev.map((item, idx) =>
+                                        idx === spIdx ? { ...item, price: val } : item
+                                      )
+                                    );
+                                  }}
+                                  placeholder="Preço"
+                                  className="col-span-5 bg-slate-900 border border-emerald-500/40 rounded px-2 py-1 text-[11px] text-emerald-300 font-mono font-bold outline-none"
+                                />
+                              </div>
+                            ) : (
+                              <span className="text-[11px] text-purple-200 block truncate">
+                                Vai para a Galeria de Fotos do mesmo produto
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="flex items-center justify-between gap-3 pt-2 border-t border-slate-800">
+                      <span className="text-[11px] text-slate-300">
+                        <strong className="text-purple-300">
+                          {stagedPhotos.filter((s) => s.destination === 'product_gallery').length}
+                        </strong>{' '}
+                        p/ Galeria do Produto ·{' '}
+                        <strong className="text-amber-300">
+                          {stagedPhotos.filter((s) => s.destination === 'variation').length}
+                        </strong>{' '}
+                        p/ Variações
+                      </span>
+
+                      <button
+                        type="button"
+                        onClick={() => handleApplyStagedPhotos(i)}
+                        className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black uppercase tracking-wider transition flex items-center gap-1.5 shadow-lg cursor-pointer"
+                      >
+                        <Check size={14} />
+                        <span>Aplicar Organização das Fotos</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
 
                 {/* Base Price Row + Quick Add Version Bar */}
                 <div className="grid grid-cols-1 md:grid-cols-12 gap-3 bg-slate-950/90 border border-slate-800 rounded-xl p-3.5 items-end">
@@ -1267,7 +1689,7 @@ export const StoreProductManagerView: React.FC<StoreProductManagerViewProps> = (
                             </label>
                           </div>
 
-                          <div className="sm:col-span-5">
+                          <div className="sm:col-span-5 space-y-1.5">
                             <input
                               type="text"
                               value={v.description || ''}
@@ -1281,6 +1703,52 @@ export const StoreProductManagerView: React.FC<StoreProductManagerViewProps> = (
                               placeholder="Resumo / detalhe desta versão (opcional)"
                               className="w-full bg-slate-900 border border-slate-700 rounded-lg p-1.5 text-xs text-slate-300"
                             />
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              {v.imageUrl && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleMoveVariationPhotoToGallery(i, vIdx, false)}
+                                  className="px-2 py-1 rounded bg-purple-600/25 hover:bg-purple-600/40 border border-purple-500/40 text-purple-200 text-[10px] font-bold cursor-pointer transition"
+                                  title="Copia esta foto para a Galeria de Fotos do Mesmo Produto"
+                                >
+                                  ↗ Enviar Foto p/ Galeria do Produto
+                                </button>
+                              )}
+                              {v.imageUrl && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleMoveVariationPhotoToGallery(i, vIdx, true)}
+                                  className="px-2 py-1 rounded bg-amber-500/20 hover:bg-amber-500/35 border border-amber-500/40 text-amber-200 text-[10px] font-bold cursor-pointer transition"
+                                  title="Move a foto para a Galeria do Produto e remove esta variação"
+                                >
+                                  ⇄ Virar Foto do Produto (Remover Variação)
+                                </button>
+                              )}
+                              {currentMediaList.length > 0 && (
+                                <select
+                                  value=""
+                                  onChange={(e) => {
+                                    const chosenUrl = e.target.value;
+                                    if (!chosenUrl) return;
+                                    updateProductAt(i, (p) => {
+                                      const vars = [...(p.priceVariations || [])];
+                                      vars[vIdx] = { ...vars[vIdx], imageUrl: chosenUrl };
+                                      return { ...p, priceVariations: vars };
+                                    });
+                                  }}
+                                  className="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-[10px] text-cyan-300 font-bold outline-none cursor-pointer"
+                                >
+                                  <option value="">Usar foto da Galeria...</option>
+                                  {currentMediaList
+                                    .filter((m) => m.type !== 'video' && m.url)
+                                    .map((m, mIdx) => (
+                                      <option key={mIdx} value={m.url}>
+                                        Foto #{mIdx + 1} da Galeria
+                                      </option>
+                                    ))}
+                                </select>
+                              )}
+                            </div>
                           </div>
                         </div>
                       </div>
@@ -1974,14 +2442,39 @@ export const StoreProductManagerView: React.FC<StoreProductManagerViewProps> = (
                     </p>
                   </div>
 
-                  <div className="flex items-center gap-2">
-                    <label className="px-3.5 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <label className="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-black transition flex items-center gap-1.5 cursor-pointer shadow">
+                      {uploadingMediaKey === `batch-${i}` ? (
+                        <Loader2 size={14} className="animate-spin" />
+                      ) : (
+                        <Upload size={14} />
+                      )}
+                      <span>
+                        {uploadingMediaKey === `batch-${i}` && batchUploadProgress
+                          ? `Subindo ${batchUploadProgress.current}/${batchUploadProgress.total}...`
+                          : '+ Subir Várias Fotos e Organizar'}
+                      </span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        multiple
+                        className="hidden"
+                        onChange={(e) => {
+                          if (e.target.files && e.target.files.length > 0) {
+                            handleBatchUploadToOrganizer(i, e.target.files, 'product_gallery');
+                            e.target.value = '';
+                          }
+                        }}
+                      />
+                    </label>
+
+                    <label className="px-3 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow">
                       {uploadingMediaKey?.startsWith(`media-${i}-`) ? (
                         <Loader2 size={14} className="animate-spin" />
                       ) : (
                         <Upload size={14} />
                       )}
-                      <span>Subir Foto do PC</span>
+                      <span>Subir 1 Foto/Vídeo</span>
                       <input
                         type="file"
                         accept="image/*,video/*"
@@ -2014,11 +2507,49 @@ export const StoreProductManagerView: React.FC<StoreProductManagerViewProps> = (
                   </div>
                 </div>
 
+                {currentMediaList.length > 1 && (
+                  <div className="bg-slate-950/80 border border-slate-800 rounded-xl p-2.5 flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-[11px] text-slate-400">
+                      {currentMediaList.length} fotos na galeria deste produto. Você também pode transformá-las em variações:
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        updateProductAt(i, (p) => {
+                          const vars = [...(p.priceVariations || [])];
+                          const basePrice = p.price || 'R$ 89,90';
+                          currentMediaList.forEach((m, mIdx) => {
+                            if (m.type !== 'video' && m.url) {
+                              vars.push({
+                                id: `var_${Date.now()}_${mIdx}`,
+                                name: `Versão #${vars.length + 1}`,
+                                price: basePrice,
+                                imageUrl: m.url,
+                                badge: '',
+                                description: '',
+                                isDefault: vars.length === 0,
+                                stock: p.stock
+                              });
+                            }
+                          });
+                          return {
+                            ...p,
+                            priceVariations: vars
+                          };
+                        })
+                      }
+                      className="px-2.5 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/35 border border-amber-500/40 text-amber-300 text-[11px] font-bold cursor-pointer transition"
+                    >
+                      ⇄ Transformar Todas as Fotos da Galeria em Variações
+                    </button>
+                  </div>
+                )}
+
                 {currentMediaList.length === 0 ? (
                   <div className="border-2 border-dashed border-slate-800 rounded-xl p-8 text-center space-y-3 bg-slate-950/60">
                     <ImageIcon size={32} className="mx-auto text-slate-600" />
                     <p className="text-xs text-slate-400">
-                      Nenhuma foto adicionada a este produto ainda.
+                      Nenhuma foto adicionada a este produto ainda. Use "+ Subir Várias Fotos e Organizar" para enviar várias fotos de uma só vez.
                     </p>
                   </div>
                 ) : (
@@ -2026,79 +2557,132 @@ export const StoreProductManagerView: React.FC<StoreProductManagerViewProps> = (
                     {currentMediaList.map((m, mIdx) => (
                       <div
                         key={mIdx}
-                        className="flex items-center gap-2.5 bg-slate-950 p-2.5 rounded-xl border border-slate-800"
+                        className="bg-slate-950 p-2.5 rounded-xl border border-slate-800 space-y-2"
                       >
-                        <div className="w-16 h-14 rounded-lg overflow-hidden bg-black border border-slate-700 shrink-0 flex items-center justify-center">
-                          {m.type === 'video' ? (
-                            <Film size={18} className="text-purple-400" />
-                          ) : m.url ? (
-                            <img
-                              src={m.url}
-                              alt=""
-                              className="w-full h-full object-contain"
-                            />
-                          ) : (
-                            <ImageIcon size={18} className="text-slate-600" />
-                          )}
+                        <div className="flex items-center gap-2.5">
+                          <div className="w-16 h-14 rounded-lg overflow-hidden bg-black border border-slate-700 shrink-0 flex items-center justify-center relative">
+                            {m.type === 'video' ? (
+                              <Film size={18} className="text-purple-400" />
+                            ) : m.url ? (
+                              <img
+                                src={m.url}
+                                alt=""
+                                className="w-full h-full object-contain"
+                              />
+                            ) : (
+                              <ImageIcon size={18} className="text-slate-600" />
+                            )}
+                            {mIdx === 0 && (
+                              <span className="absolute bottom-0 inset-x-0 bg-purple-600/90 text-white text-[9px] font-black text-center uppercase">
+                                Capa
+                              </span>
+                            )}
+                          </div>
+
+                          <select
+                            value={m.type || 'image'}
+                            onChange={(e) =>
+                              updateProductAt(i, (p) => {
+                                const list = [...currentMediaList];
+                                list[mIdx] = {
+                                  ...list[mIdx],
+                                  type: e.target.value as 'image' | 'video'
+                                };
+                                return {
+                                  ...p,
+                                  mediaList: list,
+                                  ...(mIdx === 0 ? { mediaType: list[0].type } : {})
+                                };
+                              })
+                            }
+                            className="bg-slate-900 border border-slate-700 rounded-lg p-1.5 text-xs text-white"
+                          >
+                            <option value="image">Foto</option>
+                            <option value="video">Vídeo</option>
+                          </select>
+
+                          <input
+                            type="text"
+                            value={m.url || ''}
+                            onChange={(e) =>
+                              updateProductAt(i, (p) => {
+                                const list = [...currentMediaList];
+                                list[mIdx] = { ...list[mIdx], url: e.target.value };
+                                return {
+                                  ...p,
+                                  mediaList: list,
+                                  ...(mIdx === 0 ? { mediaUrl: list[0].url } : {})
+                                };
+                              })
+                            }
+                            placeholder="URL da foto ou vídeo..."
+                            className="flex-1 min-w-0 bg-slate-900 border border-slate-700 rounded-lg p-1.5 text-xs text-white"
+                          />
+
+                          <button
+                            type="button"
+                            onClick={() =>
+                              updateProductAt(i, (p) => {
+                                const list = currentMediaList.filter((_, idx) => idx !== mIdx);
+                                return {
+                                  ...p,
+                                  mediaList: list,
+                                  mediaUrl: list[0]?.url || '',
+                                  mediaType: list[0]?.type || 'image'
+                                };
+                              })
+                            }
+                            className="text-red-400 hover:text-red-300 p-1.5 cursor-pointer"
+                            title="Remover foto da galeria"
+                          >
+                            <Trash2 size={15} />
+                          </button>
                         </div>
 
-                        <select
-                          value={m.type || 'image'}
-                          onChange={(e) =>
-                            updateProductAt(i, (p) => {
-                              const list = [...currentMediaList];
-                              list[mIdx] = {
-                                ...list[mIdx],
-                                type: e.target.value as 'image' | 'video'
-                              };
-                              return {
-                                ...p,
-                                mediaList: list,
-                                ...(mIdx === 0 ? { mediaType: list[0].type } : {})
-                              };
-                            })
-                          }
-                          className="bg-slate-900 border border-slate-700 rounded-lg p-1.5 text-xs text-white"
-                        >
-                          <option value="image">Foto</option>
-                          <option value="video">Vídeo</option>
-                        </select>
-
-                        <input
-                          type="text"
-                          value={m.url || ''}
-                          onChange={(e) =>
-                            updateProductAt(i, (p) => {
-                              const list = [...currentMediaList];
-                              list[mIdx] = { ...list[mIdx], url: e.target.value };
-                              return {
-                                ...p,
-                                mediaList: list,
-                                ...(mIdx === 0 ? { mediaUrl: list[0].url } : {})
-                              };
-                            })
-                          }
-                          placeholder="URL da foto ou vídeo..."
-                          className="flex-1 min-w-0 bg-slate-900 border border-slate-700 rounded-lg p-1.5 text-xs text-white"
-                        />
-
-                        <button
-                          type="button"
-                          onClick={() =>
-                            updateProductAt(i, (p) => {
-                              const list = currentMediaList.filter((_, idx) => idx !== mIdx);
-                              return {
-                                ...p,
-                                mediaList: list,
-                                mediaUrl: list[0]?.url || '',
-                                mediaType: list[0]?.type || 'image'
-                              };
-                            })
-                          }
-                          className="text-red-400 hover:text-red-300 p-1.5"
-                        >
-                          <Trash2 size={15} />
-                        </button>
+                        {/* Quick Actions to Organize this Gallery Photo */}
+                        {m.url && m.type !== 'video' && (
+                          <div className="flex flex-wrap items-center gap-1.5 pl-1">
+                            {mIdx > 0 && (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  updateProductAt(i, (p) => {
+                                    const list = [...currentMediaList];
+                                    const [picked] = list.splice(mIdx, 1);
+                                    list.unshift(picked);
+                                    return {
+                                      ...p,
+                                      mediaList: list,
+                                      mediaUrl: list[0]?.url || '',
+                                      mediaType: list[0]?.type || 'image'
+                                    };
+                                  })
+                                }
+                                className="px-2 py-1 rounded bg-purple-600/25 hover:bg-purple-600/40 border border-purple-500/40 text-purple-200 text-[10px] font-bold cursor-pointer transition"
+                              >
+                                ★ Definir como Foto Principal (Capa)
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => handleConvertGalleryPhotoToVariation(i, mIdx, false)}
+                              className="px-2 py-1 rounded bg-amber-500/20 hover:bg-amber-500/35 border border-amber-500/40 text-amber-200 text-[10px] font-bold cursor-pointer transition"
+                              title="Cria uma Variação usando esta foto e mantém na galeria"
+                            >
+                              + Criar Variação com esta Foto
+                            </button>
+                            {currentMediaList.length > 1 && (
+                              <button
+                                type="button"
+                                onClick={() => handleConvertGalleryPhotoToVariation(i, mIdx, true)}
+                                className="px-2 py-1 rounded bg-cyan-500/20 hover:bg-cyan-500/35 border border-cyan-500/40 text-cyan-200 text-[10px] font-bold cursor-pointer transition"
+                                title="Move esta foto da galeria do produto para ser exclusivamente uma Variação"
+                              >
+                                ⇄ Mover da Galeria p/ Variação
+                              </button>
+                            )}
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>

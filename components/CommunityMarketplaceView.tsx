@@ -97,9 +97,8 @@ export const CommunityMarketplaceView: React.FC<CommunityMarketplaceViewProps> =
   onOfficialProductCreated,
   onOpenAuth
 }) => {
-  const isOfficialAccount = Boolean(
-    isAdmin || user?.email?.toLowerCase() === 'viniciuspdiasuzumaki@gmail.com'
-  );
+  // Official Products are managed exclusively inside Gerenciar Produtos (StoreProductManagerView)
+  const isOfficialAccount = false;
 
   const [subTab, setSubTab] = useState<'explore' | 'sell' | 'my_listings' | 'sellers_reputation'>(
     initialSubTab
@@ -1427,29 +1426,23 @@ export const CommunityMarketplaceView: React.FC<CommunityMarketplaceViewProps> =
             <span>Explorar ({activeListings.length})</span>
           </button>
 
-          <button
-            type="button"
-            onClick={() => {
-              resetForm();
-              setSubTab('sell');
-            }}
-            className={`px-3.5 py-2.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
-              subTab === 'sell'
-                ? isOfficialAccount
-                  ? 'bg-amber-500 text-slate-950 shadow-lg shadow-amber-950/50'
-                  : 'bg-emerald-600 text-white shadow-lg shadow-emerald-950/50'
-                : isOfficialAccount
-                ? 'bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/50'
-                : 'bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/40'
-            }`}
-          >
-            <Plus size={15} />
-            <span>
-              {isOfficialAccount
-                ? 'Adicionar Produto Oficial (Deck / Booster / Carta)'
-                : 'Anunciar Carta / Deck / Coleção'}
-            </span>
-          </button>
+          {!isAdmin && (
+            <button
+              type="button"
+              onClick={() => {
+                resetForm();
+                setSubTab('sell');
+              }}
+              className={`px-3.5 py-2.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                subTab === 'sell'
+                  ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-950/50'
+                  : 'bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/40'
+              }`}
+            >
+              <Plus size={15} />
+              <span>Anunciar Carta / Deck / Coleção</span>
+            </button>
+          )}
 
           <button
             type="button"
@@ -1774,52 +1767,68 @@ export const CommunityMarketplaceView: React.FC<CommunityMarketplaceViewProps> =
                             {chosenVar?.description || item.description}
                           </p>
 
-                          {/* Variations Selector Pills */}
+                          {/* Compact Variations Selector */}
                           {itemVars.length > 0 && (
                             <div className="pt-1 space-y-1.5">
                               <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
-                                Escolha a Variação:
+                                Escolha a Variação ({itemVars.length}):
                               </span>
-                              <div className="flex flex-wrap gap-1.5">
-                                {itemVars.map((v, vIdx) => {
-                                  const isSelected = vIdx === (activeVarIdx >= 0 ? activeVarIdx : 0);
-                                  const vPrice = item.sameVariationPrice
-                                    ? formatBRL(item.price)
-                                    : formatBRL(parseBRLPrice(v.price) || item.price);
-                                  return (
-                                    <button
-                                      key={vIdx}
-                                      type="button"
-                                      onClick={() =>
-                                        setSelectedListingVarMap((prev) => ({
-                                          ...prev,
-                                          [item.id]: vIdx
-                                        }))
-                                      }
-                                      className={`px-2 py-1 rounded-lg border text-[11px] font-semibold transition flex items-center gap-1.5 cursor-pointer ${
-                                        isSelected
-                                          ? 'bg-purple-600/30 border-purple-400 text-white shadow-sm'
-                                          : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700'
-                                      }`}
-                                    >
-                                      {v.imageUrl && (
-                                        <img
-                                          src={v.imageUrl}
-                                          alt={v.name}
-                                          referrerPolicy="no-referrer"
-                                          className="w-4 h-4 rounded object-cover border border-white/20 shrink-0"
-                                        />
-                                      )}
-                                      <span className="truncate max-w-[100px]">{v.name}</span>
-                                      {!item.sameVariationPrice && (
-                                        <span className="text-[10px] font-mono text-emerald-400 font-bold">
-                                          {vPrice}
-                                        </span>
-                                      )}
-                                    </button>
-                                  );
-                                })}
-                              </div>
+                              {itemVars.length <= 2 ? (
+                                <div className="grid grid-cols-2 gap-1.5">
+                                  {itemVars.map((v, vIdx) => {
+                                    const isSelected = vIdx === (activeVarIdx >= 0 ? activeVarIdx : 0);
+                                    const vPrice = item.sameVariationPrice
+                                      ? formatBRL(item.price)
+                                      : formatBRL(parseBRLPrice(v.price) || item.price);
+                                    return (
+                                      <button
+                                        key={vIdx}
+                                        type="button"
+                                        onClick={() =>
+                                          setSelectedListingVarMap((prev) => ({
+                                            ...prev,
+                                            [item.id]: vIdx
+                                          }))
+                                        }
+                                        className={`px-2 py-1.5 rounded-lg border text-[11px] font-semibold transition text-left cursor-pointer ${
+                                          isSelected
+                                            ? 'bg-purple-600/30 border-purple-400 text-white shadow-sm'
+                                            : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700'
+                                        }`}
+                                      >
+                                        <div className="truncate">{v.name}</div>
+                                        {!item.sameVariationPrice && (
+                                          <div className="text-[10px] font-mono text-emerald-400 font-bold">
+                                            {vPrice}
+                                          </div>
+                                        )}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              ) : (
+                                <select
+                                  value={activeVarIdx >= 0 ? activeVarIdx : 0}
+                                  onChange={(e) =>
+                                    setSelectedListingVarMap((prev) => ({
+                                      ...prev,
+                                      [item.id]: Number(e.target.value)
+                                    }))
+                                  }
+                                  className="w-full bg-slate-950 border border-purple-500/40 rounded-lg px-2.5 py-1.5 text-xs text-white font-bold outline-none cursor-pointer"
+                                >
+                                  {itemVars.map((v, vIdx) => {
+                                    const vPrice = item.sameVariationPrice
+                                      ? formatBRL(item.price)
+                                      : formatBRL(parseBRLPrice(v.price) || item.price);
+                                    return (
+                                      <option key={vIdx} value={vIdx}>
+                                        {vIdx + 1}. {v.name} — {vPrice}
+                                      </option>
+                                    );
+                                  })}
+                                </select>
+                              )}
                             </div>
                           )}
 
