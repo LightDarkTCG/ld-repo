@@ -431,6 +431,46 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
     }
   };
 
+  const handleUploadProductCustomCardFiles = async (productIndex: number, files: FileList) => {
+    if (!files || files.length === 0) return;
+    const uploadKey = `pcard-${productIndex}`;
+    setUploadingProductMedia(uploadKey);
+    setLoading(true);
+    try {
+      const newCardItems: any[] = [];
+      for (let idx = 0; idx < files.length; idx++) {
+        const file = files[idx];
+        const fileRef = ref(storage, `home_images/pcard_${Date.now()}_${idx}_${file.name}`);
+        await uploadBytes(fileRef, file);
+        const url = await getDownloadURL(fileRef);
+        const cleanName = file.name.replace(/\.[^/.]+$/, '').replace(/[_-]+/g, ' ');
+        newCardItems.push({
+          id: `pcard_new_${Date.now()}_${idx}`,
+          source: 'custom_new',
+          name: cleanName || `Carta Nova #${idx + 1}`,
+          imageUrl: url,
+          type: 'Carta Exclusiva do Produto',
+          rarity: 'Nova / Exclusiva',
+          quantity: 1
+        });
+      }
+      const np = [...(homeSettings.exclusiveProducts || [])];
+      if (np[productIndex]) {
+        const existingCards = Array.isArray(np[productIndex].productCards)
+          ? [...np[productIndex].productCards]
+          : [];
+        np[productIndex].productCards = [...existingCards, ...newCardItems];
+        setHomeSettings({ ...homeSettings, exclusiveProducts: np });
+      }
+    } catch (err: any) {
+      console.error(err);
+      setError('Erro ao enviar imagem individual de carta: ' + (err.message || err));
+    } finally {
+      setUploadingProductMedia(null);
+      setLoading(false);
+    }
+  };
+
   const saveSettings = async () => {
     setLoading(true);
     try {
@@ -1492,6 +1532,221 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
                                   );
                                 })()}
 
+                                {/* Imagens Individuais das Cartas do Produto (Cartas do Site ou Cartas Novas pro Produto) */}
+                                <div className="w-full bg-slate-950/90 border border-cyan-500/40 rounded-xl p-4 flex flex-col gap-3">
+                                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-2.5">
+                                    <div>
+                                      <label className="text-xs font-black uppercase tracking-wider text-cyan-300 flex items-center gap-1.5">
+                                        <Layers size={15} className="text-cyan-400" />
+                                        <span>Imagens Individuais das Cartas (Cartas do Site ou Cartas Novas pro Produto)</span>
+                                      </label>
+                                      <p className="text-[11px] text-slate-400 mt-0.5">
+                                        Adicione imagens individuais das cartas que acompanham o produto (selecione cartas que já estão no site ou suba imagens de cartas novas exclusivas do produto).
+                                      </p>
+                                    </div>
+
+                                    <div className="flex items-center gap-2 flex-wrap shrink-0">
+                                      <label className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-sm">
+                                        {uploadingProductMedia === `pcard-${i}` ? (
+                                          <Loader2 size={13} className="animate-spin" />
+                                        ) : (
+                                          <Upload size={13} />
+                                        )}
+                                        <span>
+                                          {uploadingProductMedia === `pcard-${i}`
+                                            ? 'Subindo Cartas...'
+                                            : '+ Subir Carta(s) Nova(s) pro Produto'}
+                                        </span>
+                                        <input
+                                          type="file"
+                                          accept="image/*"
+                                          multiple
+                                          className="hidden"
+                                          onChange={(e) => {
+                                            if (e.target.files && e.target.files.length > 0) {
+                                              handleUploadProductCustomCardFiles(i, e.target.files);
+                                              e.target.value = '';
+                                            }
+                                          }}
+                                        />
+                                      </label>
+
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          const np = [...(homeSettings.exclusiveProducts || [])];
+                                          const currentCards = Array.isArray(np[i].productCards)
+                                            ? [...np[i].productCards]
+                                            : [];
+                                          currentCards.push({
+                                            id: `pcard_new_${Date.now()}`,
+                                            source: 'custom_new',
+                                            name: `Carta Nova #${currentCards.length + 1}`,
+                                            imageUrl: '',
+                                            type: 'Carta Exclusiva do Produto',
+                                            rarity: 'Nova / Exclusiva',
+                                            quantity: 1
+                                          });
+                                          np[i].productCards = currentCards;
+                                          setHomeSettings({ ...homeSettings, exclusiveProducts: np });
+                                        }}
+                                        className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-cyan-300 text-xs font-bold transition flex items-center gap-1"
+                                      >
+                                        <Plus size={13} />
+                                        <span>+ Carta Nova por URL</span>
+                                      </button>
+                                    </div>
+                                  </div>
+
+                                  {/* Seletor rápido de cartas que já estão no site */}
+                                  <div className="flex flex-col sm:flex-row sm:items-center gap-2 bg-slate-900/80 border border-slate-800 rounded-lg p-2.5">
+                                    <span className="text-xs font-bold text-purple-300 shrink-0">
+                                      + Adicionar Carta que Já Está no Site:
+                                    </span>
+                                    <select
+                                      defaultValue=""
+                                      onChange={(e) => {
+                                        const chosenCode = e.target.value;
+                                        if (!chosenCode) return;
+                                        const found = (cards || []).find((c) => c.code === chosenCode);
+                                        if (!found) return;
+                                        const np = [...(homeSettings.exclusiveProducts || [])];
+                                        const currentCards = Array.isArray(np[i].productCards)
+                                          ? [...np[i].productCards]
+                                          : [];
+                                        const existingIdx = currentCards.findIndex(
+                                          (pc: any) => pc.source === 'catalog' && pc.cardCode === found.code
+                                        );
+                                        if (existingIdx >= 0) {
+                                          currentCards[existingIdx].quantity =
+                                            (currentCards[existingIdx].quantity || 1) + 1;
+                                        } else {
+                                          currentCards.push({
+                                            id: `pcard_cat_${found.code}_${Date.now()}`,
+                                            source: 'catalog',
+                                            cardCode: found.code,
+                                            name: found.name,
+                                            imageUrl: found.catalogCoverImageUrl || found.imageUrl || '',
+                                            type: found.type || 'Carta Oficial',
+                                            rarity: found.rarity || 'Oficial',
+                                            quantity: 1
+                                          });
+                                        }
+                                        np[i].productCards = currentCards;
+                                        setHomeSettings({ ...homeSettings, exclusiveProducts: np });
+                                        e.target.value = '';
+                                      }}
+                                      className="flex-1 bg-slate-950 border border-purple-500/40 rounded px-2.5 py-1.5 text-xs text-white outline-none"
+                                    >
+                                      <option value="">-- Escolha uma carta do catálogo do site para incluir a imagem individual --</option>
+                                      {(cards || [])
+                                        .filter((c) => !c.deleted && !c.isHidden)
+                                        .map((c) => (
+                                          <option key={c.code} value={c.code}>
+                                            {c.name} ({c.code}) — {c.collection || 'Oficial'}
+                                          </option>
+                                        ))}
+                                    </select>
+                                  </div>
+
+                                  {/* Grade de Cartas Individuais do Produto */}
+                                  {Array.isArray(prod.productCards) && prod.productCards.length > 0 ? (
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5 max-h-80 overflow-y-auto pr-1">
+                                      {prod.productCards.map((pc: any, pcIdx: number) => (
+                                        <div
+                                          key={pc.id || pcIdx}
+                                          className="bg-slate-900 border border-slate-800 rounded-xl p-2.5 flex items-start gap-2.5"
+                                        >
+                                          <div className="w-14 h-20 rounded bg-black border border-slate-700 overflow-hidden shrink-0 flex items-center justify-center">
+                                            {pc.imageUrl ? (
+                                              <img
+                                                src={pc.imageUrl}
+                                                alt={pc.name}
+                                                className="w-full h-full object-contain"
+                                              />
+                                            ) : (
+                                              <ImageIcon size={16} className="text-slate-600" />
+                                            )}
+                                          </div>
+                                          <div className="flex-1 min-w-0 space-y-1.5">
+                                            <div className="flex items-center justify-between gap-1">
+                                              <span
+                                                className={`px-1.5 py-0.5 rounded text-[9px] font-black uppercase ${
+                                                  pc.source === 'custom_new'
+                                                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                                                    : 'bg-purple-500/20 text-purple-300 border border-purple-500/40'
+                                                }`}
+                                              >
+                                                {pc.source === 'custom_new' ? 'Carta Nova' : 'Carta do Site'}
+                                              </span>
+                                              <button
+                                                type="button"
+                                                onClick={() => {
+                                                  const np = [...(homeSettings.exclusiveProducts || [])];
+                                                  np[i].productCards = (np[i].productCards || []).filter(
+                                                    (_: any, idx: number) => idx !== pcIdx
+                                                  );
+                                                  setHomeSettings({ ...homeSettings, exclusiveProducts: np });
+                                                }}
+                                                className="text-red-400 hover:text-red-300 p-0.5"
+                                                title="Remover carta"
+                                              >
+                                                <Trash2 size={13} />
+                                              </button>
+                                            </div>
+
+                                            <input
+                                              type="text"
+                                              value={pc.name || ''}
+                                              onChange={(e) => {
+                                                const np = [...(homeSettings.exclusiveProducts || [])];
+                                                np[i].productCards[pcIdx].name = e.target.value;
+                                                setHomeSettings({ ...homeSettings, exclusiveProducts: np });
+                                              }}
+                                              placeholder="Nome da carta"
+                                              className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1 text-xs text-white font-bold"
+                                            />
+
+                                            <div className="flex items-center gap-1.5">
+                                              <input
+                                                type="text"
+                                                value={pc.imageUrl || ''}
+                                                onChange={(e) => {
+                                                  const np = [...(homeSettings.exclusiveProducts || [])];
+                                                  np[i].productCards[pcIdx].imageUrl = e.target.value;
+                                                  setHomeSettings({ ...homeSettings, exclusiveProducts: np });
+                                                }}
+                                                placeholder="URL da imagem da carta..."
+                                                className="flex-1 bg-slate-950 border border-slate-800 rounded px-2 py-1 text-[11px] text-slate-300"
+                                              />
+                                              <input
+                                                type="number"
+                                                min={1}
+                                                max={99}
+                                                value={pc.quantity || 1}
+                                                onChange={(e) => {
+                                                  const np = [...(homeSettings.exclusiveProducts || [])];
+                                                  np[i].productCards[pcIdx].quantity = Math.max(
+                                                    1,
+                                                    Number(e.target.value) || 1
+                                                  );
+                                                  setHomeSettings({ ...homeSettings, exclusiveProducts: np });
+                                                }}
+                                                className="w-12 bg-slate-950 border border-slate-800 rounded px-1.5 py-1 text-xs text-emerald-300 font-mono font-bold text-center"
+                                                title="Quantidade desta carta no produto"
+                                              />
+                                            </div>
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  ) : (
+                                    <p className="text-[11px] text-slate-500">
+                                      Nenhuma imagem individual de carta adicionada manualmente. Use os botões acima para subir cartas novas exclusivas do produto ou escolher cartas existentes do site.
+                                    </p>
+                                  )}
+                                </div>
+
                                 {/* Button Info & Configurações de Pré-Venda / Frete */}
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 w-full">
                                   <div>
@@ -1643,18 +1898,18 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
                                   </div>
                                 </div>
 
-                                {/* Seção de Preços & Variações (Normal, Full Foil, etc.) */}
+                                {/* Seção de Preços & Versões do Produto (Você escolhe o nome da versão) */}
                                 <div className="w-full bg-slate-950/80 border border-slate-800 rounded-xl p-4 mt-1 flex flex-col gap-4">
                                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-3">
                                     <div>
                                       <div className="flex items-center gap-2">
                                         <Sparkles size={16} className="text-amber-400" />
                                         <label className="text-xs font-black uppercase tracking-wider text-amber-300">
-                                          Variações de Preço do Deck (ex: Versão Normal vs Full Foil)
+                                          Versões do Produto (Coloque o Nome da Versão que Quiser)
                                         </label>
                                       </div>
                                       <p className="text-[11px] text-slate-400 mt-0.5">
-                                        Permite definir múltiplos preços e acabamentos para o mesmo deck pré-venda (ex: Normal a R$ 89,90 e Full Foil a R$ 149,90).
+                                        Adicione quantas versões quiser e digite livremente o nome, o preço e a foto de cada versão.
                                       </p>
                                     </div>
                                     <div className="flex items-center gap-2 flex-wrap">
@@ -1664,13 +1919,12 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
                                           const np = [...(homeSettings.exclusiveProducts || [])];
                                           const currentVars = [...(np[i].priceVariations || [])];
                                           const isFirst = currentVars.length === 0;
-                                          const isSecond = currentVars.length === 1;
 
                                           currentVars.push({
-                                            name: isFirst ? 'Versão Normal' : isSecond ? 'Versão Full Foil' : `Variação #${currentVars.length + 1}`,
-                                            price: isFirst ? (prod.price || 'R$ 89,90') : isSecond ? 'R$ 149,90' : '',
-                                            badge: isFirst ? 'Normal' : isSecond ? 'Full Foil' : '',
-                                            description: isFirst ? 'Cartas no acabamento tradicional padrão' : isSecond ? 'Todas as cartas 100% holográficas Full Foil' : '',
+                                            name: '',
+                                            price: prod.price || 'R$ 89,90',
+                                            badge: '',
+                                            description: '',
                                             buttonLink: prod.buttonLink || '',
                                             isDefault: isFirst
                                           });
@@ -1680,42 +1934,10 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
                                           }
                                           setHomeSettings({...homeSettings, exclusiveProducts: np});
                                         }}
-                                        className="px-3 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-xs font-bold transition flex items-center gap-1.5 shadow-sm"
+                                        className="px-3.5 py-2 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-black transition flex items-center gap-1.5 shadow-sm"
                                       >
-                                        <Plus size={13} />
-                                        <span>+ Adicionar Variação</span>
-                                      </button>
-
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          const np = [...(homeSettings.exclusiveProducts || [])];
-                                          np[i].priceVariations = [
-                                            {
-                                              name: 'Versão Normal',
-                                              price: prod.price || 'R$ 89,90',
-                                              badge: 'Normal',
-                                              description: 'Acabamento padrão não-foil, todas as cartas inclusas',
-                                              buttonLink: prod.buttonLink || '',
-                                              isDefault: true
-                                            },
-                                            {
-                                              name: 'Versão Full Foil',
-                                              price: 'R$ 149,90',
-                                              badge: 'Full Foil',
-                                              description: 'Edição Especial: 100% das cartas com acabamento holográfico Full Foil',
-                                              buttonLink: prod.buttonLink || '',
-                                              isDefault: false
-                                            }
-                                          ];
-                                          if (!np[i].price) np[i].price = 'R$ 89,90';
-                                          setHomeSettings({...homeSettings, exclusiveProducts: np});
-                                        }}
-                                        className="px-3 py-1.5 rounded-lg bg-purple-950/80 hover:bg-purple-900 text-purple-300 border border-purple-700/60 text-xs font-bold transition flex items-center gap-1.5"
-                                        title="Preenche automaticamente com o modelo de duas versões (Normal e Full Foil)"
-                                      >
-                                        <Sparkles size={13} className="text-amber-400" />
-                                        <span>Preset Halloween (Normal & Foil)</span>
+                                        <Plus size={14} />
+                                        <span>+ Adicionar Versão</span>
                                       </button>
                                     </div>
                                   </div>

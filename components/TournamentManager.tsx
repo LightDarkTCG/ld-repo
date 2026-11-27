@@ -148,9 +148,12 @@ export const TournamentManager: React.FC<TournamentManagerProps> = ({
   const [swissRounds, setSwissRounds] = useState('3');
   const [swissPhase, setSwissPhase] = useState<'swiss' | 'top4' | 'top2'>('swiss');
 
-  // Liga (Pontos de Liga Dinâmicos & Entrada Contínua de Novos Jogadores)
+  // Liga (Pontos de Liga Dinâmicos, Bônus de Vitória, Penalidade por Inatividade & Entrada Contínua)
   const [leagueInitialPoints, setLeagueInitialPoints] = useState<number>(1000);
   const [leagueKFactor, setLeagueKFactor] = useState<number>(48);
+  const [leagueWinBonusPoints, setLeagueWinBonusPoints] = useState<number>(15);
+  const [leagueInactivityPenaltyEnabled, setLeagueInactivityPenaltyEnabled] = useState<boolean>(true);
+  const [leagueInactivityPenaltyPointsPerWeek, setLeagueInactivityPenaltyPointsPerWeek] = useState<number>(30);
   const [allowLateJoin, setAllowLateJoin] = useState<boolean>(true);
   const [newDuelP1Id, setNewDuelP1Id] = useState<string>('');
   const [newDuelP2Id, setNewDuelP2Id] = useState<string>('');
@@ -159,6 +162,13 @@ export const TournamentManager: React.FC<TournamentManagerProps> = ({
   const [lateJoinPlayerName, setLateJoinPlayerName] = useState<string>('');
   const [guestJoinName, setGuestJoinName] = useState<string>('');
   const [isJoiningAsGuest, setIsJoiningAsGuest] = useState<boolean>(false);
+
+  // Lançamento de Partida Manual / Presencial (Conta do Jogador 1 x Conta do Jogador 2 / Resultado / Nome do Juiz)
+  const [manualMatchP1Id, setManualMatchP1Id] = useState<string>('');
+  const [manualMatchP2Id, setManualMatchP2Id] = useState<string>('');
+  const [manualMatchResult, setManualMatchResult] = useState<string>('2-0');
+  const [manualMatchRefereeName, setManualMatchRefereeName] = useState<string>('');
+  const [manualMatchDateStr, setManualMatchDateStr] = useState<string>('');
 
   // Participants State
   const [participants, setParticipants] = useState<Participant[]>([]);
@@ -356,6 +366,9 @@ export const TournamentManager: React.FC<TournamentManagerProps> = ({
       setReferees(data.referees || []);
       if (typeof data.leagueInitialPoints === 'number') setLeagueInitialPoints(data.leagueInitialPoints);
       if (typeof data.leagueKFactor === 'number') setLeagueKFactor(data.leagueKFactor);
+      if (typeof data.leagueWinBonusPoints === 'number') setLeagueWinBonusPoints(data.leagueWinBonusPoints);
+      if (typeof data.leagueInactivityPenaltyEnabled === 'boolean') setLeagueInactivityPenaltyEnabled(data.leagueInactivityPenaltyEnabled);
+      if (typeof data.leagueInactivityPenaltyPointsPerWeek === 'number') setLeagueInactivityPenaltyPointsPerWeek(data.leagueInactivityPenaltyPointsPerWeek);
       if (typeof data.allowLateJoin === 'boolean') setAllowLateJoin(data.allowLateJoin);
       if (data.finalStandings) setFinalStandings(data.finalStandings);
       if (data.swissPtsWin) setSwissPtsWin(data.swissPtsWin);
@@ -455,6 +468,9 @@ export const TournamentManager: React.FC<TournamentManagerProps> = ({
         referees,
         leagueInitialPoints,
         leagueKFactor,
+        leagueWinBonusPoints,
+        leagueInactivityPenaltyEnabled,
+        leagueInactivityPenaltyPointsPerWeek,
         allowLateJoin,
         participants,
         matches,
@@ -636,6 +652,128 @@ export const TournamentManager: React.FC<TournamentManagerProps> = ({
     setTimeout(() => setLinkSuccessMessage(null), 3000);
   };
 
+  // Lançar Partida Presencial / Manualmente já com Resultado e Juiz (Conta do Jogador 1 x Conta do Jogador 2 / Resultado / Nome do Juiz)
+  const handleRecordManualMatch = () => {
+    if (!manualMatchP1Id || !manualMatchP2Id || manualMatchP1Id === manualMatchP2Id) return;
+    const p1 = participants.find((p) => p.id === manualMatchP1Id);
+    const p2 = participants.find((p) => p.id === manualMatchP2Id);
+    if (!p1 || !p2) return;
+
+    const chosenRef = referees.find(
+      (r) => r.name === manualMatchRefereeName || r.id === manualMatchRefereeName
+    );
+    const finalRefName = manualMatchRefereeName.trim() || chosenRef?.name || '';
+    const mId = `m_manual_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 5)}`;
+
+    let s1 = 0;
+    let s2 = 0;
+    let isWO = false;
+    let woWinnerId: string | null = null;
+    let winnerId: string | null = null;
+
+    if (manualMatchResult === '2-0') {
+      s1 = 2;
+      s2 = 0;
+      winnerId = p1.id;
+    } else if (manualMatchResult === '2-1') {
+      s1 = 2;
+      s2 = 1;
+      winnerId = p1.id;
+    } else if (manualMatchResult === '1-1') {
+      s1 = 1;
+      s2 = 1;
+      winnerId = null;
+    } else if (manualMatchResult === '1-2') {
+      s1 = 1;
+      s2 = 2;
+      winnerId = p2.id;
+    } else if (manualMatchResult === '0-2') {
+      s1 = 0;
+      s2 = 2;
+      winnerId = p2.id;
+    } else if (manualMatchResult === 'WO-P1') {
+      s1 = 2;
+      s2 = 0;
+      isWO = true;
+      woWinnerId = p1.id;
+      winnerId = p1.id;
+    } else if (manualMatchResult === 'WO-P2') {
+      s1 = 0;
+      s2 = 2;
+      isWO = true;
+      woWinnerId = p2.id;
+      winnerId = p2.id;
+    }
+
+    let completedAtMs = Date.now();
+    if (manualMatchDateStr) {
+      const parsedDate = new Date(manualMatchDateStr);
+      if (!Number.isNaN(parsedDate.getTime())) {
+        completedAtMs = parsedDate.getTime();
+      }
+    }
+
+    const manualMatch: Match = {
+      id: mId,
+      round: currentRound || 1,
+      player1: p1,
+      player2: p2,
+      score1: s1,
+      score2: s2,
+      winnerId,
+      status: 'completed',
+      bestOf: 3,
+      isWO,
+      woWinnerId,
+      isManualEntry: true,
+      refereeId: chosenRef?.id,
+      refereeName: finalRefName,
+      scheduledAt: manualMatchDateStr ? `Presencial (${formatDateDisplay(manualMatchDateStr)})` : 'Partida Presencial / Manual',
+      completedAtMs,
+      liveRoomId: `live_${tournamentId}_${mId}`
+    };
+
+    const nextMatches = [manualMatch, ...matches];
+
+    if (format === 'copa_pontos_corridos' || format === 'round_robin' || format === 'liga_pontos') {
+      const { participants: updatedParticipants, matches: syncedMatches } = recalculateLeagueStandings(
+        participants,
+        nextMatches
+      );
+      setMatches(syncedMatches);
+      setParticipants(updatedParticipants);
+      persistTournament({ matches: syncedMatches, participants: updatedParticipants });
+    } else {
+      setMatches(nextMatches);
+      persistTournament({ matches: nextMatches });
+    }
+
+    setLinkSuccessMessage(
+      `Partida manual registrada: ${p1.name} (${s1}) x (${s2}) ${p2.name}${finalRefName ? ` • Juiz: ${finalRefName}` : ''}!`
+    );
+    setTimeout(() => setLinkSuccessMessage(null), 4000);
+  };
+
+  // Ajustar manualmente semanas de inatividade de um jogador na Liga (+1 ou -1 semana sem partida)
+  const handleAdjustPlayerInactivityWeeks = (participantId: string, deltaWeeks: number) => {
+    const preUpdatedParticipants = participants.map((p) => {
+      if (p.id !== participantId) return p;
+      const currentManual = p.manualPenaltyWeeks || 0;
+      return {
+        ...p,
+        manualPenaltyWeeks: currentManual + deltaWeeks
+      };
+    });
+
+    const { participants: recalculatedPs, matches: syncedMatches } = recalculateLeagueStandings(
+      preUpdatedParticipants,
+      matches
+    );
+    setParticipants(recalculatedPs);
+    setMatches(syncedMatches);
+    persistTournament({ participants: recalculatedPs, matches: syncedMatches });
+  };
+
   // Pareamento automático na Liga por proximidade de Pontos de Liga (PDL)
   const handleGenerateBalancedLeagueRound = () => {
     if (participants.length < 2) return;
@@ -733,19 +871,51 @@ export const TournamentManager: React.FC<TournamentManagerProps> = ({
     persistTournament({ matches: updated });
   };
 
-  // Recalcula pontuação de todos os participantes e deltas das partidas (suporta Liga com Pontos de Liga Dinâmicos / Zebra e Copa por Pontos Corridos)
+  // Recalcula pontuação de todos os participantes e deltas das partidas (suporta Liga com Pontos de Liga Dinâmicos / Zebra, Bônus de Vitória, Penalidade por Inatividade Semanal e Copa por Pontos Corridos)
   const recalculateLeagueStandings = (
     currentParticipants: Participant[],
-    currentMatches: Match[]
+    currentMatches: Match[],
+    overrides?: {
+      initialPts?: number;
+      kFactor?: number;
+      winBonusPts?: number;
+      inactivityEnabled?: boolean;
+      inactivityPtsPerWeek?: number;
+    }
   ): { participants: Participant[]; matches: Match[] } => {
-    // MODO LIGA POR PONTOS DE LIGA (Rating Dinâmico: zebra ganha muito mais pontos e o favorito perde mais)
+    // MODO LIGA POR PONTOS DE LIGA (Rating Dinâmico + Bônus de Vitória + Penalidade Semanal por Inatividade)
     if (format === 'liga_pontos') {
-      const startPts = leagueInitialPoints || 1000;
-      const kVal = leagueKFactor || 48;
-      const stats = new Map<string, { points: number; wins: number; losses: number; ties: number; matchesPlayed: number }>();
+      const startPts = overrides?.initialPts ?? (leagueInitialPoints || 1000);
+      const kVal = overrides?.kFactor ?? (leagueKFactor || 48);
+      const winBonusVal = overrides?.winBonusPts ?? (leagueWinBonusPoints ?? 0);
+      const inactivityOn = overrides?.inactivityEnabled ?? leagueInactivityPenaltyEnabled;
+      const penaltyPerWeek = overrides?.inactivityPtsPerWeek ?? (leagueInactivityPenaltyPointsPerWeek || 0);
+
+      const stats = new Map<
+        string,
+        {
+          points: number;
+          wins: number;
+          losses: number;
+          ties: number;
+          matchesPlayed: number;
+          lastMatchAtMs?: number;
+          inactivityWeeks: number;
+          inactivityPenaltyTotal: number;
+        }
+      >();
 
       currentParticipants.forEach((p) => {
-        stats.set(p.id, { points: startPts, wins: 0, losses: 0, ties: 0, matchesPlayed: 0 });
+        stats.set(p.id, {
+          points: startPts,
+          wins: 0,
+          losses: 0,
+          ties: 0,
+          matchesPlayed: 0,
+          lastMatchAtMs: undefined,
+          inactivityWeeks: 0,
+          inactivityPenaltyTotal: 0
+        });
       });
 
       // Ordena partidas concluídas cronologicamente para cálculo sequencial de rating
@@ -767,8 +937,26 @@ export const TournamentManager: React.FC<TournamentManagerProps> = ({
 
       for (const m of completedOrder) {
         if (!m.player1 || !m.player2) continue;
-        const s1 = stats.get(m.player1.id) || { points: startPts, wins: 0, losses: 0, ties: 0, matchesPlayed: 0 };
-        const s2 = stats.get(m.player2.id) || { points: startPts, wins: 0, losses: 0, ties: 0, matchesPlayed: 0 };
+        const s1 = stats.get(m.player1.id) || {
+          points: startPts,
+          wins: 0,
+          losses: 0,
+          ties: 0,
+          matchesPlayed: 0,
+          lastMatchAtMs: undefined,
+          inactivityWeeks: 0,
+          inactivityPenaltyTotal: 0
+        };
+        const s2 = stats.get(m.player2.id) || {
+          points: startPts,
+          wins: 0,
+          losses: 0,
+          ties: 0,
+          matchesPlayed: 0,
+          lastMatchAtMs: undefined,
+          inactivityWeeks: 0,
+          inactivityPenaltyTotal: 0
+        };
 
         const p1Before = s1.points;
         const p2Before = s2.points;
@@ -784,12 +972,22 @@ export const TournamentManager: React.FC<TournamentManagerProps> = ({
           else outcome = 'tie';
         }
 
-        const { delta1, delta2 } = calculateDynamicLeagueDelta(p1Before, p2Before, outcome, kVal);
+        const { delta1, delta2 } = calculateDynamicLeagueDelta(
+          p1Before,
+          p2Before,
+          outcome,
+          kVal,
+          winBonusVal
+        );
 
         s1.points = Math.max(100, p1Before + delta1);
         s2.points = Math.max(100, p2Before + delta2);
         s1.matchesPlayed += 1;
         s2.matchesPlayed += 1;
+
+        const matchTime = m.completedAtMs || Date.now();
+        s1.lastMatchAtMs = Math.max(s1.lastMatchAtMs || 0, matchTime);
+        s2.lastMatchAtMs = Math.max(s2.lastMatchAtMs || 0, matchTime);
 
         if (outcome === 'p1_win') {
           s1.wins += 1;
@@ -815,9 +1013,39 @@ export const TournamentManager: React.FC<TournamentManagerProps> = ({
         });
       }
 
+      // Aplica Penalidade por Inatividade Semanal (a cada 7 dias sem partida + ajustes manuais de semanas)
+      const nowMs = Date.now();
+      const ONE_WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+      const parsedStartMs = startDate ? new Date(startDate).getTime() : NaN;
+      const fallbackStartMs = !Number.isNaN(parsedStartMs) ? parsedStartMs : undefined;
+
       const nextParticipants = currentParticipants.map((p) => {
         const st = stats.get(p.id);
-        return st ? { ...p, ...st } : p;
+        if (!st) return p;
+
+        let autoIdleWeeks = 0;
+        const refLastActiveMs = st.lastMatchAtMs || p.joinedAtMs || fallbackStartMs;
+        if (refLastActiveMs && nowMs > refLastActiveMs) {
+          autoIdleWeeks = Math.max(0, Math.floor((nowMs - refLastActiveMs) / ONE_WEEK_MS));
+        }
+
+        const totalIdleWeeks = Math.max(0, autoIdleWeeks + (p.manualPenaltyWeeks || 0));
+        const penaltyTotal =
+          inactivityOn && penaltyPerWeek > 0 ? totalIdleWeeks * penaltyPerWeek : 0;
+
+        const finalPoints = Math.max(100, st.points - penaltyTotal);
+
+        return {
+          ...p,
+          points: finalPoints,
+          wins: st.wins,
+          losses: st.losses,
+          ties: st.ties,
+          matchesPlayed: st.matchesPlayed,
+          lastMatchAtMs: st.lastMatchAtMs,
+          inactivityWeeks: totalIdleWeeks,
+          inactivityPenaltyTotal: penaltyTotal
+        };
       });
 
       const nextMatches = currentMatches.map((m) => {
@@ -1703,11 +1931,42 @@ export const TournamentManager: React.FC<TournamentManagerProps> = ({
     const p2SelectedObj = participants.find((p) => p.id === newDuelP2Id);
     const previewDeltaWinP1 =
       isLeagueMode && p1SelectedObj && p2SelectedObj && p1SelectedObj.id !== p2SelectedObj.id
-        ? calculateDynamicLeagueDelta(p1SelectedObj.points, p2SelectedObj.points, 'p1_win', leagueKFactor)
+        ? calculateDynamicLeagueDelta(
+            p1SelectedObj.points,
+            p2SelectedObj.points,
+            'p1_win',
+            leagueKFactor,
+            leagueWinBonusPoints
+          )
         : null;
     const previewDeltaWinP2 =
       isLeagueMode && p1SelectedObj && p2SelectedObj && p1SelectedObj.id !== p2SelectedObj.id
-        ? calculateDynamicLeagueDelta(p1SelectedObj.points, p2SelectedObj.points, 'p2_win', leagueKFactor)
+        ? calculateDynamicLeagueDelta(
+            p1SelectedObj.points,
+            p2SelectedObj.points,
+            'p2_win',
+            leagueKFactor,
+            leagueWinBonusPoints
+          )
+        : null;
+
+    const manualP1Obj = participants.find((p) => p.id === manualMatchP1Id);
+    const manualP2Obj = participants.find((p) => p.id === manualMatchP2Id);
+    const manualPreviewOutcome: 'p1_win' | 'p2_win' | 'tie' =
+      manualMatchResult === '2-0' || manualMatchResult === '2-1' || manualMatchResult === 'wo_p1'
+        ? 'p1_win'
+        : manualMatchResult === '0-2' || manualMatchResult === '1-2' || manualMatchResult === 'wo_p2'
+        ? 'p2_win'
+        : 'tie';
+    const manualDeltaPreview =
+      isLeagueMode && manualP1Obj && manualP2Obj && manualP1Obj.id !== manualP2Obj.id
+        ? calculateDynamicLeagueDelta(
+            manualP1Obj.points,
+            manualP2Obj.points,
+            manualPreviewOutcome,
+            leagueKFactor,
+            leagueWinBonusPoints
+          )
         : null;
 
     return (
@@ -1866,6 +2125,131 @@ export const TournamentManager: React.FC<TournamentManagerProps> = ({
                 </div>
               )}
             </div>
+
+            {/* Bloco 3: Preencher Partida Manualmente (Partidas Presenciais / Conta Jogador 1 x Conta Jogador 2 / Resultado / Nome do Juiz) */}
+            {canConfigure && (
+              <div className="bg-gradient-to-r from-emerald-950/50 via-[#121824] to-amber-950/40 border border-emerald-500/45 rounded-xl p-3.5 space-y-3 shadow-lg">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <span className="text-xs font-black text-emerald-300 uppercase tracking-wider flex items-center gap-1.5">
+                      <Gavel size={14} className="text-amber-400" /> Preencher Partida Manualmente (Partida Presencial / Resultado Direto)
+                    </span>
+                    <p className="text-[11px] text-slate-300 mt-0.5">
+                      Anote confrontos presenciais ou já finalizados: selecione a <b>Conta do Jogador 1 x Conta do Jogador 2</b>, o <b>Resultado</b> e o <b>Nome do Juiz</b>.
+                    </p>
+                  </div>
+
+                  {manualDeltaPreview && (
+                    <div className="flex flex-wrap items-center gap-1.5 text-[10px] font-mono bg-black/60 border border-emerald-500/40 px-2.5 py-1 rounded-lg">
+                      <span className="text-slate-300">Impacto PDL:</span>
+                      <span className={manualDeltaPreview.delta1 >= 0 ? 'text-emerald-400 font-bold' : 'text-red-400 font-bold'}>
+                        {manualP1Obj?.name}: {manualDeltaPreview.delta1 >= 0 ? `+${manualDeltaPreview.delta1}` : manualDeltaPreview.delta1} PDL
+                      </span>
+                      <span className="text-slate-500">|</span>
+                      <span className={manualDeltaPreview.delta2 >= 0 ? 'text-emerald-400 font-bold' : 'text-red-400 font-bold'}>
+                        {manualP2Obj?.name}: {manualDeltaPreview.delta2 >= 0 ? `+${manualDeltaPreview.delta2}` : manualDeltaPreview.delta2} PDL
+                      </span>
+                      {manualDeltaPreview.appliedWinBonus > 0 && (
+                        <span className="text-amber-300">
+                          (Roubo: {manualDeltaPreview.stolenPoints} + Bônus Vit: +{manualDeltaPreview.appliedWinBonus})
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-12 gap-2 items-center">
+                  {/* Conta do Jogador 1 */}
+                  <div className="md:col-span-3">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">
+                      Conta do Jogador 1
+                    </label>
+                    <select
+                      value={manualMatchP1Id}
+                      onChange={(e) => setManualMatchP1Id(e.target.value)}
+                      className="w-full bg-[#14111d] border border-slate-700 rounded-xl px-2.5 py-2 text-xs text-white outline-none focus:border-emerald-400"
+                    >
+                      <option value="">Selecionar Conta Jogador 1...</option>
+                      {participants.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name} {p.userEmail ? `(${p.userEmail})` : p.userId ? '(Conta Vinculada)' : '(Convidado)'} • {p.points} {isLeagueMode ? 'PDL' : 'pts'}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* X / Resultado */}
+                  <div className="md:col-span-2">
+                    <label className="text-[10px] font-bold text-amber-300 uppercase block mb-1 text-center">
+                      Resultado (J1 x J2)
+                    </label>
+                    <select
+                      value={manualMatchResult}
+                      onChange={(e) => setManualMatchResult(e.target.value as any)}
+                      className="w-full bg-[#14111d] border border-amber-500/50 rounded-xl px-2.5 py-2 text-xs font-black text-amber-300 text-center outline-none focus:border-amber-400"
+                    >
+                      <option value="2-0">2 x 0 (Vitória J1)</option>
+                      <option value="2-1">2 x 1 (Vitória J1)</option>
+                      <option value="1-1">1 x 1 (Empate)</option>
+                      <option value="1-2">1 x 2 (Vitória J2)</option>
+                      <option value="0-2">0 x 2 (Vitória J2)</option>
+                      <option value="wo_p1">W.O. (Vitória J1 • 2x0)</option>
+                      <option value="wo_p2">W.O. (Vitória J2 • 0x2)</option>
+                    </select>
+                  </div>
+
+                  {/* Conta do Jogador 2 */}
+                  <div className="md:col-span-3">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">
+                      Conta do Jogador 2
+                    </label>
+                    <select
+                      value={manualMatchP2Id}
+                      onChange={(e) => setManualMatchP2Id(e.target.value)}
+                      className="w-full bg-[#14111d] border border-slate-700 rounded-xl px-2.5 py-2 text-xs text-white outline-none focus:border-emerald-400"
+                    >
+                      <option value="">Selecionar Conta Jogador 2...</option>
+                      {participants.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name} {p.userEmail ? `(${p.userEmail})` : p.userId ? '(Conta Vinculada)' : '(Convidado)'} • {p.points} {isLeagueMode ? 'PDL' : 'pts'}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Nome do Juiz */}
+                  <div className="md:col-span-2">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">
+                      Nome do Juiz
+                    </label>
+                    <input
+                      type="text"
+                      list="tournament-referees-datalist"
+                      value={manualMatchRefereeName}
+                      onChange={(e) => setManualMatchRefereeName(e.target.value)}
+                      placeholder="Nome do Juiz..."
+                      className="w-full bg-[#14111d] border border-slate-700 rounded-xl px-2.5 py-2 text-xs text-amber-200 outline-none focus:border-amber-400"
+                    />
+                    <datalist id="tournament-referees-datalist">
+                      {referees.map((ref) => (
+                        <option key={ref.id} value={ref.name} />
+                      ))}
+                    </datalist>
+                  </div>
+
+                  {/* Botão Registrar Partida */}
+                  <div className="md:col-span-2 self-end">
+                    <button
+                      onClick={handleRecordManualMatch}
+                      disabled={!manualMatchP1Id || !manualMatchP2Id || manualMatchP1Id === manualMatchP2Id}
+                      className="w-full py-2 px-3 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 disabled:from-slate-800 disabled:to-slate-800 disabled:text-slate-500 text-white font-black text-xs flex items-center justify-center gap-1.5 shadow-lg transition active:scale-95"
+                    >
+                      <Check size={14} /> Lançar Partida
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -1883,7 +2267,19 @@ export const TournamentManager: React.FC<TournamentManagerProps> = ({
             <p className="text-xs text-slate-300 mt-0.5">
               {isLeagueMode ? (
                 <>
-                  Sistema de Rating Dinâmico (Fator K={leagueKFactor}): <b className="text-emerald-400">Vencer oponente com mais pontos rende bônus de Zebra (+PDL)</b> e o derrotado perde mais pontos.
+                  Rating Dinâmico (Fator K={leagueKFactor}): <b className="text-emerald-400">Pontos roubados (Zebra)</b>
+                  {leagueWinBonusPoints > 0 && (
+                    <>
+                      {' '}
+                      + <b className="text-amber-300">Bônus de Vitória (+{leagueWinBonusPoints} PDL)</b>
+                    </>
+                  )}
+                  {leagueInactivityPenaltyEnabled && leagueInactivityPenaltyPointsPerWeek > 0 && (
+                    <>
+                      {' '}
+                      • <b className="text-rose-400">Inatividade: -{leagueInactivityPenaltyPointsPerWeek} PDL/semana sem partida</b>
+                    </>
+                  )}
                 </>
               ) : (
                 <>
@@ -1935,10 +2331,10 @@ export const TournamentManager: React.FC<TournamentManagerProps> = ({
 
             // Simulação em tempo real de quanto cada jogador ganha/perde se vencer este duelo na Liga
             const p1WinSim = isLeagueMode
-              ? calculateDynamicLeagueDelta(p1.points, p2.points, 'p1_win', leagueKFactor)
+              ? calculateDynamicLeagueDelta(p1.points, p2.points, 'p1_win', leagueKFactor, leagueWinBonusPoints)
               : null;
             const p2WinSim = isLeagueMode
-              ? calculateDynamicLeagueDelta(p1.points, p2.points, 'p2_win', leagueKFactor)
+              ? calculateDynamicLeagueDelta(p1.points, p2.points, 'p2_win', leagueKFactor, leagueWinBonusPoints)
               : null;
 
             const isLiveNow = isMatchCurrentlyLive(m);
@@ -1961,6 +2357,11 @@ export const TournamentManager: React.FC<TournamentManagerProps> = ({
                     <span className="px-2.5 py-1 rounded-lg bg-purple-950 border border-purple-500/40 text-amber-300 font-mono font-black text-xs">
                       RODADA {m.round} • MD3
                     </span>
+                    {m.isManualEntry && (
+                      <span className="px-2 py-1 rounded-lg bg-emerald-950/90 border border-emerald-500/40 text-emerald-300 font-mono font-bold text-[10px]">
+                        PARTIDA PRESENCIAL / MANUAL
+                      </span>
+                    )}
 
                     {isLiveNow && (
                       <span className="px-2.5 py-1 rounded-lg bg-red-600 border border-red-300 text-white font-mono font-black text-xs flex items-center gap-1.5 shadow-[0_0_15px_rgba(239,68,68,0.8)] animate-pulse">
@@ -2516,77 +2917,164 @@ export const TournamentManager: React.FC<TournamentManagerProps> = ({
       b.points !== a.points ? b.points - a.points : b.wins - a.wins
     );
     return (
-      <div className="bg-[#242424] rounded-xl border border-[#333] overflow-hidden overflow-x-auto shadow-lg">
-        <div className="min-w-[460px]">
-          <div className="grid grid-cols-[40px_1fr_80px_70px_95px] md:grid-cols-[50px_1fr_90px_80px_115px] gap-2 md:gap-4 p-3 md:p-4 border-b border-[#333] bg-[#1f1f1f] text-[10px] md:text-xs font-bold text-slate-400 uppercase tracking-wider">
-            <div className="text-center">Pos</div>
-            <div>Participante</div>
-            <div className="text-center">V-D-E</div>
-            <div className="text-center">Jogos</div>
-            <div className="text-center text-amber-300">
-              {isLeagueMode ? 'Pontos de Liga' : 'Pontos'}
+      <div className="space-y-3">
+        {isLeagueMode && (
+          <div className="bg-[#1b1626] border border-cyan-500/30 rounded-xl px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-2 text-xs">
+            <div className="flex flex-wrap items-center gap-2 text-slate-300">
+              <span className="font-bold text-cyan-300">Regras Ativas da Liga:</span>
+              <span className="bg-black/40 border border-amber-500/30 px-2 py-0.5 rounded text-amber-300 font-mono">
+                Início: {leagueInitialPoints} PDL
+              </span>
+              <span className="bg-black/40 border border-purple-500/30 px-2 py-0.5 rounded text-purple-300 font-mono">
+                Fator K (Zebra): {leagueKFactor}
+              </span>
+              <span className="bg-black/40 border border-emerald-500/30 px-2 py-0.5 rounded text-emerald-300 font-mono">
+                Bônus Vitória: +{leagueWinBonusPoints} PDL
+              </span>
+              <span className="bg-black/40 border border-rose-500/30 px-2 py-0.5 rounded text-rose-300 font-mono">
+                {leagueInactivityPenaltyEnabled
+                  ? `Penalidade Inatividade: -${leagueInactivityPenaltyPointsPerWeek} PDL / semana sem jogar`
+                  : 'Penalidade Inatividade: Desativada'}
+              </span>
             </div>
+            {canConfigure && leagueInactivityPenaltyEnabled && (
+              <span className="text-[11px] text-slate-400">
+                Use <b>-1 Sem</b> / <b>+1 Sem</b> para ajustar semanas de inatividade de qualquer jogador.
+              </span>
+            )}
           </div>
-          <div className="divide-y divide-[#333]">
-            {sorted.map((p, idx) => {
-              const netDiff = isLeagueMode ? p.points - leagueInitialPoints : 0;
-              return (
-                <div key={p.id} className="grid grid-cols-[40px_1fr_80px_70px_95px] md:grid-cols-[50px_1fr_90px_80px_115px] gap-2 md:gap-4 p-3 md:p-4 items-center hover:bg-[#2a2a2a] transition">
-                  <div className="text-center font-bold text-[#a855f7]">{idx + 1}º</div>
-                  <div className="flex items-center gap-2 truncate">
-                    {p.userPhoto ? (
-                      <img src={p.userPhoto} alt="" className="w-6 h-6 rounded-full object-cover shrink-0 border border-purple-400" />
-                    ) : p.userId ? (
-                      <div className="w-6 h-6 rounded-full bg-purple-900 text-purple-200 text-xs font-bold flex items-center justify-center shrink-0">
-                        {p.name[0]?.toUpperCase()}
-                      </div>
-                    ) : null}
-                    <span className="font-medium text-white text-sm md:text-base truncate">{p.name}</span>
-                    {p.userId && (
-                      <span className="text-[9px] bg-purple-950 text-purple-300 border border-purple-700/60 px-1.5 py-0.2 rounded font-bold">
-                        Vinculado
-                      </span>
-                    )}
-                  </div>
-                  <div className="text-center text-xs md:text-sm text-slate-300 font-mono">{p.wins}-{p.losses}-{p.ties}</div>
-                  <div className="text-center text-xs md:text-sm text-slate-300 font-mono">{p.matchesPlayed}</div>
-                  <div className="text-center font-bold text-white bg-[#1a1a1a] py-1 px-1.5 rounded border border-[#444] font-mono flex items-center justify-center gap-1">
-                    {format === 'leaderboard' && canConfigure ? (
-                      <input 
-                        type="number" 
-                        value={p.points} 
-                        onChange={(e) => {
-                          const val = parseFloat(e.target.value) || 0;
-                          setParticipants(prev => {
-                            const up = prev.map(pt => pt.id === p.id ? {...pt, points: val} : pt);
-                            persistTournament({ participants: up });
-                            return up;
-                          });
-                        }}
-                        className="w-full bg-transparent text-center outline-none text-sm md:text-base"
-                      />
-                    ) : (
-                      <>
-                        <span className="text-sm md:text-base text-amber-300">{p.points}</span>
-                        {isLeagueMode && (
-                          <span
-                            className={`text-[10px] font-bold ${
-                              netDiff > 0
-                                ? 'text-emerald-400'
-                                : netDiff < 0
-                                ? 'text-red-400'
-                                : 'text-slate-500'
-                            }`}
-                          >
-                            ({netDiff >= 0 ? `+${netDiff}` : netDiff})
-                          </span>
+        )}
+
+        <div className="bg-[#242424] rounded-xl border border-[#333] overflow-hidden overflow-x-auto shadow-lg">
+          <div className="min-w-[560px]">
+            <div
+              className={`grid ${
+                isLeagueMode
+                  ? 'grid-cols-[40px_1fr_75px_60px_135px_105px] md:grid-cols-[50px_1fr_85px_70px_165px_120px]'
+                  : 'grid-cols-[40px_1fr_80px_70px_95px] md:grid-cols-[50px_1fr_90px_80px_115px]'
+              } gap-2 md:gap-3 p-3 md:p-4 border-b border-[#333] bg-[#1f1f1f] text-[10px] md:text-xs font-bold text-slate-400 uppercase tracking-wider`}
+            >
+              <div className="text-center">Pos</div>
+              <div>Participante / Conta</div>
+              <div className="text-center">V-D-E</div>
+              <div className="text-center">Jogos</div>
+              {isLeagueMode && <div className="text-center text-rose-300">Inatividade</div>}
+              <div className="text-center text-amber-300">
+                {isLeagueMode ? 'Pontos de Liga' : 'Pontos'}
+              </div>
+            </div>
+            <div className="divide-y divide-[#333]">
+              {sorted.map((p, idx) => {
+                const netDiff = isLeagueMode ? p.points - leagueInitialPoints : 0;
+                const idleWeeks = p.inactivityWeeks || 0;
+                const idlePenalty = p.inactivityPenaltyTotal || 0;
+                return (
+                  <div
+                    key={p.id}
+                    className={`grid ${
+                      isLeagueMode
+                        ? 'grid-cols-[40px_1fr_75px_60px_135px_105px] md:grid-cols-[50px_1fr_85px_70px_165px_120px]'
+                        : 'grid-cols-[40px_1fr_80px_70px_95px] md:grid-cols-[50px_1fr_90px_80px_115px]'
+                    } gap-2 md:gap-3 p-3 md:p-4 items-center hover:bg-[#2a2a2a] transition`}
+                  >
+                    <div className="text-center font-bold text-[#a855f7]">{idx + 1}º</div>
+                    <div className="flex items-center gap-2 min-w-0">
+                      {p.userPhoto ? (
+                        <img src={p.userPhoto} alt="" className="w-6 h-6 rounded-full object-cover shrink-0 border border-purple-400" />
+                      ) : p.userId ? (
+                        <div className="w-6 h-6 rounded-full bg-purple-900 text-purple-200 text-xs font-bold flex items-center justify-center shrink-0">
+                          {p.name[0]?.toUpperCase()}
+                        </div>
+                      ) : null}
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-medium text-white text-sm md:text-base truncate">{p.name}</span>
+                          {p.userId && (
+                            <span className="text-[9px] bg-purple-950 text-purple-300 border border-purple-700/60 px-1.5 py-0.2 rounded font-bold shrink-0">
+                              Vinculado
+                            </span>
+                          )}
+                        </div>
+                        {p.userEmail && (
+                          <span className="text-[10px] text-slate-400 truncate block">{p.userEmail}</span>
                         )}
-                      </>
+                      </div>
+                    </div>
+                    <div className="text-center text-xs md:text-sm text-slate-300 font-mono">{p.wins}-{p.losses}-{p.ties}</div>
+                    <div className="text-center text-xs md:text-sm text-slate-300 font-mono">{p.matchesPlayed}</div>
+
+                    {isLeagueMode && (
+                      <div className="flex items-center justify-center gap-1">
+                        {canConfigure && (
+                          <button
+                            onClick={() => handleAdjustPlayerInactivityWeeks(p.id, -1)}
+                            title="Perdoar / Remover 1 semana de inatividade"
+                            className="px-1.5 py-0.5 rounded bg-slate-800 hover:bg-emerald-900/70 text-slate-300 hover:text-emerald-200 border border-slate-700 text-[10px] font-mono font-bold transition"
+                          >
+                            -1s
+                          </button>
+                        )}
+                        <div className="text-center font-mono">
+                          {idlePenalty > 0 ? (
+                            <span className="text-[11px] font-bold text-rose-400 bg-rose-950/60 border border-rose-500/40 px-1.5 py-0.5 rounded block">
+                              -{idlePenalty} PDL ({idleWeeks}s)
+                            </span>
+                          ) : (
+                            <span className="text-[10px] text-emerald-400/90 bg-emerald-950/30 border border-emerald-500/20 px-1.5 py-0.5 rounded block">
+                              Ativo (0s)
+                            </span>
+                          )}
+                        </div>
+                        {canConfigure && (
+                          <button
+                            onClick={() => handleAdjustPlayerInactivityWeeks(p.id, 1)}
+                            title="Aplicar +1 semana de penalidade por inatividade"
+                            className="px-1.5 py-0.5 rounded bg-slate-800 hover:bg-rose-900/80 text-slate-300 hover:text-rose-200 border border-slate-700 text-[10px] font-mono font-bold transition"
+                          >
+                            +1s
+                          </button>
+                        )}
+                      </div>
                     )}
+
+                    <div className="text-center font-bold text-white bg-[#1a1a1a] py-1 px-1.5 rounded border border-[#444] font-mono flex items-center justify-center gap-1">
+                      {format === 'leaderboard' && canConfigure ? (
+                        <input 
+                          type="number" 
+                          value={p.points} 
+                          onChange={(e) => {
+                            const val = parseFloat(e.target.value) || 0;
+                            setParticipants(prev => {
+                              const up = prev.map(pt => pt.id === p.id ? {...pt, points: val} : pt);
+                              persistTournament({ participants: up });
+                              return up;
+                            });
+                          }}
+                          className="w-full bg-transparent text-center outline-none text-sm md:text-base"
+                        />
+                      ) : (
+                        <>
+                          <span className="text-sm md:text-base text-amber-300">{p.points}</span>
+                          {isLeagueMode && (
+                            <span
+                              className={`text-[10px] font-bold ${
+                                netDiff > 0
+                                  ? 'text-emerald-400'
+                                  : netDiff < 0
+                                  ? 'text-red-400'
+                                  : 'text-slate-500'
+                              }`}
+                            >
+                              ({netDiff >= 0 ? `+${netDiff}` : netDiff})
+                            </span>
+                          )}
+                        </>
+                      )}
+                    </div>
                   </div>
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
           </div>
         </div>
       </div>
@@ -3375,12 +3863,13 @@ export const TournamentManager: React.FC<TournamentManagerProps> = ({
                         <div className="p-4 bg-gradient-to-r from-cyan-950/60 via-[#150d2a] to-purple-950/50 border border-cyan-500/40 rounded-xl space-y-2.5 text-xs">
                           <div className="flex items-center gap-2 text-cyan-300 font-black uppercase tracking-wider">
                             <Flame size={15} className="text-amber-400" />
-                            <span>Regras da Liga Dinâmica (Pontos de Liga & Entrada Contínua)</span>
+                            <span>Regras da Liga Dinâmica (Pontos de Liga, Bônus de Vitória & Penalidade por Inatividade)</span>
                           </div>
                           <ul className="space-y-1 text-slate-300">
-                            <li>• <b>Entrada Livre Durante o Campeonato</b>: Novos jogadores podem entrar na Liga a qualquer momento (mesmo após o início) começando com <b className="text-amber-300">{leagueInitialPoints} Pontos de Liga (PDL)</b>.</li>
-                            <li>• <b>Sistema de Zebra (Rating Dinâmico)</b>: Quando um jogador com <b className="text-emerald-400">poucos pontos vence um jogador com muitos pontos</b>, ele ganha muito mais Pontos de Liga e o oponente perde mais!</li>
-                            <li>• <b>Agenda & Estúdio Online</b>: Permite gerar rodadas por proximidade de PDL ou agendar confrontos individuais com Juiz, MD3, W.O. e Estúdio de Transmissão com 2 câmeras.</li>
+                            <li>• <b>Entrada Livre Durante o Campeonato</b>: Novos jogadores podem entrar na Liga a qualquer momento começando com <b className="text-amber-300">{leagueInitialPoints} Pontos de Liga (PDL)</b>.</li>
+                            <li>• <b>Pontos Roubados (Zebra) + Bônus de Vitória</b>: Além dos pontos roubados do adversário pelo cálculo de Zebra, o vencedor recebe <b className="text-emerald-400">+{leagueWinBonusPoints} PDL extras de Bônus de Vitória</b>.</li>
+                            <li>• <b>Penalidade por Inatividade Semanal</b>: Evita que jogadores acumulem muitos pontos e parem de jogar. A cada semana (7 dias) sem partida registrada, o jogador perde <b className="text-rose-400">{leagueInactivityPenaltyEnabled ? `${leagueInactivityPenaltyPointsPerWeek} PDL` : '0 PDL (Desativado)'}</b>.</li>
+                            <li>• <b>Partidas Presenciais (Lançamento Manual) & Estúdio Online</b>: Permite anotar partidas presenciais informando Conta do Jogador 1 x Conta do Jogador 2 / Resultado / Nome do Juiz.</li>
                           </ul>
 
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-white/10">
@@ -3398,7 +3887,18 @@ export const TournamentManager: React.FC<TournamentManagerProps> = ({
                                 onChange={(e) => {
                                   const val = parseInt(e.target.value) || 1000;
                                   setLeagueInitialPoints(val);
-                                  persistTournament({ leagueInitialPoints: val });
+                                  const { participants: recalcP, matches: recalcM } = recalculateLeagueStandings(
+                                    participants,
+                                    matches,
+                                    { initialPts: val }
+                                  );
+                                  setParticipants(recalcP);
+                                  setMatches(recalcM);
+                                  persistTournament({
+                                    leagueInitialPoints: val,
+                                    participants: recalcP,
+                                    matches: recalcM
+                                  });
                                 }}
                                 className="w-20 bg-[#14111d] border border-cyan-500/40 rounded-lg p-1.5 text-center font-mono font-black text-amber-300 outline-none"
                               />
@@ -3407,7 +3907,7 @@ export const TournamentManager: React.FC<TournamentManagerProps> = ({
                             <div className="bg-black/40 p-2.5 rounded-xl border border-slate-800 flex items-center justify-between gap-2">
                               <div>
                                 <span className="text-white font-bold block">Impacto de Zebra (Fator K)</span>
-                                <span className="text-[10px] text-slate-400">Maior valor = mais pontos ganhos na zebra</span>
+                                <span className="text-[10px] text-slate-400">Maior valor = mais pontos roubados na zebra</span>
                               </div>
                               <input
                                 type="number"
@@ -3418,9 +3918,113 @@ export const TournamentManager: React.FC<TournamentManagerProps> = ({
                                 onChange={(e) => {
                                   const val = parseInt(e.target.value) || 48;
                                   setLeagueKFactor(val);
-                                  persistTournament({ leagueKFactor: val });
+                                  const { participants: recalcP, matches: recalcM } = recalculateLeagueStandings(
+                                    participants,
+                                    matches,
+                                    { kFactor: val }
+                                  );
+                                  setParticipants(recalcP);
+                                  setMatches(recalcM);
+                                  persistTournament({
+                                    leagueKFactor: val,
+                                    participants: recalcP,
+                                    matches: recalcM
+                                  });
                                 }}
                                 className="w-20 bg-[#14111d] border border-purple-500/40 rounded-lg p-1.5 text-center font-mono font-black text-emerald-400 outline-none"
+                              />
+                            </div>
+
+                            {/* Bônus de Vitória (+X PDL) */}
+                            <div className="bg-black/40 p-2.5 rounded-xl border border-emerald-500/30 flex items-center justify-between gap-2">
+                              <div>
+                                <span className="text-emerald-300 font-bold block">Bônus Extra por Vitória (+PDL)</span>
+                                <span className="text-[10px] text-slate-400">Pontos extras além dos pontos roubados</span>
+                              </div>
+                              <input
+                                type="number"
+                                min={0}
+                                max={500}
+                                step={5}
+                                value={leagueWinBonusPoints}
+                                onChange={(e) => {
+                                  const val = Math.max(0, parseInt(e.target.value) || 0);
+                                  setLeagueWinBonusPoints(val);
+                                  const { participants: recalcP, matches: recalcM } = recalculateLeagueStandings(
+                                    participants,
+                                    matches,
+                                    { winBonusPts: val }
+                                  );
+                                  setParticipants(recalcP);
+                                  setMatches(recalcM);
+                                  persistTournament({
+                                    leagueWinBonusPoints: val,
+                                    participants: recalcP,
+                                    matches: recalcM
+                                  });
+                                }}
+                                className="w-20 bg-[#14111d] border border-emerald-500/50 rounded-lg p-1.5 text-center font-mono font-black text-emerald-300 outline-none"
+                              />
+                            </div>
+
+                            {/* Penalidade por Inatividade Semanal */}
+                            <div className="bg-black/40 p-2.5 rounded-xl border border-rose-500/30 flex items-center justify-between gap-2">
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-2">
+                                  <input
+                                    type="checkbox"
+                                    id="toggle-league-inactivity"
+                                    checked={leagueInactivityPenaltyEnabled}
+                                    onChange={(e) => {
+                                      const enabled = e.target.checked;
+                                      setLeagueInactivityPenaltyEnabled(enabled);
+                                      const { participants: recalcP, matches: recalcM } = recalculateLeagueStandings(
+                                        participants,
+                                        matches,
+                                        { inactivityEnabled: enabled }
+                                      );
+                                      setParticipants(recalcP);
+                                      setMatches(recalcM);
+                                      persistTournament({
+                                        leagueInactivityPenaltyEnabled: enabled,
+                                        participants: recalcP,
+                                        matches: recalcM
+                                      });
+                                    }}
+                                    className="accent-rose-500 w-3.5 h-3.5 cursor-pointer"
+                                  />
+                                  <label htmlFor="toggle-league-inactivity" className="text-rose-300 font-bold cursor-pointer truncate">
+                                    Penalidade por Inatividade
+                                  </label>
+                                </div>
+                                <span className="text-[10px] text-slate-400 block">
+                                  PDL perdidos a cada semana sem partida
+                                </span>
+                              </div>
+                              <input
+                                type="number"
+                                min={0}
+                                max={1000}
+                                step={5}
+                                disabled={!leagueInactivityPenaltyEnabled}
+                                value={leagueInactivityPenaltyPointsPerWeek}
+                                onChange={(e) => {
+                                  const val = Math.max(0, parseInt(e.target.value) || 0);
+                                  setLeagueInactivityPenaltyPointsPerWeek(val);
+                                  const { participants: recalcP, matches: recalcM } = recalculateLeagueStandings(
+                                    participants,
+                                    matches,
+                                    { inactivityPtsPerWeek: val }
+                                  );
+                                  setParticipants(recalcP);
+                                  setMatches(recalcM);
+                                  persistTournament({
+                                    leagueInactivityPenaltyPointsPerWeek: val,
+                                    participants: recalcP,
+                                    matches: recalcM
+                                  });
+                                }}
+                                className="w-20 bg-[#14111d] border border-rose-500/50 disabled:opacity-40 rounded-lg p-1.5 text-center font-mono font-black text-rose-300 outline-none"
                               />
                             </div>
                           </div>

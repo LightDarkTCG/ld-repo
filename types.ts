@@ -166,6 +166,18 @@ export interface ProductPriceVariation {
   weightGrams?: number;
 }
 
+export interface ProductIndividualCardItem {
+  id: string;
+  source: 'catalog' | 'custom_new';
+  cardCode?: string;
+  name: string;
+  imageUrl: string;
+  type?: string;
+  rarity?: string;
+  quantity: number;
+  description?: string;
+}
+
 export type StoreProductCategory =
   | 'decks'
   | 'cartas_avulsas'
@@ -185,6 +197,9 @@ export interface ExclusiveProduct {
   mediaUrl?: string;
   mediaList?: ProductMediaItem[];
   cardCodes?: string;
+  productCards?: ProductIndividualCardItem[];
+  hasPlaymatOption?: boolean;
+  playmatImageUrl?: string;
   badge?: string;
   price?: string;
   originalPrice?: string;
@@ -250,6 +265,9 @@ export interface MarketplaceListing {
   additionalImages?: string[];
   priceVariations?: ProductPriceVariation[];
   sameVariationPrice?: boolean;
+  productCards?: ProductIndividualCardItem[];
+  hasPlaymatOption?: boolean;
+  playmatImageUrl?: string;
   // Se for carta avulsa ou coleção vinculada a cartas do catálogo
   cardId?: string;
   cardName?: string;

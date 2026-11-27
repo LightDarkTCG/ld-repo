@@ -39,6 +39,7 @@ import {
   MarketplaceListing,
   MarketplaceListingType,
   MarketplaceSellerReview,
+  ProductIndividualCardItem,
   ProductPriceVariation,
   StoreProductCategory
 } from '../types';
@@ -247,6 +248,21 @@ export const CommunityMarketplaceView: React.FC<CommunityMarketplaceViewProps> =
   const [selectedBoosterCollection, setSelectedBoosterCollection] = useState('');
   const [boosterFrameFilter, setBoosterFrameFilter] = useState<'all' | 'Moderno' | 'Legado'>('all');
   const [boosterCopiesPerCard, setBoosterCopiesPerCard] = useState<number>(1);
+
+  // Imagens Individuais das Cartas do Produto (Cartas do Site ou Cartas Novas Exclusivas pro Produto)
+  const [productCards, setProductCards] = useState<ProductIndividualCardItem[]>([]);
+  const [cardImageSourceTab, setCardImageSourceTab] = useState<'catalog' | 'custom_new'>('custom_new');
+  const [productCardSearch, setProductCardSearch] = useState('');
+  const [newCustomCardName, setNewCustomCardName] = useState('');
+  const [newCustomCardImageUrl, setNewCustomCardImageUrl] = useState('');
+  const [newCustomCardType, setNewCustomCardType] = useState('Carta Exclusiva do Produto');
+  const [newCustomCardQty, setNewCustomCardQty] = useState<number>(1);
+
+  // Opção de Versão Com ou Sem Playmat
+  const [hasPlaymatOption, setHasPlaymatOption] = useState<boolean>(false);
+  const [playmatImageUrl, setPlaymatImageUrl] = useState<string>('');
+  const [withoutPlaymatPrice, setWithoutPlaymatPrice] = useState<string>('89,90');
+  const [withPlaymatPrice, setWithPlaymatPrice] = useState<string>('149,90');
 
   // Official Account Specific States
   const [officialStoreCategory, setOfficialStoreCategory] = useState<StoreProductCategory>('decks');
@@ -789,11 +805,192 @@ export const CommunityMarketplaceView: React.FC<CommunityMarketplaceViewProps> =
     setIncludedCards([]);
     setDeckCodeInput('');
     setSelectedBoosterCollection('');
+    setProductCards([]);
+    setCardImageSourceTab('custom_new');
+    setProductCardSearch('');
+    setNewCustomCardName('');
+    setNewCustomCardImageUrl('');
+    setNewCustomCardType('Carta Exclusiva do Produto');
+    setNewCustomCardQty(1);
+    setHasPlaymatOption(false);
+    setPlaymatImageUrl('');
+    setWithoutPlaymatPrice('89,90');
+    setWithPlaymatPrice('149,90');
     setOfficialStoreCategory('decks');
     setOfficialBadge('OFICIAL LIGHT DARK');
     setOfficialIsPreOrder(false);
     setOfficialPreOrderDate('');
     setFormError('');
+  };
+
+  const handleAddCatalogCardToProductCards = (card: CardData) => {
+    const coverImg = card.catalogCoverImageUrl || card.imageUrl || '';
+    if (!coverImg) return;
+    setProductCards((prev) => {
+      const existingIdx = prev.findIndex(
+        (c) => c.source === 'catalog' && (c.cardCode === card.code || c.name === card.name)
+      );
+      if (existingIdx >= 0) {
+        const next = [...prev];
+        next[existingIdx] = {
+          ...next[existingIdx],
+          quantity: (next[existingIdx].quantity || 1) + 1
+        };
+        return next;
+      }
+      return [
+        ...prev,
+        {
+          id: `pcard_cat_${card.code}_${Date.now()}`,
+          source: 'catalog',
+          cardCode: card.code,
+          name: card.name,
+          imageUrl: coverImg,
+          type: card.type || 'Carta Oficial',
+          rarity: card.rarity || 'Oficial',
+          quantity: 1
+        }
+      ];
+    });
+    if (!imageUrl && coverImg) {
+      setImageUrl(coverImg);
+    }
+  };
+
+  const handleUploadNewCustomCardFiles = async (files: FileList) => {
+    if (!files || files.length === 0) return;
+    setFormError('');
+    setUploadingPhotoTarget('custom_cards');
+    try {
+      const uploadedItems: ProductIndividualCardItem[] = [];
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const url = await uploadMarketplaceImage(file, 'product_custom_cards');
+        const cleanFileName = file.name.replace(/\.[^/.]+$/, '').replace(/[_-]+/g, ' ');
+        const cardTitle =
+          files.length === 1 && newCustomCardName.trim()
+            ? newCustomCardName.trim()
+            : cleanFileName || `Carta Nova #${productCards.length + i + 1}`;
+        uploadedItems.push({
+          id: `pcard_new_${Date.now()}_${i}`,
+          source: 'custom_new',
+          name: cardTitle,
+          imageUrl: url,
+          type: newCustomCardType.trim() || 'Carta Exclusiva do Produto',
+          rarity: 'Nova / Exclusiva',
+          quantity: Math.max(1, Number(newCustomCardQty) || 1)
+        });
+      }
+      setProductCards((prev) => [...prev, ...uploadedItems]);
+      if (!imageUrl && uploadedItems[0]?.imageUrl) {
+        setImageUrl(uploadedItems[0].imageUrl);
+      }
+      setNewCustomCardName('');
+      setNewCustomCardImageUrl('');
+    } catch (err: any) {
+      setFormError('Erro ao subir imagem individual da carta: ' + (err.message || 'Tente novamente'));
+    } finally {
+      setUploadingPhotoTarget(null);
+    }
+  };
+
+  const handleAddNewCustomCardByUrl = () => {
+    const cleanUrl = newCustomCardImageUrl.trim();
+    if (!cleanUrl) {
+      setFormError('Cole a URL da imagem da carta nova ou envie o arquivo pelo botão Subir Imagem.');
+      return;
+    }
+    const cardTitle =
+      newCustomCardName.trim() || `Carta Exclusiva #${productCards.length + 1}`;
+    const newItem: ProductIndividualCardItem = {
+      id: `pcard_new_${Date.now()}`,
+      source: 'custom_new',
+      name: cardTitle,
+      imageUrl: cleanUrl,
+      type: newCustomCardType.trim() || 'Carta Exclusiva do Produto',
+      rarity: 'Nova / Exclusiva',
+      quantity: Math.max(1, Number(newCustomCardQty) || 1)
+    };
+    setProductCards((prev) => [...prev, newItem]);
+    if (!imageUrl) {
+      setImageUrl(cleanUrl);
+    }
+    setNewCustomCardName('');
+    setNewCustomCardImageUrl('');
+  };
+
+  const handleSyncIncludedToProductCards = () => {
+    const fromIncluded: ProductIndividualCardItem[] = [];
+    for (const inc of includedCards) {
+      if (!inc.cardImageUrl) continue;
+      fromIncluded.push({
+        id: `pcard_cat_${inc.cardId}_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`,
+        source: 'catalog',
+        cardCode: inc.cardId,
+        name: inc.cardName,
+        imageUrl: inc.cardImageUrl,
+        type: inc.cardType || 'Carta Oficial',
+        quantity: Math.max(1, inc.quantity || 1)
+      });
+    }
+    if (fromIncluded.length > 0) {
+      setProductCards((prev) => {
+        const customOnes = prev.filter((p) => p.source === 'custom_new');
+        return [...customOnes, ...fromIncluded];
+      });
+    }
+  };
+
+  const handleApplyPlaymatVariations = (
+    customWithoutPrice?: string,
+    customWithPrice?: string,
+    customPlaymatImg?: string
+  ) => {
+    const baseWithout = customWithoutPrice ?? (withoutPlaymatPrice || priceInput || '89,90');
+    const baseWith = customWithPrice ?? (withPlaymatPrice || '149,90');
+    const pImg = customPlaymatImg ?? playmatImageUrl;
+    setHasPlaymatOption(true);
+    setSameVariationPrice(false);
+    setPriceVariations([
+      {
+        id: `var_no_playmat_${Date.now()}`,
+        name: 'Versão Sem Playmat',
+        price: baseWithout,
+        imageUrl: imageUrl || '',
+        description: 'Produto padrão (Sem Playmat incluso)',
+        badge: 'Sem Playmat',
+        isDefault: true
+      },
+      {
+        id: `var_with_playmat_${Date.now() + 1}`,
+        name: 'Versão Com Playmat',
+        price: baseWith,
+        imageUrl: pImg || imageUrl || '',
+        description: 'Acompanha Playmat Oficial exclusivo do produto',
+        badge: 'Com Playmat',
+        isDefault: false
+      }
+    ]);
+  };
+
+  const handleUploadPlaymatPhoto = async (file: File) => {
+    setFormError('');
+    setUploadingPhotoTarget('playmat_photo');
+    try {
+      const url = await uploadMarketplaceImage(file, 'marketplace_playmats');
+      setPlaymatImageUrl(url);
+      setPriceVariations((prev) =>
+        prev.map((v) =>
+          v.name.toLowerCase().includes('com playmat') || v.badge?.toLowerCase().includes('com playmat')
+            ? { ...v, imageUrl: url }
+            : v
+        )
+      );
+    } catch (err: any) {
+      setFormError('Erro ao subir foto do Playmat: ' + (err.message || 'Tente novamente'));
+    } finally {
+      setUploadingPhotoTarget(null);
+    }
   };
 
   const handleUploadCoverPhoto = async (file: File) => {
@@ -867,6 +1064,9 @@ export const CommunityMarketplaceView: React.FC<CommunityMarketplaceViewProps> =
     setSameVariationPrice(Boolean(item.sameVariationPrice));
     setSelectedCardCode(item.cardId || '');
     setIncludedCards(item.includedCards || []);
+    setProductCards(item.productCards || []);
+    setHasPlaymatOption(Boolean(item.hasPlaymatOption));
+    setPlaymatImageUrl(item.playmatImageUrl || '');
     setSellerWhatsapp(item.sellerWhatsapp || '');
     setSellerExternalLink(item.sellerExternalLink || '');
     setDeliveryNotes(
@@ -888,15 +1088,20 @@ export const CommunityMarketplaceView: React.FC<CommunityMarketplaceViewProps> =
     if (creationMode === 'single_card' && selectedCardCode) {
       return selectedCardCode;
     }
-    if (includedCards.length > 0) {
+    const catalogProductCards = productCards.filter((c) => c.source === 'catalog' && c.cardCode);
+    if (includedCards.length > 0 || catalogProductCards.length > 0) {
       const matchedCards: CardData[] = [];
       const fallbackCodes: string[] = [];
-      for (const entry of includedCards) {
-        const found = catalogCards.find((c) => c.code === entry.cardId);
-        const qty = Math.max(1, Number(entry.quantity) || 1);
+      const sourceEntries =
+        includedCards.length > 0
+          ? includedCards.map((e) => ({ code: e.cardId, qty: e.quantity }))
+          : catalogProductCards.map((e) => ({ code: e.cardCode!, qty: e.quantity }));
+      for (const entry of sourceEntries) {
+        const found = catalogCards.find((c) => c.code === entry.code);
+        const qty = Math.max(1, Number(entry.qty) || 1);
         for (let i = 0; i < qty; i++) {
           if (found) matchedCards.push(found);
-          fallbackCodes.push(entry.cardId);
+          fallbackCodes.push(entry.code);
         }
       }
       if (matchedCards.length > 0) {
@@ -953,9 +1158,28 @@ export const CommunityMarketplaceView: React.FC<CommunityMarketplaceViewProps> =
         };
       });
 
+    // Combine explicit productCards with any includedCards not yet in productCards
+    const finalProductCards: ProductIndividualCardItem[] = [...productCards];
+    if (finalProductCards.length === 0 && includedCards.length > 0) {
+      for (const inc of includedCards) {
+        if (inc.cardImageUrl) {
+          finalProductCards.push({
+            id: `pcard_cat_${inc.cardId}`,
+            source: 'catalog',
+            cardCode: inc.cardId,
+            name: inc.cardName,
+            imageUrl: inc.cardImageUrl,
+            type: inc.cardType || 'Carta Oficial',
+            quantity: Math.max(1, inc.quantity || 1)
+          });
+        }
+      }
+    }
+
     const finalImage =
       imageUrl.trim() ||
       cleanedVariations.find((v) => v.imageUrl)?.imageUrl ||
+      finalProductCards[0]?.imageUrl ||
       matchedCatalogCard?.catalogCoverImageUrl ||
       matchedCatalogCard?.imageUrl ||
       includedCards[0]?.cardImageUrl ||
@@ -1012,6 +1236,11 @@ export const CommunityMarketplaceView: React.FC<CommunityMarketplaceViewProps> =
             officialBadge.trim() ||
             (isFoil ? 'FOIL OFICIAL' : 'OFICIAL LIGHT DARK'),
           cardCodes: finalCardCodes,
+          productCards: finalProductCards,
+          hasPlaymatOption:
+            hasPlaymatOption ||
+            cleanedVariations.some((v) => v.name.toLowerCase().includes('playmat')),
+          playmatImageUrl: playmatImageUrl.trim() || '',
           isPreOrder: officialIsPreOrder || officialStoreCategory === 'pre_venda',
           preOrderReleaseDate: officialPreOrderDate.trim() || '',
           isPromotion: parsedOrig > parsedPrice || officialStoreCategory === 'promocoes',
@@ -1023,7 +1252,7 @@ export const CommunityMarketplaceView: React.FC<CommunityMarketplaceViewProps> =
 
         await saveOfficialProductToStore(newOfficialProduct);
         setFormSuccess(
-          '✓ Produto Oficial publicado com sucesso no catálogo de Produtos Oficiais (com Variações, Fotos e Carrinho + Mercado Pago)!'
+          '✓ Produto Oficial publicado com sucesso no catálogo de Produtos Oficiais (com Foto do Produto, Imagens Individuais das Cartas e Versões Com/Sem Playmat)!'
         );
         resetForm();
         setTimeout(() => {
@@ -1051,6 +1280,7 @@ export const CommunityMarketplaceView: React.FC<CommunityMarketplaceViewProps> =
     }
 
     const totalCardsInCollection =
+      finalProductCards.reduce((acc, c) => acc + (c.quantity || 1), 0) ||
       includedCards.reduce((acc, c) => acc + c.quantity, 0) ||
       previewFromDeckCode.totalCount ||
       1;
@@ -1077,6 +1307,11 @@ export const CommunityMarketplaceView: React.FC<CommunityMarketplaceViewProps> =
         additionalImages: additionalImages.filter((u) => u && u.trim() !== ''),
         priceVariations: cleanedVariations.length > 0 ? cleanedVariations : undefined,
         sameVariationPrice,
+        productCards: finalProductCards.length > 0 ? finalProductCards : undefined,
+        hasPlaymatOption:
+          hasPlaymatOption ||
+          cleanedVariations.some((v) => v.name.toLowerCase().includes('playmat')),
+        playmatImageUrl: playmatImageUrl.trim() || undefined,
         cardId: creationMode === 'single_card' ? selectedCardCode || undefined : undefined,
         cardName:
           creationMode === 'single_card'
@@ -2385,16 +2620,354 @@ export const CommunityMarketplaceView: React.FC<CommunityMarketplaceViewProps> =
                       )}
                     </div>
 
-                    {/* Variações do Produto no Mesmo Anúncio (Fotos Independentes + Preços Iguais ou Independentes) */}
+                    {/* ===================================================================== */}
+                    {/* NOVO: IMAGENS INDIVIDUAIS DAS CARTAS (CARTAS DO SITE OU NOVAS PRO PRODUTO) */}
+                    {/* ===================================================================== */}
+                    <div className="bg-slate-950 border border-cyan-500/40 rounded-2xl p-4 space-y-3.5">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-3">
+                        <div>
+                          <label className="text-xs font-black uppercase tracking-wider text-cyan-300 flex items-center gap-1.5">
+                            <Layers size={15} className="text-cyan-400" />
+                            <span>Imagens Individuais das Cartas do Produto</span>
+                          </label>
+                          <p className="text-[11px] text-slate-400 mt-0.5">
+                            Adicione as imagens individuais das cartas que vêm neste produto: escolha <strong className="text-white">cartas que já estão no site</strong> ou suba <strong className="text-emerald-300">cartas novas exclusivas pro produto</strong>.
+                          </p>
+                        </div>
+
+                        {productCards.length > 0 && (
+                          <span className="px-2.5 py-1 rounded-full bg-cyan-950/90 border border-cyan-500/40 text-cyan-300 text-[11px] font-bold shrink-0 self-start sm:self-center">
+                            {productCards.reduce((acc, c) => acc + (c.quantity || 1), 0)} cartas ({productCards.length} imagens)
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Tabs: Cartas Novas pro Produto vs Cartas que Já Estão no Site */}
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setCardImageSourceTab('custom_new')}
+                          className={`px-3.5 py-2 rounded-xl text-xs font-bold border transition flex items-center gap-1.5 cursor-pointer ${
+                            cardImageSourceTab === 'custom_new'
+                              ? 'bg-emerald-600/25 border-emerald-500 text-emerald-200 shadow-md shadow-emerald-950/40'
+                              : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
+                          }`}
+                        >
+                          <Upload size={13} />
+                          <span>+ Subir Cartas Novas pro Produto</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setCardImageSourceTab('catalog')}
+                          className={`px-3.5 py-2 rounded-xl text-xs font-bold border transition flex items-center gap-1.5 cursor-pointer ${
+                            cardImageSourceTab === 'catalog'
+                              ? 'bg-purple-600/25 border-purple-500 text-purple-200 shadow-md shadow-purple-950/40'
+                              : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
+                          }`}
+                        >
+                          <Search size={13} />
+                          <span>Escolher Cartas que Já Estão no Site</span>
+                        </button>
+
+                        {includedCards.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={handleSyncIncludedToProductCards}
+                            className="px-3 py-2 rounded-xl bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/40 text-cyan-300 text-xs font-bold transition cursor-pointer ml-auto"
+                          >
+                            Importar {includedCards.length} Cartas do Código / Coleção Acima
+                          </button>
+                        )}
+                      </div>
+
+                      {/* ABA 1: SUBIR CARTAS NOVAS PRO PRODUTO */}
+                      {cardImageSourceTab === 'custom_new' && (
+                        <div className="bg-slate-900/80 border border-emerald-500/30 rounded-xl p-3.5 space-y-3">
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                            <div>
+                              <span className="text-xs font-bold text-emerald-300 block">
+                                Cartas Novas / Exclusivas para este Produto
+                              </span>
+                              <span className="text-[11px] text-slate-400">
+                                Você pode selecionar 1 ou várias imagens de cartas novas de uma só vez do seu computador/celular, ou colar a URL da imagem abaixo.
+                              </span>
+                            </div>
+
+                            <label className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shrink-0 shadow-md shadow-emerald-950/50">
+                              {uploadingPhotoTarget === 'custom_cards' ? (
+                                <Loader2 size={14} className="animate-spin" />
+                              ) : (
+                                <Upload size={14} />
+                              )}
+                              <span>
+                                {uploadingPhotoTarget === 'custom_cards'
+                                  ? 'Subindo Cartas...'
+                                  : 'Subir Imagem(ns) de Carta Nova'}
+                              </span>
+                              <input
+                                type="file"
+                                accept="image/*"
+                                multiple
+                                className="hidden"
+                                onChange={(e) => {
+                                  if (e.target.files && e.target.files.length > 0) {
+                                    handleUploadNewCustomCardFiles(e.target.files);
+                                    e.target.value = '';
+                                  }
+                                }}
+                              />
+                            </label>
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-end">
+                            <div className="sm:col-span-4">
+                              <label className="text-[11px] text-slate-300 font-semibold block mb-1">
+                                Nome da Carta Nova (opcional no upload em lote)
+                              </label>
+                              <input
+                                type="text"
+                                value={newCustomCardName}
+                                onChange={(e) => setNewCustomCardName(e.target.value)}
+                                placeholder="Ex: Príncipe do Macroverso - Exclusiva"
+                                className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-emerald-500"
+                              />
+                            </div>
+
+                            <div className="sm:col-span-4">
+                              <label className="text-[11px] text-slate-300 font-semibold block mb-1">
+                                Ou URL da Imagem da Carta (https://...)
+                              </label>
+                              <input
+                                type="text"
+                                value={newCustomCardImageUrl}
+                                onChange={(e) => setNewCustomCardImageUrl(e.target.value)}
+                                placeholder="https://..."
+                                className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-emerald-500"
+                              />
+                            </div>
+
+                            <div className="sm:col-span-2">
+                              <label className="text-[11px] text-slate-300 font-semibold block mb-1">
+                                Qtd. no Produto
+                              </label>
+                              <input
+                                type="number"
+                                min={1}
+                                max={99}
+                                value={newCustomCardQty}
+                                onChange={(e) => setNewCustomCardQty(Math.max(1, Number(e.target.value) || 1))}
+                                className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-2 text-xs text-white font-mono outline-none"
+                              />
+                            </div>
+
+                            <div className="sm:col-span-2">
+                              <button
+                                type="button"
+                                onClick={handleAddNewCustomCardByUrl}
+                                className="w-full py-2 px-3 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-300 text-xs font-bold transition cursor-pointer"
+                              >
+                                + Adicionar URL
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* ABA 2: ESCOLHER CARTAS QUE JÁ ESTÃO NO SITE */}
+                      {cardImageSourceTab === 'catalog' && (
+                        <div className="bg-slate-900/80 border border-purple-500/30 rounded-xl p-3.5 space-y-3">
+                          <div className="relative">
+                            <Search
+                              size={14}
+                              className="text-slate-500 absolute left-3 top-1/2 -translate-y-1/2"
+                            />
+                            <input
+                              type="text"
+                              value={productCardSearch}
+                              onChange={(e) => setProductCardSearch(e.target.value)}
+                              placeholder="Buscar carta que já está no site por nome, código ou coleção..."
+                              className="w-full bg-slate-950 border border-slate-800 rounded-lg pl-9 pr-3 py-2 text-xs text-white outline-none focus:border-purple-500"
+                            />
+                          </div>
+
+                          <div className="max-h-48 overflow-y-auto grid grid-cols-2 sm:grid-cols-3 gap-2 pr-1 custom-scrollbar">
+                            {catalogCards
+                              .filter((c) => {
+                                if (!productCardSearch.trim()) return true;
+                                const q = productCardSearch.toLowerCase();
+                                return (
+                                  c.name.toLowerCase().includes(q) ||
+                                  c.code.toLowerCase().includes(q) ||
+                                  (c.collection || '').toLowerCase().includes(q)
+                                );
+                              })
+                              .slice(0, 60)
+                              .map((card) => {
+                                const cover = card.catalogCoverImageUrl || card.imageUrl;
+                                const addedItem = productCards.find(
+                                  (pc) => pc.source === 'catalog' && pc.cardCode === card.code
+                                );
+                                return (
+                                  <button
+                                    key={card.code}
+                                    type="button"
+                                    onClick={() => handleAddCatalogCardToProductCards(card)}
+                                    className={`p-2 rounded-lg border text-left transition flex items-center gap-2 cursor-pointer ${
+                                      addedItem
+                                        ? 'bg-purple-950/70 border-purple-500 text-white'
+                                        : 'bg-slate-950/80 border-slate-800 text-slate-300 hover:border-slate-700'
+                                    }`}
+                                  >
+                                    {cover && (
+                                      <img
+                                        src={cover}
+                                        alt={card.name}
+                                        referrerPolicy="no-referrer"
+                                        className="w-8 h-11 object-cover rounded shrink-0 bg-black"
+                                      />
+                                    )}
+                                    <div className="min-w-0 flex-1">
+                                      <div className="text-[11px] font-bold truncate">{card.name}</div>
+                                      <div className="text-[10px] text-slate-400 font-mono truncate">
+                                        {card.code}
+                                      </div>
+                                      {addedItem && (
+                                        <span className="text-[10px] font-bold text-emerald-400">
+                                          Adicionada ({addedItem.quantity}x)
+                                        </span>
+                                      )}
+                                    </div>
+                                  </button>
+                                );
+                              })}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* LISTA / GRADE DE IMAGENS INDIVIDUAIS DAS CARTAS ADICIONADAS AO PRODUTO */}
+                      {productCards.length > 0 && (
+                        <div className="pt-2 border-t border-slate-800 space-y-2.5">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-bold text-cyan-300">
+                              Cartas com Imagem Individual no Produto ({productCards.length} únicas /{' '}
+                              {productCards.reduce((a, b) => a + (b.quantity || 1), 0)} no total):
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => setProductCards([])}
+                              className="text-[11px] text-red-400 hover:underline cursor-pointer"
+                            >
+                              Limpar todas as cartas
+                            </button>
+                          </div>
+
+                          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2.5 max-h-72 overflow-y-auto pr-1 custom-scrollbar">
+                            {productCards.map((pc, idx) => (
+                              <div
+                                key={pc.id || idx}
+                                className="bg-slate-900 border border-slate-800 rounded-xl p-2 flex flex-col gap-2 relative group"
+                              >
+                                <div className="relative aspect-[3/4] w-full rounded-lg bg-black overflow-hidden border border-slate-800">
+                                  <img
+                                    src={pc.imageUrl}
+                                    alt={pc.name}
+                                    referrerPolicy="no-referrer"
+                                    className="w-full h-full object-contain"
+                                  />
+                                  <span
+                                    className={`absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider ${
+                                      pc.source === 'custom_new'
+                                        ? 'bg-emerald-600/90 text-white'
+                                        : 'bg-purple-600/90 text-white'
+                                    }`}
+                                  >
+                                    {pc.source === 'custom_new' ? 'Carta Nova' : 'Do Site'}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setProductCards((prev) => prev.filter((_, i) => i !== idx))
+                                    }
+                                    className="absolute top-1.5 right-1.5 p-1 rounded-full bg-black/80 text-red-400 hover:text-red-300"
+                                    title="Remover carta"
+                                  >
+                                    <X size={11} />
+                                  </button>
+                                </div>
+
+                                <input
+                                  type="text"
+                                  value={pc.name}
+                                  onChange={(e) => {
+                                    const val = e.target.value;
+                                    setProductCards((prev) =>
+                                      prev.map((item, i) =>
+                                        i === idx ? { ...item, name: val } : item
+                                      )
+                                    );
+                                  }}
+                                  className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1 text-[11px] font-bold text-white outline-none"
+                                  placeholder="Nome da carta"
+                                />
+
+                                <div className="flex items-center justify-between bg-slate-950 rounded-lg px-2 py-1 border border-slate-800">
+                                  <span className="text-[10px] text-slate-400">Qtd:</span>
+                                  <div className="flex items-center gap-1.5">
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        setProductCards((prev) =>
+                                          prev
+                                            .map((item, i) =>
+                                              i === idx
+                                                ? { ...item, quantity: (item.quantity || 1) - 1 }
+                                                : item
+                                            )
+                                            .filter((item) => item.quantity > 0)
+                                        )
+                                      }
+                                      className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 hover:text-white text-xs cursor-pointer"
+                                    >
+                                      -
+                                    </button>
+                                    <span className="text-xs font-mono font-bold text-emerald-400">
+                                      {pc.quantity || 1}x
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        setProductCards((prev) =>
+                                          prev.map((item, i) =>
+                                            i === idx
+                                              ? { ...item, quantity: (item.quantity || 1) + 1 }
+                                              : item
+                                          )
+                                        )
+                                      }
+                                      className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 hover:text-white text-xs cursor-pointer"
+                                    >
+                                      +
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Versões do Produto (Nome Livre Escolhido pelo Usuário + Preço + Foto Opcional) */}
                     <div className="bg-slate-950 border border-amber-500/40 rounded-2xl p-4 space-y-4">
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 border-b border-slate-800 pb-3">
                         <div>
                           <h4 className="text-xs font-black uppercase tracking-wider text-amber-300 flex items-center gap-1.5">
                             <Sparkles size={15} />
-                            <span>Variações de Produtos no Mesmo Anúncio</span>
+                            <span>Versões do Produto (Defina o Nome da Versão que Quiser)</span>
                           </h4>
                           <p className="text-[11px] text-slate-400 mt-0.5">
-                            Adicione opções ou modelos no mesmo anúncio com <strong className="text-slate-200">fotos independentes</strong> e escolha entre <strong className="text-emerald-300">preços iguais</strong> ou <strong className="text-amber-300">preços independentes</strong>.
+                            Adicione quantas versões quiser para este produto e <strong className="text-white">digite livremente o nome de cada versão</strong>, com preço e foto própria opcional.
                           </p>
                         </div>
 
@@ -2408,9 +2981,7 @@ export const CommunityMarketplaceView: React.FC<CommunityMarketplaceViewProps> =
                                   ...prev,
                                   {
                                     id: `var_${Date.now()}_${prev.length}`,
-                                    name: isFirst
-                                      ? 'Variação 1 (Ex: Normal)'
-                                      : `Variação ${prev.length + 1}`,
+                                    name: '',
                                     price: priceInput || '49,90',
                                     imageUrl: '',
                                     description: '',
@@ -2420,43 +2991,72 @@ export const CommunityMarketplaceView: React.FC<CommunityMarketplaceViewProps> =
                                 ];
                               });
                             }}
-                            className="px-3 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
+                            className="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-black transition flex items-center gap-1.5 cursor-pointer shadow-md shadow-amber-950/40"
+                          >
+                            <Plus size={14} />
+                            <span>+ Adicionar Versão</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Barra Rápida para Digitar o Nome da Versão e Adicionar */}
+                      <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-3 grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-end">
+                        <div className="sm:col-span-6">
+                          <label className="text-[11px] text-slate-300 font-bold block mb-1">
+                            Nome da Versão que Você Quiser
+                          </label>
+                          <input
+                            type="text"
+                            value={withoutPlaymatPrice === '89,90' ? '' : withoutPlaymatPrice}
+                            onChange={(e) => setWithoutPlaymatPrice(e.target.value)}
+                            placeholder="Digite aqui o nome da versão..."
+                            className="w-full bg-slate-950 border border-slate-700 focus:border-amber-400 rounded-lg px-3 py-2 text-xs text-white font-bold outline-none"
+                          />
+                        </div>
+
+                        <div className="sm:col-span-3">
+                          <label className="text-[11px] text-slate-300 font-bold block mb-1">
+                            Preço da Versão (R$)
+                          </label>
+                          <input
+                            type="text"
+                            value={withPlaymatPrice}
+                            onChange={(e) => setWithPlaymatPrice(e.target.value)}
+                            placeholder={priceInput || '89,90'}
+                            className="w-full bg-slate-950 border border-emerald-500/50 rounded-lg px-3 py-2 text-xs font-mono font-bold text-emerald-300 outline-none"
+                          />
+                        </div>
+
+                        <div className="sm:col-span-3">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const customName =
+                                withoutPlaymatPrice === '89,90'
+                                  ? ''
+                                  : withoutPlaymatPrice.trim();
+                              setPriceVariations((prev) => {
+                                const isFirst = prev.length === 0;
+                                return [
+                                  ...prev,
+                                  {
+                                    id: `var_${Date.now()}_${prev.length}`,
+                                    name: customName,
+                                    price: withPlaymatPrice.trim() || priceInput || '49,90',
+                                    imageUrl: '',
+                                    description: '',
+                                    badge: '',
+                                    isDefault: isFirst
+                                  }
+                                ];
+                              });
+                              setWithoutPlaymatPrice('');
+                            }}
+                            className="w-full py-2 px-3 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/50 text-amber-300 text-xs font-bold transition cursor-pointer flex items-center justify-center gap-1.5"
                           >
                             <Plus size={13} />
-                            <span>+ Adicionar Variação</span>
+                            <span>Inserir Versão</span>
                           </button>
-
-                          {priceVariations.length === 0 && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setPriceVariations([
-                                  {
-                                    id: `var_${Date.now()}_0`,
-                                    name: 'Versão Normal',
-                                    price: priceInput || '89,90',
-                                    imageUrl: imageUrl || '',
-                                    description: 'Acabamento padrão tradicional',
-                                    badge: 'Normal',
-                                    isDefault: true
-                                  },
-                                  {
-                                    id: `var_${Date.now()}_1`,
-                                    name: 'Versão Full Foil',
-                                    price: '149,90',
-                                    imageUrl: '',
-                                    description: 'Acabamento especial 100% Holográfico Foil',
-                                    badge: 'Full Foil',
-                                    isDefault: false
-                                  }
-                                ]);
-                              }}
-                              className="px-3 py-1.5 rounded-xl bg-purple-950/80 hover:bg-purple-900 border border-purple-700/60 text-purple-200 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
-                            >
-                              <Sparkles size={13} className="text-amber-400" />
-                              <span>Criar 2 Opções (Ex: Normal & Foil)</span>
-                            </button>
-                          )}
                         </div>
                       </div>
 
@@ -2465,7 +3065,7 @@ export const CommunityMarketplaceView: React.FC<CommunityMarketplaceViewProps> =
                           {/* Modo de Preço: Preços Iguais vs Preços Independentes */}
                           <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
                             <span className="text-xs font-bold text-slate-200">
-                              Modo de Preço das Variações:
+                              Modo de Preço das Versões:
                             </span>
                             <div className="flex items-center gap-2 flex-wrap">
                               <button
@@ -2488,12 +3088,12 @@ export const CommunityMarketplaceView: React.FC<CommunityMarketplaceViewProps> =
                                     : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200'
                                 }`}
                               >
-                                Preços Independentes por Variação
+                                Preços Independentes por Versão
                               </button>
                             </div>
                           </div>
 
-                          {/* Lista de Variações */}
+                          {/* Lista de Versões */}
                           <div className="space-y-3">
                             {priceVariations.map((v, vIdx) => (
                               <div
@@ -2506,7 +3106,7 @@ export const CommunityMarketplaceView: React.FC<CommunityMarketplaceViewProps> =
                                       {vIdx + 1}
                                     </span>
                                     <span className="text-xs font-bold text-white">
-                                      {v.name || `Variação #${vIdx + 1}`}
+                                      {v.name || `Versão #${vIdx + 1} (digite o nome abaixo)`}
                                     </span>
                                   </div>
 
@@ -2526,7 +3126,7 @@ export const CommunityMarketplaceView: React.FC<CommunityMarketplaceViewProps> =
                                         }
                                         className="accent-amber-400"
                                       />
-                                      <span>Opção Padrão</span>
+                                      <span>Versão Padrão</span>
                                     </label>
 
                                     <button
@@ -2537,14 +3137,14 @@ export const CommunityMarketplaceView: React.FC<CommunityMarketplaceViewProps> =
                                         )
                                       }
                                       className="text-red-400 hover:text-red-300 p-1 rounded hover:bg-red-950/40 transition cursor-pointer"
-                                      title="Remover variação"
+                                      title="Remover versão"
                                     >
                                       <Trash2 size={14} />
                                     </button>
                                   </div>
                                 </div>
 
-                                {/* Foto Independente da Variação + Nome + Preço */}
+                                {/* Foto Independente da Versão + Nome + Preço */}
                                 <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-start">
                                   {/* Foto Independente */}
                                   <div className="md:col-span-5 bg-slate-950 border border-slate-800 rounded-xl p-2.5 flex items-center gap-2.5">
@@ -2571,7 +3171,7 @@ export const CommunityMarketplaceView: React.FC<CommunityMarketplaceViewProps> =
                                           <span>
                                             {uploadingPhotoTarget === `var-${vIdx}`
                                               ? 'Subindo...'
-                                              : 'Subir Foto'}
+                                              : 'Foto da Versão'}
                                           </span>
                                           <input
                                             type="file"
@@ -2612,16 +3212,16 @@ export const CommunityMarketplaceView: React.FC<CommunityMarketplaceViewProps> =
                                             )
                                           );
                                         }}
-                                        placeholder="Ou URL da foto desta variação..."
+                                        placeholder="Ou URL da foto desta versão..."
                                         className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2 py-1 text-[11px] text-white outline-none"
                                       />
                                     </div>
                                   </div>
 
-                                  {/* Nome da Variação */}
+                                  {/* Nome da Versão */}
                                   <div className="md:col-span-4">
-                                    <label className="text-[11px] text-slate-400 block mb-1">
-                                      Nome da Variação *
+                                    <label className="text-[11px] text-amber-300 font-bold block mb-1">
+                                      Nome da Versão *
                                     </label>
                                     <input
                                       type="text"
@@ -2634,17 +3234,17 @@ export const CommunityMarketplaceView: React.FC<CommunityMarketplaceViewProps> =
                                           )
                                         );
                                       }}
-                                      placeholder="Ex: Versão Full Foil, Modelo B..."
-                                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white font-bold outline-none"
+                                      placeholder="Digite o nome da versão que quiser..."
+                                      className="w-full bg-slate-950 border border-amber-500/50 focus:border-amber-400 rounded-xl px-3 py-2 text-xs text-white font-bold outline-none"
                                     />
                                   </div>
 
-                                  {/* Preço da Variação */}
+                                  {/* Preço da Versão */}
                                   <div className="md:col-span-3">
                                     <label className="text-[11px] text-slate-400 block mb-1">
                                       {sameVariationPrice
                                         ? 'Preço (Igual p/ Todas)'
-                                        : 'Preço desta Variação (R$)'}
+                                        : 'Preço desta Versão (R$)'}
                                     </label>
                                     {sameVariationPrice ? (
                                       <div className="w-full bg-slate-950/60 border border-emerald-500/30 rounded-xl px-3 py-2 text-xs font-mono font-bold text-emerald-300">
@@ -2669,7 +3269,7 @@ export const CommunityMarketplaceView: React.FC<CommunityMarketplaceViewProps> =
                                   </div>
                                 </div>
 
-                                {/* Descrição Rápida & Estoque Opcional da Variação */}
+                                {/* Descrição Rápida & Estoque Opcional da Versão */}
                                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
                                   <div className="sm:col-span-2">
                                     <input

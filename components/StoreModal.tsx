@@ -1427,11 +1427,39 @@ export const StoreModal: React.FC<StoreModalProps> = ({
                               </div>
                             )}
 
+                            {/* Mini Preview de Imagens Individuais das Cartas do Produto */}
+                            {Array.isArray(prod.productCards) && prod.productCards.length > 0 && (
+                              <div
+                                onClick={() =>
+                                  onOpenProductDetail && onOpenProductDetail(prod, activeVarIdx)
+                                }
+                                className="p-2 rounded-xl bg-slate-950/90 border border-cyan-500/30 hover:border-cyan-400/60 transition cursor-pointer flex items-center justify-between gap-2"
+                              >
+                                <div className="flex items-center gap-1.5 min-w-0">
+                                  <div className="flex -space-x-2 overflow-hidden shrink-0">
+                                    {prod.productCards.slice(0, 4).map((pc, pIdx) => (
+                                      <img
+                                        key={pc.id || pIdx}
+                                        src={pc.imageUrl}
+                                        alt={pc.name}
+                                        referrerPolicy="no-referrer"
+                                        className="w-6 h-8 rounded object-cover border border-slate-800 bg-black"
+                                      />
+                                    ))}
+                                  </div>
+                                  <span className="text-[11px] font-bold text-cyan-300 truncate">
+                                    {prod.productCards.reduce((a, b) => a + (b.quantity || 1), 0)} Cartas (Ver Imagens)
+                                  </span>
+                                </div>
+                                <Eye size={13} className="text-cyan-400 shrink-0" />
+                              </div>
+                            )}
+
                             {/* Variations Selector */}
                             {hasVars && (
                               <div className="space-y-1.5 pt-1">
                                 <label className="text-[11px] text-slate-400 font-semibold block">
-                                  Escolha a Versão / Variação:
+                                  Escolha a Versão:
                                 </label>
                                 <div className="grid grid-cols-2 gap-1.5">
                                   {variations.map((v, vIdx) => {

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { X, ShoppingCart, Play, Image as ImageIcon, ChevronLeft, ChevronRight, Layers, Sword, Shield, Sparkles, ExternalLink, Copy, Check, Info, Calendar, Dices, Share2 } from 'lucide-react';
-import { ExclusiveProduct, ProductMediaItem, CardData, ProductPriceVariation } from '../types';
+import { ExclusiveProduct, ProductMediaItem, CardData, ProductPriceVariation, ProductIndividualCardItem } from '../types';
 import { parseDeckFromCode, ParsedDeckData, DeckCardEntry } from '../deckUtils';
 import { getOfficialProductShareUrl } from '../storeService';
 import { MulliganSimulatorModal } from './MulliganSimulatorModal';
@@ -30,6 +30,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
   const [showNotice, setShowNotice] = useState(false);
   const [addedToCartFeedback, setAddedToCartFeedback] = useState(false);
   const [showMulliganSimulator, setShowMulliganSimulator] = useState(false);
+  const [inspectCustomCard, setInspectCustomCard] = useState<ProductIndividualCardItem | null>(null);
 
   // Extract all media items
   const mediaList: ProductMediaItem[] = useMemo(() => {
@@ -320,7 +321,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                     <div className="flex items-center justify-between">
                       <label className="text-xs font-black uppercase tracking-wider text-purple-300 flex items-center gap-1.5">
                         <Sparkles size={14} className="text-amber-400" />
-                        <span>Escolha o Acabamento / Versão:</span>
+                        <span>Escolha a Versão:</span>
                       </label>
                       <span className="text-[11px] text-slate-400 font-medium font-mono">
                         {priceVariations.length} opções
@@ -332,6 +333,9 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                         const isSelected = activeVariationIndex === idx;
                         const isFoil = (variation.name || '').toLowerCase().includes('foil') || 
                                        (variation.badge || '').toLowerCase().includes('foil');
+                        const isWithPlaymat =
+                          (variation.name || '').toLowerCase().includes('com playmat') ||
+                          (variation.badge || '').toLowerCase().includes('com playmat');
 
                         return (
                           <div
@@ -367,14 +371,16 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                               </div>
 
                               {/* Badge da Variação */}
-                              {(variation.badge || isFoil) && (
+                              {(variation.badge || isFoil || isWithPlaymat) && (
                                 <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-full shrink-0 flex items-center gap-1 border shadow-sm ${
-                                  isFoil
+                                  isWithPlaymat
+                                    ? 'bg-emerald-950 text-emerald-300 border-emerald-500/60'
+                                    : isFoil
                                     ? 'bg-gradient-to-r from-amber-500/25 to-yellow-500/25 text-yellow-300 border-yellow-500/50'
                                     : 'bg-purple-950 text-purple-300 border-purple-700/60'
                                 }`}>
                                   {isFoil && <Sparkles size={10} className="text-yellow-400" />}
-                                  <span>{variation.badge || 'Full Foil'}</span>
+                                  <span>{variation.badge || (isWithPlaymat ? 'Com Playmat' : 'Full Foil')}</span>
                                 </span>
                               )}
                             </div>
@@ -543,6 +549,91 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
 
           </div>
 
+          {/* ===================================================================== */}
+          {/* IMAGENS INDIVIDUAIS DAS CARTAS DO PRODUTO (DO SITE OU NOVAS EXCLUSIVAS) */}
+          {/* ===================================================================== */}
+          {Array.isArray(product.productCards) && product.productCards.length > 0 && (
+            <div className="border-t border-cyan-500/30 pt-6 space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-slate-950/80 border border-cyan-500/30 p-4 rounded-xl">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <Layers className="text-cyan-400" size={20} />
+                    <h4 className="text-lg md:text-xl font-bold text-white tracking-wide">
+                      Imagens Individuais das Cartas do Produto
+                    </h4>
+                    <span className="bg-cyan-950 text-cyan-300 border border-cyan-500/40 text-[11px] font-bold px-2.5 py-0.5 rounded-full">
+                      {product.productCards.reduce((acc, c) => acc + (c.quantity || 1), 0)} Cartas
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-400 mt-1">
+                    Clique em qualquer carta abaixo para ampliar a imagem individual ou inspecionar seus detalhes.
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+                {product.productCards.map((pc, idx) => {
+                  const matchedInCatalog =
+                    pc.source === 'catalog' && pc.cardCode
+                      ? allCards.find((c) => c.code === pc.cardCode)
+                      : allCards.find(
+                          (c) =>
+                            (pc.cardCode && c.code === pc.cardCode) ||
+                            c.name.toLowerCase() === (pc.name || '').toLowerCase()
+                        );
+                  return (
+                    <div
+                      key={pc.id || idx}
+                      onClick={() => {
+                        if (matchedInCatalog && onSelectCard) {
+                          onSelectCard(matchedInCatalog);
+                        } else {
+                          setInspectCustomCard(pc);
+                        }
+                      }}
+                      className="group bg-slate-950/90 border border-slate-800 hover:border-cyan-400/70 rounded-xl overflow-hidden cursor-pointer transition-all duration-200 hover:-translate-y-1 shadow-md flex flex-col"
+                    >
+                      <div className="relative aspect-[3/4] w-full bg-black overflow-hidden">
+                        {pc.imageUrl ? (
+                          <img
+                            src={pc.imageUrl}
+                            alt={pc.name}
+                            referrerPolicy="no-referrer"
+                            className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-300"
+                          />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center text-slate-600">
+                            <ImageIcon size={28} />
+                          </div>
+                        )}
+                        <span
+                          className={`absolute top-2 left-2 px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-wider shadow ${
+                            pc.source === 'custom_new'
+                              ? 'bg-emerald-600/95 text-white border border-emerald-400/50'
+                              : 'bg-purple-600/95 text-white border border-purple-400/50'
+                          }`}
+                        >
+                          {pc.source === 'custom_new' ? 'Carta Nova' : 'Carta do Site'}
+                        </span>
+                        <span className="absolute top-2 right-2 px-2 py-0.5 rounded-md bg-black/85 border border-white/15 text-emerald-400 font-mono font-black text-xs">
+                          {pc.quantity || 1}x
+                        </span>
+                      </div>
+                      <div className="p-2.5 flex-1 flex flex-col justify-between">
+                        <div className="text-xs font-bold text-white truncate group-hover:text-cyan-300 transition">
+                          {pc.name}
+                        </div>
+                        <div className="text-[10px] text-slate-400 truncate mt-0.5">
+                          {pc.cardCode || pc.type || 'Carta Exclusiva do Produto'}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {/* Deck List Section (if valid deck cards exist) */}
           {deckData.isValid && (
             <div className="border-t border-purple-900/30 pt-6 space-y-6">
@@ -644,6 +735,48 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
           )}
         </div>
       </div>
+
+      {/* Lightbox para Ampliar Imagem Individual de Carta Nova do Produto */}
+      {inspectCustomCard && (
+        <div
+          className="fixed inset-0 z-70 flex items-center justify-center p-4 bg-black/90 backdrop-blur-md animate-in fade-in duration-200"
+          onClick={() => setInspectCustomCard(null)}
+        >
+          <div
+            className="bg-slate-900 border border-cyan-500/50 rounded-2xl max-w-md w-full p-5 relative shadow-2xl space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div>
+                <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded bg-emerald-600/30 text-emerald-300 border border-emerald-500/40">
+                  {inspectCustomCard.source === 'custom_new'
+                    ? 'Carta Nova / Exclusiva do Produto'
+                    : 'Carta do Produto'}
+                </span>
+                <h4 className="text-base font-black text-white mt-1">
+                  {inspectCustomCard.name} ({inspectCustomCard.quantity || 1}x)
+                </h4>
+              </div>
+              <button
+                type="button"
+                onClick={() => setInspectCustomCard(null)}
+                className="p-2 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="aspect-[3/4] w-full rounded-xl bg-black border border-slate-800 overflow-hidden flex items-center justify-center">
+              <img
+                src={inspectCustomCard.imageUrl}
+                alt={inspectCustomCard.name}
+                referrerPolicy="no-referrer"
+                className="w-full h-full object-contain"
+              />
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* On-screen Notice Modal when there's no link */}
       {showNotice && (

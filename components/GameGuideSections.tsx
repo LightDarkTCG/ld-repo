@@ -3,7 +3,8 @@ import {
   BookOpen, Clock, Layers, Scale, Sparkles, ChevronDown, ChevronUp, 
   Info, Sword, Shield, Crown, Zap, CheckCircle, Ghost, FileText, 
   Edit2, Save, X, Plus, Trash2, AlertCircle, Eye, EyeOff, Check, Search, Grid,
-  Trophy, Award, Upload, Loader2, Image as ImageIcon, Flame, Filter, Hexagon, Users
+  Trophy, Award, Upload, Loader2, Image as ImageIcon, Flame, Filter, Hexagon, Users,
+  Play, Video, ExternalLink
 } from 'lucide-react';
 import { doc, getDoc, setDoc, onSnapshot } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
@@ -797,7 +798,8 @@ export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
     arquetipos: true,
     campos: false,
     raridades: true,
-    faq: false
+    faq: false,
+    videos: true
   });
 
   // Garante sincronamente na renderização que qualquer menu retrátil do Manual mostrado durante o tutorial já esteja ABERTO no frame 1
@@ -817,7 +819,8 @@ export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
           arquetipos: false,
           campos: false,
           raridades: false,
-          faq: false
+          faq: false,
+          videos: false
         });
       } else {
         setOpenSections({
@@ -829,7 +832,8 @@ export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
           arquetipos: tourOpenManualSection === 'arquetipos',
           campos: tourOpenManualSection === 'campos',
           raridades: tourOpenManualSection === 'raridades',
-          faq: tourOpenManualSection === 'faq'
+          faq: tourOpenManualSection === 'faq',
+          videos: tourOpenManualSection === 'videos'
         });
       }
     }
@@ -1171,7 +1175,8 @@ export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
       arquetipos: true,
       campos: true,
       raridades: true,
-      faq: true
+      faq: true,
+      videos: true
     });
   };
 
@@ -1185,7 +1190,8 @@ export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
       arquetipos: false,
       campos: false,
       raridades: false,
-      faq: false
+      faq: false,
+      videos: false
     });
   };
 
@@ -2682,6 +2688,46 @@ export const GameGuideSections: React.FC<GameGuideSectionsProps> = ({
             )}
           </div>
 
+          {/* 10. VÍDEOS DE TUTORIAIS & GAMEPLAYS - ABAIXO DA SEÇÃO 09 */}
+          <div
+            id="section-videos"
+            data-tour-id="tour-section-videos"
+            className="cyber-arcane-box-sm border border-rose-500/45 bg-[#080612]/95 overflow-hidden shadow-lg shadow-black/60 transition-all hover:border-rose-400/75"
+          >
+            <button
+              onClick={() => toggleSection('videos')}
+              className="w-full flex items-center justify-between p-4 sm:p-5 text-left hover:bg-rose-950/20 transition group"
+            >
+              <div className="flex items-center gap-3 sm:gap-4 min-w-0">
+                <div className="cyber-arcane-btn w-10 h-10 bg-rose-600/20 border border-rose-500/40 flex items-center justify-center text-rose-400 shrink-0 shadow-[0_0_15px_rgba(244,63,94,0.25)]">
+                  <Video size={20} />
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-xs font-mono font-bold text-rose-400 uppercase tracking-widest">
+                      SEÇÃO 10 // CENTRAL DE VÍDEOS
+                    </span>
+                    <span className="text-[11px] font-mono px-2 py-0.5 bg-rose-950 text-rose-200 border border-rose-700/50">
+                      Tutoriais & Gameplays
+                    </span>
+                  </div>
+                  <h3 className="text-lg sm:text-xl font-cinzel font-black text-white group-hover:text-rose-300 transition-colors tracking-wider">
+                    VÍDEOS DE TUTORIAIS & GAMEPLAYS
+                  </h3>
+                </div>
+              </div>
+              <div className="cyber-arcane-btn p-2 bg-[#0d0a1a] border border-rose-500/30 text-rose-300 group-hover:text-white shrink-0 ml-2">
+                {openSections.videos ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+              </div>
+            </button>
+
+            {openSections.videos && (
+              <div className="p-4 sm:p-6 border-t border-rose-500/30 bg-slate-950/90 animate-in slide-in-from-top-2 duration-200">
+                <TutorialGameplayVideosSection isAdmin={isAdmin} />
+              </div>
+            )}
+          </div>
+
         </div>
       </div>
 
@@ -3742,4 +3788,565 @@ const ManualEditModal: React.FC<{
     </div>
   );
 };
+
+export interface TutorialGameplayVideoItem {
+  id: string;
+  title: string;
+  category: 'Tutorial' | 'Gameplay' | 'Tutorial & Gameplay';
+  youtubeUrl: string;
+  description: string;
+  badgeText?: string;
+}
+
+export const defaultTutorialVideos: TutorialGameplayVideoItem[] = [
+  {
+    id: 'vid-official-01',
+    title: 'Lightdark GAMEPLAY! — Cabrito Montês',
+    category: 'Tutorial & Gameplay',
+    youtubeUrl: 'https://www.youtube.com/watch?v=k067clPr-xc&t=2955s',
+    description:
+      'Apresentação prática de gameplay e mecânicas de Light Dark TCG na mesa, demonstrando a dinâmica de turnos, combate, posicionamento no campo e estratégias de partida.',
+    badgeText: 'Vídeo 01 • Destaque Oficial'
+  }
+];
+
+const parseYouTubeTimeParam = (tParam: string | null): number => {
+  if (!tParam) return 0;
+  const clean = tParam.trim().toLowerCase();
+  if (/^\d+$/.test(clean)) return parseInt(clean, 10);
+  if (/^\d+s$/.test(clean)) return parseInt(clean.replace('s', ''), 10);
+  let total = 0;
+  const hMatch = clean.match(/(\d+)h/);
+  const mMatch = clean.match(/(\d+)m/);
+  const sMatch = clean.match(/(\d+)s/);
+  if (hMatch) total += parseInt(hMatch[1], 10) * 3600;
+  if (mMatch) total += parseInt(mMatch[1], 10) * 60;
+  if (sMatch) total += parseInt(sMatch[1], 10);
+  return total;
+};
+
+const formatSecondsLabel = (sec: number): string => {
+  if (!sec || sec <= 0) return '';
+  const hrs = Math.floor(sec / 3600);
+  const mins = Math.floor((sec % 3600) / 60);
+  const secs = sec % 60;
+  if (hrs > 0) {
+    return `${hrs}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+  }
+  return `${mins}:${String(secs).padStart(2, '0')}`;
+};
+
+const parseYouTubeEmbedInfo = (
+  rawUrl: string
+): {
+  videoId: string;
+  startSeconds: number;
+  embedUrl: string;
+  watchUrl: string;
+  thumbnailUrl: string;
+} | null => {
+  if (!rawUrl || !rawUrl.trim()) return null;
+  const trimmed = rawUrl.trim();
+  let videoId = '';
+  let startSeconds = 0;
+
+  try {
+    const urlObj = new URL(trimmed.startsWith('http') ? trimmed : `https://${trimmed}`);
+    const host = urlObj.hostname.replace(/^www\./, '');
+    if (host === 'youtu.be') {
+      videoId = urlObj.pathname.replace(/^\//, '').split('/')[0];
+    } else if (host.includes('youtube.com')) {
+      if (urlObj.pathname.startsWith('/watch')) {
+        videoId = urlObj.searchParams.get('v') || '';
+      } else if (urlObj.pathname.startsWith('/embed/')) {
+        videoId = urlObj.pathname.replace('/embed/', '').split('/')[0];
+      } else if (urlObj.pathname.startsWith('/live/')) {
+        videoId = urlObj.pathname.replace('/live/', '').split('/')[0];
+      } else if (urlObj.pathname.startsWith('/shorts/')) {
+        videoId = urlObj.pathname.replace('/shorts/', '').split('/')[0];
+      }
+    }
+    const tVal = urlObj.searchParams.get('t') || urlObj.searchParams.get('start');
+    startSeconds = parseYouTubeTimeParam(tVal);
+  } catch {
+    const idMatch = trimmed.match(/(?:v=|youtu\.be\/|embed\/)([a-zA-Z0-9_-]{11})/);
+    if (idMatch) videoId = idMatch[1];
+    const tMatch = trimmed.match(/[?&](?:t|start)=([0-9hms]+)/i);
+    if (tMatch) startSeconds = parseYouTubeTimeParam(tMatch[1]);
+  }
+
+  if (!videoId) return null;
+
+  const params = new URLSearchParams();
+  if (startSeconds > 0) params.set('start', String(startSeconds));
+  params.set('feature', 'oembed');
+  params.set('rel', '0');
+
+  const embedUrl = `https://www.youtube.com/embed/${videoId}?${params.toString()}`;
+  const watchUrl =
+    startSeconds > 0
+      ? `https://www.youtube.com/watch?v=${videoId}&t=${startSeconds}s`
+      : `https://www.youtube.com/watch?v=${videoId}`;
+  const thumbnailUrl = `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
+
+  return { videoId, startSeconds, embedUrl, watchUrl, thumbnailUrl };
+};
+
+const TutorialGameplayVideosSection: React.FC<{ isAdmin?: boolean }> = ({ isAdmin = false }) => {
+  const [videos, setVideos] = useState<TutorialGameplayVideoItem[]>(
+    () =>
+      readBrowserCache<TutorialGameplayVideoItem[]>('ld_cache_tutorial_videos_v1') ||
+      defaultTutorialVideos
+  );
+  const [selectedVideoId, setSelectedVideoId] = useState<string>(
+    defaultTutorialVideos[0]?.id || ''
+  );
+  const [categoryFilter, setCategoryFilter] = useState<'all' | 'Tutorial' | 'Gameplay'>('all');
+  const [isEditingVideos, setIsEditingVideos] = useState(false);
+  const [isSavingVideos, setIsSavingVideos] = useState(false);
+  const [feedbackMsg, setFeedbackMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    const unsub = onSnapshot(
+      doc(db, 'homeSettings', 'tutorialVideos'),
+      (snap) => {
+        if (snap.exists()) {
+          const d = snap.data();
+          if (Array.isArray(d.items) && d.items.length > 0) {
+            setVideos(d.items);
+            writeBrowserCache('ld_cache_tutorial_videos_v1', d.items);
+          }
+        }
+      },
+      (err) => {
+        console.warn('Erro ao carregar vídeos de tutoriais e gameplays:', err);
+      }
+    );
+    return () => unsub();
+  }, []);
+
+  const filteredVideos = videos.filter((v) => {
+    if (categoryFilter === 'all') return true;
+    if (categoryFilter === 'Tutorial') return v.category.includes('Tutorial');
+    if (categoryFilter === 'Gameplay') return v.category.includes('Gameplay');
+    return true;
+  });
+
+  const activeVideo =
+    filteredVideos.find((v) => v.id === selectedVideoId) ||
+    filteredVideos[0] ||
+    videos[0] ||
+    defaultTutorialVideos[0];
+
+  const activeEmbed = activeVideo ? parseYouTubeEmbedInfo(activeVideo.youtubeUrl) : null;
+
+  const handleSaveVideos = async (itemsToSave: TutorialGameplayVideoItem[]) => {
+    try {
+      setIsSavingVideos(true);
+      await setDoc(
+        doc(db, 'homeSettings', 'tutorialVideos'),
+        sanitizeForFirestore({
+          items: itemsToSave,
+          updatedAt: new Date().toISOString()
+        }),
+        { merge: true }
+      );
+      setVideos(itemsToSave);
+      writeBrowserCache('ld_cache_tutorial_videos_v1', itemsToSave);
+      setFeedbackMsg('Vídeos de Tutoriais & Gameplays salvos com sucesso!');
+      setIsEditingVideos(false);
+      setTimeout(() => setFeedbackMsg(null), 3500);
+    } catch (err) {
+      console.error('Erro ao salvar vídeos:', err);
+    } finally {
+      setIsSavingVideos(false);
+    }
+  };
+
+  const handleAddNewVideo = () => {
+    const nextIdx = videos.length + 1;
+    const newVid: TutorialGameplayVideoItem = {
+      id: `vid-${Date.now()}`,
+      title: `Novo Vídeo #${nextIdx} — Tutorial / Gameplay`,
+      category: 'Tutorial & Gameplay',
+      youtubeUrl: 'https://www.youtube.com/watch?v=k067clPr-xc&t=2955s',
+      description: 'Descrição do tutorial ou partida comentada de Light Dark TCG.',
+      badgeText: `Vídeo ${String(nextIdx).padStart(2, '0')}`
+    };
+    const nextList = [...videos, newVid];
+    setVideos(nextList);
+    setSelectedVideoId(newVid.id);
+    setIsEditingVideos(true);
+  };
+
+  const handleDeleteVideo = (id: string) => {
+    if (videos.length <= 1) return;
+    const nextList = videos.filter((v) => v.id !== id);
+    setVideos(nextList);
+    if (selectedVideoId === id && nextList[0]) {
+      setSelectedVideoId(nextList[0].id);
+    }
+  };
+
+  return (
+    <div className="space-y-5">
+      {/* Barra Superior de Filtros + Botão Admin */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-rose-500/20">
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {(
+            [
+              { id: 'all', label: `Todos os Vídeos (${videos.length})` },
+              { id: 'Tutorial', label: 'Tutoriais' },
+              { id: 'Gameplay', label: 'Gameplays' }
+            ] as const
+          ).map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setCategoryFilter(tab.id)}
+              className={`cyber-arcane-btn px-3.5 py-1.5 text-xs font-cyber font-bold uppercase tracking-wider transition ${
+                categoryFilter === tab.id
+                  ? 'bg-gradient-to-r from-rose-600 to-amber-500 text-slate-950 font-black shadow-[0_0_15px_rgba(244,63,94,0.35)]'
+                  : 'bg-[#0c0918] text-slate-300 hover:text-white border border-rose-500/30'
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
+        {isAdmin && (
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleAddNewVideo}
+              className="cyber-arcane-btn px-3 py-1.5 bg-emerald-600/25 hover:bg-emerald-600/40 border border-emerald-500/50 text-emerald-300 text-xs font-bold flex items-center gap-1.5 transition"
+            >
+              <Plus size={14} /> Adicionar Vídeo
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsEditingVideos((v) => !v)}
+              className="cyber-arcane-btn px-3 py-1.5 bg-rose-600/25 hover:bg-rose-600/40 border border-rose-500/50 text-rose-200 text-xs font-bold flex items-center gap-1.5 transition"
+            >
+              <Edit2 size={13} />
+              <span>{isEditingVideos ? 'Fechar Editor' : 'Gerenciar Vídeos'}</span>
+            </button>
+          </div>
+        )}
+      </div>
+
+      {feedbackMsg && (
+        <div className="p-3 rounded-xl bg-emerald-950/70 border border-emerald-500/50 text-emerald-300 text-xs font-bold flex items-center gap-2">
+          <CheckCircle size={15} className="text-emerald-400 shrink-0" />
+          <span>{feedbackMsg}</span>
+        </div>
+      )}
+
+      {/* Player Principal em Destaque + Lista Lateral / Galeria */}
+      {activeVideo && (
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+          {/* Player de Vídeo (YouTube Embed) */}
+          <div className="lg:col-span-8 bg-[#0b0816] border border-rose-500/35 rounded-2xl overflow-hidden shadow-2xl">
+            <div className="relative w-full aspect-video bg-black">
+              {activeEmbed ? (
+                <iframe
+                  key={activeEmbed.embedUrl}
+                  src={activeEmbed.embedUrl}
+                  title={activeVideo.title}
+                  className="w-full h-full border-0"
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                  referrerPolicy="strict-origin-when-cross-origin"
+                  allowFullScreen
+                />
+              ) : (
+                <div className="w-full h-full flex flex-col items-center justify-center text-slate-400 p-6 text-center">
+                  <Video size={36} className="text-rose-400 mb-2" />
+                  <p className="text-xs">URL do YouTube inválida. Edite o link abaixo.</p>
+                </div>
+              )}
+            </div>
+
+            <div className="p-4 sm:p-5 space-y-2.5 bg-gradient-to-b from-[#120d22] to-[#090612] border-t border-rose-500/25">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="px-2.5 py-0.5 rounded bg-rose-500/20 border border-rose-500/45 text-rose-300 font-mono font-bold text-[10px] uppercase tracking-wider">
+                    {activeVideo.category}
+                  </span>
+                  {activeVideo.badgeText && (
+                    <span className="px-2.5 py-0.5 rounded bg-amber-500/15 border border-amber-500/40 text-amber-300 font-mono text-[10px]">
+                      {activeVideo.badgeText}
+                    </span>
+                  )}
+                  {activeEmbed && activeEmbed.startSeconds > 0 && (
+                    <span className="px-2 py-0.5 rounded bg-cyan-950/70 border border-cyan-500/40 text-cyan-300 font-mono text-[10px] flex items-center gap-1">
+                      <Clock size={11} /> Inicia em {formatSecondsLabel(activeEmbed.startSeconds)}
+                    </span>
+                  )}
+                </div>
+
+                {activeEmbed && (
+                  <a
+                    href={activeEmbed.watchUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs inline-flex items-center gap-1.5 shadow transition"
+                  >
+                    <ExternalLink size={13} />
+                    <span>Assistir no YouTube</span>
+                  </a>
+                )}
+              </div>
+
+              <h4 className="text-base sm:text-lg font-cinzel font-black text-white">
+                {activeVideo.title}
+              </h4>
+              <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
+                {activeVideo.description}
+              </p>
+            </div>
+          </div>
+
+          {/* Lista de Vídeos / Playlist */}
+          <div className="lg:col-span-4 space-y-2.5">
+            <div className="flex items-center justify-between px-1">
+              <span className="text-xs font-mono font-bold uppercase tracking-wider text-rose-300 flex items-center gap-1.5">
+                <Play size={13} className="text-amber-400" /> Playlist de Tutoriais & Gameplays
+              </span>
+              <span className="text-[11px] font-mono text-slate-400">
+                {filteredVideos.length} {filteredVideos.length === 1 ? 'vídeo' : 'vídeos'}
+              </span>
+            </div>
+
+            <div className="space-y-2.5 max-h-[420px] overflow-y-auto pr-1 custom-scrollbar">
+              {filteredVideos.map((vid, idx) => {
+                const info = parseYouTubeEmbedInfo(vid.youtubeUrl);
+                const isSelected = vid.id === activeVideo.id;
+                return (
+                  <button
+                    key={vid.id}
+                    type="button"
+                    onClick={() => setSelectedVideoId(vid.id)}
+                    className={`w-full text-left p-2.5 rounded-xl border transition flex items-start gap-3 group ${
+                      isSelected
+                        ? 'bg-gradient-to-r from-rose-950/70 via-[#1a1128] to-amber-950/40 border-rose-400 shadow-[0_0_20px_rgba(244,63,94,0.22)]'
+                        : 'bg-[#0e0a1a] hover:bg-[#161029] border-white/10 hover:border-rose-500/40'
+                    }`}
+                  >
+                    <div className="w-24 sm:w-28 aspect-video rounded-lg overflow-hidden bg-black shrink-0 relative border border-white/15">
+                      {info?.thumbnailUrl ? (
+                        <img
+                          src={info.thumbnailUrl}
+                          alt={vid.title}
+                          className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
+                        />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center text-rose-400">
+                          <Video size={18} />
+                        </div>
+                      )}
+                      <div className="absolute inset-0 bg-black/35 flex items-center justify-center">
+                        <div
+                          className={`w-7 h-7 rounded-full flex items-center justify-center ${
+                            isSelected
+                              ? 'bg-rose-500 text-white shadow-lg'
+                              : 'bg-black/70 text-amber-300 group-hover:bg-rose-600 group-hover:text-white'
+                          } transition`}
+                        >
+                          <Play size={13} className="fill-current ml-0.5" />
+                        </div>
+                      </div>
+                      {info && info.startSeconds > 0 && (
+                        <span className="absolute bottom-1 right-1 px-1.5 py-0.2 rounded bg-black/85 text-[9px] font-mono text-amber-300">
+                          {formatSecondsLabel(info.startSeconds)}
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="min-w-0 flex-1 space-y-1">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="text-[10px] font-mono font-bold text-rose-300">
+                          #{String(idx + 1).padStart(2, '0')}
+                        </span>
+                        <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-rose-950/80 text-rose-200 border border-rose-500/30">
+                          {vid.category}
+                        </span>
+                      </div>
+                      <h5 className="text-xs font-bold text-white line-clamp-2 group-hover:text-amber-200 transition">
+                        {vid.title}
+                      </h5>
+                      <p className="text-[11px] text-slate-400 line-clamp-1">{vid.description}</p>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Painel Admin para Editar / Adicionar Vídeos */}
+      {isAdmin && isEditingVideos && (
+        <div className="p-4 rounded-2xl bg-[#110c1d] border border-rose-500/40 space-y-4">
+          <div className="flex items-center justify-between border-b border-white/10 pb-2.5">
+            <span className="text-xs font-mono font-bold uppercase tracking-wider text-rose-300">
+              Editor de Vídeos de Tutoriais & Gameplays
+            </span>
+            <button
+              type="button"
+              onClick={handleAddNewVideo}
+              className="px-3 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1"
+            >
+              <Plus size={13} /> Novo Vídeo
+            </button>
+          </div>
+
+          <div className="space-y-3">
+            {videos.map((vid, index) => (
+              <div
+                key={vid.id}
+                className="p-3.5 rounded-xl bg-black/50 border border-slate-800 space-y-2.5"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs font-mono font-bold text-amber-300">
+                    Vídeo #{index + 1}
+                  </span>
+                  {videos.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteVideo(vid.id)}
+                      className="px-2 py-1 rounded bg-red-950/80 hover:bg-red-900 text-red-300 border border-red-500/40 text-[11px] flex items-center gap-1"
+                    >
+                      <Trash2 size={12} /> Remover
+                    </button>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                  <div>
+                    <label className="block text-[10px] font-mono uppercase text-slate-400 mb-1">
+                      Título do Vídeo
+                    </label>
+                    <input
+                      type="text"
+                      value={vid.title}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setVideos((prev) =>
+                          prev.map((item) => (item.id === vid.id ? { ...item, title: val } : item))
+                        );
+                      }}
+                      className="w-full bg-[#090612] border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white outline-none focus:border-rose-400"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-mono uppercase text-slate-400 mb-1">
+                      Categoria
+                    </label>
+                    <select
+                      value={vid.category}
+                      onChange={(e) => {
+                        const val = e.target.value as TutorialGameplayVideoItem['category'];
+                        setVideos((prev) =>
+                          prev.map((item) =>
+                            item.id === vid.id ? { ...item, category: val } : item
+                          )
+                        );
+                      }}
+                      className="w-full bg-[#090612] border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white outline-none focus:border-rose-400"
+                    >
+                      <option value="Tutorial & Gameplay">Tutorial & Gameplay</option>
+                      <option value="Tutorial">Tutorial</option>
+                      <option value="Gameplay">Gameplay</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-mono uppercase text-slate-400 mb-1">
+                      Selo / Destaque (Opcional)
+                    </label>
+                    <input
+                      type="text"
+                      value={vid.badgeText || ''}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setVideos((prev) =>
+                          prev.map((item) =>
+                            item.id === vid.id ? { ...item, badgeText: val } : item
+                          )
+                        );
+                      }}
+                      placeholder="Ex: Vídeo 01 • Destaque Oficial"
+                      className="w-full bg-[#090612] border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white outline-none focus:border-rose-400"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-mono uppercase text-amber-300 mb-1">
+                    Link do YouTube (Suporta ?t=2955s para iniciar no minuto exato)
+                  </label>
+                  <input
+                    type="text"
+                    value={vid.youtubeUrl}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setVideos((prev) =>
+                        prev.map((item) =>
+                          item.id === vid.id ? { ...item, youtubeUrl: val } : item
+                        )
+                      );
+                    }}
+                    placeholder="https://www.youtube.com/watch?v=k067clPr-xc&t=2955s"
+                    className="w-full bg-[#090612] border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-mono text-cyan-300 outline-none focus:border-rose-400"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-mono uppercase text-slate-400 mb-1">
+                    Descrição
+                  </label>
+                  <textarea
+                    rows={2}
+                    value={vid.description}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setVideos((prev) =>
+                        prev.map((item) =>
+                          item.id === vid.id ? { ...item, description: val } : item
+                        )
+                      );
+                    }}
+                    className="w-full bg-[#090612] border border-slate-700 rounded-lg p-2 text-xs text-white outline-none focus:border-rose-400"
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="flex items-center justify-end gap-2 pt-2">
+            <button
+              type="button"
+              onClick={() => setIsEditingVideos(false)}
+              className="px-4 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold"
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              disabled={isSavingVideos}
+              onClick={() => handleSaveVideos(videos)}
+              className="px-5 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-black flex items-center gap-1.5 shadow-lg disabled:opacity-50"
+            >
+              {isSavingVideos ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+              <span>Salvar Vídeos</span>
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 

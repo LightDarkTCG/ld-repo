@@ -28,6 +28,12 @@ export interface Participant {
   userId?: string;
   userEmail?: string;
   userPhoto?: string;
+  // Liga: Controle de Inatividade Semanal & Bônus de Vitória
+  joinedAtMs?: number;
+  lastMatchAtMs?: number;
+  inactivityWeeks?: number;
+  inactivityPenaltyTotal?: number;
+  manualPenaltyWeeks?: number;
 }
 
 export interface Referee {
@@ -57,6 +63,7 @@ export interface Match {
   woWinnerId?: string | null;
   liveRoomId?: string; // ID da sala de duelo online/transmissão vinculada
   isLive?: boolean; // Indica se a partida está sendo transmitida ao vivo no momento
+  isManualEntry?: boolean; // Partida presencial/manual lançada diretamente com resultado e juiz
   notes?: string;
   // Liga (Pontos de Liga / Rating Dinâmico)
   p1LeagueDelta?: number;
@@ -104,29 +111,46 @@ export interface SwissTiebreakerStats {
 }
 
 /**
- * Calcula a variação de Pontos de Liga (ELO Dinâmico) para uma partida entre dois jogadores.
+ * Calcula a variação de Pontos de Liga (ELO Dinâmico + Bônus de Vitória) para uma partida entre dois jogadores.
  * Quando um jogador com poucos pontos vence um com muitos pontos (zebra / upset),
- * ele ganha muito mais pontos de liga e o outro perde mais.
+ * ele ganha muito mais pontos roubados do oponente, somados ao Bônus de Vitória configurado (+X PDL extras pela vitória).
  */
 export function calculateDynamicLeagueDelta(
   p1Points: number,
   p2Points: number,
   outcome: 'p1_win' | 'p2_win' | 'tie',
-  kFactor: number = 48
-): { delta1: number; delta2: number } {
+  kFactor: number = 48,
+  winBonus: number = 0
+): { delta1: number; delta2: number; stolenPoints: number; appliedWinBonus: number } {
   const expected1 = 1 / (1 + Math.pow(10, (p2Points - p1Points) / 400));
   const actual1 = outcome === 'p1_win' ? 1 : outcome === 'p2_win' ? 0 : 0.5;
-  let delta1 = Math.round(kFactor * (actual1 - expected1));
+  let baseDelta1 = Math.round(kFactor * (actual1 - expected1));
+  const cleanBonus = Math.max(0, Math.round(winBonus || 0));
 
   if (outcome === 'p1_win') {
-    delta1 = Math.max(5, delta1);
+    baseDelta1 = Math.max(5, baseDelta1);
+    return {
+      delta1: baseDelta1 + cleanBonus,
+      delta2: -baseDelta1,
+      stolenPoints: baseDelta1,
+      appliedWinBonus: cleanBonus
+    };
   } else if (outcome === 'p2_win') {
-    delta1 = Math.min(-5, delta1);
+    baseDelta1 = Math.min(-5, baseDelta1);
+    const stolenByP2 = Math.abs(baseDelta1);
+    return {
+      delta1: baseDelta1,
+      delta2: stolenByP2 + cleanBonus,
+      stolenPoints: stolenByP2,
+      appliedWinBonus: cleanBonus
+    };
   }
 
   return {
-    delta1,
-    delta2: -delta1
+    delta1: baseDelta1,
+    delta2: -baseDelta1,
+    stolenPoints: Math.abs(baseDelta1),
+    appliedWinBonus: 0
   };
 }
 
@@ -163,6 +187,9 @@ export interface TournamentData {
   referees?: Referee[];
   leagueInitialPoints?: number; // Ex: 1000 PDL iniciais
   leagueKFactor?: number; // Ex: 48 (Fator de impacto de zebra)
+  leagueWinBonusPoints?: number; // Bônus extra de pontos por vitória (+X PDL além dos pontos roubados)
+  leagueInactivityPenaltyEnabled?: boolean; // Ativa penalidade automática/manual por semanas sem jogar
+  leagueInactivityPenaltyPointsPerWeek?: number; // Quantos PDL o jogador perde a cada semana inativo (sem partida)
   allowLateJoin?: boolean; // Permitir novos jogadores durante o campeonato
   // State
   participants: Participant[];
@@ -560,7 +587,7 @@ export async function finalizeTournamentAndRecordHistory(
       let label = `${idx + 1}º Lugar`;
       if (idx === 0) label = 'Campeão 🏆';
       else if (idx === 1) label = 'Vice-Campeão 🥈';
-      else if (idx === 2) label = '3º Lugar ������';
+      else if (idx === 2) label = '3º Lugar 🥉';
 
       const s = statsMap.get(p.id);
 
@@ -704,6 +731,7 @@ export async function registerGuestPlayerInTournament(
     losses: 0,
     ties: 0,
     matchesPlayed: 0,
+    joinedAtMs: Date.now(),
     ...(user?.uid
       ? {
           userId: user.uid,

@@ -228,302 +228,314 @@ export const BLAIR_TOUR_SLIDES: BlairTourSlide[] = [
     padding: 10,
     blairPoseSuggestion: 'Pose 15 • Blair Consultando o Juiz Digital',
     blairSpeech:
-      'E no FAQ Rápido você pesquisa respostas oficiais sobre cartas e interações ou envia sua própria dúvida!'
+      'No FAQ Rápido você pesquisa respostas oficiais sobre cartas e interações ou envia sua própria dúvida!'
+  },
+  {
+    id: 'step_15b_manual_videos',
+    stepNumber: '16',
+    title: '10. Vídeos de Tutoriais & Gameplays',
+    targetSelector: '#section-videos',
+    envView: 'home',
+    manualSection: 'videos',
+    padding: 10,
+    blairPoseSuggestion: 'Pose 16 • Blair Apresentando a Central de Vídeos e Gameplays',
+    blairSpeech:
+      'E logo abaixo da Seção 09 fica a Central de Vídeos de Tutoriais e Gameplays! Você pode assistir aos vídeos e partidas comentadas direto aqui na página para ver na prática toda a dinâmica de Light Dark TCG.'
   },
   {
     id: 'step_16_btn_catalog',
-    stepNumber: '16',
+    stepNumber: '17',
     title: 'Catálogo',
     targetTourId: 'tour-btn-catalog',
     envView: 'home',
     padding: 8,
-    blairPoseSuggestion: 'Pose 16 • Blair Apresentando o Catálogo',
+    blairPoseSuggestion: 'Pose 17 • Blair Apresentando o Catálogo',
     blairSpeech:
       'Agora vamos conhecer o Catálogo Oficial com todas as cartas lançadas de Light Dark TCG!'
   },
   {
     id: 'step_17_catalog_open',
-    stepNumber: '17',
+    stepNumber: '18',
     title: 'Catálogo de Cartas',
     targetTourId: 'tour-catalog-first-card',
     envView: 'catalog_grid',
     padding: 14,
-    blairPoseSuggestion: 'Pose 17 • Blair Navegando pelo Catálogo de Cartas',
+    blairPoseSuggestion: 'Pose 18 • Blair Navegando pelo Catálogo de Cartas',
     blairSpeech:
       'No Catálogo você pesquisa qualquer carta por nome, código ou efeito e filtra por Coleção, Frame (Moderno ou Legado), Raridade, Tipo, Arquétipo, CT, ATK e VIDA. Vamos abrir uma carta para ver todos os detalhes!'
   },
   {
     id: 'step_18_catalog_card_detail',
-    stepNumber: '18',
+    stepNumber: '19',
     title: 'Detalhes da Carta',
     targetTourId: 'tour-card-detail-modal',
     envView: 'catalog_card_open',
     padding: 10,
-    blairPoseSuggestion: 'Pose 18 • Blair Examinando uma Carta Holográfica Aberta',
+    blairPoseSuggestion: 'Pose 19 • Blair Examinando uma Carta Holográfica Aberta',
     blairSpeech:
       'Ao abrir uma carta, você confere a Descrição completa do efeito e da história, todas as Versões disponíveis (Frame Moderno, Frame Legado e skins), a Raridade, informações de Tiragem, marcação no seu Álbum e cartas com sinergia!'
   },
   {
     id: 'step_19_btn_lore',
-    stepNumber: '19',
+    stepNumber: '20',
     title: 'Lore',
     targetTourId: 'tour-btn-lore',
     envView: 'home',
     padding: 8,
-    blairPoseSuggestion: 'Pose 19 • Blair Apresentando a Lore',
+    blairPoseSuggestion: 'Pose 20 • Blair Apresentando a Lore',
     blairSpeech:
       'Ao lado do Catálogo fica a Lore, onde toda a história do universo Light Dark está reunida. Vamos entrar!'
   },
   {
     id: 'step_20_lore_archivum',
-    stepNumber: '20',
+    stepNumber: '21',
     title: 'Lore — Archivum',
     targetTourId: 'tour-lore-main',
     envView: 'lore_home',
     padding: 10,
-    blairPoseSuggestion: 'Pose 20 • Blair Abrindo os Arquivos da Lore',
+    blairPoseSuggestion: 'Pose 21 • Blair Abrindo os Arquivos da Lore',
     blairSpeech:
       'No Archivum você alterna entre o Macroverso 13 e o Macroverso 1 e acessa todas as ferramentas e registros históricos de Light Dark. Vamos conhecer cada parte da Lore!'
   },
   {
     id: 'step_21_lore_map3d',
-    stepNumber: '21',
+    stepNumber: '22',
     title: 'Lore — Mapa 3D & Linha do Tempo',
     targetTourId: 'tour-lore-main',
     envView: 'lore_map',
     padding: 10,
-    blairPoseSuggestion: 'Pose 21 • Blair Diante do Mapa Estelar 3D',
+    blairPoseSuggestion: 'Pose 22 • Blair Diante do Mapa Estelar 3D',
     blairSpeech:
       'Este é o Mapa 3D Interativo com a Linha do Tempo aberta no rodapé! Você pode girar o cosmos, dar zoom nos setores, clicar nos mundos para ler a história de cada local e navegar pelas eras do Macroverso 13.'
   },
   {
     id: 'step_22_lore_relations_quiz',
-    stepNumber: '22',
+    stepNumber: '23',
     title: 'Lore — Árvore de Relações',
     targetTourId: 'tour-lore-main',
     envView: 'lore_relations',
     padding: 10,
-    blairPoseSuggestion: 'Pose 22 • Blair Mostrando a Árvore Interativa de Relações',
+    blairPoseSuggestion: 'Pose 23 • Blair Mostrando a Árvore Interativa de Relações',
     blairSpeech:
       'Aqui está a Árvore Interativa de Relações! Ela conecta visualmente alianças, famílias, mestres, criações e rivalidades entre os personagens — e você pode clicar em qualquer personagem para ver seus vínculos e sua carta!'
   },
   {
     id: 'step_22b_lore_quiz',
-    stepNumber: '23',
+    stepNumber: '24',
     title: 'Lore — Quiz Diário & Pontuação da Comunidade',
     targetTourId: 'tour-lore-main',
     envView: 'lore_quiz',
     padding: 10,
-    blairPoseSuggestion: 'Pose 23 • Blair Apresentando o Quiz Diário e o Ranking',
+    blairPoseSuggestion: 'Pose 24 • Blair Apresentando o Quiz Diário e o Ranking',
     blairSpeech:
       'Este é o Quiz Diário do Macroverso! Todos os dias há um novo desafio sobre cartas, artes, efeitos e história que vale pontos para a sua conta e coloca você na disputa do Ranking de Pontuação da Comunidade!'
   },
   {
     id: 'step_22c_lore_music',
-    stepNumber: '24',
+    stepNumber: '25',
     title: 'Lore — Músicas com Lore Embutida',
     targetTourId: 'tour-lore-main',
     envView: 'lore_music',
     padding: 10,
-    blairPoseSuggestion: 'Pose 24 • Blair Ouvindo as Músicas com Lore Embutida',
+    blairPoseSuggestion: 'Pose 25 • Blair Ouvindo as Músicas com Lore Embutida',
     blairSpeech:
       'Na seção de Músicas você escuta as trilhas oficiais acompanhando a letra sincronizada com tradução, a linha do tempo musical e toda a Lore embutida por trás de cada canção e dos personagens ligados a ela!'
   },
   {
     id: 'step_22d_lore_archives',
-    stepNumber: '25',
+    stepNumber: '26',
     title: 'Lore — Arquivos & Crônicas',
     targetTourId: 'tour-lore-main',
     envView: 'lore_archives',
     padding: 10,
-    blairPoseSuggestion: 'Pose 25 • Blair Folheando os Arquivos e Crônicas',
+    blairPoseSuggestion: 'Pose 26 • Blair Folheando os Arquivos e Crônicas',
     blairSpeech:
       'E em Arquivos & Crônicas ficam os registros ilustrados, contos, personagens, conceitos e a cronologia detalhada dos acontecimentos de cada era para você ler e explorar!'
   },
   {
     id: 'step_23_btn_duelo',
-    stepNumber: '26',
+    stepNumber: '27',
     title: 'App Duelo',
     targetTourId: 'tour-btn-duelo',
     envView: 'home',
     padding: 8,
-    blairPoseSuggestion: 'Pose 26 • Blair Apresentando o App Duelo',
+    blairPoseSuggestion: 'Pose 27 • Blair Apresentando o App Duelo',
     blairSpeech:
       'Agora vamos abrir o App Duelo, o marcador oficial para acompanhar suas partidas presenciais ou online!'
   },
   {
     id: 'step_24_duelo_setup',
-    stepNumber: '27',
+    stepNumber: '28',
     title: 'App Duelo — Modos de Partida',
     targetTourId: 'tour-gameboard-setup',
     envView: 'game_setup',
     padding: 12,
-    blairPoseSuggestion: 'Pose 27 • Blair Configurando uma Partida no App Duelo',
+    blairPoseSuggestion: 'Pose 28 • Blair Configurando uma Partida no App Duelo',
     blairSpeech:
       'Aqui você escolhe se vai jogar no Mesmo Aparelho ou via Conexão Online (criando uma sala para cada jogador usar seu próprio celular), tanto no Modo Normal (2 jogadores) quanto no Modo Mesão (4 jogadores).'
   },
   {
     id: 'step_25_duelo_board',
-    stepNumber: '28',
+    stepNumber: '29',
     title: 'App Duelo — Marcador em Partida',
     targetTourId: 'tour-gameboard-active',
     envView: 'game_board',
     padding: 10,
-    blairPoseSuggestion: 'Pose 28 • Blair Ativando as 3 Runas no Campo de Batalha',
+    blairPoseSuggestion: 'Pose 29 • Blair Ativando as 3 Runas no Campo de Batalha',
     blairSpeech:
       'Durante o duelo, o marcador controla Pontos de Vida, Mana da rodada, Redução de CT, Dano Primordial, ativação de Runas, Sanidade, contador de Rodadas e o Log completo da partida!'
   },
   {
     id: 'step_26_btn_duel_ia',
-    stepNumber: '29',
+    stepNumber: '30',
     title: 'Duelo vs IA',
     targetTourId: 'tour-btn-duel-ia',
     envView: 'home',
     padding: 8,
-    blairPoseSuggestion: 'Pose 29 • Blair com Sorriso Misterioso',
+    blairPoseSuggestion: 'Pose 30 • Blair com Sorriso Misterioso',
     blairSpeech:
       'Em breve poderei falar disso... mas o Mestre ainda não terminou de montar..'
   },
   {
     id: 'step_27_btn_torneio',
-    stepNumber: '30',
+    stepNumber: '31',
     title: 'Torneios',
     targetTourId: 'tour-btn-torneio',
     envView: 'home',
     padding: 8,
-    blairPoseSuggestion: 'Pose 30 • Blair Apresentando os Torneios',
+    blairPoseSuggestion: 'Pose 31 • Blair Apresentando os Torneios',
     blairSpeech:
       'Em Torneios ficam os campeonatos da comunidade e os oficiais, assim como as Ligas e Copas presenciais e online!'
   },
   {
     id: 'step_28_torneio_open',
-    stepNumber: '31',
+    stepNumber: '32',
     title: 'Torneios, Ligas e Copas',
     targetTourId: 'tour-tournament-main',
     envView: 'tournament_bracket',
     padding: 10,
-    blairPoseSuggestion: 'Pose 31 • Blair Erguendo o Troféu de Campeã',
+    blairPoseSuggestion: 'Pose 32 • Blair Erguendo o Troféu de Campeã',
     blairSpeech:
       'Aqui você acompanha os torneios da comunidade e os torneios oficiais, além das Ligas e Copas presenciais e online, podendo conferir a classificação, a agenda de duelos e assistir às partidas ao vivo!'
   },
   {
     id: 'step_29_btn_deckbuilder',
-    stepNumber: '32',
+    stepNumber: '33',
     title: 'Monte Seu Deck',
     targetTourId: 'tour-btn-deckbuilder',
     envView: 'home',
     padding: 8,
-    blairPoseSuggestion: 'Pose 32 • Blair Apresentando o DeckBuilder',
+    blairPoseSuggestion: 'Pose 33 • Blair Apresentando o DeckBuilder',
     blairSpeech:
       'Agora vamos entrar no DeckBuilder para ver cada ferramenta de construção e análise de decks em ação!'
   },
   {
     id: 'step_30_deckbuilder_build',
-    stepNumber: '33',
+    stepNumber: '34',
     title: 'Monte Seu Deck — Construtor',
     targetTourId: 'tour-deckbuilder-main',
     envView: 'deckbuilder_build',
     padding: 10,
-    blairPoseSuggestion: 'Pose 33 • Blair Montando o Deck Insanis',
+    blairPoseSuggestion: 'Pose 34 • Blair Montando o Deck Insanis',
     blairSpeech:
       'Carreguei o Deck Insanis como exemplo! À esquerda você filtra todas as cartas do jogo e à direita monta seu Deck Principal (Modo Normal ou Modo Mesão) e Side Deck, além de acessar o Mural da Comunidade, Decks na Nuvem e gerar PDF/PNG para torneios.'
   },
   {
     id: 'step_31_deckbuilder_mulligan',
-    stepNumber: '34',
+    stepNumber: '35',
     title: 'Monte Seu Deck — Mão Inicial e Mulligan',
     targetTourId: 'tour-deckbuilder-main',
     envView: 'deckbuilder_mulligan',
     padding: 10,
-    blairPoseSuggestion: 'Pose 34 • Blair Simulando a Mão Inicial do Deck Insanis',
+    blairPoseSuggestion: 'Pose 35 • Blair Simulando a Mão Inicial do Deck Insanis',
     blairSpeech:
       'Na aba Mão Inicial / Mulligan, simulamos a compra das 5 cartas iniciais do Deck Insanis, testamos o Mulligan e conferimos as probabilidades exatas de comprar cada carta!'
   },
   {
     id: 'step_32_deckbuilder_neural',
-    stepNumber: '35',
+    stepNumber: '36',
     title: 'Monte Seu Deck — Mapa Neural',
     targetTourId: 'tour-deckbuilder-main',
     envView: 'deckbuilder_neural',
     padding: 10,
-    blairPoseSuggestion: 'Pose 35 • Blair Explorando o Mapa Neural do Deck Insanis',
+    blairPoseSuggestion: 'Pose 36 • Blair Explorando o Mapa Neural do Deck Insanis',
     blairSpeech:
       'Este é o Mapa Neural! Ele desenha uma rede interativa conectando todas as sinergias, citações e combos entre as cartas do Deck Insanis.'
   },
   {
     id: 'step_33_deckbuilder_compare',
-    stepNumber: '36',
+    stepNumber: '37',
     title: 'Monte Seu Deck — Comparador de Decks',
     targetTourId: 'tour-deckbuilder-main',
     envView: 'deckbuilder_compare',
     padding: 10,
-    blairPoseSuggestion: 'Pose 36 • Blair Comparando Deck Insanis vs. Príncipe do Macroverso',
+    blairPoseSuggestion: 'Pose 37 • Blair Comparando Deck Insanis vs. Príncipe do Macroverso',
     blairSpeech:
       'No Comparador de Decks coloquei lado a lado o Deck Insanis e o Deck Príncipe do Macroverso! Aqui você analisa as cartas em comum, as cartas exclusivas de cada lista e compara as curvas de custo.'
   },
   {
     id: 'step_34_deckbuilder_stats',
-    stepNumber: '37',
+    stepNumber: '38',
     title: 'Monte Seu Deck — Estatísticas',
     targetTourId: 'tour-deckbuilder-main',
     envView: 'deckbuilder_stats',
     padding: 10,
-    blairPoseSuggestion: 'Pose 37 • Blair Analisando os Gráficos do Deck Insanis',
+    blairPoseSuggestion: 'Pose 38 • Blair Analisando os Gráficos do Deck Insanis',
     blairSpeech:
       'E na aba Estatísticas você confere a distribuição de tipos de cartas, o painel de validação completa das regras e o gráfico da Curva de Custo (CT) do Deck Insanis!'
   },
   {
     id: 'step_35_btn_populares',
-    stepNumber: '38',
+    stepNumber: '39',
     title: 'Cartas Populares',
     targetTourId: 'tour-btn-populares',
     envView: 'home',
     padding: 8,
-    blairPoseSuggestion: 'Pose 38 • Blair Apresentando as Cartas Populares',
+    blairPoseSuggestion: 'Pose 39 • Blair Apresentando as Cartas Populares',
     blairSpeech:
       'Ao lado do DeckBuilder temos as Cartas Populares, com o ranking das cartas mais usadas pela comunidade!'
   },
   {
     id: 'step_36_populares_open',
-    stepNumber: '39',
+    stepNumber: '40',
     title: 'Cartas Populares — Ranking da Comunidade',
     targetTourId: 'tour-popular-modal',
     envView: 'popular_modal',
     padding: 10,
-    blairPoseSuggestion: 'Pose 39 • Blair Analisando o Ranking em Chamas',
+    blairPoseSuggestion: 'Pose 40 • Blair Analisando o Ranking em Chamas',
     blairSpeech:
       'Aqui você acompanha em tempo real o Top 10 das cartas mais presentes nos decks da comunidade nos últimos 30 dias, podendo alternar entre Modo Normal e Modo Mesão e filtrar por categoria.'
   },
   {
     id: 'step_37_btn_mercado',
-    stepNumber: '40',
+    stepNumber: '41',
     title: 'Mercado',
     targetTourId: 'tour-btn-mercado',
     envView: 'home',
     padding: 8,
-    blairPoseSuggestion: 'Pose 40 • Blair Apresentando o Mercado',
+    blairPoseSuggestion: 'Pose 41 • Blair Apresentando o Mercado',
     blairSpeech:
       'Aqui fica o Mercado oficial e da comunidade junto ao seu Carrinho de compras. Vamos abrir!'
   },
   {
     id: 'step_38_mercado_open',
-    stepNumber: '41',
+    stepNumber: '42',
     title: 'Mercado — Loja Oficial e da Comunidade',
     targetTourId: 'tour-store-main',
     envView: 'store_modal',
     padding: 10,
-    blairPoseSuggestion: 'Pose 41 • Blair Mostrando Decks, Playmats e Cartas',
+    blairPoseSuggestion: 'Pose 42 • Blair Mostrando Decks, Playmats e Cartas',
     blairSpeech:
       'No Mercado você encontra os Produtos Oficiais (Decks, Cartas Avulsas, Playmats, Promoções, Pré-venda e Kits), além de Cartas e Coleções anunciadas por jogadores da comunidade, acompanhamento de pedidos e Carrinho com cálculo de frete!'
   },
   {
     id: 'step_39_btn_conta',
-    stepNumber: '42',
+    stepNumber: '43',
     title: 'Sua Conta — Perfil, Álbum e Coleção',
     targetTourId: 'tour-btn-conta',
     envView: 'home_account',
     padding: 10,
-    blairPoseSuggestion: 'Pose 42 • Blair Despedindo-se e Desejando Bons Duelos',
+    blairPoseSuggestion: 'Pose 43 • Blair Despedindo-se e Desejando Bons Duelos',
     blairSpeech:
       'E por fim, aqui no menu da Sua Conta (aberto na tela para você ver todas as opções), você acessa Meu Perfil e Cartas que Procuro, Cartas Mais Procuradas, Meu Álbum de Coleção, Hall da Fama, Meus Decks Salvos, Histórico de Campeonatos e Meus Pedidos! Clique em "Concluir" para fechar o tutorial e curtir o site ao som da nossa música!'
   }
