@@ -18,7 +18,7 @@ import {
   Clock,
   ShoppingBag
 } from 'lucide-react';
-import { OrderStatus, StoreCoupon, StoreOrder, StoreSettings } from '../types';
+import { OrderStatus, StoreCoupon, StoreOrder, StoreSettings, SupplierOriginAddress } from '../types';
 import {
   DEFAULT_STORE_SETTINGS,
   deleteStoreOrder,
@@ -28,6 +28,7 @@ import {
   formatCouponExpiry,
   formatCpf,
   isCouponExpired,
+  lookupCepAddress,
   ORDER_STATUS_LABELS,
   saveStoreSettings,
   subscribeAllStoreOrders,
@@ -35,8 +36,10 @@ import {
   updateStoreOrderFields
 } from '../storeService';
 
-export const AdminStoreManager: React.FC = () => {
-  const [subTab, setSubTab] = useState<'orders' | 'shipping'>('orders');
+export const AdminStoreManager: React.FC<{ initialSubTab?: 'orders' | 'shipping' }> = ({
+  initialSubTab = 'orders'
+}) => {
+  const [subTab, setSubTab] = useState<'orders' | 'shipping'>(initialSubTab);
   const [orders, setOrders] = useState<StoreOrder[]>([]);
   const [loadingOrders, setLoadingOrders] = useState(true);
   const [statusFilter, setStatusFilter] = useState<string>('all');
@@ -76,6 +79,123 @@ export const AdminStoreManager: React.FC = () => {
   const [newCouponMinVal, setNewCouponMinVal] = useState('0');
   const [newCouponExpiresAt, setNewCouponExpiresAt] = useState('');
   const [expandedCouponCode, setExpandedCouponCode] = useState<string | null>(null);
+
+  // Origin CEP Lookup & New Supplier Origin Form
+  const [originCepLoading, setOriginCepLoading] = useState(false);
+  const [supplierCepLoading, setSupplierCepLoading] = useState(false);
+  const [newSupName, setNewSupName] = useState('');
+  const [newSupContact, setNewSupContact] = useState('');
+  const [newSupCep, setNewSupCep] = useState('');
+  const [newSupStreet, setNewSupStreet] = useState('');
+  const [newSupNumber, setNewSupNumber] = useState('');
+  const [newSupComplement, setNewSupComplement] = useState('');
+  const [newSupNeighborhood, setNewSupNeighborhood] = useState('');
+  const [newSupCity, setNewSupCity] = useState('');
+  const [newSupState, setNewSupState] = useState('');
+
+  const handleOriginCepLookup = async (rawVal: string) => {
+    const formatted = formatCep(rawVal);
+    setSettings((prev) => ({ ...prev, originCep: formatted }));
+    const clean = formatted.replace(/\D/g, '');
+    if (clean.length === 8) {
+      setOriginCepLoading(true);
+      try {
+        const addr = await lookupCepAddress(clean);
+        setSettings((prev) => ({
+          ...prev,
+          originCep: formatted,
+          originStreet: addr.street || prev.originStreet || '',
+          originNeighborhood: addr.neighborhood || prev.originNeighborhood || '',
+          originCity: addr.city || prev.originCity || '',
+          originState: addr.state || prev.originState || ''
+        }));
+      } catch {
+        // allow manual typing
+      } finally {
+        setOriginCepLoading(false);
+      }
+    }
+  };
+
+  const handleSupplierCepLookup = async (rawVal: string) => {
+    const formatted = formatCep(rawVal);
+    setNewSupCep(formatted);
+    const clean = formatted.replace(/\D/g, '');
+    if (clean.length === 8) {
+      setSupplierCepLoading(true);
+      try {
+        const addr = await lookupCepAddress(clean);
+        if (addr.street) setNewSupStreet(addr.street);
+        if (addr.neighborhood) setNewSupNeighborhood(addr.neighborhood);
+        if (addr.city) setNewSupCity(addr.city);
+        if (addr.state) setNewSupState(addr.state);
+      } catch {
+        // allow manual typing
+      } finally {
+        setSupplierCepLoading(false);
+      }
+    }
+  };
+
+  const handleAddSupplierOrigin = async () => {
+    if (!newSupName.trim() || newSupCep.replace(/\D/g, '').length !== 8) return;
+    const item: SupplierOriginAddress = {
+      id: `sup_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      name: newSupName.trim(),
+      contactOrCompany: newSupContact.trim() || undefined,
+      cep: formatCep(newSupCep),
+      street: newSupStreet.trim(),
+      number: newSupNumber.trim() || 'S/N',
+      complement: newSupComplement.trim() || undefined,
+      neighborhood: newSupNeighborhood.trim(),
+      city: newSupCity.trim(),
+      state: newSupState.trim().toUpperCase()
+    };
+    const nextList = [...(settings.supplierOrigins || []), item];
+    const nextSettings: StoreSettings = {
+      ...settings,
+      supplierOrigins: nextList
+    };
+    setSettings(nextSettings);
+    setNewSupName('');
+    setNewSupContact('');
+    setNewSupCep('');
+    setNewSupStreet('');
+    setNewSupNumber('');
+    setNewSupComplement('');
+    setNewSupNeighborhood('');
+    setNewSupCity('');
+    setNewSupState('');
+    try {
+      await saveStoreSettings(nextSettings);
+      setSettingsSavedMsg(true);
+      setTimeout(() => setSettingsSavedMsg(false), 2500);
+    } catch {
+      // ignore
+    }
+  };
+
+  const handleActivateSupplierAsStoreOrigin = async (sup: SupplierOriginAddress) => {
+    const nextSettings: StoreSettings = {
+      ...settings,
+      originName: sup.name,
+      originCep: sup.cep,
+      originStreet: sup.street,
+      originNumber: sup.number,
+      originComplement: sup.complement || '',
+      originNeighborhood: sup.neighborhood,
+      originCity: sup.city,
+      originState: sup.state
+    };
+    setSettings(nextSettings);
+    try {
+      await saveStoreSettings(nextSettings);
+      setSettingsSavedMsg(true);
+      setTimeout(() => setSettingsSavedMsg(false), 2500);
+    } catch {
+      // ignore
+    }
+  };
 
   useEffect(() => {
     fetchStoreSettings().then(setSettings);
@@ -235,7 +355,31 @@ export const AdminStoreManager: React.FC = () => {
 
   const handleCopyShippingLabel = (ord: StoreOrder) => {
     const addr = ord.shippingAddress;
+    const itemOrigins = Array.from(
+      new Set(ord.items.map((i) => i.originAddressFormatted).filter(Boolean))
+    );
+    const defaultOriginLine = [
+      settings.originName || 'Loja Oficial Light Dark TCG',
+      settings.originStreet
+        ? `${settings.originStreet}${settings.originNumber ? `, Nº ${settings.originNumber}` : ''}${settings.originComplement ? ` (${settings.originComplement})` : ''}`
+        : '',
+      settings.originNeighborhood || '',
+      settings.originCity || settings.originState
+        ? `${settings.originCity || ''}${settings.originState ? `/${settings.originState}` : ''}`
+        : '',
+      `CEP: ${formatCep(settings.originCep || '01001-000')}`
+    ]
+      .filter(Boolean)
+      .join(' | ');
+
+    const originSection =
+      itemOrigins.length > 0
+        ? `REMETENTE / ORIGEM (FORNECEDOR): ${itemOrigins.join(' // ')}`
+        : `REMETENTE / ORIGEM: ${defaultOriginLine}`;
+
     const text = [
+      originSection,
+      `----------------------------------------`,
       `DESTINATÁRIO: ${ord.customerName}`,
       `CPF: ${formatCpf(ord.customerCpf)} | TEL: ${ord.customerPhone}`,
       `ENDEREÇO: ${addr.street}, Nº ${addr.number}${addr.complement ? ` (${addr.complement})` : ''}`,
@@ -666,6 +810,11 @@ export const AdminStoreManager: React.FC = () => {
                                     [Item de Pré-Venda]
                                   </span>
                                 )}
+                                {item.originAddressFormatted && (
+                                  <span className="block text-[10px] text-cyan-300 font-mono mt-0.5 bg-cyan-950/50 border border-cyan-500/30 px-1.5 py-0.5 rounded">
+                                    📍 Sai do Fornecedor: {item.originAddressFormatted}
+                                  </span>
+                                )}
                               </div>
                               <span className="font-mono font-bold text-emerald-400 tabular-nums shrink-0">
                                 {formatBRL(item.unitPrice * item.quantity)}
@@ -814,20 +963,352 @@ export const AdminStoreManager: React.FC = () => {
       ) : (
         /* ================= SUB-TAB 2: SHIPPING & COUPONS SETTINGS ================= */
         <form onSubmit={handleSaveSettings} className="bg-slate-900 border border-slate-800 rounded-xl p-6 space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div>
-              <label className="text-xs font-bold text-slate-300 block mb-1">
-                CEP de Origem dos Envios
-              </label>
-              <input
-                type="text"
-                value={settings.originCep}
-                onChange={(e) => setSettings({ ...settings, originCep: formatCep(e.target.value) })}
-                placeholder="01001-000"
-                className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm text-white font-mono"
-              />
+          {/* ================= ENDEREÇO DE ORIGEM DOS ENVIOS & FORNECEDORES TERCEIROS ================= */}
+          <div className="p-5 rounded-xl bg-slate-950 border border-cyan-500/40 space-y-5 shadow-lg">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-3">
+              <div>
+                <h4 className="text-sm font-black text-cyan-300 flex items-center gap-2 uppercase tracking-wider">
+                  <MapPin size={16} className="text-cyan-400" />
+                  <span>Endereço de Origem dos Envios (Loja ou Fornecedores Terceiros)</span>
+                </h4>
+                <p className="text-[11px] text-slate-300 mt-0.5">
+                  Altere livremente o endereço de onde os produtos saem (remetente) ou cadastre endereços de fornecedores terceiros que vendem na sua loja.
+                </p>
+              </div>
+              <span className="text-xs font-mono text-cyan-200 bg-cyan-950/70 border border-cyan-500/40 px-3 py-1.5 rounded-lg shrink-0">
+                Origem Ativa: <strong>{settings.originCity || 'São Paulo'}/{settings.originState || 'SP'} ({settings.originCep || '01001-000'})</strong>
+              </span>
             </div>
 
+            {/* Campos do Endereço de Origem Principal / Ativo */}
+            <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-4 space-y-3">
+              <div className="text-xs font-bold text-white flex items-center justify-between">
+                <span>1. Endereço de Origem Principal / Ativo da Loja</span>
+                {originCepLoading && (
+                  <span className="text-[11px] text-cyan-400 flex items-center gap-1">
+                    <RefreshCw size={12} className="animate-spin" /> Buscando CEP...
+                  </span>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
+                <div className="sm:col-span-5">
+                  <label className="text-[11px] font-bold text-slate-300 block mb-1">
+                    Nome do Remetente / Loja / Fornecedor
+                  </label>
+                  <input
+                    type="text"
+                    value={settings.originName || ''}
+                    onChange={(e) => setSettings({ ...settings, originName: e.target.value })}
+                    placeholder="Ex: Matriz Light Dark TCG ou Nome do Fornecedor"
+                    className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-xs text-white font-bold"
+                  />
+                </div>
+
+                <div className="sm:col-span-3">
+                  <label className="text-[11px] font-bold text-cyan-300 block mb-1">
+                    CEP de Origem (Busca Automática)
+                  </label>
+                  <input
+                    type="text"
+                    value={settings.originCep}
+                    onChange={(e) => handleOriginCepLookup(e.target.value)}
+                    placeholder="01001-000"
+                    maxLength={9}
+                    className="w-full bg-slate-950 border border-cyan-500/60 rounded-lg p-2 text-xs text-cyan-300 font-mono font-bold"
+                  />
+                </div>
+
+                <div className="sm:col-span-3">
+                  <label className="text-[11px] font-bold text-slate-300 block mb-1">
+                    Cidade de Origem
+                  </label>
+                  <input
+                    type="text"
+                    value={settings.originCity || ''}
+                    onChange={(e) => setSettings({ ...settings, originCity: e.target.value })}
+                    placeholder="Ex: São Paulo"
+                    className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-xs text-white"
+                  />
+                </div>
+
+                <div className="sm:col-span-1">
+                  <label className="text-[11px] font-bold text-slate-300 block mb-1">
+                    UF
+                  </label>
+                  <input
+                    type="text"
+                    maxLength={2}
+                    value={settings.originState || ''}
+                    onChange={(e) => setSettings({ ...settings, originState: e.target.value.toUpperCase() })}
+                    placeholder="SP"
+                    className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-xs text-white font-mono uppercase text-center"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
+                <div className="sm:col-span-5">
+                  <label className="text-[11px] text-slate-400 block mb-1">
+                    Rua / Logradouro de Origem
+                  </label>
+                  <input
+                    type="text"
+                    value={settings.originStreet || ''}
+                    onChange={(e) => setSettings({ ...settings, originStreet: e.target.value })}
+                    placeholder="Rua, Avenida..."
+                    className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-xs text-white"
+                  />
+                </div>
+
+                <div className="sm:col-span-2">
+                  <label className="text-[11px] text-slate-400 block mb-1">
+                    Número
+                  </label>
+                  <input
+                    type="text"
+                    value={settings.originNumber || ''}
+                    onChange={(e) => setSettings({ ...settings, originNumber: e.target.value })}
+                    placeholder="Ex: 100"
+                    className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-xs text-white"
+                  />
+                </div>
+
+                <div className="sm:col-span-2">
+                  <label className="text-[11px] text-slate-400 block mb-1">
+                    Complemento
+                  </label>
+                  <input
+                    type="text"
+                    value={settings.originComplement || ''}
+                    onChange={(e) => setSettings({ ...settings, originComplement: e.target.value })}
+                    placeholder="Galpão, Sala..."
+                    className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-xs text-white"
+                  />
+                </div>
+
+                <div className="sm:col-span-3">
+                  <label className="text-[11px] text-slate-400 block mb-1">
+                    Bairro
+                  </label>
+                  <input
+                    type="text"
+                    value={settings.originNeighborhood || ''}
+                    onChange={(e) => setSettings({ ...settings, originNeighborhood: e.target.value })}
+                    placeholder="Bairro"
+                    className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-xs text-white"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Cadastro e Lista de Fornecedores Terceiros / Origens Adicionais */}
+            <div className="bg-slate-900/90 border border-purple-500/30 rounded-xl p-4 space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div>
+                  <div className="text-xs font-bold text-purple-300">
+                    2. Endereços de Fornecedores Terceiros (Produtos que saem direto do endereço deles)
+                  </div>
+                  <p className="text-[11px] text-slate-400">
+                    Cadastre abaixo os endereços dos seus fornecedores parceiros. Você pode ativar qualquer um deles como endereço principal em 1 clique ou vincular cada produto ao seu respectivo fornecedor na aba de Produtos!
+                  </p>
+                </div>
+                <span className="text-xs font-mono text-purple-300 bg-slate-950 border border-slate-800 px-2.5 py-1 rounded-lg shrink-0">
+                  {(settings.supplierOrigins || []).length} fornecedor(es) salvo(s)
+                </span>
+              </div>
+
+              {/* Lista de Fornecedores Salvos */}
+              {(settings.supplierOrigins || []).length > 0 && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {(settings.supplierOrigins || []).map((sup) => {
+                    const isCurrentOrigin =
+                      settings.originCep === sup.cep && settings.originName === sup.name;
+                    return (
+                      <div
+                        key={sup.id}
+                        className={`p-3.5 rounded-xl border flex flex-col justify-between gap-2.5 ${
+                          isCurrentOrigin
+                            ? 'bg-cyan-950/35 border-cyan-500/60'
+                            : 'bg-slate-950 border-slate-800'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <div className="text-xs font-black text-white flex items-center gap-2">
+                              <span>{sup.name}</span>
+                              {isCurrentOrigin && (
+                                <span className="text-[10px] px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 font-bold">
+                                  Origem Principal Ativa
+                                </span>
+                              )}
+                            </div>
+                            {sup.contactOrCompany && (
+                              <div className="text-[11px] text-purple-300">{sup.contactOrCompany}</div>
+                            )}
+                            <div className="text-[11px] text-slate-300 mt-1">
+                              {sup.street}
+                              {sup.number ? `, Nº ${sup.number}` : ''}
+                              {sup.complement ? ` (${sup.complement})` : ''}
+                              {sup.neighborhood ? ` — ${sup.neighborhood}` : ''}
+                            </div>
+                            <div className="text-[11px] font-mono text-cyan-300 font-bold mt-0.5">
+                              {sup.city}/{sup.state} · CEP: {sup.cep}
+                            </div>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              const filtered = (settings.supplierOrigins || []).filter(
+                                (item) => item.id !== sup.id
+                              );
+                              const next = { ...settings, supplierOrigins: filtered };
+                              setSettings(next);
+                              await saveStoreSettings(next).catch(() => {});
+                            }}
+                            className="text-red-400 hover:text-red-300 p-1 rounded hover:bg-red-950/40 transition"
+                            title="Remover endereço de fornecedor"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+
+                        <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-800/80">
+                          <button
+                            type="button"
+                            onClick={() => handleActivateSupplierAsStoreOrigin(sup)}
+                            className={`px-3 py-1.5 rounded-lg text-[11px] font-bold transition ${
+                              isCurrentOrigin
+                                ? 'bg-cyan-600/30 text-cyan-200 border border-cyan-500/40'
+                                : 'bg-cyan-600 hover:bg-cyan-500 text-white'
+                            }`}
+                          >
+                            {isCurrentOrigin
+                              ? '✓ Em uso como Origem Principal'
+                              : 'Usar como Endereço de Origem Principal'}
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Formulário para Adicionar Novo Endereço de Fornecedor Terceiro */}
+              <div className="bg-slate-950/80 border border-slate-800 rounded-xl p-3.5 space-y-3">
+                <div className="text-xs font-bold text-emerald-300 flex items-center justify-between">
+                  <span>+ Adicionar Novo Endereço de Fornecedor Terceiro</span>
+                  {supplierCepLoading && (
+                    <span className="text-[11px] text-emerald-400 flex items-center gap-1">
+                      <RefreshCw size={12} className="animate-spin" /> Preenchendo endereço pelo CEP...
+                    </span>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5">
+                  <div className="sm:col-span-4">
+                    <label className="text-[11px] text-slate-400 block mb-1">Nome do Fornecedor *</label>
+                    <input
+                      type="text"
+                      value={newSupName}
+                      onChange={(e) => setNewSupName(e.target.value)}
+                      placeholder="Ex: Fornecedor Playmats RS"
+                      className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs text-white font-bold"
+                    />
+                  </div>
+                  <div className="sm:col-span-3">
+                    <label className="text-[11px] text-slate-400 block mb-1">Contato / Empresa (opcional)</label>
+                    <input
+                      type="text"
+                      value={newSupContact}
+                      onChange={(e) => setNewSupContact(e.target.value)}
+                      placeholder="WhatsApp ou Responsável"
+                      className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs text-white"
+                    />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="text-[11px] text-emerald-300 font-bold block mb-1">CEP do Fornecedor *</label>
+                    <input
+                      type="text"
+                      maxLength={9}
+                      value={newSupCep}
+                      onChange={(e) => handleSupplierCepLookup(e.target.value)}
+                      placeholder="00000-000"
+                      className="w-full bg-slate-900 border border-emerald-500/50 rounded-lg p-2 text-xs text-emerald-300 font-mono font-bold"
+                    />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="text-[11px] text-slate-400 block mb-1">Cidade</label>
+                    <input
+                      type="text"
+                      value={newSupCity}
+                      onChange={(e) => setNewSupCity(e.target.value)}
+                      placeholder="Cidade"
+                      className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs text-white"
+                    />
+                  </div>
+                  <div className="sm:col-span-1">
+                    <label className="text-[11px] text-slate-400 block mb-1">UF</label>
+                    <input
+                      type="text"
+                      maxLength={2}
+                      value={newSupState}
+                      onChange={(e) => setNewSupState(e.target.value.toUpperCase())}
+                      placeholder="UF"
+                      className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs text-white font-mono uppercase text-center"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-end">
+                  <div className="sm:col-span-4">
+                    <label className="text-[11px] text-slate-400 block mb-1">Rua / Logradouro</label>
+                    <input
+                      type="text"
+                      value={newSupStreet}
+                      onChange={(e) => setNewSupStreet(e.target.value)}
+                      placeholder="Rua, Avenida..."
+                      className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs text-white"
+                    />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="text-[11px] text-slate-400 block mb-1">Número</label>
+                    <input
+                      type="text"
+                      value={newSupNumber}
+                      onChange={(e) => setNewSupNumber(e.target.value)}
+                      placeholder="Nº"
+                      className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs text-white"
+                    />
+                  </div>
+                  <div className="sm:col-span-3">
+                    <label className="text-[11px] text-slate-400 block mb-1">Bairro</label>
+                    <input
+                      type="text"
+                      value={newSupNeighborhood}
+                      onChange={(e) => setNewSupNeighborhood(e.target.value)}
+                      placeholder="Bairro"
+                      className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs text-white"
+                    />
+                  </div>
+                  <div className="sm:col-span-3">
+                    <button
+                      type="button"
+                      onClick={handleAddSupplierOrigin}
+                      disabled={!newSupName.trim() || newSupCep.replace(/\D/g, '').length !== 8}
+                      className="w-full py-2 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white text-xs font-bold transition flex items-center justify-center gap-1.5"
+                    >
+                      <Plus size={14} />
+                      <span>Salvar Fornecedor</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="text-xs font-bold text-slate-300 block mb-1">
                 Frete Grátis Acima de (R$) (0 = desativado)

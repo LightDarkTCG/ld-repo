@@ -208,6 +208,7 @@ export interface ExclusiveProduct {
   buttonText?: string;
   buttonLink?: string;
   isActive?: boolean;
+  isHiddenFromStore?: boolean;
   isButtonActive?: boolean;
   noLinkMessage?: string;
   // Loja Interna, Pré-Venda e Cálculo de Frete
@@ -218,6 +219,17 @@ export interface ExclusiveProduct {
   weightGrams?: number;
   freeShipping?: boolean;
   allowInternalCheckout?: boolean;
+  // Endereço de Origem do Produto / Fornecedor Terceiro
+  originAddressMode?: 'store_default' | 'custom_supplier';
+  supplierOriginId?: string;
+  customOriginName?: string;
+  customOriginCep?: string;
+  customOriginStreet?: string;
+  customOriginNumber?: string;
+  customOriginComplement?: string;
+  customOriginNeighborhood?: string;
+  customOriginCity?: string;
+  customOriginState?: string;
 }
 
 export interface CartItem {
@@ -235,6 +247,11 @@ export interface CartItem {
   weightGrams: number;
   freeShipping?: boolean;
   maxStock?: number;
+  originName?: string;
+  originCep?: string;
+  originCity?: string;
+  originState?: string;
+  originAddressFormatted?: string;
 }
 
 export type MarketplaceListingType = 'single_card' | 'collection';
@@ -354,8 +371,30 @@ export interface RegionalShippingRate {
   extraPerKg: number;
 }
 
+export interface SupplierOriginAddress {
+  id: string;
+  name: string;
+  contactOrCompany?: string;
+  cep: string;
+  street: string;
+  number: string;
+  complement?: string;
+  neighborhood: string;
+  city: string;
+  state: string;
+  isDefault?: boolean;
+}
+
 export interface StoreSettings {
   originCep: string;
+  originName?: string;
+  originStreet?: string;
+  originNumber?: string;
+  originComplement?: string;
+  originNeighborhood?: string;
+  originCity?: string;
+  originState?: string;
+  supplierOrigins?: SupplierOriginAddress[];
   freeShippingThreshold: number;
   handlingDays: number;
   enableMiniEnvios: boolean;

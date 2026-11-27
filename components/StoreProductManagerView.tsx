@@ -1,0 +1,2551 @@
+import React, { useState, useEffect, useMemo } from 'react';
+import {
+  Box,
+  Plus,
+  Trash2,
+  Edit2,
+  Check,
+  X,
+  Upload,
+  Film,
+  Image as ImageIcon,
+  Sparkles,
+  Layers,
+  Search,
+  Eye,
+  EyeOff,
+  Truck,
+  MapPin,
+  Copy,
+  ArrowLeft,
+  ArrowUp,
+  ArrowDown,
+  Save,
+  RefreshCw,
+  Package,
+  AlertCircle,
+  Loader2,
+  SlidersHorizontal,
+  DollarSign,
+  Calendar
+} from 'lucide-react';
+import {
+  CardData,
+  ExclusiveProduct,
+  ProductIndividualCardItem,
+  StoreSettings,
+  SupplierOriginAddress
+} from '../types';
+import {
+  DEFAULT_STORE_SETTINGS,
+  fetchStoreSettings,
+  formatCep,
+  isProductVisibleInStore,
+  lookupCepAddress,
+  saveStoreSettings,
+  uploadMarketplaceImage
+} from '../storeService';
+import { encodeDeckCode, parseDeckFromCode } from '../deckUtils';
+
+interface StoreProductManagerViewProps {
+  products: ExclusiveProduct[];
+  onChangeProducts: (nextProducts: ExclusiveProduct[]) => void;
+  onSaveProducts: (productsToSave?: ExclusiveProduct[]) => Promise<void>;
+  cards: CardData[];
+  saving?: boolean;
+  initialEditingIndex?: number | null;
+  initialCreateNew?: boolean;
+  initialCreateHidden?: boolean;
+  onOpenShippingSettings?: () => void;
+}
+
+type ProductFilterMode =
+  | 'all'
+  | 'visible'
+  | 'hidden'
+  | 'in_stock'
+  | 'out_of_stock'
+  | 'pre_order'
+  | 'custom_supplier';
+
+type EditorSectionTab =
+  | 'all_columns'
+  | 'general'
+  | 'stock_origin'
+  | 'versions'
+  | 'media'
+  | 'cards';
+
+export const StoreProductManagerView: React.FC<StoreProductManagerViewProps> = ({
+  products,
+  onChangeProducts,
+  onSaveProducts,
+  cards,
+  saving = false,
+  initialEditingIndex = null,
+  initialCreateNew = false,
+  initialCreateHidden = false,
+  onOpenShippingSettings
+}) => {
+  const [viewMode, setViewMode] = useState<'list' | 'editor'>(() =>
+    initialEditingIndex !== null || initialCreateNew ? 'editor' : 'list'
+  );
+  const [editingIndex, setEditingIndex] = useState<number | null>(initialEditingIndex);
+  const [editorTab, setEditorTab] = useState<EditorSectionTab>('all_columns');
+
+  const [filterMode, setFilterMode] = useState<ProductFilterMode>('all');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [uploadingMediaKey, setUploadingMediaKey] = useState<string | null>(null);
+  const [savedBannerMsg, setSavedBannerMsg] = useState<string | null>(null);
+
+  // Store Settings (for Default Origin & Saved Third-Party Suppliers)
+  const [storeSettings, setStoreSettings] = useState<StoreSettings>(DEFAULT_STORE_SETTINGS);
+  const [customCepLoading, setCustomCepLoading] = useState(false);
+  const [quickVarName, setQuickVarName] = useState('');
+  const [quickVarPrice, setQuickVarPrice] = useState('');
+  const [catalogCardSearch, setCatalogCardSearch] = useState('');
+
+  useEffect(() => {
+    fetchStoreSettings().then(setStoreSettings);
+  }, []);
+
+  // Handle initial create new product trigger
+  useEffect(() => {
+    if (initialCreateNew) {
+      handleCreateNewProduct(initialCreateHidden);
+    } else if (
+      typeof initialEditingIndex === 'number' &&
+      initialEditingIndex >= 0 &&
+      initialEditingIndex < products.length
+    ) {
+      setEditingIndex(initialEditingIndex);
+      setViewMode('editor');
+    }
+  }, [initialCreateNew, initialCreateHidden, initialEditingIndex]);
+
+  const updateProductAt = (idx: number, updater: (prev: ExclusiveProduct) => ExclusiveProduct) => {
+    if (idx < 0 || idx >= products.length) return;
+    const next = [...products];
+    next[idx] = updater({ ...next[idx] });
+    onChangeProducts(next);
+  };
+
+  const handleSaveAndNotify = async (overrideList?: ExclusiveProduct[], customMsg?: string) => {
+    await onSaveProducts(overrideList);
+    setSavedBannerMsg(customMsg || '✓ Alterações nos produtos e estoque salvas com sucesso!');
+    setTimeout(() => setSavedBannerMsg(null), 3500);
+  };
+
+  const handleCreateNewProduct = (startHidden: boolean = false) => {
+    const newProd: ExclusiveProduct = {
+      id: `prod_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      title: '',
+      badge: 'Produto Oficial',
+      category: 'Decks',
+      storeCategory: 'decks',
+      description: '',
+      mediaType: 'image',
+      mediaUrl: '',
+      mediaList: [],
+      cardCodes: '',
+      productCards: [],
+      buttonText: 'Comprar Agora',
+      buttonLink: '',
+      price: 'R$ 89,90',
+      priceVariations: [],
+      sameVariationPrice: false,
+      noLinkMessage: 'PRÉ VENDA EM BREVE',
+      isActive: !startHidden,
+      isHiddenFromStore: startHidden,
+      isButtonActive: true,
+      stock: 20,
+      weightGrams: 250,
+      freeShipping: false,
+      originAddressMode: 'store_default'
+    };
+
+    // Prepend at the TOP of the product list so the user never has to scroll to the bottom
+    const next = [newProd, ...products];
+    onChangeProducts(next);
+    setEditingIndex(0);
+    setEditorTab('all_columns');
+    setViewMode('editor');
+  };
+
+  const handleInsertHalloweenTemplate = () => {
+    const halloweenDeck: ExclusiveProduct = {
+      id: `prod_halloween_${Date.now()}`,
+      title: 'Deck Halloween - Invasão das Sombras',
+      badge: 'Edição Especial Halloween',
+      category: 'Decks',
+      storeCategory: 'decks',
+      description:
+        'Deck temático de Halloween completo pronto para jogar com criaturas das trevas e magias sombrias.',
+      mediaType: 'image',
+      mediaUrl:
+        'https://firebasestorage.googleapis.com/v0/b/gen-lang-client-0120804533.firebasestorage.app/o/wb_images%2F1788736620932_Prancheta%2014.png?alt=media&token=efac4eed-1323-40d1-a15c-9687c910a9b2',
+      mediaList: [
+        {
+          type: 'image',
+          url: 'https://firebasestorage.googleapis.com/v0/b/gen-lang-client-0120804533.firebasestorage.app/o/wb_images%2F1788736620932_Prancheta%2014.png?alt=media&token=efac4eed-1323-40d1-a15c-9687c910a9b2'
+        }
+      ],
+      cardCodes: '',
+      productCards: [],
+      buttonText: 'Comprar Agora',
+      buttonLink: '',
+      price: 'R$ 89,90',
+      priceVariations: [
+        {
+          name: 'Versão Normal',
+          price: 'R$ 89,90',
+          badge: 'Normal',
+          description: 'Acabamento padrão não-foil, todas as cartas inclusas',
+          buttonLink: '',
+          isDefault: true,
+          stock: 15
+        },
+        {
+          name: 'Versão Full Foil',
+          price: 'R$ 149,90',
+          badge: 'Full Foil',
+          description: 'Edição Especial: 100% das cartas com acabamento holográfico Full Foil',
+          buttonLink: '',
+          isDefault: false,
+          stock: 10
+        }
+      ],
+      noLinkMessage: 'PRÉ VENDA DE HALLOWEEN',
+      isActive: true,
+      isHiddenFromStore: false,
+      isButtonActive: true,
+      stock: 25,
+      weightGrams: 250,
+      originAddressMode: 'store_default'
+    };
+
+    const next = [halloweenDeck, ...products];
+    onChangeProducts(next);
+    setEditingIndex(0);
+    setViewMode('editor');
+  };
+
+  const handleToggleVisibility = async (idx: number, hideFromStore: boolean) => {
+    const next = [...products];
+    next[idx] = {
+      ...next[idx],
+      isHiddenFromStore: hideFromStore,
+      isActive: !hideFromStore
+    };
+    onChangeProducts(next);
+    await handleSaveAndNotify(
+      next,
+      hideFromStore
+        ? '✓ Produto marcado como OCULTO (não está mais à vista na loja).'
+        : '✓ Produto desmarcado e colocado À VISTA na loja!'
+    );
+  };
+
+  const handleDuplicateProduct = (idx: number) => {
+    const source = products[idx];
+    if (!source) return;
+    const copy: ExclusiveProduct = JSON.parse(
+      JSON.stringify({
+        ...source,
+        id: `prod_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        title: `${source.title || 'Produto'} (Cópia)`,
+        isHiddenFromStore: true,
+        isActive: false
+      })
+    );
+    const next = [copy, ...products];
+    onChangeProducts(next);
+    setEditingIndex(0);
+    setViewMode('editor');
+  };
+
+  const handleDeleteProduct = async (idx: number) => {
+    const target = products[idx];
+    if (!target) return;
+    const next = products.filter((_, i) => i !== idx);
+    onChangeProducts(next);
+    if (editingIndex === idx) {
+      setEditingIndex(null);
+      setViewMode('list');
+    }
+    await handleSaveAndNotify(next, '✓ Produto removido da lista.');
+  };
+
+  const handleMoveProduct = (idx: number, direction: 'up' | 'down') => {
+    const targetIdx = direction === 'up' ? idx - 1 : idx + 1;
+    if (targetIdx < 0 || targetIdx >= products.length) return;
+    const next = [...products];
+    const temp = next[idx];
+    next[idx] = next[targetIdx];
+    next[targetIdx] = temp;
+    onChangeProducts(next);
+    if (editingIndex === idx) setEditingIndex(targetIdx);
+  };
+
+  // Upload Helpers
+  const handleUploadMainMedia = async (prodIdx: number, file: File, mediaSlotIdx?: number) => {
+    const key = `media-${prodIdx}-${mediaSlotIdx ?? 'new'}`;
+    setUploadingMediaKey(key);
+    try {
+      const url = await uploadMarketplaceImage(file, 'products');
+      const isVideo = file.type.startsWith('video/');
+      const mediaType: 'image' | 'video' = isVideo ? 'video' : 'image';
+
+      updateProductAt(prodIdx, (prod) => {
+        const list =
+          prod.mediaList && Array.isArray(prod.mediaList)
+            ? [...prod.mediaList]
+            : prod.mediaUrl
+            ? [{ type: prod.mediaType || 'image', url: prod.mediaUrl }]
+            : [];
+
+        if (typeof mediaSlotIdx === 'number' && mediaSlotIdx >= 0 && mediaSlotIdx < list.length) {
+          list[mediaSlotIdx] = { type: mediaType, url };
+        } else {
+          list.push({ type: mediaType, url });
+        }
+
+        return {
+          ...prod,
+          mediaList: list,
+          mediaUrl: list[0]?.url || url,
+          mediaType: list[0]?.type || mediaType
+        };
+      });
+    } finally {
+      setUploadingMediaKey(null);
+    }
+  };
+
+  const handleUploadVariationMedia = async (prodIdx: number, varIdx: number, file: File) => {
+    const key = `var-${prodIdx}-${varIdx}`;
+    setUploadingMediaKey(key);
+    try {
+      const url = await uploadMarketplaceImage(file, 'variations');
+      updateProductAt(prodIdx, (prod) => {
+        const vars = [...(prod.priceVariations || [])];
+        if (vars[varIdx]) {
+          vars[varIdx] = { ...vars[varIdx], imageUrl: url };
+        }
+        return { ...prod, priceVariations: vars };
+      });
+    } finally {
+      setUploadingMediaKey(null);
+    }
+  };
+
+  const handleUploadCustomCardFiles = async (prodIdx: number, files: FileList) => {
+    const key = `pcard-${prodIdx}`;
+    setUploadingMediaKey(key);
+    try {
+      const uploadedItems: ProductIndividualCardItem[] = [];
+      for (let fIdx = 0; fIdx < files.length; fIdx++) {
+        const file = files[fIdx];
+        const url = await uploadMarketplaceImage(file, 'product_cards');
+        const cleanName = file.name.replace(/\.[^/.]+$/, '').replace(/[-_]+/g, ' ');
+        uploadedItems.push({
+          id: `pcard_new_${Date.now()}_${fIdx}`,
+          source: 'custom_new',
+          name: cleanName || `Carta Exclusiva #${fIdx + 1}`,
+          imageUrl: url,
+          type: 'Carta Exclusiva do Produto',
+          rarity: 'Nova / Exclusiva',
+          quantity: 1
+        });
+      }
+
+      updateProductAt(prodIdx, (prod) => ({
+        ...prod,
+        productCards: [...(prod.productCards || []), ...uploadedItems]
+      }));
+    } finally {
+      setUploadingMediaKey(null);
+    }
+  };
+
+  const handleCustomOriginCepLookup = async (prodIdx: number, rawCep: string) => {
+    const formatted = formatCep(rawCep);
+    updateProductAt(prodIdx, (prod) => ({
+      ...prod,
+      originAddressMode: 'custom_supplier',
+      customOriginCep: formatted
+    }));
+
+    const clean = formatted.replace(/\D/g, '');
+    if (clean.length === 8) {
+      setCustomCepLoading(true);
+      try {
+        const addr = await lookupCepAddress(clean);
+        updateProductAt(prodIdx, (prod) => ({
+          ...prod,
+          originAddressMode: 'custom_supplier',
+          customOriginCep: formatted,
+          customOriginStreet: addr.street || prod.customOriginStreet || '',
+          customOriginNeighborhood: addr.neighborhood || prod.customOriginNeighborhood || '',
+          customOriginCity: addr.city || prod.customOriginCity || '',
+          customOriginState: addr.state || prod.customOriginState || ''
+        }));
+      } catch {
+        // allow manual typing
+      } finally {
+        setCustomCepLoading(false);
+      }
+    }
+  };
+
+  const handleSaveCurrentCustomOriginToGlobalSuppliers = async (prod: ExclusiveProduct) => {
+    if (!prod.customOriginName?.trim() || (prod.customOriginCep || '').replace(/\D/g, '').length !== 8) {
+      return;
+    }
+    const newSup: SupplierOriginAddress = {
+      id: `sup_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      name: prod.customOriginName.trim(),
+      cep: formatCep(prod.customOriginCep || ''),
+      street: prod.customOriginStreet || '',
+      number: prod.customOriginNumber || 'S/N',
+      complement: prod.customOriginComplement || undefined,
+      neighborhood: prod.customOriginNeighborhood || '',
+      city: prod.customOriginCity || '',
+      state: (prod.customOriginState || '').toUpperCase()
+    };
+    const nextSettings: StoreSettings = {
+      ...storeSettings,
+      supplierOrigins: [...(storeSettings.supplierOrigins || []), newSup]
+    };
+    setStoreSettings(nextSettings);
+    await saveStoreSettings(nextSettings);
+    setSavedBannerMsg(`✓ Fornecedor "${newSup.name}" salvo na lista de fornecedores de frete!`);
+    setTimeout(() => setSavedBannerMsg(null), 3500);
+  };
+
+  // KPI Metrics
+  const stats = useMemo(() => {
+    const total = products.length;
+    const visible = products.filter((p) => isProductVisibleInStore(p)).length;
+    const hidden = total - visible;
+    const outOfStock = products.filter((p) => p.stock !== undefined && p.stock <= 0).length;
+    const lowStock = products.filter(
+      (p) => p.stock !== undefined && p.stock > 0 && p.stock <= 5
+    ).length;
+    const customSupplier = products.filter(
+      (p) => p.originAddressMode === 'custom_supplier'
+    ).length;
+    return { total, visible, hidden, outOfStock, lowStock, customSupplier };
+  }, [products]);
+
+  // Filtered Products for Dashboard View
+  const filteredProducts = useMemo(() => {
+    const q = searchQuery.toLowerCase().trim();
+    return products
+      .map((prod, idx) => ({ prod, idx }))
+      .filter(({ prod }) => {
+        const isVisible = isProductVisibleInStore(prod);
+        if (filterMode === 'visible' && !isVisible) return false;
+        if (filterMode === 'hidden' && isVisible) return false;
+        if (filterMode === 'in_stock' && prod.stock !== undefined && prod.stock <= 0) return false;
+        if (
+          filterMode === 'out_of_stock' &&
+          (prod.stock === undefined || prod.stock > 5)
+        ) {
+          return false;
+        }
+        if (
+          filterMode === 'pre_order' &&
+          !prod.isPreOrder &&
+          prod.storeCategory !== 'pre_venda'
+        ) {
+          return false;
+        }
+        if (
+          filterMode === 'custom_supplier' &&
+          prod.originAddressMode !== 'custom_supplier'
+        ) {
+          return false;
+        }
+
+        if (q) {
+          const hay = [
+            prod.title || '',
+            prod.category || '',
+            prod.badge || '',
+            prod.description || '',
+            prod.customOriginName || '',
+            prod.customOriginCity || ''
+          ]
+            .join(' ')
+            .toLowerCase();
+          if (!hay.includes(q)) return false;
+        }
+        return true;
+      });
+  }, [products, filterMode, searchQuery]);
+
+  const activeEditingProduct =
+    editingIndex !== null && editingIndex >= 0 && editingIndex < products.length
+      ? products[editingIndex]
+      : null;
+
+  const getProductPrimaryImage = (prod: ExclusiveProduct): string => {
+    if (prod.mediaList && prod.mediaList.length > 0) {
+      const firstImg = prod.mediaList.find((m) => m.type === 'image' && m.url);
+      if (firstImg?.url) return firstImg.url;
+    }
+    if (prod.mediaUrl) return prod.mediaUrl;
+    if (prod.priceVariations && prod.priceVariations[0]?.imageUrl) {
+      return prod.priceVariations[0].imageUrl;
+    }
+    return '';
+  };
+
+  // ============================================================================
+  // RENDER: DEDICATED FULL-PAGE PRODUCT EDITOR (VIEW B)
+  // ============================================================================
+  if (viewMode === 'editor' && activeEditingProduct && editingIndex !== null) {
+    const i = editingIndex;
+    const prod = activeEditingProduct;
+    const isHidden = !isProductVisibleInStore(prod);
+    const currentMediaList =
+      prod.mediaList && Array.isArray(prod.mediaList)
+        ? prod.mediaList
+        : prod.mediaUrl
+        ? [{ type: prod.mediaType || 'image', url: prod.mediaUrl }]
+        : [];
+    const deckPreview = parseDeckFromCode(prod.cardCodes, cards);
+
+    return (
+      <div className="space-y-6">
+        {/* Sticky Top Bar of Dedicated Product Editor */}
+        <div className="sticky top-0 z-30 bg-slate-950/95 backdrop-blur-md border border-purple-500/50 rounded-2xl p-4 shadow-2xl flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              onClick={() => setViewMode('list')}
+              className="px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-200 border border-slate-700 text-xs font-bold transition flex items-center gap-2 cursor-pointer"
+            >
+              <ArrowLeft size={15} />
+              <span>Voltar para Lista & Estoque ({products.length})</span>
+            </button>
+
+            <div className="h-6 w-px bg-slate-800 hidden sm:block" />
+
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs font-mono font-bold text-purple-300 bg-purple-950/80 border border-purple-700/60 px-2.5 py-0.5 rounded-md">
+                  Editando Produto #{i + 1}
+                </span>
+                <h3 className="text-base sm:text-lg font-black text-white truncate max-w-md">
+                  {prod.title || 'Novo Produto (Sem Título)'}
+                </h3>
+                {isHidden ? (
+                  <span className="px-2.5 py-0.5 rounded-full text-[11px] font-black uppercase bg-amber-500/20 text-amber-300 border border-amber-500/50 flex items-center gap-1">
+                    <EyeOff size={12} />
+                    <span>Oculto da Loja (Não está à vista)</span>
+                  </span>
+                ) : (
+                  <span className="px-2.5 py-0.5 rounded-full text-[11px] font-black uppercase bg-emerald-500/20 text-emerald-300 border border-emerald-500/50 flex items-center gap-1">
+                    <Eye size={12} />
+                    <span>À Vista na Loja</span>
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Right Controls in Editor Top Bar: Visibility Checkbox + Add New + Save */}
+          <div className="flex flex-wrap items-center gap-2.5">
+            {/* Checkbox to hide or show product in store */}
+            <label
+              className={`px-3.5 py-2 rounded-xl border text-xs font-bold cursor-pointer transition flex items-center gap-2 select-none ${
+                isHidden
+                  ? 'bg-amber-950/70 border-amber-500 text-amber-200 shadow-md shadow-amber-950/40'
+                  : 'bg-slate-900 border-slate-700 text-slate-300 hover:border-slate-600'
+              }`}
+              title="Se marcado, o produto fica salvo mas oculto dos clientes. Desmarque quando quiser deixá-lo à vista na loja."
+            >
+              <input
+                type="checkbox"
+                checked={isHidden}
+                onChange={(e) => {
+                  const hide = e.target.checked;
+                  updateProductAt(i, (p) => ({
+                    ...p,
+                    isHiddenFromStore: hide,
+                    isActive: !hide
+                  }));
+                }}
+                className="w-4 h-4 accent-amber-500 rounded"
+              />
+              <span>Não deixar à vista na loja (Oculto)</span>
+            </label>
+
+            <button
+              type="button"
+              onClick={() => handleCreateNewProduct(false)}
+              className="px-3 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-purple-500/40 text-purple-300 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
+            >
+              <Plus size={14} />
+              <span>+ Novo Produto</span>
+            </button>
+
+            <button
+              type="button"
+              disabled={saving}
+              onClick={() => handleSaveAndNotify()}
+              className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-black uppercase tracking-wider transition flex items-center gap-2 shadow-lg shadow-emerald-950/50 cursor-pointer"
+            >
+              <Save size={15} />
+              <span>{saving ? 'Salvando...' : 'Salvar Produto'}</span>
+            </button>
+          </div>
+        </div>
+
+        {savedBannerMsg && (
+          <div className="p-3 rounded-xl bg-emerald-950/80 border border-emerald-500/60 text-emerald-200 text-xs font-bold flex items-center justify-between">
+            <span>{savedBannerMsg}</span>
+            <button type="button" onClick={() => setSavedBannerMsg(null)}>
+              <X size={14} />
+            </button>
+          </div>
+        )}
+
+        {/* Section Navigation Tabs inside the Editor */}
+        <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-2 flex flex-wrap items-center gap-1.5">
+          {[
+            { id: 'all_columns', label: 'Visão Completa (2 Colunas)', icon: <SlidersHorizontal size={14} /> },
+            { id: 'general', label: '1. Dados Gerais & Visibilidade', icon: <Edit2 size={14} /> },
+            { id: 'stock_origin', label: '2. Estoque, Frete & Endereço de Origem', icon: <Truck size={14} /> },
+            { id: 'versions', label: `3. Versões & Preços (${(prod.priceVariations || []).length})`, icon: <Sparkles size={14} /> },
+            { id: 'media', label: `4. Fotos & Vídeos (${currentMediaList.length})`, icon: <ImageIcon size={14} /> },
+            { id: 'cards', label: `5. Cartas do Produto & Deck (${(prod.productCards || []).length})`, icon: <Layers size={14} /> }
+          ].map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setEditorTab(tab.id as EditorSectionTab)}
+              className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer ${
+                editorTab === tab.id
+                  ? 'bg-purple-600 text-white shadow-md shadow-purple-950/50'
+                  : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+              }`}
+            >
+              {tab.icon}
+              <span>{tab.label}</span>
+            </button>
+          ))}
+        </div>
+
+        {/* Dedicated Editor Workspace Grid */}
+        <div
+          className={
+            editorTab === 'all_columns'
+              ? 'grid grid-cols-1 xl:grid-cols-12 gap-6 items-start'
+              : 'max-w-5xl mx-auto space-y-6'
+          }
+        >
+          {/* LEFT / MAIN COLUMN */}
+          <div className={editorTab === 'all_columns' ? 'xl:col-span-7 space-y-6' : 'space-y-6'}>
+            {/* SECTION 1: DADOS GERAIS & VISIBILIDADE */}
+            {(editorTab === 'all_columns' || editorTab === 'general') && (
+              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-4 shadow-lg">
+                <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                  <h4 className="text-sm font-black uppercase tracking-wider text-purple-300 flex items-center gap-2">
+                    <Edit2 size={16} />
+                    <span>1. Dados Gerais & Visibilidade na Loja</span>
+                  </h4>
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteProduct(i)}
+                    className="text-xs text-red-400 hover:text-red-300 flex items-center gap-1 px-2.5 py-1 rounded-lg hover:bg-red-950/40 transition"
+                  >
+                    <Trash2 size={14} />
+                    <span>Excluir Produto</span>
+                  </button>
+                </div>
+
+                {/* Visibility Box */}
+                <div
+                  className={`p-4 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+                    isHidden
+                      ? 'bg-amber-950/30 border-amber-500/50'
+                      : 'bg-emerald-950/20 border-emerald-500/40'
+                  }`}
+                >
+                  <div className="space-y-0.5">
+                    <div className="text-xs font-black text-white flex items-center gap-2">
+                      {isHidden ? (
+                        <>
+                          <EyeOff size={15} className="text-amber-400" />
+                          <span className="text-amber-300">
+                            PRODUTO OCULTO (Não está à vista para os clientes)
+                          </span>
+                        </>
+                      ) : (
+                        <>
+                          <Eye size={15} className="text-emerald-400" />
+                          <span className="text-emerald-300">
+                            PRODUTO À VISTA NA LOJA (Visível na vitrine e catálogo)
+                          </span>
+                        </>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-slate-300">
+                      Você pode cadastrar e editar o produto inteiro sem deixá-lo à vista. Quando quiser publicá-lo, basta desmarcar a caixa ao lado.
+                    </p>
+                  </div>
+
+                  <div className="flex flex-col gap-2 shrink-0">
+                    <label className="flex items-center gap-2 text-xs font-bold text-amber-200 cursor-pointer bg-slate-950/90 border border-slate-700 px-3 py-2 rounded-xl">
+                      <input
+                        type="checkbox"
+                        checked={isHidden}
+                        onChange={(e) => {
+                          const hide = e.target.checked;
+                          updateProductAt(i, (p) => ({
+                            ...p,
+                            isHiddenFromStore: hide,
+                            isActive: !hide
+                          }));
+                        }}
+                        className="w-4 h-4 accent-amber-500 rounded"
+                      />
+                      <span>Não deixar à vista (Ocultar)</span>
+                    </label>
+
+                    <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer px-1">
+                      <input
+                        type="checkbox"
+                        checked={prod.isButtonActive !== false}
+                        onChange={(e) =>
+                          updateProductAt(i, (p) => ({
+                            ...p,
+                            isButtonActive: e.target.checked
+                          }))
+                        }
+                        className="w-3.5 h-3.5 accent-purple-500 rounded"
+                      />
+                      <span>Botão de Compra Ativo</span>
+                    </label>
+                  </div>
+                </div>
+
+                {/* Title, Category & Badge */}
+                <div className="grid grid-cols-1 sm:grid-cols-12 gap-4">
+                  <div className="sm:col-span-6">
+                    <label className="text-xs font-bold text-slate-300 block mb-1">
+                      Título do Produto *
+                    </label>
+                    <input
+                      type="text"
+                      value={prod.title || ''}
+                      onChange={(e) =>
+                        updateProductAt(i, (p) => ({ ...p, title: e.target.value }))
+                      }
+                      placeholder="Ex: Deck Estrutural Invasão das Sombras"
+                      className="w-full bg-slate-950 border border-slate-700 focus:border-purple-500 rounded-xl p-2.5 text-sm text-white font-bold outline-none"
+                    />
+                  </div>
+
+                  <div className="sm:col-span-3">
+                    <label className="text-xs font-bold text-purple-300 block mb-1">
+                      Categoria na Loja
+                    </label>
+                    <select
+                      value={prod.storeCategory || 'decks'}
+                      onChange={(e) => {
+                        const val = e.target.value as any;
+                        const labels: Record<string, string> = {
+                          decks: 'Decks',
+                          cartas_avulsas: 'Cartas Avulsas',
+                          playmats: 'Playmats',
+                          promocoes: 'Promoções',
+                          pre_venda: 'Pré-venda',
+                          kits: 'Kits'
+                        };
+                        updateProductAt(i, (p) => ({
+                          ...p,
+                          storeCategory: val,
+                          category: labels[val] || 'Decks',
+                          isPreOrder: val === 'pre_venda' ? true : p.isPreOrder,
+                          isPromotion: val === 'promocoes' ? true : p.isPromotion
+                        }));
+                      }}
+                      className="w-full bg-slate-950 border border-purple-500/60 rounded-xl p-2.5 text-sm text-white font-bold outline-none"
+                    >
+                      <option value="decks">Decks</option>
+                      <option value="cartas_avulsas">Cartas Avulsas</option>
+                      <option value="playmats">Playmats</option>
+                      <option value="promocoes">Promoções</option>
+                      <option value="pre_venda">Pré-venda</option>
+                      <option value="kits">Kits</option>
+                    </select>
+                  </div>
+
+                  <div className="sm:col-span-3">
+                    <label className="text-xs font-bold text-slate-300 block mb-1">
+                      Etiqueta / Badge
+                    </label>
+                    <input
+                      type="text"
+                      value={prod.badge || ''}
+                      onChange={(e) =>
+                        updateProductAt(i, (p) => ({ ...p, badge: e.target.value }))
+                      }
+                      placeholder="Ex: Lançamento Oficial"
+                      className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-sm text-amber-300 font-semibold outline-none"
+                    />
+                  </div>
+                </div>
+
+                {/* Description */}
+                <div>
+                  <label className="text-xs font-bold text-slate-300 block mb-1">
+                    Descrição Completa do Produto
+                  </label>
+                  <textarea
+                    value={prod.description || ''}
+                    onChange={(e) =>
+                      updateProductAt(i, (p) => ({ ...p, description: e.target.value }))
+                    }
+                    placeholder="Descreva os detalhes do produto, conteúdo da caixa, bônus..."
+                    className="w-full bg-slate-950 border border-slate-700 focus:border-purple-500 rounded-xl p-3 text-sm text-white h-28 resize-y outline-none"
+                  />
+                </div>
+
+                {/* Pre-Order, Promotion & Button Config */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-slate-950/80 border border-slate-800 rounded-xl p-3.5">
+                  <div className="space-y-2">
+                    <label className="flex items-center gap-2 text-xs font-bold text-amber-300 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(prod.isPreOrder)}
+                        onChange={(e) =>
+                          updateProductAt(i, (p) => ({
+                            ...p,
+                            isPreOrder: e.target.checked
+                          }))
+                        }
+                        className="accent-amber-500 w-4 h-4"
+                      />
+                      <span>Produto em Pré-Venda</span>
+                    </label>
+
+                    <label className="flex items-center gap-2 text-xs font-bold text-pink-300 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(prod.isPromotion)}
+                        onChange={(e) =>
+                          updateProductAt(i, (p) => ({
+                            ...p,
+                            isPromotion: e.target.checked
+                          }))
+                        }
+                        className="accent-pink-500 w-4 h-4"
+                      />
+                      <span>Em Promoção / Oferta</span>
+                    </label>
+                  </div>
+
+                  <div>
+                    <label className="text-[11px] text-slate-400 block mb-1">
+                      Preço Antigo Riscado (Promo)
+                    </label>
+                    <input
+                      type="text"
+                      value={prod.originalPrice || ''}
+                      onChange={(e) =>
+                        updateProductAt(i, (p) => ({ ...p, originalPrice: e.target.value }))
+                      }
+                      placeholder="Ex: R$ 129,90"
+                      className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs text-pink-300 font-mono"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[11px] text-slate-400 block mb-1">
+                      Previsão de Envio / Lote
+                    </label>
+                    <input
+                      type="text"
+                      value={prod.preOrderReleaseDate || ''}
+                      onChange={(e) =>
+                        updateProductAt(i, (p) => ({
+                          ...p,
+                          preOrderReleaseDate: e.target.value
+                        }))
+                      }
+                      placeholder="Ex: Envios a partir de 15/12"
+                      className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs text-amber-300 font-semibold"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs text-slate-400 block mb-1">
+                      Texto do Botão de Compra
+                    </label>
+                    <input
+                      type="text"
+                      value={prod.buttonText || 'Comprar Agora'}
+                      onChange={(e) =>
+                        updateProductAt(i, (p) => ({ ...p, buttonText: e.target.value }))
+                      }
+                      className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2 text-xs text-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-slate-400 block mb-1">
+                      Link Externo Opcional (vazio = Carrinho + Mercado Pago)
+                    </label>
+                    <input
+                      type="text"
+                      value={prod.buttonLink || ''}
+                      onChange={(e) =>
+                        updateProductAt(i, (p) => ({ ...p, buttonLink: e.target.value }))
+                      }
+                      placeholder="Deixe vazio para usar o Checkout Interno"
+                      className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2 text-xs text-white"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* SECTION 3: VERSÕES & PREÇOS DO PRODUTO */}
+            {(editorTab === 'all_columns' || editorTab === 'versions') && (
+              <div className="bg-slate-900 border border-amber-500/40 rounded-2xl p-5 space-y-4 shadow-lg">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-3">
+                  <div>
+                    <h4 className="text-sm font-black uppercase tracking-wider text-amber-300 flex items-center gap-2">
+                      <Sparkles size={16} className="text-amber-400" />
+                      <span>3. Versões do Produto & Preços (Coloque o Nome que Quiser)</span>
+                    </h4>
+                    <p className="text-[11px] text-slate-400 mt-0.5">
+                      Defina o preço padrão ou crie quantas versões quiser digitando livremente o nome, valor, estoque e foto de cada versão.
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      updateProductAt(i, (p) => {
+                        const vars = [...(p.priceVariations || [])];
+                        vars.push({
+                          name: '',
+                          price: p.price || 'R$ 89,90',
+                          badge: '',
+                          description: '',
+                          buttonLink: p.buttonLink || '',
+                          isDefault: vars.length === 0,
+                          stock: p.stock
+                        });
+                        return { ...p, priceVariations: vars };
+                      });
+                    }}
+                    className="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-black transition flex items-center gap-1.5 shrink-0 cursor-pointer"
+                  >
+                    <Plus size={14} />
+                    <span>+ Adicionar Versão</span>
+                  </button>
+                </div>
+
+                {/* Base Price Row + Quick Add Version Bar */}
+                <div className="grid grid-cols-1 md:grid-cols-12 gap-3 bg-slate-950/90 border border-slate-800 rounded-xl p-3.5 items-end">
+                  <div className="md:col-span-4">
+                    <label className="text-xs font-bold text-emerald-300 block mb-1">
+                      Preço Base / Padrão (R$)
+                    </label>
+                    <input
+                      type="text"
+                      value={prod.price || ''}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        updateProductAt(i, (p) => ({
+                          ...p,
+                          price: val,
+                          priceVariations: p.sameVariationPrice
+                            ? (p.priceVariations || []).map((v) => ({ ...v, price: val }))
+                            : p.priceVariations
+                        }));
+                      }}
+                      placeholder="Ex: R$ 89,90"
+                      className="w-full bg-slate-900 border border-emerald-500/60 rounded-lg p-2 text-sm text-emerald-300 font-mono font-bold outline-none"
+                    />
+                  </div>
+
+                  <div className="md:col-span-4">
+                    <label className="text-[11px] font-bold text-amber-200 block mb-1">
+                      Criar Versão Rápida (Digite o nome que quiser)
+                    </label>
+                    <input
+                      type="text"
+                      value={quickVarName}
+                      onChange={(e) => setQuickVarName(e.target.value)}
+                      placeholder="Nome da versão..."
+                      className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs text-white font-bold outline-none focus:border-amber-400"
+                    />
+                  </div>
+
+                  <div className="md:col-span-2">
+                    <label className="text-[11px] text-slate-400 block mb-1">
+                      Preço da Versão
+                    </label>
+                    <input
+                      type="text"
+                      value={quickVarPrice}
+                      onChange={(e) => setQuickVarPrice(e.target.value)}
+                      placeholder={prod.price || 'R$ 89,90'}
+                      className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs text-emerald-300 font-mono font-bold outline-none"
+                    />
+                  </div>
+
+                  <div className="md:col-span-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const nameToUse = quickVarName.trim();
+                        const priceToUse = quickVarPrice.trim() || prod.price || 'R$ 89,90';
+                        updateProductAt(i, (p) => {
+                          const vars = [...(p.priceVariations || [])];
+                          vars.push({
+                            name: nameToUse,
+                            price: priceToUse,
+                            badge: '',
+                            description: '',
+                            isDefault: vars.length === 0,
+                            stock: p.stock
+                          });
+                          return { ...p, priceVariations: vars };
+                        });
+                        setQuickVarName('');
+                        setQuickVarPrice('');
+                      }}
+                      className="w-full py-2 px-3 rounded-lg bg-amber-500/25 hover:bg-amber-500/35 border border-amber-500/50 text-amber-200 text-xs font-bold transition cursor-pointer"
+                    >
+                      Inserir Versão
+                    </button>
+                  </div>
+                </div>
+
+                {/* List of Variations */}
+                {prod.priceVariations && prod.priceVariations.length > 0 && (
+                  <div className="space-y-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2 bg-slate-950/70 border border-slate-800 px-3.5 py-2 rounded-xl">
+                      <span className="text-xs font-bold text-slate-300">
+                        Modo de Preço das Versões:
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            updateProductAt(i, (p) => {
+                              const baseP = p.price || p.priceVariations?.[0]?.price || 'R$ 89,90';
+                              return {
+                                ...p,
+                                sameVariationPrice: true,
+                                price: baseP,
+                                priceVariations: (p.priceVariations || []).map((v) => ({
+                                  ...v,
+                                  price: baseP
+                                }))
+                              };
+                            })
+                          }
+                          className={`px-3 py-1 rounded-lg text-xs font-bold border transition cursor-pointer ${
+                            prod.sameVariationPrice
+                              ? 'bg-emerald-600/30 border-emerald-400 text-emerald-200'
+                              : 'bg-slate-900 border-slate-800 text-slate-400'
+                          }`}
+                        >
+                          Mesmo Preço em Todas
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            updateProductAt(i, (p) => ({ ...p, sameVariationPrice: false }))
+                          }
+                          className={`px-3 py-1 rounded-lg text-xs font-bold border transition cursor-pointer ${
+                            !prod.sameVariationPrice
+                              ? 'bg-amber-500/25 border-amber-400 text-amber-200'
+                              : 'bg-slate-900 border-slate-800 text-slate-400'
+                          }`}
+                        >
+                          Preço Individual por Versão
+                        </button>
+                      </div>
+                    </div>
+
+                    {prod.priceVariations.map((v, vIdx) => (
+                      <div
+                        key={vIdx}
+                        className="p-3.5 bg-slate-950 border border-slate-800 rounded-xl space-y-3"
+                      >
+                        <div className="flex items-center justify-between border-b border-slate-800/80 pb-2">
+                          <span className="text-xs font-bold text-amber-300">
+                            Versão #{vIdx + 1}: {v.name || '(Digite o nome abaixo)'}
+                          </span>
+                          <div className="flex items-center gap-3">
+                            <label className="flex items-center gap-1.5 text-xs text-slate-300 cursor-pointer">
+                              <input
+                                type="radio"
+                                name={`def_var_${i}`}
+                                checked={Boolean(v.isDefault)}
+                                onChange={() =>
+                                  updateProductAt(i, (p) => ({
+                                    ...p,
+                                    priceVariations: (p.priceVariations || []).map(
+                                      (item, idx) => ({
+                                        ...item,
+                                        isDefault: idx === vIdx
+                                      })
+                                    )
+                                  }))
+                                }
+                                className="accent-amber-500"
+                              />
+                              <span className="text-[11px] text-slate-400">Padrão</span>
+                            </label>
+
+                            <button
+                              type="button"
+                              onClick={() =>
+                                updateProductAt(i, (p) => ({
+                                  ...p,
+                                  priceVariations: (p.priceVariations || []).filter(
+                                    (_, idx) => idx !== vIdx
+                                  )
+                                }))
+                              }
+                              className="text-red-400 hover:text-red-300 p-1"
+                              title="Remover versão"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
+                          <div className="sm:col-span-5">
+                            <label className="text-[11px] text-slate-400 block mb-1">
+                              Nome da Versão (Livre)
+                            </label>
+                            <input
+                              type="text"
+                              value={v.name || ''}
+                              onChange={(e) =>
+                                updateProductAt(i, (p) => {
+                                  const vars = [...(p.priceVariations || [])];
+                                  vars[vIdx] = { ...vars[vIdx], name: e.target.value };
+                                  return { ...p, priceVariations: vars };
+                                })
+                              }
+                              placeholder="Digite o nome da versão..."
+                              className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs text-white font-bold"
+                            />
+                          </div>
+
+                          <div className="sm:col-span-3">
+                            <label className="text-[11px] text-slate-400 block mb-1">
+                              Preço (R$)
+                            </label>
+                            <input
+                              type="text"
+                              disabled={Boolean(prod.sameVariationPrice)}
+                              value={
+                                prod.sameVariationPrice
+                                  ? prod.price || v.price || ''
+                                  : v.price || ''
+                              }
+                              onChange={(e) =>
+                                updateProductAt(i, (p) => {
+                                  const vars = [...(p.priceVariations || [])];
+                                  vars[vIdx] = { ...vars[vIdx], price: e.target.value };
+                                  return { ...p, priceVariations: vars };
+                                })
+                              }
+                              placeholder="R$ 89,90"
+                              className="w-full bg-slate-900 border border-emerald-500/50 rounded-lg p-2 text-xs text-emerald-300 font-mono font-bold disabled:opacity-60"
+                            />
+                          </div>
+
+                          <div className="sm:col-span-2">
+                            <label className="text-[11px] text-slate-400 block mb-1">
+                              Estoque Versão
+                            </label>
+                            <input
+                              type="number"
+                              min={0}
+                              value={v.stock !== undefined ? v.stock : ''}
+                              onChange={(e) =>
+                                updateProductAt(i, (p) => {
+                                  const vars = [...(p.priceVariations || [])];
+                                  vars[vIdx] = {
+                                    ...vars[vIdx],
+                                    stock:
+                                      e.target.value === ''
+                                        ? undefined
+                                        : Number(e.target.value)
+                                  };
+                                  return { ...p, priceVariations: vars };
+                                })
+                              }
+                              placeholder="Livre"
+                              className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs text-white font-mono"
+                            />
+                          </div>
+
+                          <div className="sm:col-span-2">
+                            <label className="text-[11px] text-slate-400 block mb-1">
+                              Badge
+                            </label>
+                            <input
+                              type="text"
+                              value={v.badge || ''}
+                              onChange={(e) =>
+                                updateProductAt(i, (p) => {
+                                  const vars = [...(p.priceVariations || [])];
+                                  vars[vIdx] = { ...vars[vIdx], badge: e.target.value };
+                                  return { ...p, priceVariations: vars };
+                                })
+                              }
+                              placeholder="Opcional"
+                              className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs text-amber-300"
+                            />
+                          </div>
+                        </div>
+
+                        {/* Variation Image & Description */}
+                        <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-center pt-1">
+                          <div className="sm:col-span-7 flex items-center gap-2">
+                            <div className="w-10 h-10 rounded bg-black border border-slate-800 overflow-hidden shrink-0 flex items-center justify-center">
+                              {v.imageUrl ? (
+                                <img
+                                  src={v.imageUrl}
+                                  alt={v.name}
+                                  className="w-full h-full object-contain"
+                                />
+                              ) : (
+                                <ImageIcon size={15} className="text-slate-600" />
+                              )}
+                            </div>
+                            <input
+                              type="text"
+                              value={v.imageUrl || ''}
+                              onChange={(e) =>
+                                updateProductAt(i, (p) => {
+                                  const vars = [...(p.priceVariations || [])];
+                                  vars[vIdx] = { ...vars[vIdx], imageUrl: e.target.value };
+                                  return { ...p, priceVariations: vars };
+                                })
+                              }
+                              placeholder="Foto específica desta versão (opcional)"
+                              className="flex-1 bg-slate-900 border border-slate-700 rounded-lg p-1.5 text-xs text-white"
+                            />
+                            <label className="px-2.5 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-[11px] font-bold cursor-pointer shrink-0 flex items-center gap-1">
+                              {uploadingMediaKey === `var-${i}-${vIdx}` ? (
+                                <Loader2 size={12} className="animate-spin" />
+                              ) : (
+                                <Upload size={12} />
+                              )}
+                              <span>Foto</span>
+                              <input
+                                type="file"
+                                accept="image/*"
+                                className="hidden"
+                                onChange={(e) => {
+                                  if (e.target.files?.[0]) {
+                                    handleUploadVariationMedia(i, vIdx, e.target.files[0]);
+                                    e.target.value = '';
+                                  }
+                                }}
+                              />
+                            </label>
+                          </div>
+
+                          <div className="sm:col-span-5">
+                            <input
+                              type="text"
+                              value={v.description || ''}
+                              onChange={(e) =>
+                                updateProductAt(i, (p) => {
+                                  const vars = [...(p.priceVariations || [])];
+                                  vars[vIdx] = { ...vars[vIdx], description: e.target.value };
+                                  return { ...p, priceVariations: vars };
+                                })
+                              }
+                              placeholder="Resumo / detalhe desta versão (opcional)"
+                              className="w-full bg-slate-900 border border-slate-700 rounded-lg p-1.5 text-xs text-slate-300"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* SECTION 5: CARTAS INDIVIDUAIS DO PRODUTO & CÓDIGO DE DECK */}
+            {(editorTab === 'all_columns' || editorTab === 'cards') && (
+              <div className="bg-slate-900 border border-cyan-500/40 rounded-2xl p-5 space-y-5 shadow-lg">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-3">
+                  <div>
+                    <h4 className="text-sm font-black uppercase tracking-wider text-cyan-300 flex items-center gap-2">
+                      <Layers size={16} className="text-cyan-400" />
+                      <span>5. Imagens Individuais das Cartas & Código de Deck</span>
+                    </h4>
+                    <p className="text-[11px] text-slate-400 mt-0.5">
+                      Suba imagens de cartas novas exclusivas do produto, escolha cartas do catálogo do site ou cole um código de Deck.
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <label className="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow">
+                      {uploadingMediaKey === `pcard-${i}` ? (
+                        <Loader2 size={13} className="animate-spin" />
+                      ) : (
+                        <Upload size={13} />
+                      )}
+                      <span>
+                        {uploadingMediaKey === `pcard-${i}`
+                          ? 'Subindo...'
+                          : '+ Subir Carta(s) Nova(s) do PC'}
+                      </span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        multiple
+                        className="hidden"
+                        onChange={(e) => {
+                          if (e.target.files && e.target.files.length > 0) {
+                            handleUploadCustomCardFiles(i, e.target.files);
+                            e.target.value = '';
+                          }
+                        }}
+                      />
+                    </label>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        updateProductAt(i, (p) => {
+                          const list = [...(p.productCards || [])];
+                          list.push({
+                            id: `pcard_new_${Date.now()}`,
+                            source: 'custom_new',
+                            name: `Carta Nova #${list.length + 1}`,
+                            imageUrl: '',
+                            type: 'Carta Exclusiva',
+                            rarity: 'Exclusiva',
+                            quantity: 1
+                          });
+                          return { ...p, productCards: list };
+                        })
+                      }
+                      className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-cyan-300 text-xs font-bold transition cursor-pointer"
+                    >
+                      + Carta Nova por URL
+                    </button>
+                  </div>
+                </div>
+
+                {/* Pick existing card from site catalog */}
+                <div className="bg-slate-950/90 border border-slate-800 rounded-xl p-3.5 space-y-2.5">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <span className="text-xs font-bold text-purple-300">
+                      Adicionar Carta que Já Está no Site:
+                    </span>
+                    <input
+                      type="text"
+                      value={catalogCardSearch}
+                      onChange={(e) => setCatalogCardSearch(e.target.value)}
+                      placeholder="Filtrar carta por nome ou código..."
+                      className="w-full sm:w-64 bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1 text-xs text-white outline-none"
+                    />
+                  </div>
+
+                  <select
+                    defaultValue=""
+                    onChange={(e) => {
+                      const code = e.target.value;
+                      if (!code) return;
+                      const found = (cards || []).find((c) => c.code === code);
+                      if (!found) return;
+                      updateProductAt(i, (p) => {
+                        const current = [...(p.productCards || [])];
+                        const existingIdx = current.findIndex(
+                          (item) => item.source === 'catalog' && item.cardCode === found.code
+                        );
+                        if (existingIdx >= 0) {
+                          current[existingIdx] = {
+                            ...current[existingIdx],
+                            quantity: (current[existingIdx].quantity || 1) + 1
+                          };
+                        } else {
+                          current.push({
+                            id: `pcard_cat_${found.code}_${Date.now()}`,
+                            source: 'catalog',
+                            cardCode: found.code,
+                            name: found.name,
+                            imageUrl: found.catalogCoverImageUrl || found.imageUrl || '',
+                            type: found.type || 'Carta Oficial',
+                            rarity: found.rarity || 'Oficial',
+                            quantity: 1
+                          });
+                        }
+                        return { ...p, productCards: current };
+                      });
+                      e.target.value = '';
+                    }}
+                    className="w-full bg-slate-900 border border-purple-500/40 rounded-lg p-2 text-xs text-white outline-none"
+                  >
+                    <option value="">
+                      -- Selecione uma carta do catálogo do site para incluir a imagem individual --
+                    </option>
+                    {(cards || [])
+                      .filter((c) => {
+                        if (c.deleted || c.isHidden) return false;
+                        if (!catalogCardSearch.trim()) return true;
+                        const q = catalogCardSearch.toLowerCase();
+                        return (
+                          c.name.toLowerCase().includes(q) ||
+                          c.code.toLowerCase().includes(q) ||
+                          (c.collection || '').toLowerCase().includes(q)
+                        );
+                      })
+                      .map((c) => (
+                        <option key={c.code} value={c.code}>
+                          {c.name} ({c.code}) — {c.collection || 'Oficial'}
+                        </option>
+                      ))}
+                  </select>
+                </div>
+
+                {/* Individual Product Cards Grid */}
+                {Array.isArray(prod.productCards) && prod.productCards.length > 0 && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-80 overflow-y-auto pr-1">
+                    {prod.productCards.map((pc, pcIdx) => (
+                      <div
+                        key={pc.id || pcIdx}
+                        className="bg-slate-950 border border-slate-800 rounded-xl p-2.5 flex items-start gap-2.5"
+                      >
+                        <div className="w-12 h-16 rounded bg-black border border-slate-700 overflow-hidden shrink-0 flex items-center justify-center">
+                          {pc.imageUrl ? (
+                            <img
+                              src={pc.imageUrl}
+                              alt={pc.name}
+                              className="w-full h-full object-contain"
+                            />
+                          ) : (
+                            <ImageIcon size={14} className="text-slate-600" />
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0 space-y-1.5">
+                          <div className="flex items-center justify-between">
+                            <span
+                              className={`px-1.5 py-0.5 rounded text-[9px] font-black uppercase ${
+                                pc.source === 'custom_new'
+                                  ? 'bg-emerald-500/20 text-emerald-300'
+                                  : 'bg-purple-500/20 text-purple-300'
+                              }`}
+                            >
+                              {pc.source === 'custom_new' ? 'Carta Nova' : 'Carta do Site'}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                updateProductAt(i, (p) => ({
+                                  ...p,
+                                  productCards: (p.productCards || []).filter(
+                                    (_, idx) => idx !== pcIdx
+                                  )
+                                }))
+                              }
+                              className="text-red-400 hover:text-red-300"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          </div>
+
+                          <input
+                            type="text"
+                            value={pc.name || ''}
+                            onChange={(e) =>
+                              updateProductAt(i, (p) => {
+                                const list = [...(p.productCards || [])];
+                                list[pcIdx] = { ...list[pcIdx], name: e.target.value };
+                                return { ...p, productCards: list };
+                              })
+                            }
+                            placeholder="Nome da carta"
+                            className="w-full bg-slate-900 border border-slate-800 rounded px-2 py-1 text-xs text-white font-bold"
+                          />
+
+                          <div className="flex items-center gap-1.5">
+                            <input
+                              type="text"
+                              value={pc.imageUrl || ''}
+                              onChange={(e) =>
+                                updateProductAt(i, (p) => {
+                                  const list = [...(p.productCards || [])];
+                                  list[pcIdx] = { ...list[pcIdx], imageUrl: e.target.value };
+                                  return { ...p, productCards: list };
+                                })
+                              }
+                              placeholder="URL da imagem..."
+                              className="flex-1 bg-slate-900 border border-slate-800 rounded px-2 py-1 text-[11px] text-slate-300"
+                            />
+                            <input
+                              type="number"
+                              min={1}
+                              max={99}
+                              value={pc.quantity || 1}
+                              onChange={(e) =>
+                                updateProductAt(i, (p) => {
+                                  const list = [...(p.productCards || [])];
+                                  list[pcIdx] = {
+                                    ...list[pcIdx],
+                                    quantity: Math.max(1, Number(e.target.value) || 1)
+                                  };
+                                  return { ...p, productCards: list };
+                                })
+                              }
+                              className="w-12 bg-slate-900 border border-slate-800 rounded px-1.5 py-1 text-xs text-emerald-300 font-mono font-bold text-center"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Deck Code & Booster Collection Loader */}
+                <div className="bg-slate-950/90 border border-slate-800 rounded-xl p-3.5 space-y-2.5">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <span className="text-xs font-bold text-purple-300">
+                      Código do Criador de Deck ou Coleção Inteira de Booster:
+                    </span>
+                    <select
+                      defaultValue=""
+                      onChange={(e) => {
+                        const colName = e.target.value;
+                        if (!colName) return;
+                        const colCards = (cards || []).filter(
+                          (c) =>
+                            !c.deleted &&
+                            !c.isHidden &&
+                            (c.collection || '').trim() === colName
+                        );
+                        const uniqueMap = new Map<string, CardData>();
+                        colCards.forEach((c) => {
+                          const k = c.code || c.id || c.name;
+                          if (!uniqueMap.has(k)) uniqueMap.set(k, c);
+                        });
+                        const uniqueList = Array.from(uniqueMap.values());
+                        if (uniqueList.length === 0) return;
+                        const encoded = encodeDeckCode(uniqueList, []);
+                        updateProductAt(i, (p) => ({
+                          ...p,
+                          cardCodes: encoded,
+                          title:
+                            p.title ||
+                            `Coleção Completa Booster: ${colName} (${uniqueList.length} Cartas)`
+                        }));
+                        e.target.value = '';
+                      }}
+                      className="bg-slate-900 border border-emerald-500/40 rounded-lg px-2.5 py-1.5 text-xs text-emerald-300 font-bold outline-none"
+                    >
+                      <option value="">-- Carregar Coleção de Booster Inteira --</option>
+                      {Array.from(
+                        new Set(
+                          (cards || [])
+                            .filter((c) => !c.deleted && !c.isHidden && c.collection)
+                            .map((c) => (c.collection || '').trim())
+                            .filter(Boolean)
+                        )
+                      ).map((colName) => (
+                        <option key={colName} value={colName}>
+                          Carregar coleção: {colName}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <textarea
+                    value={prod.cardCodes || ''}
+                    onChange={(e) =>
+                      updateProductAt(i, (p) => ({ ...p, cardCodes: e.target.value }))
+                    }
+                    placeholder="Cole o código exportado no Criador de Deck..."
+                    className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-xs text-white font-mono h-20 resize-y outline-none"
+                  />
+
+                  {prod.cardCodes && prod.cardCodes.trim() && (
+                    <div className="text-xs text-emerald-400 font-bold">
+                      {deckPreview.isValid
+                        ? `✓ Deck identificado: ${deckPreview.totalCount} cartas (${deckPreview.mainDeck.length + deckPreview.sideDeck.length} tipos únicos)`
+                        : '⚠️ Código de deck não identificado.'}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* RIGHT COLUMN IN FULL EDITOR: STOCK, ORIGIN ADDRESS (SUPPLIER) & MEDIA */}
+          <div className={editorTab === 'all_columns' ? 'xl:col-span-5 space-y-6' : 'space-y-6'}>
+            {/* SECTION 2: ESTOQUE, PESO & ENDEREÇO DE ORIGEM / FORNECEDOR TERCEIRO */}
+            {(editorTab === 'all_columns' || editorTab === 'stock_origin') && (
+              <div className="bg-slate-900 border border-emerald-500/40 rounded-2xl p-5 space-y-5 shadow-lg">
+                <div className="border-b border-slate-800 pb-3">
+                  <h4 className="text-sm font-black uppercase tracking-wider text-emerald-300 flex items-center gap-2">
+                    <Truck size={16} className="text-emerald-400" />
+                    <span>2. Controle de Estoque, Frete & Endereço de Origem</span>
+                  </h4>
+                  <p className="text-[11px] text-slate-400 mt-0.5">
+                    Gerencie a quantidade disponível e escolha se o produto sai do seu endereço padrão ou do endereço de um fornecedor terceiro.
+                  </p>
+                </div>
+
+                {/* Stock, Weight & Free Shipping Controls */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-slate-950/90 border border-slate-800 rounded-xl p-4">
+                  <div>
+                    <label className="text-xs font-bold text-emerald-300 block mb-1.5">
+                      Quantidade em Estoque Geral
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          updateProductAt(i, (p) => ({
+                            ...p,
+                            stock: Math.max(0, (p.stock ?? 1) - 1)
+                          }))
+                        }
+                        className="w-9 h-9 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-white font-black text-base flex items-center justify-center cursor-pointer"
+                      >
+                        -
+                      </button>
+                      <input
+                        type="number"
+                        min={0}
+                        value={prod.stock !== undefined ? prod.stock : ''}
+                        onChange={(e) =>
+                          updateProductAt(i, (p) => ({
+                            ...p,
+                            stock:
+                              e.target.value === '' ? undefined : Number(e.target.value)
+                          }))
+                        }
+                        placeholder="Ilimitado"
+                        className="flex-1 bg-slate-900 border border-emerald-500/50 rounded-lg p-2 text-center text-sm text-white font-mono font-black outline-none"
+                      />
+                      <button
+                        type="button"
+                        onClick={() =>
+                          updateProductAt(i, (p) => ({
+                            ...p,
+                            stock: (p.stock ?? 0) + 1
+                          }))
+                        }
+                        className="w-9 h-9 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-white font-black text-base flex items-center justify-center cursor-pointer"
+                      >
+                        +
+                      </button>
+                    </div>
+                    <div className="flex items-center justify-between mt-1.5">
+                      <span className="text-[10px] text-slate-400">
+                        {prod.stock === undefined
+                          ? 'Estoque livre / ilimitado'
+                          : prod.stock === 0
+                          ? '⚠️ Produto Esgotado'
+                          : `${prod.stock} un. disponíveis`}
+                      </span>
+                      {prod.stock !== undefined && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            updateProductAt(i, (p) => ({ ...p, stock: undefined }))
+                          }
+                          className="text-[10px] text-purple-400 hover:underline"
+                        >
+                          Deixar ilimitado
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    <div>
+                      <label className="text-xs font-bold text-slate-300 block mb-1">
+                        Peso para Cálculo de Frete (gramas)
+                      </label>
+                      <input
+                        type="number"
+                        min={50}
+                        step={50}
+                        value={prod.weightGrams || 250}
+                        onChange={(e) =>
+                          updateProductAt(i, (p) => ({
+                            ...p,
+                            weightGrams: Number(e.target.value) || 250
+                          }))
+                        }
+                        className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs text-white font-mono"
+                      />
+                    </div>
+
+                    <label className="flex items-center gap-2 text-xs font-bold text-emerald-300 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(prod.freeShipping)}
+                        onChange={(e) =>
+                          updateProductAt(i, (p) => ({
+                            ...p,
+                            freeShipping: e.target.checked
+                          }))
+                        }
+                        className="accent-emerald-500 w-4 h-4"
+                      />
+                      <span>Frete Grátis neste Produto</span>
+                    </label>
+                  </div>
+                </div>
+
+                {/* ENDEREÇO DE ORIGEM DO PRODUTO / FORNECEDOR TERCEIRO */}
+                <div className="bg-slate-950 border border-cyan-500/40 rounded-xl p-4 space-y-3.5">
+                  <div className="flex items-center justify-between">
+                    <div className="text-xs font-black text-cyan-300 flex items-center gap-1.5 uppercase tracking-wider">
+                      <MapPin size={15} className="text-cyan-400" />
+                      <span>Endereço de Origem deste Produto (Loja ou Fornecedor Terceiro)</span>
+                    </div>
+                  </div>
+
+                  {/* Mode Selector: Store Default vs Third-Party Supplier */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        updateProductAt(i, (p) => ({
+                          ...p,
+                          originAddressMode: 'store_default'
+                        }))
+                      }
+                      className={`p-2.5 rounded-xl border text-left transition cursor-pointer ${
+                        prod.originAddressMode !== 'custom_supplier'
+                          ? 'bg-cyan-600/25 border-cyan-400 text-white'
+                          : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      <div className="text-xs font-bold">Endereço Padrão da Loja</div>
+                      <div className="text-[10px] text-slate-300 font-mono mt-0.5">
+                        {storeSettings.originName || 'Loja Oficial'} ({storeSettings.originCity || 'SP'}/{storeSettings.originState || 'SP'} · {storeSettings.originCep})
+                      </div>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        updateProductAt(i, (p) => ({
+                          ...p,
+                          originAddressMode: 'custom_supplier'
+                        }))
+                      }
+                      className={`p-2.5 rounded-xl border text-left transition cursor-pointer ${
+                        prod.originAddressMode === 'custom_supplier'
+                          ? 'bg-purple-600/25 border-purple-400 text-white'
+                          : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      <div className="text-xs font-bold text-purple-200">
+                        Fornecedor Terceiro (Outro Endereço)
+                      </div>
+                      <div className="text-[10px] text-slate-300 mt-0.5">
+                        O produto sai direto do endereço do fornecedor
+                      </div>
+                    </button>
+                  </div>
+
+                  {prod.originAddressMode === 'custom_supplier' && (
+                    <div className="bg-slate-900/90 border border-purple-500/40 rounded-xl p-3.5 space-y-3">
+                      {/* Quick Select from Saved Suppliers */}
+                      {(storeSettings.supplierOrigins || []).length > 0 && (
+                        <div>
+                          <label className="text-[11px] font-bold text-purple-300 block mb-1">
+                            Escolher Fornecedor Terceiro Salvo nas Configurações de Frete:
+                          </label>
+                          <select
+                            value={prod.supplierOriginId || ''}
+                            onChange={(e) => {
+                              const supId = e.target.value;
+                              const found = (storeSettings.supplierOrigins || []).find(
+                                (s) => s.id === supId
+                              );
+                              if (found) {
+                                updateProductAt(i, (p) => ({
+                                  ...p,
+                                  originAddressMode: 'custom_supplier',
+                                  supplierOriginId: found.id,
+                                  customOriginName: found.name,
+                                  customOriginCep: found.cep,
+                                  customOriginStreet: found.street,
+                                  customOriginNumber: found.number,
+                                  customOriginComplement: found.complement || '',
+                                  customOriginNeighborhood: found.neighborhood,
+                                  customOriginCity: found.city,
+                                  customOriginState: found.state
+                                }));
+                              }
+                            }}
+                            className="w-full bg-slate-950 border border-purple-500/50 rounded-lg p-2 text-xs text-white font-bold outline-none"
+                          >
+                            <option value="">
+                              -- Selecionar fornecedor salvo ou preencher abaixo --
+                            </option>
+                            {(storeSettings.supplierOrigins || []).map((sup) => (
+                              <option key={sup.id} value={sup.id}>
+                                {sup.name} — {sup.city}/{sup.state} (CEP: {sup.cep})
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
+
+                      <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5">
+                        <div className="sm:col-span-7">
+                          <label className="text-[11px] text-slate-300 font-bold block mb-1">
+                            Nome do Fornecedor Terceiro / Remetente
+                          </label>
+                          <input
+                            type="text"
+                            value={prod.customOriginName || ''}
+                            onChange={(e) =>
+                              updateProductAt(i, (p) => ({
+                                ...p,
+                                customOriginName: e.target.value
+                              }))
+                            }
+                            placeholder="Ex: Fornecedor Playmats Sul"
+                            className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-xs text-white font-bold"
+                          />
+                        </div>
+
+                        <div className="sm:col-span-5">
+                          <label className="text-[11px] text-cyan-300 font-bold block mb-1">
+                            CEP de Origem do Fornecedor {customCepLoading ? '(Buscando...)' : ''}
+                          </label>
+                          <input
+                            type="text"
+                            maxLength={9}
+                            value={prod.customOriginCep || ''}
+                            onChange={(e) => handleCustomOriginCepLookup(i, e.target.value)}
+                            placeholder="00000-000"
+                            className="w-full bg-slate-950 border border-cyan-500/60 rounded-lg p-2 text-xs text-cyan-300 font-mono font-bold"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5">
+                        <div className="sm:col-span-6">
+                          <label className="text-[11px] text-slate-400 block mb-1">
+                            Rua / Logradouro
+                          </label>
+                          <input
+                            type="text"
+                            value={prod.customOriginStreet || ''}
+                            onChange={(e) =>
+                              updateProductAt(i, (p) => ({
+                                ...p,
+                                customOriginStreet: e.target.value
+                              }))
+                            }
+                            placeholder="Rua, Avenida..."
+                            className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-xs text-white"
+                          />
+                        </div>
+                        <div className="sm:col-span-2">
+                          <label className="text-[11px] text-slate-400 block mb-1">
+                            Número
+                          </label>
+                          <input
+                            type="text"
+                            value={prod.customOriginNumber || ''}
+                            onChange={(e) =>
+                              updateProductAt(i, (p) => ({
+                                ...p,
+                                customOriginNumber: e.target.value
+                              }))
+                            }
+                            placeholder="Nº"
+                            className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-xs text-white"
+                          />
+                        </div>
+                        <div className="sm:col-span-4">
+                          <label className="text-[11px] text-slate-400 block mb-1">
+                            Bairro
+                          </label>
+                          <input
+                            type="text"
+                            value={prod.customOriginNeighborhood || ''}
+                            onChange={(e) =>
+                              updateProductAt(i, (p) => ({
+                                ...p,
+                                customOriginNeighborhood: e.target.value
+                              }))
+                            }
+                            placeholder="Bairro"
+                            className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-xs text-white"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-end">
+                        <div className="sm:col-span-5">
+                          <label className="text-[11px] text-slate-400 block mb-1">
+                            Cidade do Fornecedor
+                          </label>
+                          <input
+                            type="text"
+                            value={prod.customOriginCity || ''}
+                            onChange={(e) =>
+                              updateProductAt(i, (p) => ({
+                                ...p,
+                                customOriginCity: e.target.value
+                              }))
+                            }
+                            placeholder="Cidade"
+                            className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-xs text-white"
+                          />
+                        </div>
+                        <div className="sm:col-span-2">
+                          <label className="text-[11px] text-slate-400 block mb-1">
+                            UF
+                          </label>
+                          <input
+                            type="text"
+                            maxLength={2}
+                            value={prod.customOriginState || ''}
+                            onChange={(e) =>
+                              updateProductAt(i, (p) => ({
+                                ...p,
+                                customOriginState: e.target.value.toUpperCase()
+                              }))
+                            }
+                            placeholder="UF"
+                            className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-xs text-white font-mono uppercase text-center"
+                          />
+                        </div>
+                        <div className="sm:col-span-5">
+                          <button
+                            type="button"
+                            onClick={() => handleSaveCurrentCustomOriginToGlobalSuppliers(prod)}
+                            disabled={
+                              !prod.customOriginName?.trim() ||
+                              (prod.customOriginCep || '').replace(/\D/g, '').length !== 8
+                            }
+                            className="w-full py-2 px-2.5 rounded-lg bg-purple-600/30 hover:bg-purple-600/50 disabled:opacity-40 border border-purple-500/50 text-purple-200 text-[11px] font-bold transition cursor-pointer"
+                          >
+                            + Salvar na Lista de Fornecedores
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* SECTION 4: FOTOS & VÍDEOS DO PRODUTO */}
+            {(editorTab === 'all_columns' || editorTab === 'media') && (
+              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-4 shadow-lg">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-3">
+                  <div>
+                    <h4 className="text-sm font-black uppercase tracking-wider text-purple-300 flex items-center gap-2">
+                      <Film size={16} />
+                      <span>4. Foto do Produto & Galeria de Mídias</span>
+                    </h4>
+                    <p className="text-[11px] text-slate-400 mt-0.5">
+                      Suba a foto principal e imagens/vídeos adicionais do produto.
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <label className="px-3.5 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow">
+                      {uploadingMediaKey?.startsWith(`media-${i}-`) ? (
+                        <Loader2 size={14} className="animate-spin" />
+                      ) : (
+                        <Upload size={14} />
+                      )}
+                      <span>Subir Foto do PC</span>
+                      <input
+                        type="file"
+                        accept="image/*,video/*"
+                        className="hidden"
+                        onChange={(e) => {
+                          if (e.target.files?.[0]) {
+                            handleUploadMainMedia(i, e.target.files[0]);
+                            e.target.value = '';
+                          }
+                        }}
+                      />
+                    </label>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        updateProductAt(i, (p) => {
+                          const list = [...currentMediaList, { type: 'image' as const, url: '' }];
+                          return {
+                            ...p,
+                            mediaList: list,
+                            mediaUrl: p.mediaUrl || ''
+                          };
+                        })
+                      }
+                      className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-bold transition cursor-pointer"
+                    >
+                      + URL
+                    </button>
+                  </div>
+                </div>
+
+                {currentMediaList.length === 0 ? (
+                  <div className="border-2 border-dashed border-slate-800 rounded-xl p-8 text-center space-y-3 bg-slate-950/60">
+                    <ImageIcon size={32} className="mx-auto text-slate-600" />
+                    <p className="text-xs text-slate-400">
+                      Nenhuma foto adicionada a este produto ainda.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-2.5">
+                    {currentMediaList.map((m, mIdx) => (
+                      <div
+                        key={mIdx}
+                        className="flex items-center gap-2.5 bg-slate-950 p-2.5 rounded-xl border border-slate-800"
+                      >
+                        <div className="w-16 h-14 rounded-lg overflow-hidden bg-black border border-slate-700 shrink-0 flex items-center justify-center">
+                          {m.type === 'video' ? (
+                            <Film size={18} className="text-purple-400" />
+                          ) : m.url ? (
+                            <img
+                              src={m.url}
+                              alt=""
+                              className="w-full h-full object-contain"
+                            />
+                          ) : (
+                            <ImageIcon size={18} className="text-slate-600" />
+                          )}
+                        </div>
+
+                        <select
+                          value={m.type || 'image'}
+                          onChange={(e) =>
+                            updateProductAt(i, (p) => {
+                              const list = [...currentMediaList];
+                              list[mIdx] = {
+                                ...list[mIdx],
+                                type: e.target.value as 'image' | 'video'
+                              };
+                              return {
+                                ...p,
+                                mediaList: list,
+                                ...(mIdx === 0 ? { mediaType: list[0].type } : {})
+                              };
+                            })
+                          }
+                          className="bg-slate-900 border border-slate-700 rounded-lg p-1.5 text-xs text-white"
+                        >
+                          <option value="image">Foto</option>
+                          <option value="video">Vídeo</option>
+                        </select>
+
+                        <input
+                          type="text"
+                          value={m.url || ''}
+                          onChange={(e) =>
+                            updateProductAt(i, (p) => {
+                              const list = [...currentMediaList];
+                              list[mIdx] = { ...list[mIdx], url: e.target.value };
+                              return {
+                                ...p,
+                                mediaList: list,
+                                ...(mIdx === 0 ? { mediaUrl: list[0].url } : {})
+                              };
+                            })
+                          }
+                          placeholder="URL da foto ou vídeo..."
+                          className="flex-1 min-w-0 bg-slate-900 border border-slate-700 rounded-lg p-1.5 text-xs text-white"
+                        />
+
+                        <button
+                          type="button"
+                          onClick={() =>
+                            updateProductAt(i, (p) => {
+                              const list = currentMediaList.filter((_, idx) => idx !== mIdx);
+                              return {
+                                ...p,
+                                mediaList: list,
+                                mediaUrl: list[0]?.url || '',
+                                mediaType: list[0]?.type || 'image'
+                              };
+                            })
+                          }
+                          className="text-red-400 hover:text-red-300 p-1.5"
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ============================================================================
+  // RENDER: DASHBOARD OVERVIEW & QUICK STOCK / VISIBILITY MANAGER (VIEW A)
+  // ============================================================================
+  return (
+    <div className="space-y-6">
+      {/* TOP ACTION BAR (Always at the top, never at the bottom!) */}
+      <div className="bg-slate-900 border border-purple-500/40 rounded-2xl p-4 sm:p-5 shadow-xl space-y-4">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+          <div>
+            <h3 className="text-lg sm:text-xl font-black text-white flex items-center gap-2.5">
+              <Box size={22} className="text-purple-400" />
+              <span>Central de Produtos, Controle de Estoque & Fornecedores</span>
+            </h3>
+            <p className="text-xs text-slate-400 mt-0.5">
+              Adicione novos produtos no topo, controle o estoque em tempo real, oculte produtos em rascunho ou abra a página dedicada de edição.
+            </p>
+          </div>
+
+          {/* Primary Top Action Buttons */}
+          <div className="flex flex-wrap items-center gap-2.5">
+            <button
+              type="button"
+              onClick={() => handleCreateNewProduct(false)}
+              className="px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-black uppercase tracking-wider transition flex items-center gap-2 shadow-lg shadow-purple-950/50 cursor-pointer"
+            >
+              <Plus size={16} />
+              <span>+ Adicionar Novo Produto</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => handleCreateNewProduct(true)}
+              className="px-4 py-2.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/50 text-amber-200 text-xs font-bold transition flex items-center gap-2 cursor-pointer"
+              title="Cria o produto já marcado como Oculto (Não à vista na loja) para você editar com calma e ativar quando quiser"
+            >
+              <EyeOff size={15} className="text-amber-400" />
+              <span>+ Adicionar Produto Oculto (Não deixar à vista)</span>
+            </button>
+
+            {onOpenShippingSettings && (
+              <button
+                type="button"
+                onClick={onOpenShippingSettings}
+                className="px-3.5 py-2.5 rounded-xl bg-cyan-600/20 hover:bg-cyan-600/30 border border-cyan-500/40 text-cyan-200 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
+              >
+                <MapPin size={15} className="text-cyan-400" />
+                <span>Endereços de Origem & Frete</span>
+              </button>
+            )}
+
+            <button
+              type="button"
+              disabled={saving}
+              onClick={() => handleSaveAndNotify()}
+              className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-black uppercase tracking-wider transition flex items-center gap-2 shadow-lg shadow-emerald-950/50 cursor-pointer"
+            >
+              <Save size={15} />
+              <span>{saving ? 'Salvando...' : 'Salvar Tudo'}</span>
+            </button>
+          </div>
+        </div>
+
+        {/* KPI Summary Cards */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 pt-2 border-t border-slate-800/80">
+          <div className="bg-slate-950/80 border border-slate-800 rounded-xl p-3">
+            <div className="text-[11px] text-slate-400">Total Cadastrados</div>
+            <div className="text-xl font-black font-mono text-white mt-0.5">{stats.total}</div>
+          </div>
+
+          <div className="bg-slate-950/80 border border-emerald-500/30 rounded-xl p-3">
+            <div className="text-[11px] text-emerald-300 flex items-center gap-1">
+              <Eye size={12} />
+              <span>À Vista na Loja</span>
+            </div>
+            <div className="text-xl font-black font-mono text-emerald-400 mt-0.5">
+              {stats.visible}
+            </div>
+          </div>
+
+          <div className="bg-slate-950/80 border border-amber-500/30 rounded-xl p-3">
+            <div className="text-[11px] text-amber-300 flex items-center gap-1">
+              <EyeOff size={12} />
+              <span>Ocultos (Não à vista)</span>
+            </div>
+            <div className="text-xl font-black font-mono text-amber-300 mt-0.5">
+              {stats.hidden}
+            </div>
+          </div>
+
+          <div className="bg-slate-950/80 border border-rose-500/30 rounded-xl p-3">
+            <div className="text-[11px] text-rose-300">Esgotados / Estoque Baixo</div>
+            <div className="text-xl font-black font-mono text-rose-400 mt-0.5">
+              {stats.outOfStock} esgot. / {stats.lowStock} baixo
+            </div>
+          </div>
+
+          <div className="bg-slate-950/80 border border-cyan-500/30 rounded-xl p-3">
+            <div className="text-[11px] text-cyan-300">Com Fornecedor Terceiro</div>
+            <div className="text-xl font-black font-mono text-cyan-300 mt-0.5">
+              {stats.customSupplier}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {savedBannerMsg && (
+        <div className="p-3 rounded-xl bg-emerald-950/80 border border-emerald-500/60 text-emerald-200 text-xs font-bold flex items-center justify-between">
+          <span>{savedBannerMsg}</span>
+          <button type="button" onClick={() => setSavedBannerMsg(null)}>
+            <X size={14} />
+          </button>
+        </div>
+      )}
+
+      {/* FILTER & SEARCH BAR */}
+      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-1.5">
+          {[
+            { id: 'all', label: `Todos (${stats.total})` },
+            { id: 'visible', label: `À Vista na Loja (${stats.visible})` },
+            { id: 'hidden', label: `Ocultos / Não à vista (${stats.hidden})` },
+            { id: 'in_stock', label: 'Em Estoque' },
+            { id: 'out_of_stock', label: `Estoque Baixo / Esgotado (${stats.outOfStock + stats.lowStock})` },
+            { id: 'pre_order', label: 'Pré-Venda' },
+            { id: 'custom_supplier', label: `Fornecedor Terceiro (${stats.customSupplier})` }
+          ].map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setFilterMode(tab.id as ProductFilterMode)}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
+                filterMode === tab.id
+                  ? 'bg-purple-600 text-white shadow'
+                  : 'bg-slate-950 text-slate-400 hover:text-white border border-slate-800'
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="flex items-center gap-2">
+          <div className="relative w-full md:w-72">
+            <Search
+              size={14}
+              className="text-slate-500 absolute left-3 top-1/2 -translate-y-1/2"
+            />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Buscar produto, categoria, fornecedor..."
+              className="w-full bg-slate-950 border border-slate-700 focus:border-purple-500 rounded-xl pl-9 pr-3 py-2 text-xs text-white outline-none"
+            />
+          </div>
+
+          <button
+            type="button"
+            onClick={handleInsertHalloweenTemplate}
+            className="px-3 py-2 rounded-xl bg-amber-600/20 hover:bg-amber-600/30 border border-amber-500/40 text-amber-300 text-xs font-bold transition shrink-0 hidden xl:flex items-center gap-1.5 cursor-pointer"
+            title="Inserir modelo de produto pronto com 2 versões"
+          >
+            <Sparkles size={13} />
+            <span>+ Modelo Pronto</span>
+          </button>
+        </div>
+      </div>
+
+      {/* PRODUCTS GRID / LIST WITH DIRECT STOCK & VISIBILITY CONTROLS */}
+      {filteredProducts.length === 0 ? (
+        <div className="bg-slate-900/70 border border-slate-800 rounded-2xl p-12 text-center space-y-4">
+          <Package size={40} className="mx-auto text-slate-600" />
+          <div className="space-y-1">
+            <h4 className="text-base font-bold text-white">
+              Nenhum produto encontrado neste filtro
+            </h4>
+            <p className="text-xs text-slate-400">
+              Use os botões no topo para adicionar um novo produto visível ou oculto.
+            </p>
+          </div>
+          <div className="flex items-center justify-center gap-3">
+            <button
+              type="button"
+              onClick={() => handleCreateNewProduct(false)}
+              className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition cursor-pointer"
+            >
+              + Adicionar Novo Produto
+            </button>
+            <button
+              type="button"
+              onClick={() => handleCreateNewProduct(true)}
+              className="px-4 py-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-200 text-xs font-bold transition cursor-pointer"
+            >
+              + Adicionar Produto Oculto
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 gap-4">
+          {filteredProducts.map(({ prod, idx }) => {
+            const isVisible = isProductVisibleInStore(prod);
+            const isHidden = !isVisible;
+            const thumb = getProductPrimaryImage(prod);
+            const variations = Array.isArray(prod.priceVariations)
+              ? prod.priceVariations.filter((v) => v && (v.name || v.price))
+              : [];
+            const cardsCount = Array.isArray(prod.productCards)
+              ? prod.productCards.reduce((acc, c) => acc + (c.quantity || 1), 0)
+              : 0;
+
+            return (
+              <div
+                key={prod.id || idx}
+                className={`rounded-2xl border p-4 sm:p-5 transition shadow-lg flex flex-col xl:flex-row xl:items-center justify-between gap-4 ${
+                  isHidden
+                    ? 'bg-slate-900/60 border-amber-500/40'
+                    : 'bg-slate-900 border-slate-700/80 hover:border-purple-500/50'
+                }`}
+              >
+                {/* Left: Thumbnail & Core Product Info */}
+                <div className="flex items-start gap-4 min-w-0 flex-1">
+                  <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-xl bg-black border border-slate-700 overflow-hidden shrink-0 flex items-center justify-center relative">
+                    {thumb ? (
+                      <img
+                        src={thumb}
+                        alt={prod.title}
+                        className="w-full h-full object-contain"
+                      />
+                    ) : (
+                      <ImageIcon size={24} className="text-slate-600" />
+                    )}
+                    <span className="absolute top-1 left-1 bg-black/80 text-[10px] font-mono font-bold text-purple-300 px-1.5 py-0.5 rounded">
+                      #{idx + 1}
+                    </span>
+                  </div>
+
+                  <div className="min-w-0 flex-1 space-y-1.5">
+                    <div className="flex flex-wrap items-center gap-2">
+                      {isHidden ? (
+                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-amber-500/20 text-amber-300 border border-amber-500/40 flex items-center gap-1">
+                          <EyeOff size={11} />
+                          <span>Oculto (Não à vista)</span>
+                        </span>
+                      ) : (
+                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 flex items-center gap-1">
+                          <Eye size={11} />
+                          <span>À Vista na Loja</span>
+                        </span>
+                      )}
+
+                      <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-purple-950/80 border border-purple-700/50 text-purple-200">
+                        {prod.category || prod.storeCategory || 'Decks'}
+                      </span>
+
+                      {prod.isPreOrder && (
+                        <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-950/80 border border-amber-700/50 text-amber-300">
+                          Pré-Venda
+                        </span>
+                      )}
+
+                      {prod.originAddressMode === 'custom_supplier' ? (
+                        <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-cyan-950/80 border border-cyan-600/50 text-cyan-300 flex items-center gap-1">
+                          <MapPin size={10} />
+                          <span>
+                            Fornecedor: {prod.customOriginName || 'Terceiro'} (
+                            {prod.customOriginCity || prod.customOriginCep || 'CEP próprio'})
+                          </span>
+                        </span>
+                      ) : (
+                        <span className="px-2 py-0.5 rounded-md text-[10px] font-mono text-slate-400 bg-slate-950 border border-slate-800">
+                          Origem Padrão ({storeSettings.originCity || 'SP'}/{storeSettings.originState || 'SP'})
+                        </span>
+                      )}
+                    </div>
+
+                    <h4 className="text-base sm:text-lg font-black text-white truncate">
+                      {prod.title || '(Produto Sem Título)'}
+                    </h4>
+
+                    <div className="flex flex-wrap items-center gap-3 text-xs text-slate-300">
+                      <span>
+                        Preço Base:{' '}
+                        <strong className="text-emerald-400 font-mono">
+                          {prod.price || variations[0]?.price || 'R$ 89,90'}
+                        </strong>
+                      </span>
+
+                      {variations.length > 0 && (
+                        <span className="text-amber-300 font-semibold">
+                          • {variations.length}{' '}
+                          {variations.length === 1 ? 'versão' : 'versões'}:{' '}
+                          <span className="text-slate-300 font-normal">
+                            {variations
+                              .map((v) => `${v.name || 'Versão'} (${v.price || prod.price})`)
+                              .join(', ')}
+                          </span>
+                        </span>
+                      )}
+
+                      {cardsCount > 0 && (
+                        <span className="text-cyan-300 font-semibold">
+                          • {cardsCount} carta(s) individual(is)
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Middle: Direct Stock & Visibility Controls (Zero modal needed!) */}
+                <div className="flex flex-wrap sm:flex-nowrap items-center gap-3 bg-slate-950/90 border border-slate-800 rounded-xl p-3 shrink-0">
+                  {/* Direct Stock Control */}
+                  <div className="space-y-1">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
+                      Controle de Estoque
+                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          updateProductAt(idx, (p) => ({
+                            ...p,
+                            stock: Math.max(0, (p.stock ?? 1) - 1)
+                          }))
+                        }
+                        className="w-7 h-7 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-white font-bold text-xs flex items-center justify-center cursor-pointer"
+                      >
+                        -
+                      </button>
+                      <input
+                        type="number"
+                        min={0}
+                        value={prod.stock !== undefined ? prod.stock : ''}
+                        onChange={(e) =>
+                          updateProductAt(idx, (p) => ({
+                            ...p,
+                            stock:
+                              e.target.value === '' ? undefined : Number(e.target.value)
+                          }))
+                        }
+                        placeholder="Livre"
+                        className="w-16 bg-slate-900 border border-slate-700 rounded-lg py-1 px-1.5 text-center text-xs text-emerald-300 font-mono font-bold outline-none"
+                      />
+                      <button
+                        type="button"
+                        onClick={() =>
+                          updateProductAt(idx, (p) => ({
+                            ...p,
+                            stock: (p.stock ?? 0) + 1
+                          }))
+                        }
+                        className="w-7 h-7 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-white font-bold text-xs flex items-center justify-center cursor-pointer"
+                      >
+                        +
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="h-8 w-px bg-slate-800 hidden sm:block" />
+
+                  {/* Checkbox: Não deixar à vista / Desmarcar para exibir */}
+                  <label
+                    className={`px-3 py-2 rounded-xl border text-xs font-bold cursor-pointer transition flex items-center gap-2 select-none ${
+                      isHidden
+                        ? 'bg-amber-500/20 border-amber-500/60 text-amber-200'
+                        : 'bg-slate-900 border-slate-800 text-slate-300 hover:border-slate-700'
+                    }`}
+                    title="Marque para não deixar este produto à vista na loja. Desmarque quando quiser exibi-lo."
+                  >
+                    <input
+                      type="checkbox"
+                      checked={isHidden}
+                      onChange={(e) => handleToggleVisibility(idx, e.target.checked)}
+                      className="w-4 h-4 accent-amber-500 rounded"
+                    />
+                    <span>Não deixar à vista</span>
+                  </label>
+                </div>
+
+                {/* Right: Open Dedicated Editor Page, Reorder, Clone, Delete */}
+                <div className="flex flex-wrap items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditingIndex(idx);
+                      setEditorTab('all_columns');
+                      setViewMode('editor');
+                    }}
+                    className="px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-black transition flex items-center gap-1.5 shadow-md shadow-purple-950/50 cursor-pointer"
+                  >
+                    <Edit2 size={14} />
+                    <span>Abrir Página de Edição</span>
+                  </button>
+
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      disabled={idx === 0}
+                      onClick={() => handleMoveProduct(idx, 'up')}
+                      className="p-2 rounded-lg bg-slate-950 hover:bg-slate-800 disabled:opacity-30 border border-slate-800 text-slate-300 transition cursor-pointer"
+                      title="Subir posição na vitrine"
+                    >
+                      <ArrowUp size={14} />
+                    </button>
+                    <button
+                      type="button"
+                      disabled={idx === products.length - 1}
+                      onClick={() => handleMoveProduct(idx, 'down')}
+                      className="p-2 rounded-lg bg-slate-950 hover:bg-slate-800 disabled:opacity-30 border border-slate-800 text-slate-300 transition cursor-pointer"
+                      title="Descer posição na vitrine"
+                    >
+                      <ArrowDown size={14} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDuplicateProduct(idx)}
+                      className="p-2 rounded-lg bg-slate-950 hover:bg-slate-800 border border-slate-800 text-purple-300 transition cursor-pointer"
+                      title="Duplicar produto (cria cópia oculta)"
+                    >
+                      <Copy size={14} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteProduct(idx)}
+                      className="p-2 rounded-lg bg-slate-950 hover:bg-red-950/60 border border-slate-800 text-red-400 transition cursor-pointer"
+                      title="Excluir produto"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+};

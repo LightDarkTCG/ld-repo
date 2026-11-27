@@ -77,6 +77,14 @@ function handleFirestoreError(error: unknown, operationType: OperationType, path
 
 export const DEFAULT_STORE_SETTINGS: StoreSettings = {
   originCep: '01001-000',
+  originName: 'Matriz Light Dark TCG',
+  originStreet: 'Praça da Sé',
+  originNumber: '100',
+  originComplement: '',
+  originNeighborhood: 'Sé',
+  originCity: 'São Paulo',
+  originState: 'SP',
+  supplierOrigins: [],
   freeShippingThreshold: 299,
   handlingDays: 2,
   enableMiniEnvios: true,
@@ -331,6 +339,22 @@ export function buildCartItemFromProduct(
       ? false
       : Boolean(product.isPreOrder || product.storeCategory === 'pre_venda');
 
+  const isCustomSupplier = product.originAddressMode === 'custom_supplier';
+  const originAddressFormatted = isCustomSupplier
+    ? [
+        product.customOriginName ? `${product.customOriginName}` : '',
+        product.customOriginStreet
+          ? `${product.customOriginStreet}${product.customOriginNumber ? `, Nº ${product.customOriginNumber}` : ''}`
+          : '',
+        product.customOriginCity || product.customOriginState
+          ? `${product.customOriginCity || ''}${product.customOriginState ? `/${product.customOriginState}` : ''}`
+          : '',
+        product.customOriginCep ? `CEP ${product.customOriginCep}` : ''
+      ]
+        .filter(Boolean)
+        .join(' — ')
+    : undefined;
+
   return {
     cartItemId,
     productId,
@@ -345,8 +369,20 @@ export function buildCartItemFromProduct(
     preOrderReleaseDate: product.preOrderReleaseDate || product.noLinkMessage,
     weightGrams: Number(chosenVar?.weightGrams || product.weightGrams || 250),
     freeShipping: Boolean(product.freeShipping),
-    maxStock: chosenVar?.stock !== undefined ? chosenVar.stock : product.stock
+    maxStock: chosenVar?.stock !== undefined ? chosenVar.stock : product.stock,
+    originName: isCustomSupplier ? product.customOriginName : undefined,
+    originCep: isCustomSupplier ? product.customOriginCep : undefined,
+    originCity: isCustomSupplier ? product.customOriginCity : undefined,
+    originState: isCustomSupplier ? product.customOriginState : undefined,
+    originAddressFormatted
   };
+}
+
+export function isProductVisibleInStore(prod?: ExclusiveProduct | null): boolean {
+  if (!prod) return false;
+  if (prod.isHiddenFromStore === true) return false;
+  if (prod.isActive === false) return false;
+  return true;
 }
 
 export function addToCart(
@@ -492,11 +528,32 @@ export function calculateShippingOptions(
   const cleanCep = cepRaw.replace(/\D/g, '');
   if (cleanCep.length !== 8 || items.length === 0) return [];
 
-  const region = getRegionByUfOrCep(stateUf, cleanCep);
-  const defaultRegionRates = DEFAULT_STORE_SETTINGS.regionalRates[region];
+  // Determine effective origin from items (if third-party supplier origin) or global store settings
+  const itemWithCustomOrigin = items.find((i) => i.originCep || i.originState || i.originCity);
+  const effectiveOriginCep = itemWithCustomOrigin?.originCep || settings.originCep || '01001-000';
+  const effectiveOriginState = itemWithCustomOrigin?.originState || settings.originState || '';
+  const effectiveOriginCity = itemWithCustomOrigin?.originCity || settings.originCity || '';
+  const effectiveOriginName = itemWithCustomOrigin?.originName || settings.originName || '';
+
+  const originLabelParts = [
+    effectiveOriginName ? effectiveOriginName : '',
+    effectiveOriginCity || effectiveOriginState
+      ? `${effectiveOriginCity}${effectiveOriginState ? `/${effectiveOriginState}` : ''}`
+      : '',
+    effectiveOriginCep ? `CEP ${effectiveOriginCep}` : ''
+  ].filter(Boolean);
+  const originSuffix = originLabelParts.length > 0 ? ` · Origem: ${originLabelParts.join(' - ')}` : '';
+
+  const destRegion = getRegionByUfOrCep(stateUf, cleanCep);
+  const originRegion = getRegionByUfOrCep(effectiveOriginState, effectiveOriginCep);
+  // If origin is in the same region as destination, use the local/SE base rate if lower
+  const effectiveRegion =
+    originRegion === destRegion && destRegion !== 'SE' ? 'SE' : destRegion;
+
+  const defaultRegionRates = DEFAULT_STORE_SETTINGS.regionalRates[effectiveRegion];
   const rates: RegionalShippingRate = {
     ...defaultRegionRates,
-    ...(settings.regionalRates?.[region] || {})
+    ...(settings.regionalRates?.[effectiveRegion] || {})
   };
 
   const totalGrams = items.reduce((acc, item) => acc + (item.weightGrams || 250) * item.quantity, 0);
@@ -517,7 +574,7 @@ export function calculateShippingOptions(
       company: 'Correios / Transportadora',
       price: 0,
       estimatedDays: rates.jadlogPackageDays || rates.pacDays,
-      description: 'Desbloqueado para o seu pedido!'
+      description: `Desbloqueado para o seu pedido!${originSuffix}`
     });
   }
 
@@ -528,7 +585,7 @@ export function calculateShippingOptions(
       company: 'Correios',
       price: Number((settings.miniEnviosPrice || 16.9).toFixed(2)),
       estimatedDays: settings.miniEnviosDays || '6 a 10 dias úteis',
-      description: 'Econômico com rastreamento para pedidos leves'
+      description: `Econômico com rastreamento para pedidos leves${originSuffix}`
     });
   }
 
@@ -541,7 +598,7 @@ export function calculateShippingOptions(
       company: 'Loggi',
       price: loggiPrice,
       estimatedDays: rates.loggiExpressDays || defaultRegionRates.loggiExpressDays || '1 a 4 dias úteis',
-      description: 'Transportadora expressa com rastreio em tempo real'
+      description: `Transportadora expressa com rastreio em tempo real${originSuffix}`
     });
   }
 
@@ -557,7 +614,7 @@ export function calculateShippingOptions(
       company: 'Jadlog',
       price: jadlogPkgPrice,
       estimatedDays: rates.jadlogPackageDays || defaultRegionRates.jadlogPackageDays || '3 a 7 dias úteis',
-      description: 'Modalidade econômica Jadlog com seguro e rastreamento'
+      description: `Modalidade econômica Jadlog com seguro e rastreamento${originSuffix}`
     });
 
     options.push({
@@ -566,7 +623,7 @@ export function calculateShippingOptions(
       company: 'Jadlog',
       price: jadlogComPrice,
       estimatedDays: rates.jadlogComDays || defaultRegionRates.jadlogComDays || '1 a 4 dias úteis',
-      description: 'Modalidade expressa prioritária Jadlog com seguro total'
+      description: `Modalidade expressa prioritária Jadlog com seguro total${originSuffix}`
     });
   }
 
@@ -579,7 +636,7 @@ export function calculateShippingOptions(
     company: 'Correios',
     price: pacPrice,
     estimatedDays: rates.pacDays,
-    description: 'Entrega econômica dos Correios com seguro e código de rastreio'
+    description: `Entrega econômica dos Correios com seguro e código de rastreio${originSuffix}`
   });
 
   options.push({
@@ -588,7 +645,7 @@ export function calculateShippingOptions(
     company: 'Correios',
     price: sedexPrice,
     estimatedDays: rates.sedexDays,
-    description: 'Entrega expressa prioritária dos Correios com seguro e rastreio'
+    description: `Entrega expressa prioritária dos Correios com seguro e rastreio${originSuffix}`
   });
 
   return options.sort((a, b) => a.price - b.price);
@@ -1372,10 +1429,14 @@ export async function saveOfficialProductToStore(
       product.id ||
       `prod_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
 
+    const isHidden = Boolean(product.isHiddenFromStore || product.isActive === false);
+
     const cleanProd: ExclusiveProduct = JSON.parse(
       JSON.stringify({
         id: prodId,
-        isActive: product.isActive !== false,
+        isActive: !isHidden,
+        isHiddenFromStore: isHidden,
+        isButtonActive: product.isButtonActive !== false,
         title: product.title,
         category: product.category || 'Produto Oficial',
         storeCategory: product.storeCategory || 'decks',
@@ -1407,7 +1468,17 @@ export async function saveOfficialProductToStore(
         weightGrams: product.weightGrams || 250,
         freeShipping: Boolean(product.freeShipping),
         sameVariationPrice: Boolean(product.sameVariationPrice),
-        priceVariations: normalizedVariations
+        priceVariations: normalizedVariations,
+        originAddressMode: product.originAddressMode || 'store_default',
+        supplierOriginId: product.supplierOriginId || '',
+        customOriginName: product.customOriginName || '',
+        customOriginCep: product.customOriginCep || '',
+        customOriginStreet: product.customOriginStreet || '',
+        customOriginNumber: product.customOriginNumber || '',
+        customOriginComplement: product.customOriginComplement || '',
+        customOriginNeighborhood: product.customOriginNeighborhood || '',
+        customOriginCity: product.customOriginCity || '',
+        customOriginState: product.customOriginState || ''
       })
     );
 

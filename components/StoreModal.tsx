@@ -367,7 +367,11 @@ export const StoreModal: React.FC<StoreModalProps> = ({
   }, [isOpen, isCartDrawerOpen, cartStep, activeOrder]);
 
   const activeProducts = useMemo(() => {
-    return (products || []).filter((p) => p && p.isActive !== false);
+    return (products || []).filter((p) => p && p.isActive !== false && !p.isHiddenFromStore);
+  }, [products]);
+
+  const hiddenProductsCount = useMemo(() => {
+    return (products || []).filter((p) => p && (p.isActive === false || p.isHiddenFromStore)).length;
   }, [products]);
 
   // Category counts for badges
@@ -915,10 +919,15 @@ export const StoreModal: React.FC<StoreModalProps> = ({
                     type="button"
                     onClick={onOpenAdminStore}
                     className="cyber-arcane-btn px-3 py-2.5 text-xs font-cyber font-bold uppercase tracking-wider bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/40 transition flex items-center gap-1.5 whitespace-nowrap cursor-pointer"
-                    title="Gerenciar Pedidos, Comissões de 10%, Frete e Produtos no Painel Admin"
+                    title="Abrir Central Tela Cheia de Produtos, Controle de Estoque, Pedidos e Frete (Fornecedores Terceiros)"
                   >
                     <Settings size={15} />
-                    <span className="hidden lg:inline">Gerenciar Mercado</span>
+                    <span className="hidden lg:inline">Central de Produtos, Estoque & Frete</span>
+                    {hiddenProductsCount > 0 && (
+                      <span className="px-1.5 py-0.5 rounded bg-amber-500 text-slate-950 text-[10px] font-black font-mono">
+                        {hiddenProductsCount} oculto(s)
+                      </span>
+                    )}
                   </button>
                 )}
 

@@ -269,6 +269,12 @@ export const CommunityMarketplaceView: React.FC<CommunityMarketplaceViewProps> =
   const [officialBadge, setOfficialBadge] = useState('OFICIAL LIGHT DARK');
   const [officialIsPreOrder, setOfficialIsPreOrder] = useState(false);
   const [officialPreOrderDate, setOfficialPreOrderDate] = useState('');
+  const [officialIsHiddenFromStore, setOfficialIsHiddenFromStore] = useState(false);
+  const [officialOriginMode, setOfficialOriginMode] = useState<'default' | 'custom'>('default');
+  const [officialCustomOriginName, setOfficialCustomOriginName] = useState('');
+  const [officialCustomOriginCep, setOfficialCustomOriginCep] = useState('');
+  const [officialCustomOriginCity, setOfficialCustomOriginCity] = useState('');
+  const [officialCustomOriginState, setOfficialCustomOriginState] = useState('');
 
   // Seller Direct Contact & Shipping Notes (for regular players)
   const [sellerWhatsapp, setSellerWhatsapp] = useState('');
@@ -820,6 +826,12 @@ export const CommunityMarketplaceView: React.FC<CommunityMarketplaceViewProps> =
     setOfficialBadge('OFICIAL LIGHT DARK');
     setOfficialIsPreOrder(false);
     setOfficialPreOrderDate('');
+    setOfficialIsHiddenFromStore(false);
+    setOfficialOriginMode('default');
+    setOfficialCustomOriginName('');
+    setOfficialCustomOriginCep('');
+    setOfficialCustomOriginCity('');
+    setOfficialCustomOriginState('');
     setFormError('');
   };
 
@@ -1214,7 +1226,8 @@ export const CommunityMarketplaceView: React.FC<CommunityMarketplaceViewProps> =
             : 'Promoção Oficial';
 
         const newOfficialProduct: ExclusiveProduct = {
-          isActive: true,
+          isActive: !officialIsHiddenFromStore,
+          isHiddenFromStore: officialIsHiddenFromStore,
           title: title.trim(),
           category: categoryLabel,
           storeCategory: officialStoreCategory,
@@ -1247,12 +1260,19 @@ export const CommunityMarketplaceView: React.FC<CommunityMarketplaceViewProps> =
           stock: Math.max(1, Number(stockQuantity) || 25),
           weightGrams: creationMode === 'single_card' ? 50 : 250,
           sameVariationPrice,
-          priceVariations: cleanedVariations
+          priceVariations: cleanedVariations,
+          originAddressMode: officialOriginMode,
+          customOriginName: officialOriginMode === 'custom' ? officialCustomOriginName.trim() : '',
+          customOriginCep: officialOriginMode === 'custom' ? officialCustomOriginCep.trim() : '',
+          customOriginCity: officialOriginMode === 'custom' ? officialCustomOriginCity.trim() : '',
+          customOriginState: officialOriginMode === 'custom' ? officialCustomOriginState.trim().toUpperCase() : ''
         };
 
         await saveOfficialProductToStore(newOfficialProduct);
         setFormSuccess(
-          '✓ Produto Oficial publicado com sucesso no catálogo de Produtos Oficiais (com Foto do Produto, Imagens Individuais das Cartas e Versões Com/Sem Playmat)!'
+          officialIsHiddenFromStore
+            ? '✓ Produto Oficial salvo como OCULTO (Não à vista na loja). Você pode desmarcá-lo quando quiser na Central de Produtos!'
+            : '✓ Produto Oficial publicado com sucesso no topo do catálogo de Produtos Oficiais!'
         );
         resetForm();
         setTimeout(() => {
@@ -2065,6 +2085,40 @@ export const CommunityMarketplaceView: React.FC<CommunityMarketplaceViewProps> =
                 <div className="p-3.5 rounded-xl bg-emerald-950/70 border border-emerald-500/60 text-emerald-200 text-xs flex items-center gap-2 font-bold">
                   <Check size={16} className="shrink-0 text-emerald-400" />
                   <span>{formSuccess}</span>
+                </div>
+              )}
+
+              {/* Top Action Bar for Quick Save & Visibility Toggle */}
+              {isOfficialAccount && !editingListingId && (
+                <div className="bg-slate-950/90 border border-amber-500/40 rounded-2xl p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <label className="flex items-center gap-2.5 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={officialIsHiddenFromStore}
+                      onChange={(e) => setOfficialIsHiddenFromStore(e.target.checked)}
+                      className="w-4 h-4 accent-amber-500 rounded cursor-pointer"
+                    />
+                    <div>
+                      <span className="text-xs font-black text-amber-300 block">
+                        Não deixar produto à vista na loja (Salvar Oculto / Rascunho)
+                      </span>
+                      <span className="text-[11px] text-slate-400 block">
+                        Marque se quiser cadastrar agora e desmarcar depois na Central de Produtos para deixá-lo visível.
+                      </span>
+                    </div>
+                  </label>
+
+                  <button
+                    type="submit"
+                    disabled={isSaving}
+                    className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-purple-600 hover:from-amber-400 hover:to-purple-500 text-white font-black text-xs transition shadow-md cursor-pointer shrink-0"
+                  >
+                    {isSaving
+                      ? 'Salvando...'
+                      : officialIsHiddenFromStore
+                      ? '🔒 Salvar Produto Oculto (Não à vista)'
+                      : '👑 Publicar Produto Oficial no Topo'}
+                  </button>
                 </div>
               )}
 
@@ -3423,6 +3477,83 @@ export const CommunityMarketplaceView: React.FC<CommunityMarketplaceViewProps> =
                             placeholder="Previsão de envio (ex: Lançamento em Novembro)"
                             className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white outline-none"
                           />
+                        )}
+
+                        <label className="flex items-center gap-2 text-xs font-bold text-amber-300 cursor-pointer pt-1">
+                          <input
+                            type="checkbox"
+                            checked={officialIsHiddenFromStore}
+                            onChange={(e) => setOfficialIsHiddenFromStore(e.target.checked)}
+                            className="accent-amber-500 w-4 h-4 rounded"
+                          />
+                          <span>Não deixar à vista na loja (Salvar Oculto e desmarcar depois)</span>
+                        </label>
+                      </div>
+
+                      {/* Endereço de Origem / Fornecedor Terceiro */}
+                      <div className="pt-2 border-t border-slate-800 space-y-2">
+                        <label className="text-[11px] text-cyan-300 font-bold block">
+                          Endereço de Origem do Envio (Loja ou Fornecedor Terceiro)
+                        </label>
+                        <div className="grid grid-cols-2 gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => setOfficialOriginMode('default')}
+                            className={`py-1.5 px-2.5 rounded-lg text-[11px] font-bold border transition cursor-pointer ${
+                              officialOriginMode === 'default'
+                                ? 'bg-emerald-600/25 border-emerald-500 text-emerald-200'
+                                : 'bg-slate-900 border-slate-800 text-slate-400'
+                            }`}
+                          >
+                            Origem Padrão da Loja
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setOfficialOriginMode('custom')}
+                            className={`py-1.5 px-2.5 rounded-lg text-[11px] font-bold border transition cursor-pointer ${
+                              officialOriginMode === 'custom'
+                                ? 'bg-cyan-600/25 border-cyan-400 text-cyan-200'
+                                : 'bg-slate-900 border-slate-800 text-slate-400'
+                            }`}
+                          >
+                            Fornecedor Terceiro
+                          </button>
+                        </div>
+
+                        {officialOriginMode === 'custom' && (
+                          <div className="bg-slate-900/90 border border-cyan-500/30 rounded-xl p-2.5 space-y-2">
+                            <input
+                              type="text"
+                              value={officialCustomOriginName}
+                              onChange={(e) => setOfficialCustomOriginName(e.target.value)}
+                              placeholder="Nome do Fornecedor Terceiro"
+                              className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-white outline-none"
+                            />
+                            <div className="grid grid-cols-3 gap-1.5">
+                              <input
+                                type="text"
+                                value={officialCustomOriginCep}
+                                onChange={(e) => setOfficialCustomOriginCep(formatCep(e.target.value))}
+                                placeholder="CEP Origem"
+                                className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5 text-xs text-cyan-300 font-mono outline-none"
+                              />
+                              <input
+                                type="text"
+                                value={officialCustomOriginCity}
+                                onChange={(e) => setOfficialCustomOriginCity(e.target.value)}
+                                placeholder="Cidade"
+                                className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5 text-xs text-white outline-none"
+                              />
+                              <input
+                                type="text"
+                                maxLength={2}
+                                value={officialCustomOriginState}
+                                onChange={(e) => setOfficialCustomOriginState(e.target.value.toUpperCase())}
+                                placeholder="UF"
+                                className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5 text-xs text-white uppercase outline-none"
+                              />
+                            </div>
+                          </div>
                         )}
                       </div>
                     </div>

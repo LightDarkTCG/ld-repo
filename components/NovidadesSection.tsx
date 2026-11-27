@@ -24,7 +24,7 @@ export const NovidadesSection: React.FC<NovidadesSectionProps> = ({
   onConfigureTexture
 }) => {
   const activeProducts = useMemo(() => {
-    return products.filter(p => p && p.isActive !== false);
+    return products.filter(p => p && p.isActive !== false && !p.isHiddenFromStore);
   }, [products]);
 
   const [currentIndex, setCurrentIndex] = useState(0);
