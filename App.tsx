@@ -3210,6 +3210,41 @@ export default function App() {
           textureSlot={textures.novidades_cyber_texture}
           showPlaceholderBadge={showPlaceholdersUI}
           onConfigureTexture={handleOpenTextureSlotConfig}
+          rareCardsConfig={homeSettings?.featuredRareCardsConfig}
+          isAdmin={isAdmin}
+          onOpenCatalog={() => {
+            navigateToModal(() => {
+              setIsCatalogOpen(true);
+            });
+          }}
+          onSaveRareCardsConfig={async (config) => {
+            const cleanConfig = JSON.parse(JSON.stringify(config));
+            const nextSettings = {
+              ...(homeSettings || {}),
+              featuredRareCardsConfig: cleanConfig
+            };
+            setHomeSettings(nextSettings);
+            writeBrowserCache('ld_cache_homeSettings_v2', nextSettings);
+            await setDoc(
+              doc(db, 'homeSettings', 'global'),
+              { featuredRareCardsConfig: cleanConfig },
+              { merge: true }
+            );
+          }}
+          onSaveProducts={async (nextProducts) => {
+            const cleanProducts = JSON.parse(JSON.stringify(nextProducts));
+            const nextSettings = {
+              ...(homeSettings || {}),
+              exclusiveProducts: cleanProducts
+            };
+            setHomeSettings(nextSettings);
+            writeBrowserCache('ld_cache_homeSettings_v2', nextSettings);
+            await setDoc(
+              doc(db, 'homeSettings', 'global'),
+              { exclusiveProducts: cleanProducts },
+              { merge: true }
+            );
+          }}
         />
       </div>
 

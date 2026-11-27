@@ -149,7 +149,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
               </span>
 
               {/* Card art or placeholder */}
-              <div className="w-11 h-14 rounded overflow-hidden shrink-0 bg-slate-900 border border-slate-800 flex items-center justify-center">
+              <div className="w-11 aspect-[63/88] rounded overflow-hidden shrink-0 bg-slate-900 border border-slate-800 flex items-center justify-center">
                 {card?.imageUrl ? (
                   <img 
                     src={card.imageUrl} 
@@ -157,7 +157,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                     referrerPolicy="no-referrer"
                     loading="lazy"
                     decoding="async"
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform" 
+                    className="w-full h-full object-fill group-hover:scale-105 transition-transform" 
                   />
                 ) : (
                   <Layers size={18} className="text-slate-600" />
@@ -606,25 +606,22 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                             (pc.cardCode && c.code === pc.cardCode) ||
                             c.name.toLowerCase() === (pc.name || '').toLowerCase()
                         );
+                  const displayCollection = pc.collection || matchedInCatalog?.collection || 'Natal Macroversal';
                   return (
                     <div
                       key={pc.id || idx}
                       onClick={() => {
-                        if (matchedInCatalog && onSelectCard) {
-                          onSelectCard(matchedInCatalog);
-                        } else {
-                          setInspectCustomCard(pc);
-                        }
+                        setInspectCustomCard(pc);
                       }}
                       className="group bg-slate-950/90 border border-slate-800 hover:border-cyan-400/70 rounded-xl overflow-hidden cursor-pointer transition-all duration-200 hover:-translate-y-1 shadow-md flex flex-col"
                     >
-                      <div className="relative aspect-[3/4] w-full bg-black overflow-hidden">
+                      <div className="relative aspect-[63/88] w-full bg-slate-950 overflow-hidden">
                         {pc.imageUrl ? (
                           <img
                             src={pc.imageUrl}
                             alt={pc.name}
                             referrerPolicy="no-referrer"
-                            className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-300"
+                            className="w-full h-full object-fill group-hover:scale-[1.03] transition-transform duration-300"
                           />
                         ) : (
                           <div className="w-full h-full flex items-center justify-center text-slate-600">
@@ -633,12 +630,12 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                         )}
                         <span
                           className={`absolute top-2 left-2 px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-wider shadow ${
-                            pc.source === 'custom_new'
+                            pc.source === 'custom_new' && !pc.cardCode
                               ? 'bg-emerald-600/95 text-white border border-emerald-400/50'
                               : 'bg-purple-600/95 text-white border border-purple-400/50'
                           }`}
                         >
-                          {pc.source === 'custom_new' ? 'Carta Nova' : 'Carta do Site'}
+                          {displayCollection}
                         </span>
                         <span className="absolute top-2 right-2 px-2 py-0.5 rounded-md bg-black/85 border border-white/15 text-emerald-400 font-mono font-black text-xs">
                           {pc.quantity || 1}x
@@ -649,7 +646,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                           {pc.name}
                         </div>
                         <div className="text-[10px] text-slate-400 truncate mt-0.5">
-                          {pc.cardCode || pc.type || 'Carta Exclusiva do Produto'}
+                          {pc.cardCode ? `${pc.cardCode} • ${displayCollection}` : displayCollection}
                         </div>
                       </div>
                     </div>
@@ -761,47 +758,77 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
         </div>
       </div>
 
-      {/* Lightbox para Ampliar Imagem Individual de Carta Nova do Produto */}
-      {inspectCustomCard && (
-        <div
-          className="fixed inset-0 z-70 flex items-center justify-center p-4 bg-black/90 backdrop-blur-md animate-in fade-in duration-200"
-          onClick={() => setInspectCustomCard(null)}
-        >
+      {/* Lightbox para Ampliar Imagem Individual de Carta do Produto */}
+      {inspectCustomCard && (() => {
+        const linkedCatalogCard =
+          inspectCustomCard.cardCode
+            ? allCards.find((c) => c.code === inspectCustomCard.cardCode)
+            : allCards.find((c) => c.name.toLowerCase() === (inspectCustomCard.name || '').toLowerCase());
+        const cardCol = inspectCustomCard.collection || linkedCatalogCard?.collection || 'Natal Macroversal';
+        return (
           <div
-            className="bg-slate-900 border border-cyan-500/50 rounded-2xl max-w-md w-full p-5 relative shadow-2xl space-y-4"
-            onClick={(e) => e.stopPropagation()}
+            className="fixed inset-0 z-70 flex items-center justify-center p-4 bg-black/90 backdrop-blur-md animate-in fade-in duration-200"
+            onClick={() => setInspectCustomCard(null)}
           >
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <div>
-                <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded bg-emerald-600/30 text-emerald-300 border border-emerald-500/40">
-                  {inspectCustomCard.source === 'custom_new'
-                    ? 'Carta Nova / Exclusiva do Produto'
-                    : 'Carta do Produto'}
-                </span>
-                <h4 className="text-base font-black text-white mt-1">
-                  {inspectCustomCard.name} ({inspectCustomCard.quantity || 1}x)
-                </h4>
+            <div
+              className="bg-slate-900 border border-cyan-500/50 rounded-2xl max-w-[420px] w-full p-4 sm:p-5 relative shadow-2xl space-y-3"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between border-b border-slate-800 pb-3 gap-2">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded bg-emerald-600/30 text-emerald-300 border border-emerald-500/40">
+                      {cardCol}
+                    </span>
+                    {inspectCustomCard.cardCode && (
+                      <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-purple-900/50 text-purple-300 border border-purple-500/30">
+                        {inspectCustomCard.cardCode}
+                      </span>
+                    )}
+                  </div>
+                  <h4 className="text-base font-black text-white mt-1 truncate">
+                    {inspectCustomCard.name} ({inspectCustomCard.quantity || 1}x)
+                  </h4>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setInspectCustomCard(null)}
+                  className="p-2 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition shrink-0"
+                >
+                  <X size={18} />
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={() => setInspectCustomCard(null)}
-                className="p-2 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition"
-              >
-                <X size={18} />
-              </button>
-            </div>
 
-            <div className="aspect-[3/4] w-full rounded-xl bg-black border border-slate-800 overflow-hidden flex items-center justify-center">
-              <img
-                src={inspectCustomCard.imageUrl}
-                alt={inspectCustomCard.name}
-                referrerPolicy="no-referrer"
-                className="w-full h-full object-contain"
-              />
+              <div className="w-full rounded-xl overflow-hidden shadow-xl border border-slate-800/80">
+                <img
+                  src={inspectCustomCard.imageUrl}
+                  alt={inspectCustomCard.name}
+                  referrerPolicy="no-referrer"
+                  className="w-full h-auto max-h-[72vh] object-fill block mx-auto"
+                />
+              </div>
+
+              {linkedCatalogCard && onSelectCard && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const cardWithThisImage: CardData = {
+                      ...linkedCatalogCard,
+                      imageUrl: inspectCustomCard.imageUrl || linkedCatalogCard.imageUrl,
+                      collection: cardCol
+                    };
+                    setInspectCustomCard(null);
+                    onSelectCard(cardWithThisImage);
+                  }}
+                  className="w-full py-2.5 px-4 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs uppercase tracking-wider transition shadow-md cursor-pointer"
+                >
+                  Ver Ficha Completa da Carta no Catálogo ({linkedCatalogCard.code})
+                </button>
+              )}
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* On-screen Notice Modal when there's no link */}
       {showNotice && (

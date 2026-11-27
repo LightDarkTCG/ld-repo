@@ -31,11 +31,13 @@ import {
 } from 'lucide-react';
 import {
   CardData,
+  CardVariationItem,
   ExclusiveProduct,
   ProductIndividualCardItem,
   StoreSettings,
   SupplierOriginAddress
 } from '../types';
+import { useCards } from '../CardContext';
 import {
   DEFAULT_STORE_SETTINGS,
   fetchStoreSettings,
@@ -88,6 +90,7 @@ export const StoreProductManagerView: React.FC<StoreProductManagerViewProps> = (
   initialCreateHidden = false,
   onOpenShippingSettings
 }) => {
+  const { saveCard, saveCollection, collections } = useCards();
   const [viewMode, setViewMode] = useState<'list' | 'editor'>(() =>
     initialEditingIndex !== null || initialCreateNew ? 'editor' : 'list'
   );
@@ -98,6 +101,9 @@ export const StoreProductManagerView: React.FC<StoreProductManagerViewProps> = (
   const [searchQuery, setSearchQuery] = useState('');
   const [uploadingMediaKey, setUploadingMediaKey] = useState<string | null>(null);
   const [savedBannerMsg, setSavedBannerMsg] = useState<string | null>(null);
+  const [defaultProductCardsCollection, setDefaultProductCardsCollection] = useState<string>('Natal Macroversal');
+  const [syncingCardsToCatalog, setSyncingCardsToCatalog] = useState<boolean>(false);
+  const [cardLinkSearchByIndex, setCardLinkSearchByIndex] = useState<Record<number, string>>({});
 
   // Store Settings (for Default Origin & Saved Third-Party Suppliers)
   const [storeSettings, setStoreSettings] = useState<StoreSettings>(DEFAULT_STORE_SETTINGS);
@@ -167,8 +173,17 @@ export const StoreProductManagerView: React.FC<StoreProductManagerViewProps> = (
   };
 
   const handleSaveAndNotify = async (overrideList?: ExclusiveProduct[], customMsg?: string) => {
+    if (
+      !overrideList &&
+      editingIndex !== null &&
+      products[editingIndex] &&
+      Array.isArray(products[editingIndex].productCards) &&
+      products[editingIndex].productCards!.some((pc) => pc.imageUrl && !pc.syncedToCatalog)
+    ) {
+      await handleSyncProductCardsToCatalog(editingIndex, undefined, true);
+    }
     await onSaveProducts(overrideList);
-    setSavedBannerMsg(customMsg || '✓ Alterações nos produtos e estoque salvas com sucesso!');
+    setSavedBannerMsg(customMsg || '✓ Alterações nos produtos, cartas do catálogo e estoque salvas com sucesso!');
     setTimeout(() => setSavedBannerMsg(null), 3500);
   };
 
@@ -279,6 +294,21 @@ export const StoreProductManagerView: React.FC<StoreProductManagerViewProps> = (
       hideFromStore
         ? '✓ Produto marcado como OCULTO (não está mais à vista na loja).'
         : '✓ Produto desmarcado e colocado À VISTA na loja!'
+    );
+  };
+
+  const handleToggleCarouselHighlight = async (idx: number, showInCarousel: boolean) => {
+    const next = [...products];
+    next[idx] = {
+      ...next[idx],
+      showInHomeCarousel: showInCarousel
+    };
+    onChangeProducts(next);
+    await handleSaveAndNotify(
+      next,
+      showInCarousel
+        ? '✓ Produto ATIVADO no Carrossel de Destaques da Página Inicial!'
+        : '✓ Produto REMOVIDO do Carrossel de Destaques da Página Inicial.'
     );
   };
 
@@ -555,24 +585,93 @@ export const StoreProductManagerView: React.FC<StoreProductManagerViewProps> = (
     });
   };
 
+  const findBestCatalogMatch = (rawName: string): CardData | undefined => {
+    const clean = rawName
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9\s]/g, ' ')
+      .trim();
+    if (!clean || clean.length < 2) return undefined;
+
+    // 1. Exact code match or exact name match
+    const exact = cards.find((c) => {
+      const cName = c.name
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .trim();
+      const cCode = (c.code || '').toLowerCase();
+      return cName === clean || cCode === clean || cCode.endsWith(clean);
+    });
+    if (exact) return exact;
+
+    // 2. Prefix match (e.g. "Ikari" -> "Ikari - O Quebrado")
+    const prefixMatch = cards.find((c) => {
+      const cName = c.name
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .trim();
+      const firstPart = cName.split(/\s*[-–:]\s*/)[0]?.trim() || '';
+      return firstPart === clean || cName.startsWith(clean + ' ') || cName.startsWith(clean + '-');
+    });
+    if (prefixMatch) return prefixMatch;
+
+    // 3. Substring match if at least 4 chars
+    if (clean.length >= 4) {
+      return cards.find((c) => {
+        const cName = c.name
+          .toLowerCase()
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '')
+          .trim();
+        return cName.includes(clean);
+      });
+    }
+    return undefined;
+  };
+
   const handleUploadCustomCardFiles = async (prodIdx: number, files: FileList) => {
     const key = `pcard-${prodIdx}`;
     setUploadingMediaKey(key);
+    const activeCollection = (defaultProductCardsCollection || 'Natal Macroversal').trim() || 'Natal Macroversal';
     try {
       const uploadedItems: ProductIndividualCardItem[] = [];
       for (let fIdx = 0; fIdx < files.length; fIdx++) {
         const file = files[fIdx];
         const url = await uploadMarketplaceImage(file, 'product_cards');
-        const cleanName = file.name.replace(/\.[^/.]+$/, '').replace(/[-_]+/g, ' ');
-        uploadedItems.push({
-          id: `pcard_new_${Date.now()}_${fIdx}`,
-          source: 'custom_new',
-          name: cleanName || `Carta Exclusiva #${fIdx + 1}`,
-          imageUrl: url,
-          type: 'Carta Exclusiva do Produto',
-          rarity: 'Nova / Exclusiva',
-          quantity: 1
-        });
+        const cleanName = file.name.replace(/\.[^/.]+$/, '').replace(/[-_]+/g, ' ').trim();
+        const matchedCatalogCard = findBestCatalogMatch(cleanName);
+
+        if (matchedCatalogCard) {
+          uploadedItems.push({
+            id: `pcard_new_${Date.now()}_${fIdx}`,
+            source: 'catalog',
+            cardCode: matchedCatalogCard.code,
+            name: matchedCatalogCard.name,
+            imageUrl: url,
+            type: matchedCatalogCard.type || 'Herói',
+            rarity: matchedCatalogCard.rarity || 'Moderno Exclusiva',
+            collection: activeCollection,
+            frame: 'Moderno',
+            syncedToCatalog: false,
+            quantity: 1
+          });
+        } else {
+          uploadedItems.push({
+            id: `pcard_new_${Date.now()}_${fIdx}`,
+            source: 'custom_new',
+            name: cleanName || `Carta Exclusiva #${fIdx + 1}`,
+            imageUrl: url,
+            type: 'Herói',
+            rarity: 'Moderno Exclusiva',
+            collection: activeCollection,
+            frame: 'Moderno',
+            syncedToCatalog: false,
+            quantity: 1
+          });
+        }
       }
 
       updateProductAt(prodIdx, (prod) => ({
@@ -581,6 +680,175 @@ export const StoreProductManagerView: React.FC<StoreProductManagerViewProps> = (
       }));
     } finally {
       setUploadingMediaKey(null);
+    }
+  };
+
+  const handleSyncProductCardsToCatalog = async (
+    prodIdx: number,
+    specificCardIndex?: number,
+    silent: boolean = false
+  ) => {
+    const targetProd = products[prodIdx];
+    if (!targetProd || !Array.isArray(targetProd.productCards) || targetProd.productCards.length === 0) {
+      return;
+    }
+
+    setSyncingCardsToCatalog(true);
+    try {
+      const updatedProductCards = [...targetProd.productCards];
+      const collectionsToSave = new Set<string>();
+      let syncedCount = 0;
+
+      for (let idx = 0; idx < updatedProductCards.length; idx++) {
+        if (specificCardIndex !== undefined && idx !== specificCardIndex) continue;
+        const pc = updatedProductCards[idx];
+        if (!pc.imageUrl) continue;
+
+        const targetCollection = (pc.collection || defaultProductCardsCollection || 'Natal Macroversal').trim() || 'Natal Macroversal';
+        const targetFrame: 'Moderno' | 'Legado' = pc.frame || 'Moderno';
+        const targetRarity = pc.rarity && pc.rarity !== 'Nova / Exclusiva' ? pc.rarity : 'Moderno Exclusiva';
+        collectionsToSave.add(targetCollection);
+
+        // Find catalog card by linked cardCode or exact name
+        const existingCard = pc.cardCode
+          ? cards.find((c) => c.code === pc.cardCode)
+          : cards.find((c) => c.name.toLowerCase() === (pc.name || '').toLowerCase());
+
+        if (existingCard) {
+          const existingVariants = Array.isArray(existingCard.variants) ? [...existingCard.variants] : [];
+          // Ensure base image is preserved in variants if not already present
+          if (
+            existingCard.imageUrl &&
+            !existingVariants.some((v) => v.imageUrl === existingCard.imageUrl)
+          ) {
+            existingVariants.unshift({
+              id: `${existingCard.code.replace(/[\/\s-]/g, '_')}_base`,
+              name: existingCard.collection || 'Padrão',
+              code: existingCard.code,
+              collection: existingCard.collection,
+              frame: existingCard.frame || 'Moderno',
+              rarity: existingCard.rarity || 'Moderno Comum',
+              imageUrl: existingCard.imageUrl
+            });
+          }
+
+          const varIdx = existingVariants.findIndex(
+            (v) =>
+              v.imageUrl === pc.imageUrl ||
+              (v.collection && v.collection.toLowerCase() === targetCollection.toLowerCase() && v.imageUrl === pc.imageUrl)
+          );
+
+          const newVariantItem: CardVariationItem = {
+            id: `var_${existingCard.code.replace(/[\/\s-]/g, '_')}_${targetCollection.replace(/[^a-zA-Z0-9]/g, '_')}`,
+            name: targetCollection,
+            code: existingCard.code,
+            collection: targetCollection,
+            frame: targetFrame,
+            rarity: targetRarity,
+            imageUrl: pc.imageUrl
+          };
+
+          if (varIdx >= 0) {
+            existingVariants[varIdx] = {
+              ...existingVariants[varIdx],
+              ...newVariantItem
+            };
+          } else {
+            existingVariants.push(newVariantItem);
+          }
+
+          await saveCard({
+            ...existingCard,
+            variants: existingVariants
+          });
+
+          updatedProductCards[idx] = {
+            ...pc,
+            source: 'catalog',
+            cardCode: existingCard.code,
+            name: existingCard.name,
+            type: existingCard.type,
+            collection: targetCollection,
+            frame: targetFrame,
+            rarity: targetRarity,
+            syncedToCatalog: true
+          };
+          syncedCount++;
+        } else {
+          // Brand new standalone card in the catalog under targetCollection
+          const generatedCode =
+            pc.cardCode && pc.cardCode.trim()
+              ? pc.cardCode.trim()
+              : `2026/NATAL/C${String(cards.length + idx + 1).padStart(4, '0')}`;
+
+          const validType = (['Herói', 'Combatente', 'Equipamento', 'Efeito', 'Token'].includes(pc.type || '')
+            ? pc.type
+            : 'Herói') as CardData['type'];
+
+          const newCatalogCard: CardData = {
+            code: generatedCode,
+            name: pc.name || `Carta ${generatedCode}`,
+            type: validType,
+            archetype: 'Neutro',
+            collection: targetCollection,
+            frame: targetFrame,
+            rarity: targetRarity,
+            ct: 1,
+            attack: validType === 'Herói' || validType === 'Combatente' ? 1 : undefined,
+            defense: validType === 'Herói' || validType === 'Combatente' ? 1 : undefined,
+            description: pc.description || `Carta da coleção ${targetCollection}.`,
+            imageUrl: pc.imageUrl,
+            variants: [
+              {
+                id: `var_${generatedCode.replace(/[\/\s-]/g, '_')}_base`,
+                name: targetCollection,
+                code: generatedCode,
+                collection: targetCollection,
+                frame: targetFrame,
+                rarity: targetRarity,
+                imageUrl: pc.imageUrl
+              }
+            ]
+          };
+
+          await saveCard(newCatalogCard);
+
+          updatedProductCards[idx] = {
+            ...pc,
+            source: 'catalog',
+            cardCode: generatedCode,
+            collection: targetCollection,
+            frame: targetFrame,
+            rarity: targetRarity,
+            syncedToCatalog: true
+          };
+          syncedCount++;
+        }
+      }
+
+      for (const colName of collectionsToSave) {
+        await saveCollection(colName);
+      }
+
+      const nextProducts = [...products];
+      nextProducts[prodIdx] = {
+        ...targetProd,
+        productCards: updatedProductCards
+      };
+      onChangeProducts(nextProducts);
+
+      if (!silent) {
+        await onSaveProducts(nextProducts);
+        const colsList = Array.from(collectionsToSave).join(', ');
+        setSavedBannerMsg(
+          `✓ ${syncedCount} carta(s) vinculada(s) e publicada(s) diretamente no Catálogo Oficial na coleção "${colsList}"!`
+        );
+        setTimeout(() => setSavedBannerMsg(null), 4500);
+      }
+    } catch (err: any) {
+      console.error('Erro ao publicar cartas no catálogo:', err);
+    } finally {
+      setSyncingCardsToCatalog(false);
     }
   };
 
@@ -799,6 +1067,30 @@ export const StoreProductManagerView: React.FC<StoreProductManagerViewProps> = (
               <span>Não deixar à vista na loja (Oculto)</span>
             </label>
 
+            {/* Checkbox to toggle highlight in Home Carousel */}
+            <label
+              className={`px-3.5 py-2 rounded-xl border text-xs font-bold cursor-pointer transition flex items-center gap-2 select-none ${
+                prod.showInHomeCarousel !== false
+                  ? 'bg-purple-950/80 border-purple-500 text-purple-200 shadow-md shadow-purple-950/40'
+                  : 'bg-slate-900 border-slate-700 text-slate-400 hover:border-slate-600'
+              }`}
+              title="Marque para exibir este produto no Carrossel de Destaques da Página Inicial."
+            >
+              <input
+                type="checkbox"
+                checked={prod.showInHomeCarousel !== false}
+                onChange={(e) => {
+                  const show = e.target.checked;
+                  updateProductAt(i, (p) => ({
+                    ...p,
+                    showInHomeCarousel: show
+                  }));
+                }}
+                className="w-4 h-4 accent-purple-500 rounded"
+              />
+              <span>Destaque no Carrossel da Home</span>
+            </label>
+
             <button
               type="button"
               onClick={() => handleCreateNewProduct(false)}
@@ -930,6 +1222,21 @@ export const StoreProductManagerView: React.FC<StoreProductManagerViewProps> = (
                         className="w-4 h-4 accent-amber-500 rounded"
                       />
                       <span>Não deixar à vista (Ocultar)</span>
+                    </label>
+
+                    <label className="flex items-center gap-2 text-xs font-bold text-purple-200 cursor-pointer bg-slate-950/90 border border-purple-500/40 px-3 py-2 rounded-xl">
+                      <input
+                        type="checkbox"
+                        checked={prod.showInHomeCarousel !== false}
+                        onChange={(e) =>
+                          updateProductAt(i, (p) => ({
+                            ...p,
+                            showInHomeCarousel: e.target.checked
+                          }))
+                        }
+                        className="w-4 h-4 accent-purple-500 rounded"
+                      />
+                      <span>Destaque no Carrossel da Home</span>
                     </label>
 
                     <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer px-1">
@@ -1765,24 +2072,24 @@ export const StoreProductManagerView: React.FC<StoreProductManagerViewProps> = (
                   <div>
                     <h4 className="text-sm font-black uppercase tracking-wider text-cyan-300 flex items-center gap-2">
                       <Layers size={16} className="text-cyan-400" />
-                      <span>5. Imagens Individuais das Cartas & Código de Deck</span>
+                      <span>5. Imagens Individuais das Cartas & Sincronização Direta com o Catálogo</span>
                     </h4>
                     <p className="text-[11px] text-slate-400 mt-0.5">
-                      Suba imagens de cartas novas exclusivas do produto, escolha cartas do catálogo do site ou cole um código de Deck.
+                      Passo 1: Suba várias imagens de cartas de uma vez • Passo 2: Vincule à carta do catálogo e à coleção nova (ex: &quot;Natal Macroversal&quot;) para publicar direto no Catálogo Oficial.
                     </p>
                   </div>
 
                   <div className="flex items-center gap-2 flex-wrap">
-                    <label className="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow">
+                    <label className="px-3.5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black uppercase tracking-wider transition flex items-center gap-1.5 cursor-pointer shadow-lg shadow-emerald-950/50">
                       {uploadingMediaKey === `pcard-${i}` ? (
-                        <Loader2 size={13} className="animate-spin" />
+                        <Loader2 size={14} className="animate-spin" />
                       ) : (
-                        <Upload size={13} />
+                        <Upload size={14} />
                       )}
                       <span>
                         {uploadingMediaKey === `pcard-${i}`
-                          ? 'Subindo...'
-                          : '+ Subir Carta(s) Nova(s) do PC'}
+                          ? 'Subindo Cartas...'
+                          : '+ Subir Várias Imagens de Cartas de Uma Vez'}
                       </span>
                       <input
                         type="file"
@@ -1808,8 +2115,11 @@ export const StoreProductManagerView: React.FC<StoreProductManagerViewProps> = (
                             source: 'custom_new',
                             name: `Carta Nova #${list.length + 1}`,
                             imageUrl: '',
-                            type: 'Carta Exclusiva',
-                            rarity: 'Exclusiva',
+                            type: 'Herói',
+                            rarity: 'Moderno Exclusiva',
+                            collection: (defaultProductCardsCollection || 'Natal Macroversal').trim() || 'Natal Macroversal',
+                            frame: 'Moderno',
+                            syncedToCatalog: false,
                             quantity: 1
                           });
                           return { ...p, productCards: list };
@@ -1817,16 +2127,87 @@ export const StoreProductManagerView: React.FC<StoreProductManagerViewProps> = (
                       }
                       className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-cyan-300 text-xs font-bold transition cursor-pointer"
                     >
-                      + Carta Nova por URL
+                      + Carta por URL
                     </button>
                   </div>
+                </div>
+
+                {/* Coleção Padrão das Cartas deste Produto + Botão de Publicar Todas no Catálogo */}
+                <div className="bg-emerald-950/30 border border-emerald-500/40 rounded-xl p-4 space-y-3">
+                  <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-3">
+                    <div className="flex-1 space-y-1.5">
+                      <label className="text-[11px] font-black uppercase tracking-wider text-emerald-300 flex items-center gap-1.5">
+                        <Sparkles size={13} className="text-emerald-400" />
+                        <span>Nome da Coleção Nova para Vincular as Cartas no Catálogo:</span>
+                      </label>
+                      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                        <input
+                          type="text"
+                          value={defaultProductCardsCollection}
+                          onChange={(e) => setDefaultProductCardsCollection(e.target.value)}
+                          placeholder="Ex: Natal Macroversal"
+                          list={`collections-datalist-${i}`}
+                          className="flex-1 bg-slate-950 border border-emerald-500/50 rounded-lg px-3 py-2 text-xs text-white font-bold outline-none focus:border-emerald-400"
+                        />
+                        <datalist id={`collections-datalist-${i}`}>
+                          <option value="Natal Macroversal" />
+                          {(collections || []).map((col) => (
+                            <option key={col} value={col} />
+                          ))}
+                        </datalist>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const colToApply = (defaultProductCardsCollection || 'Natal Macroversal').trim() || 'Natal Macroversal';
+                            updateProductAt(i, (p) => ({
+                              ...p,
+                              productCards: (p.productCards || []).map((pc) => ({
+                                ...pc,
+                                collection: colToApply,
+                                syncedToCatalog: false
+                              }))
+                            }));
+                          }}
+                          className="px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-emerald-500/40 text-emerald-200 text-[11px] font-bold transition cursor-pointer shrink-0"
+                        >
+                          Aplicar Coleção em Todas Abaixo
+                        </button>
+                      </div>
+                    </div>
+
+                    {Array.isArray(prod.productCards) && prod.productCards.length > 0 && (
+                      <button
+                        type="button"
+                        disabled={syncingCardsToCatalog}
+                        onClick={() => handleSyncProductCardsToCatalog(i)}
+                        className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-cyan-600 hover:from-emerald-500 hover:to-cyan-500 disabled:opacity-50 text-white text-xs font-black uppercase tracking-wider shadow-lg transition flex items-center justify-center gap-2 cursor-pointer shrink-0"
+                      >
+                        {syncingCardsToCatalog ? (
+                          <>
+                            <Loader2 size={14} className="animate-spin" />
+                            <span>Publicando no Catálogo...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Check size={14} />
+                            <span>
+                              Vincular &amp; Adicionar Todas no Catálogo ({prod.productCards.length})
+                            </span>
+                          </>
+                        )}
+                      </button>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-emerald-200/80">
+                    Ao subir várias imagens de cartas, o sistema tenta identificar o nome da carta automaticamente pelo nome do arquivo. Você pode confirmar ou trocar a carta vinculada do catálogo abaixo e clicar em <strong>&quot;Vincular &amp; Adicionar Todas no Catálogo&quot;</strong> para que elas entrem imediatamente no Catálogo de Cartas com a coleção <strong>&quot;{defaultProductCardsCollection || 'Natal Macroversal'}&quot;</strong>.
+                  </p>
                 </div>
 
                 {/* Pick existing card from site catalog */}
                 <div className="bg-slate-950/90 border border-slate-800 rounded-xl p-3.5 space-y-2.5">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                     <span className="text-xs font-bold text-purple-300">
-                      Adicionar Carta que Já Está no Site:
+                      Ou Puxar uma Carta que Já Está no Catálogo (com a arte atual dela):
                     </span>
                     <input
                       type="text"
@@ -1861,8 +2242,11 @@ export const StoreProductManagerView: React.FC<StoreProductManagerViewProps> = (
                             cardCode: found.code,
                             name: found.name,
                             imageUrl: found.catalogCoverImageUrl || found.imageUrl || '',
-                            type: found.type || 'Carta Oficial',
-                            rarity: found.rarity || 'Oficial',
+                            type: found.type || 'Herói',
+                            rarity: found.rarity || 'Moderno Comum',
+                            collection: found.collection || defaultProductCardsCollection || 'Natal Macroversal',
+                            frame: found.frame || 'Moderno',
+                            syncedToCatalog: true,
                             quantity: 1
                           });
                         }
@@ -1894,101 +2278,241 @@ export const StoreProductManagerView: React.FC<StoreProductManagerViewProps> = (
                   </select>
                 </div>
 
-                {/* Individual Product Cards Grid */}
+                {/* Individual Product Cards Grid with Catalog Linker & Collection */}
                 {Array.isArray(prod.productCards) && prod.productCards.length > 0 && (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-80 overflow-y-auto pr-1">
-                    {prod.productCards.map((pc, pcIdx) => (
-                      <div
-                        key={pc.id || pcIdx}
-                        className="bg-slate-950 border border-slate-800 rounded-xl p-2.5 flex items-start gap-2.5"
-                      >
-                        <div className="w-12 h-16 rounded bg-black border border-slate-700 overflow-hidden shrink-0 flex items-center justify-center">
-                          {pc.imageUrl ? (
-                            <img
-                              src={pc.imageUrl}
-                              alt={pc.name}
-                              className="w-full h-full object-contain"
-                            />
-                          ) : (
-                            <ImageIcon size={14} className="text-slate-600" />
-                          )}
-                        </div>
-                        <div className="flex-1 min-w-0 space-y-1.5">
-                          <div className="flex items-center justify-between">
-                            <span
-                              className={`px-1.5 py-0.5 rounded text-[9px] font-black uppercase ${
-                                pc.source === 'custom_new'
-                                  ? 'bg-emerald-500/20 text-emerald-300'
-                                  : 'bg-purple-500/20 text-purple-300'
-                              }`}
-                            >
-                              {pc.source === 'custom_new' ? 'Carta Nova' : 'Carta do Site'}
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() =>
-                                updateProductAt(i, (p) => ({
-                                  ...p,
-                                  productCards: (p.productCards || []).filter(
-                                    (_, idx) => idx !== pcIdx
-                                  )
-                                }))
-                              }
-                              className="text-red-400 hover:text-red-300"
-                            >
-                              <Trash2 size={13} />
-                            </button>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[540px] overflow-y-auto pr-1">
+                    {prod.productCards.map((pc, pcIdx) => {
+                      const localSearch = (cardLinkSearchByIndex[pcIdx] || '').toLowerCase().trim();
+                      const filteredCatalogOptions = (cards || []).filter((c) => {
+                        if (c.deleted || c.isHidden) return false;
+                        if (pc.cardCode && c.code === pc.cardCode) return true;
+                        if (!localSearch) return true;
+                        return (
+                          c.name.toLowerCase().includes(localSearch) ||
+                          c.code.toLowerCase().includes(localSearch)
+                        );
+                      });
+
+                      return (
+                        <div
+                          key={pc.id || pcIdx}
+                          className={`bg-slate-950 border rounded-xl p-3 flex items-start gap-3 transition ${
+                            pc.syncedToCatalog
+                              ? 'border-emerald-500/50'
+                              : 'border-slate-800 hover:border-cyan-500/40'
+                          }`}
+                        >
+                          {/* Full-frame TCG aspect ratio preview (no zoom cropping, no black bars) */}
+                          <div className="w-20 aspect-[63/88] rounded-lg bg-slate-900 border border-slate-700 overflow-hidden shrink-0 flex items-center justify-center shadow-md">
+                            {pc.imageUrl ? (
+                              <img
+                                src={pc.imageUrl}
+                                alt={pc.name}
+                                referrerPolicy="no-referrer"
+                                className="w-full h-full object-fill"
+                              />
+                            ) : (
+                              <ImageIcon size={18} className="text-slate-600" />
+                            )}
                           </div>
 
-                          <input
-                            type="text"
-                            value={pc.name || ''}
-                            onChange={(e) =>
-                              updateProductAt(i, (p) => {
-                                const list = [...(p.productCards || [])];
-                                list[pcIdx] = { ...list[pcIdx], name: e.target.value };
-                                return { ...p, productCards: list };
-                              })
-                            }
-                            placeholder="Nome da carta"
-                            className="w-full bg-slate-900 border border-slate-800 rounded px-2 py-1 text-xs text-white font-bold"
-                          />
+                          <div className="flex-1 min-w-0 space-y-2">
+                            <div className="flex items-center justify-between gap-1.5">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span
+                                  className={`px-1.5 py-0.5 rounded text-[9px] font-black uppercase ${
+                                    pc.cardCode
+                                      ? 'bg-purple-500/25 text-purple-300 border border-purple-500/30'
+                                      : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                                  }`}
+                                >
+                                  {pc.cardCode
+                                    ? `Vinculada: ${pc.cardCode}`
+                                    : 'Nova Carta Independente'}
+                                </span>
+                                {pc.syncedToCatalog && (
+                                  <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-emerald-500/25 text-emerald-300 border border-emerald-500/40">
+                                    ✓ No Catálogo
+                                  </span>
+                                )}
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  updateProductAt(i, (p) => ({
+                                    ...p,
+                                    productCards: (p.productCards || []).filter(
+                                      (_, idx) => idx !== pcIdx
+                                    )
+                                  }))
+                                }
+                                className="text-red-400 hover:text-red-300 p-1"
+                                title="Remover carta do produto"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            </div>
 
-                          <div className="flex items-center gap-1.5">
-                            <input
-                              type="text"
-                              value={pc.imageUrl || ''}
-                              onChange={(e) =>
-                                updateProductAt(i, (p) => {
-                                  const list = [...(p.productCards || [])];
-                                  list[pcIdx] = { ...list[pcIdx], imageUrl: e.target.value };
-                                  return { ...p, productCards: list };
-                                })
-                              }
-                              placeholder="URL da imagem..."
-                              className="flex-1 bg-slate-900 border border-slate-800 rounded px-2 py-1 text-[11px] text-slate-300"
-                            />
-                            <input
-                              type="number"
-                              min={1}
-                              max={99}
-                              value={pc.quantity || 1}
-                              onChange={(e) =>
-                                updateProductAt(i, (p) => {
-                                  const list = [...(p.productCards || [])];
-                                  list[pcIdx] = {
-                                    ...list[pcIdx],
-                                    quantity: Math.max(1, Number(e.target.value) || 1)
-                                  };
-                                  return { ...p, productCards: list };
-                                })
-                              }
-                              className="w-12 bg-slate-900 border border-slate-800 rounded px-1.5 py-1 text-xs text-emerald-300 font-mono font-bold text-center"
-                            />
+                            {/* Step 2A: Vincular à Carta do Catálogo */}
+                            <div className="space-y-1 bg-slate-900/90 border border-slate-800 rounded-lg p-2">
+                              <div className="flex items-center justify-between gap-2">
+                                <label className="text-[10px] font-black uppercase tracking-wider text-cyan-300">
+                                  Vincular à Carta do Catálogo:
+                                </label>
+                                <input
+                                  type="text"
+                                  value={cardLinkSearchByIndex[pcIdx] || ''}
+                                  onChange={(e) =>
+                                    setCardLinkSearchByIndex((prev) => ({
+                                      ...prev,
+                                      [pcIdx]: e.target.value
+                                    }))
+                                  }
+                                  placeholder="Buscar carta..."
+                                  className="w-28 bg-slate-950 border border-slate-700 rounded px-1.5 py-0.5 text-[10px] text-white outline-none"
+                                />
+                              </div>
+                              <select
+                                value={pc.cardCode || ''}
+                                onChange={(e) => {
+                                  const selectedCode = e.target.value;
+                                  const matched = (cards || []).find((c) => c.code === selectedCode);
+                                  updateProductAt(i, (p) => {
+                                    const list = [...(p.productCards || [])];
+                                    if (matched) {
+                                      list[pcIdx] = {
+                                        ...list[pcIdx],
+                                        source: 'catalog',
+                                        cardCode: matched.code,
+                                        name: matched.name,
+                                        type: matched.type || list[pcIdx].type,
+                                        syncedToCatalog: false
+                                      };
+                                    } else {
+                                      list[pcIdx] = {
+                                        ...list[pcIdx],
+                                        source: 'custom_new',
+                                        cardCode: undefined,
+                                        syncedToCatalog: false
+                                      };
+                                    }
+                                    return { ...p, productCards: list };
+                                  });
+                                }}
+                                className="w-full bg-slate-950 border border-purple-500/40 rounded px-2 py-1 text-[11px] text-white outline-none"
+                              >
+                                <option value="">
+                                  + Criar como Nova Carta Independente no Catálogo
+                                </option>
+                                {filteredCatalogOptions.map((c) => (
+                                  <option key={c.code} value={c.code}>
+                                    {c.name} ({c.code})
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+
+                            {/* Step 2B: Nome da Carta & Nome da Coleção Nova */}
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                              <div>
+                                <label className="text-[9px] font-bold uppercase text-slate-400 block mb-0.5">
+                                  Nome da Carta:
+                                </label>
+                                <input
+                                  type="text"
+                                  value={pc.name || ''}
+                                  onChange={(e) =>
+                                    updateProductAt(i, (p) => {
+                                      const list = [...(p.productCards || [])];
+                                      list[pcIdx] = {
+                                        ...list[pcIdx],
+                                        name: e.target.value,
+                                        syncedToCatalog: false
+                                      };
+                                      return { ...p, productCards: list };
+                                    })
+                                  }
+                                  placeholder="Nome da carta"
+                                  className="w-full bg-slate-900 border border-slate-800 rounded px-2 py-1 text-xs text-white font-bold"
+                                />
+                              </div>
+
+                              <div>
+                                <label className="text-[9px] font-bold uppercase text-emerald-400 block mb-0.5">
+                                  Coleção no Catálogo:
+                                </label>
+                                <input
+                                  type="text"
+                                  value={pc.collection ?? defaultProductCardsCollection ?? 'Natal Macroversal'}
+                                  onChange={(e) =>
+                                    updateProductAt(i, (p) => {
+                                      const list = [...(p.productCards || [])];
+                                      list[pcIdx] = {
+                                        ...list[pcIdx],
+                                        collection: e.target.value,
+                                        syncedToCatalog: false
+                                      };
+                                      return { ...p, productCards: list };
+                                    })
+                                  }
+                                  placeholder="Ex: Natal Macroversal"
+                                  list={`collections-datalist-${i}`}
+                                  className="w-full bg-slate-900 border border-emerald-500/40 rounded px-2 py-1 text-xs text-emerald-200 font-bold"
+                                />
+                              </div>
+                            </div>
+
+                            {/* URL, Quantidade & Botão Individual de Publicar */}
+                            <div className="flex items-center gap-1.5">
+                              <input
+                                type="text"
+                                value={pc.imageUrl || ''}
+                                onChange={(e) =>
+                                  updateProductAt(i, (p) => {
+                                    const list = [...(p.productCards || [])];
+                                    list[pcIdx] = {
+                                      ...list[pcIdx],
+                                      imageUrl: e.target.value,
+                                      syncedToCatalog: false
+                                    };
+                                    return { ...p, productCards: list };
+                                  })
+                                }
+                                placeholder="URL da imagem..."
+                                className="flex-1 bg-slate-900 border border-slate-800 rounded px-2 py-1 text-[11px] text-slate-300"
+                              />
+                              <input
+                                type="number"
+                                min={1}
+                                max={99}
+                                value={pc.quantity || 1}
+                                onChange={(e) =>
+                                  updateProductAt(i, (p) => {
+                                    const list = [...(p.productCards || [])];
+                                    list[pcIdx] = {
+                                      ...list[pcIdx],
+                                      quantity: Math.max(1, Number(e.target.value) || 1)
+                                    };
+                                    return { ...p, productCards: list };
+                                  })
+                                }
+                                title="Quantidade desta carta no produto"
+                                className="w-12 bg-slate-900 border border-slate-800 rounded px-1.5 py-1 text-xs text-emerald-300 font-mono font-bold text-center"
+                              />
+                              <button
+                                type="button"
+                                disabled={syncingCardsToCatalog || !pc.imageUrl}
+                                onClick={() => handleSyncProductCardsToCatalog(i, pcIdx)}
+                                className="px-2.5 py-1 rounded bg-emerald-600/30 hover:bg-emerald-600/50 border border-emerald-500/50 text-emerald-200 text-[10px] font-black uppercase tracking-wider transition cursor-pointer shrink-0"
+                                title="Publicar esta carta e coleção imediatamente no Catálogo"
+                              >
+                                {pc.syncedToCatalog ? 'Atualizar' : 'Publicar'}
+                              </button>
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
 
@@ -3055,22 +3579,41 @@ export const StoreProductManagerView: React.FC<StoreProductManagerViewProps> = (
                   <div className="h-8 w-px bg-slate-800 hidden sm:block" />
 
                   {/* Checkbox: Não deixar à vista / Desmarcar para exibir */}
-                  <label
-                    className={`px-3 py-2 rounded-xl border text-xs font-bold cursor-pointer transition flex items-center gap-2 select-none ${
-                      isHidden
-                        ? 'bg-amber-500/20 border-amber-500/60 text-amber-200'
-                        : 'bg-slate-900 border-slate-800 text-slate-300 hover:border-slate-700'
-                    }`}
-                    title="Marque para não deixar este produto à vista na loja. Desmarque quando quiser exibi-lo."
-                  >
-                    <input
-                      type="checkbox"
-                      checked={isHidden}
-                      onChange={(e) => handleToggleVisibility(idx, e.target.checked)}
-                      className="w-4 h-4 accent-amber-500 rounded"
-                    />
-                    <span>Não deixar à vista</span>
-                  </label>
+                  <div className="flex flex-col gap-1.5">
+                    <label
+                      className={`px-3 py-1.5 rounded-xl border text-xs font-bold cursor-pointer transition flex items-center gap-2 select-none ${
+                        isHidden
+                          ? 'bg-amber-500/20 border-amber-500/60 text-amber-200'
+                          : 'bg-slate-900 border-slate-800 text-slate-300 hover:border-slate-700'
+                      }`}
+                      title="Marque para não deixar este produto à vista na loja. Desmarque quando quiser exibi-lo."
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isHidden}
+                        onChange={(e) => handleToggleVisibility(idx, e.target.checked)}
+                        className="w-3.5 h-3.5 accent-amber-500 rounded"
+                      />
+                      <span>Não deixar à vista</span>
+                    </label>
+
+                    <label
+                      className={`px-3 py-1.5 rounded-xl border text-xs font-bold cursor-pointer transition flex items-center gap-2 select-none ${
+                        prod.showInHomeCarousel !== false
+                          ? 'bg-purple-500/20 border-purple-500/60 text-purple-200'
+                          : 'bg-slate-900 border-slate-800 text-slate-400 hover:border-slate-700'
+                      }`}
+                      title="Ativar ou desativar destaque deste produto no Carrossel da Página Inicial"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={prod.showInHomeCarousel !== false}
+                        onChange={(e) => handleToggleCarouselHighlight(idx, e.target.checked)}
+                        className="w-3.5 h-3.5 accent-purple-500 rounded"
+                      />
+                      <span>Destaque no Carrossel</span>
+                    </label>
+                  </div>
                 </div>
 
                 {/* Right: Open Dedicated Editor Page, Reorder, Clone, Delete */}

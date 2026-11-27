@@ -174,6 +174,9 @@ export interface ProductIndividualCardItem {
   imageUrl: string;
   type?: string;
   rarity?: string;
+  collection?: string;
+  frame?: 'Legado' | 'Moderno';
+  syncedToCatalog?: boolean;
   quantity: number;
   description?: string;
 }
@@ -209,6 +212,7 @@ export interface ExclusiveProduct {
   buttonLink?: string;
   isActive?: boolean;
   isHiddenFromStore?: boolean;
+  showInHomeCarousel?: boolean;
   isButtonActive?: boolean;
   noLinkMessage?: string;
   // Loja Interna, Pré-Venda e Cálculo de Frete
@@ -485,5 +489,28 @@ export interface StoreOrder {
   paidAt?: string;
   shippedAt?: string;
 }
+
+export interface FeaturedRareCardItem {
+  id: string;
+  source: 'catalog' | 'custom';
+  cardCode?: string;
+  name: string;
+  collection: string;
+  rarity: string;
+  type?: string;
+  imageUrl: string;
+  description?: string;
+  badge?: string;
+}
+
+export interface FeaturedRareCardsConfig {
+  isEnabled?: boolean;
+  title?: string; // Default: "Cartas Raras da Coleção Atual"
+  collectionName?: string; // Ex: "Coleção Atual"
+  subtitle?: string;
+  frequencyMode?: 'high_interleaved' | 'medium_interleaved' | 'per_card_interleaved' | 'once_first';
+  cards: FeaturedRareCardItem[];
+}
+
 
 
