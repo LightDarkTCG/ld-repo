@@ -28,7 +28,7 @@ import { db, storage, readBrowserCache, writeBrowserCache } from './firebase';
 import { doc, onSnapshot, setDoc } from 'firebase/firestore';
 import { ref, listAll, getDownloadURL } from 'firebase/storage';
 import { useCards, cleanCardCode, getBaseCardCode, getCardDisplayPriority, resolveModernFrameOnly, isLegacyCard } from './CardContext';
-import { CardData, CardType, ArchetypeData, ExclusiveProduct, LEGADO_RARITIES, MODERNO_RARITIES } from './types';
+import { CardData, CardType, ArchetypeData, ExclusiveProduct, FeaturedRareCardsConfig, LEGADO_RARITIES, MODERNO_RARITIES } from './types';
 import { NovidadesSection } from './components/NovidadesSection';
 import { ProductDetailModal } from './components/ProductDetailModal';
 import { GameGuideSections } from './components/GameGuideSections';
@@ -1781,6 +1781,14 @@ export default function App() {
     return readBrowserCache<any>('ld_cache_homeSettings_v2');
   });
 
+  // Configuração dedicada das Cartas Raras do Carrossel (armazenada em homeSettings/featuredRareCards)
+  const [featuredRareCardsConfig, setFeaturedRareCardsConfig] = useState<FeaturedRareCardsConfig | undefined>(() => {
+    const cached = readBrowserCache<FeaturedRareCardsConfig>('ld_cache_featuredRareCards_v1');
+    if (cached && Array.isArray(cached.cards)) return cached;
+    const legacyHome = readBrowserCache<any>('ld_cache_homeSettings_v2');
+    return legacyHome?.featuredRareCardsConfig;
+  });
+
   useEffect(() => {
     const syncCartCount = () => {
       setCartCount(getCartItems().reduce((sum, i) => sum + i.quantity, 0));
@@ -1930,9 +1938,22 @@ export default function App() {
       console.error('Erro ao escutar homeSettings:', err);
     });
 
+    const unsubRareCards = onSnapshot(doc(db, 'homeSettings', 'featuredRareCards'), (snap) => {
+      if (snap.exists()) {
+        const data = snap.data() as FeaturedRareCardsConfig;
+        if (data && Array.isArray(data.cards)) {
+          setFeaturedRareCardsConfig(data);
+          writeBrowserCache('ld_cache_featuredRareCards_v1', data);
+        }
+      }
+    }, (err) => {
+      console.error('Erro ao escutar featuredRareCards:', err);
+    });
+
     return () => {
       window.removeEventListener('popstate', applyUrlRoute);
       unsubHomeSettings();
+      unsubRareCards();
     };
   }, []);
 
@@ -3210,7 +3231,7 @@ export default function App() {
           textureSlot={textures.novidades_cyber_texture}
           showPlaceholderBadge={showPlaceholdersUI}
           onConfigureTexture={handleOpenTextureSlotConfig}
-          rareCardsConfig={homeSettings?.featuredRareCardsConfig}
+          rareCardsConfig={featuredRareCardsConfig || homeSettings?.featuredRareCardsConfig}
           isAdmin={isAdmin}
           onOpenCatalog={() => {
             navigateToModal(() => {
@@ -3218,27 +3239,27 @@ export default function App() {
             });
           }}
           onSaveRareCardsConfig={async (config) => {
-            const cleanConfig = JSON.parse(JSON.stringify(config));
-            const nextSettings = {
-              ...(homeSettings || {}),
-              featuredRareCardsConfig: cleanConfig
-            };
-            setHomeSettings(nextSettings);
-            writeBrowserCache('ld_cache_homeSettings_v2', nextSettings);
+            const cleanConfig: FeaturedRareCardsConfig = JSON.parse(JSON.stringify(config));
+            setFeaturedRareCardsConfig(cleanConfig);
+            writeBrowserCache('ld_cache_featuredRareCards_v1', cleanConfig);
+            setHomeSettings((prev: any) => {
+              const next = { ...(prev || {}), featuredRareCardsConfig: cleanConfig };
+              writeBrowserCache('ld_cache_homeSettings_v2', next);
+              return next;
+            });
             await setDoc(
-              doc(db, 'homeSettings', 'global'),
-              { featuredRareCardsConfig: cleanConfig },
+              doc(db, 'homeSettings', 'featuredRareCards'),
+              cleanConfig,
               { merge: true }
             );
           }}
           onSaveProducts={async (nextProducts) => {
             const cleanProducts = JSON.parse(JSON.stringify(nextProducts));
-            const nextSettings = {
-              ...(homeSettings || {}),
-              exclusiveProducts: cleanProducts
-            };
-            setHomeSettings(nextSettings);
-            writeBrowserCache('ld_cache_homeSettings_v2', nextSettings);
+            setHomeSettings((prev: any) => {
+              const next = { ...(prev || {}), exclusiveProducts: cleanProducts };
+              writeBrowserCache('ld_cache_homeSettings_v2', next);
+              return next;
+            });
             await setDoc(
               doc(db, 'homeSettings', 'global'),
               { exclusiveProducts: cleanProducts },

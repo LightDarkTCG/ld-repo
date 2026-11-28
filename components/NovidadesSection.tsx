@@ -68,8 +68,15 @@ const isCardConsideredRare = (rarity?: string, isRarePrint?: boolean): boolean =
     r.includes('lendaria') ||
     r.includes('promo') ||
     r.includes('especial') ||
+    r.includes('exclusiva') ||
+    r.includes('limitada') ||
+    r.includes('macroversal') ||
+    r.includes('evento') ||
     r.includes('colecionador') ||
     r.includes('foil') ||
+    r.includes('holo') ||
+    r.includes('dourada') ||
+    r.includes('gold') ||
     r.includes('épica') ||
     r.includes('epica')
   );
@@ -210,7 +217,7 @@ export const NovidadesSection: React.FC<NovidadesSectionProps> = ({
   }, [activeCarouselProducts, effectiveRareCards, isRareShowcaseEnabled, frequencyMode]);
 
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [rarePageStart, setRarePageStart] = useState(0);
+  const [isRareListModalOpen, setIsRareListModalOpen] = useState(false);
   const [inspectingRareCard, setInspectingRareCard] = useState<FeaturedRareCardItem | null>(null);
   const [isPaused, setIsPaused] = useState(false);
   const [noticeProduct, setNoticeProduct] = useState<ExclusiveProduct | null>(null);
@@ -227,12 +234,16 @@ export const NovidadesSection: React.FC<NovidadesSectionProps> = ({
     cards: []
   });
   const [draftProducts, setDraftProducts] = useState<ExclusiveProduct[]>([]);
+  const [productsDirty, setProductsDirty] = useState(false);
   const [isSavingConfig, setIsSavingConfig] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saveFeedback, setSaveFeedback] = useState<string | null>(null);
 
   // Catalog picker filters in Manager Modal
   const [catalogSearch, setCatalogSearch] = useState('');
   const [catalogCollectionFilter, setCatalogCollectionFilter] = useState('Todas');
-  const [catalogOnlyRare, setCatalogOnlyRare] = useState(true);
+  const [catalogOnlyRare, setCatalogOnlyRare] = useState(false);
+  const [catalogVisibleLimit, setCatalogVisibleLimit] = useState(60);
 
   // Custom card form in Manager Modal (ONLY Image + Collection!)
   const [customCardCollection, setCustomCardCollection] = useState('');
@@ -240,22 +251,23 @@ export const NovidadesSection: React.FC<NovidadesSectionProps> = ({
   const [isUploadingCustomImg, setIsUploadingCustomImg] = useState(false);
 
   const openManagerModal = (initialTab: 'carousel_items' | 'rare_list' | 'catalog' | 'upload' = 'carousel_items') => {
+    const hasSavedConfig = Boolean(rareCardsConfig && Array.isArray(rareCardsConfig.cards));
     setDraftConfig({
       isEnabled: rareCardsConfig?.isEnabled !== false,
       title: rareCardsConfig?.title || 'Cartas Raras da Coleção Atual',
       collectionName:
         rareCardsConfig?.collectionName ||
-        effectiveRareCards[0]?.collection ||
+        (hasSavedConfig ? rareCardsConfig!.cards[0]?.collection : '') ||
         'Coleção Atual',
       frequencyMode: rareCardsConfig?.frequencyMode === 'per_card_interleaved'
         ? 'high_interleaved'
         : (rareCardsConfig?.frequencyMode || 'high_interleaved'),
-      cards:
-        rareCardsConfig && Array.isArray(rareCardsConfig.cards)
-          ? [...rareCardsConfig.cards]
-          : [...effectiveRareCards]
+      cards: hasSavedConfig ? [...rareCardsConfig!.cards] : []
     });
     setDraftProducts(products.map(p => ({ ...p })));
+    setProductsDirty(false);
+    setSaveError(null);
+    setCatalogVisibleLimit(60);
     setManagerTab(initialTab);
     setIsManagerOpen(true);
   };
@@ -275,36 +287,13 @@ export const NovidadesSection: React.FC<NovidadesSectionProps> = ({
 
   const currentSlide = carouselSlides[currentIndex] || carouselSlides[0];
 
-  useEffect(() => {
-    if (currentSlide?.kind === 'rare_showcase') {
-      setRarePageStart(currentSlide.focusStartIndex % Math.max(1, currentSlide.cards.length));
-    }
-  }, [currentIndex, currentSlide]);
-
-  // Sub-rotate rare cards page every 3.5s when there are more than 4 rare cards
-  useEffect(() => {
-    if (
-      !currentSlide ||
-      currentSlide.kind !== 'rare_showcase' ||
-      currentSlide.cards.length <= 4 ||
-      isPaused ||
-      isManagerOpen ||
-      Boolean(inspectingRareCard)
-    ) {
-      return;
-    }
-    const subTimer = setInterval(() => {
-      setRarePageStart(prev => (prev + 1) % currentSlide.cards.length);
-    }, 3500);
-    return () => clearInterval(subTimer);
-  }, [currentSlide, isPaused, isManagerOpen, inspectingRareCard]);
-
   // Auto slide every 10 seconds if 2 or more slides
   useEffect(() => {
     if (
       carouselSlides.length <= 1 ||
       isPaused ||
       isManagerOpen ||
+      isRareListModalOpen ||
       Boolean(inspectingRareCard)
     ) {
       return;
@@ -317,7 +306,7 @@ export const NovidadesSection: React.FC<NovidadesSectionProps> = ({
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, [carouselSlides.length, isPaused, currentIndex, isManagerOpen, inspectingRareCard]);
+  }, [carouselSlides.length, isPaused, currentIndex, isManagerOpen, isRareListModalOpen, inspectingRareCard]);
 
   const handlePrev = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -341,32 +330,38 @@ export const NovidadesSection: React.FC<NovidadesSectionProps> = ({
   }, [allCards]);
 
   const catalogPickerCandidates = useMemo(() => {
-    const items: FeaturedRareCardItem[] = [];
+    const items: (FeaturedRareCardItem & { isRarePrint?: boolean })[] = [];
     const seenUrls = new Set<string>();
 
     allCards.forEach((c) => {
-      if (c.imageUrl && !seenUrls.has(c.imageUrl)) {
-        seenUrls.add(c.imageUrl);
+      const baseUrl = (c.imageUrl || '').trim();
+      if (baseUrl && !seenUrls.has(baseUrl)) {
+        seenUrls.add(baseUrl);
         items.push({
           id: `cat_${c.id || c.code}_${items.length}`,
           source: 'catalog',
+          cardCode: c.code || '',
           name: c.name || 'Carta',
-          collection: c.collection || 'Coleção Geral',
+          collection: (c.collection || 'Coleção Geral').trim(),
           rarity: c.rarity || 'Comum',
-          imageUrl: c.imageUrl
+          imageUrl: baseUrl,
+          isRarePrint: Boolean(c.isRarePrint || c.requiresAdminVerification)
         });
       }
       if (c.variants && c.variants.length > 0) {
         c.variants.forEach((v, vIdx) => {
-          if (v.imageUrl && !seenUrls.has(v.imageUrl)) {
-            seenUrls.add(v.imageUrl);
+          const varUrl = (v.imageUrl || '').trim();
+          if (varUrl && !seenUrls.has(varUrl)) {
+            seenUrls.add(varUrl);
             items.push({
               id: `cat_var_${c.id || c.code}_${vIdx}_${items.length}`,
               source: 'catalog',
+              cardCode: v.code || c.code || '',
               name: v.name && v.name !== 'Padrão' ? `${c.name} (${v.name})` : (c.name || 'Carta'),
-              collection: v.collection || c.collection || 'Coleção Geral',
+              collection: (v.collection || c.collection || 'Coleção Geral').trim(),
               rarity: v.rarity || c.rarity || 'Rara',
-              imageUrl: v.imageUrl
+              imageUrl: varUrl,
+              isRarePrint: Boolean(v.isRarePrint || c.isRarePrint || c.requiresAdminVerification)
             });
           }
         });
@@ -377,14 +372,15 @@ export const NovidadesSection: React.FC<NovidadesSectionProps> = ({
       if (catalogCollectionFilter !== 'Todas' && item.collection !== catalogCollectionFilter) {
         return false;
       }
-      if (catalogOnlyRare && !isCardConsideredRare(item.rarity, false)) {
+      if (catalogOnlyRare && !isCardConsideredRare(item.rarity, Boolean(item.isRarePrint))) {
         return false;
       }
       if (catalogSearch.trim()) {
-        const q = catalogSearch.toLowerCase();
+        const q = catalogSearch.trim().toLowerCase();
         return (
           item.name.toLowerCase().includes(q) ||
-          item.collection.toLowerCase().includes(q)
+          item.collection.toLowerCase().includes(q) ||
+          (item.cardCode || '').toLowerCase().includes(q)
         );
       }
       return true;
@@ -424,25 +420,35 @@ export const NovidadesSection: React.FC<NovidadesSectionProps> = ({
   };
 
   const handleToggleCardInDraft = (item: FeaturedRareCardItem) => {
+    const normalizedTargetUrl = (item.imageUrl || '').trim();
+    if (!normalizedTargetUrl) return;
+    setSaveError(null);
     setDraftConfig(prev => {
-      const exists = prev.cards.some(c => c.imageUrl === item.imageUrl);
+      const exists = prev.cards.some(c => (c.imageUrl || '').trim() === normalizedTargetUrl);
       if (exists) {
         return {
           ...prev,
-          cards: prev.cards.filter(c => c.imageUrl !== item.imageUrl)
+          cards: prev.cards.filter(c => (c.imageUrl || '').trim() !== normalizedTargetUrl)
         };
       }
+      const nextCollectionName =
+        !prev.collectionName || prev.collectionName.trim() === '' || prev.collectionName === 'Coleção Atual'
+          ? (item.collection || prev.collectionName || 'Coleção Atual')
+          : prev.collectionName;
       return {
         ...prev,
+        isEnabled: true,
+        collectionName: nextCollectionName,
         cards: [
           ...prev.cards,
           {
             id: `rare_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
             source: 'catalog',
+            cardCode: item.cardCode || '',
             name: item.name,
             collection: item.collection,
             rarity: item.rarity,
-            imageUrl: item.imageUrl
+            imageUrl: normalizedTargetUrl
           }
         ]
       };
@@ -533,16 +539,39 @@ export const NovidadesSection: React.FC<NovidadesSectionProps> = ({
 
   const handleSaveAllCarouselSettings = async () => {
     setIsSavingConfig(true);
+    setSaveError(null);
     try {
+      const configToSave: FeaturedRareCardsConfig = {
+        ...draftConfig,
+        isEnabled: draftConfig.isEnabled !== false,
+        collectionName:
+          draftConfig.collectionName?.trim() ||
+          draftConfig.cards[0]?.collection ||
+          'Coleção Atual',
+        cards: draftConfig.cards.filter(c => c && c.imageUrl && c.imageUrl.trim() !== '')
+      };
+
       if (onSaveRareCardsConfig) {
-        await onSaveRareCardsConfig(draftConfig);
+        await onSaveRareCardsConfig(configToSave);
       }
-      if (onSaveProducts) {
+      if (productsDirty && onSaveProducts) {
         await onSaveProducts(draftProducts);
       }
+
+      if (configToSave.isEnabled !== false && configToSave.cards.length > 0) {
+        setCurrentIndex(0);
+      }
+
       setIsManagerOpen(false);
-    } catch (err) {
+      setSaveFeedback(
+        `✓ Carrossel atualizado! (${configToSave.cards.length} carta(s) rara(s) ativa(s))`
+      );
+      setTimeout(() => setSaveFeedback(null), 4500);
+    } catch (err: any) {
       console.error('Erro ao salvar configurações do carrossel:', err);
+      setSaveError(
+        err?.message || 'Não foi possível salvar no banco de dados. Tente novamente.'
+      );
     } finally {
       setIsSavingConfig(false);
     }
@@ -757,22 +786,35 @@ export const NovidadesSection: React.FC<NovidadesSectionProps> = ({
 
   // ============================================================================
   // SLIDE 2: RARE CARDS SLIDE (STRICT FIXED HEIGHT: h-[460px] md:h-[390px])
+  // SHOWS ALL SELECTED CARDS OVERLAPPED — CLICKING OPENS THE FULL LIST!
   // ONLY CARD IMAGES + COLLECTION NAME — NO DESCRIPTIONS OR EXTRA TEXT!
   // ============================================================================
   const renderRareShowcaseSlide = (cards: FeaturedRareCardItem[], slideIdx: number, totalSlides: number) => {
-    // Show up to 4 cards at a time side-by-side in the showcase
-    const visibleCount = Math.min(4, cards.length);
-    const displayedCards: FeaturedRareCardItem[] = [];
-    for (let i = 0; i < visibleCount; i++) {
-      displayedCards.push(cards[(rarePageStart + i) % cards.length]);
-    }
+    const count = cards.length;
+    const overlapCardClass =
+      count <= 3
+        ? 'h-[225px] sm:h-[260px] md:h-[265px] first:ml-0 -ml-6 sm:ml-4 md:ml-5'
+        : count === 4
+        ? 'h-[215px] sm:h-[250px] md:h-[255px] first:ml-0 -ml-12 sm:-ml-4 md:ml-3'
+        : count <= 6
+        ? 'h-[210px] sm:h-[245px] md:h-[250px] first:ml-0 -ml-16 sm:-ml-10 md:-ml-8'
+        : count <= 8
+        ? 'h-[205px] sm:h-[235px] md:h-[245px] first:ml-0 -ml-20 sm:-ml-16 md:-ml-16'
+        : count <= 12
+        ? 'h-[200px] sm:h-[230px] md:h-[235px] first:ml-0 -ml-24 sm:-ml-20 md:-ml-24'
+        : 'h-[195px] sm:h-[220px] md:h-[225px] first:ml-0 -ml-24 sm:-ml-24 md:-ml-28';
 
     return (
-      <div className="cyber-arcane-box border-amber-400/60 hover:border-amber-300 h-[460px] md:h-[390px] w-full overflow-hidden shadow-[0_20px_70px_rgba(245,158,11,0.22)] transition-colors duration-300 flex flex-col justify-between p-4 sm:p-6 relative bg-[radial-gradient(circle_at_center,rgba(245,158,11,0.16)_0%,rgba(88,28,135,0.22)_50%,rgba(5,4,10,0.98)_100%)]">
+      <div
+        onClick={() => {
+          if (cards.length > 0) setIsRareListModalOpen(true);
+        }}
+        className="cyber-arcane-box border-amber-400/60 hover:border-amber-300 h-[460px] md:h-[390px] w-full overflow-hidden shadow-[0_20px_70px_rgba(245,158,11,0.22)] transition-colors duration-300 flex flex-col justify-between p-4 sm:p-6 relative bg-[radial-gradient(circle_at_center,rgba(245,158,11,0.16)_0%,rgba(88,28,135,0.22)_50%,rgba(5,4,10,0.98)_100%)] cursor-pointer group"
+      >
         <CyberArcaneCornerFrame accent="gold" />
 
         {/* Top Header: ONLY Title + Collection Badge */}
-        <div className="flex flex-wrap items-center justify-between gap-2 shrink-0 relative z-10">
+        <div className="flex flex-wrap items-center justify-between gap-2 shrink-0 relative z-20">
           <div className="flex flex-wrap items-center gap-2.5">
             <h3 className="text-lg sm:text-xl md:text-2xl font-cinzel font-black text-transparent bg-clip-text bg-gradient-to-r from-amber-200 via-yellow-400 to-amber-200 tracking-wide">
               {rareShowcaseTitle}
@@ -789,7 +831,7 @@ export const NovidadesSection: React.FC<NovidadesSectionProps> = ({
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation();
-                  openManagerModal('rare_list');
+                  openManagerModal('catalog');
                 }}
                 className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/35 border border-amber-400/70 text-amber-200 text-xs font-mono font-bold transition cursor-pointer"
               >
@@ -805,33 +847,33 @@ export const NovidadesSection: React.FC<NovidadesSectionProps> = ({
           </div>
         </div>
 
-        {/* Center Gallery: ONLY Card Images + Collection Tag */}
-        <div className="flex-1 flex items-center justify-center gap-3 sm:gap-5 md:gap-6 my-2 overflow-hidden relative z-10">
-          {displayedCards.length > 0 ? (
-            displayedCards.map((card, idx) => (
-              <div
-                key={`${card.id}_${idx}`}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setInspectingRareCard(card);
-                }}
-                className={`group/rc relative h-[265px] sm:h-[280px] md:h-[275px] aspect-[2.5/3.5] rounded-xl overflow-hidden border-2 border-amber-400/80 hover:border-amber-300 shadow-[0_0_25px_rgba(245,158,11,0.35)] bg-black shrink-0 cursor-pointer transition-transform duration-300 hover:scale-105 ${
-                  idx >= 2 ? 'hidden sm:block' : ''
-                } ${idx >= 3 ? 'hidden lg:block' : ''}`}
-              >
-                <img
-                  src={card.imageUrl}
-                  alt={card.collection || rareShowcaseCollection}
-                  className="w-full h-full object-contain bg-black"
-                />
-                {/* Bottom badge with ONLY the Collection name */}
-                <div className="absolute bottom-1.5 inset-x-1.5 bg-black/85 backdrop-blur-md border border-amber-400/50 rounded-md px-2 py-0.5 text-center pointer-events-none">
-                  <div className="text-[10px] font-mono font-bold text-amber-300 uppercase tracking-wider truncate">
-                    {card.collection || rareShowcaseCollection}
+        {/* Center Gallery: ALL Selected Cards Overlapped (Click anywhere to open full list) */}
+        <div className="flex-1 flex items-center justify-center my-1 overflow-x-auto overflow-y-hidden relative z-10 px-4">
+          {cards.length > 0 ? (
+            <div className="flex items-center justify-center py-2 mx-auto">
+              {cards.map((card, idx) => (
+                <div
+                  key={`${card.id}_${idx}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setIsRareListModalOpen(true);
+                  }}
+                  className={`group/rc relative aspect-[63/88] rounded-xl overflow-hidden border-2 border-amber-400/80 hover:border-amber-200 shadow-[-6px_6px_22px_rgba(0,0,0,0.85),0_0_20px_rgba(245,158,11,0.28)] bg-slate-950 shrink-0 cursor-pointer transition-all duration-300 hover:-translate-y-3 hover:scale-105 hover:z-40 ${overlapCardClass}`}
+                >
+                  <img
+                    src={card.imageUrl}
+                    alt={card.collection || rareShowcaseCollection}
+                    className="w-full h-full object-fill"
+                  />
+                  {/* Bottom badge with ONLY the Collection name */}
+                  <div className="absolute bottom-1.5 inset-x-1.5 bg-black/85 backdrop-blur-md border border-amber-400/50 rounded-md px-1.5 py-0.5 text-center pointer-events-none">
+                    <div className="text-[9px] sm:text-[10px] font-mono font-bold text-amber-300 uppercase tracking-wider truncate">
+                      {card.collection || rareShowcaseCollection}
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))
+              ))}
+            </div>
           ) : (
             <div className="text-center">
               <p className="text-sm text-amber-200 font-bold">
@@ -841,25 +883,23 @@ export const NovidadesSection: React.FC<NovidadesSectionProps> = ({
           )}
         </div>
 
-        {/* Bottom mini navigation if more than 4 rare cards */}
-        <div className="h-5 flex items-center justify-center gap-1.5 shrink-0 relative z-10">
-          {cards.length > 1 &&
-            cards.slice(0, 12).map((c, idx) => (
-              <button
-                key={c.id || idx}
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setRarePageStart(idx);
-                }}
-                className={`h-1.5 rounded-full transition-all cursor-pointer ${
-                  idx === rarePageStart % cards.length
-                    ? 'w-6 bg-amber-400'
-                    : 'w-2 bg-amber-500/35 hover:bg-amber-400/70'
-                }`}
-                title={c.collection || rareShowcaseCollection}
-              />
-            ))}
+        {/* Bottom prompt: Click to view the full list */}
+        <div className="h-6 flex items-center justify-center shrink-0 relative z-20">
+          {cards.length > 0 && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsRareListModalOpen(true);
+              }}
+              className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-amber-500/15 hover:bg-amber-500/30 border border-amber-400/50 text-amber-200 text-[11px] font-mono font-bold transition cursor-pointer"
+            >
+              <Eye size={12} />
+              <span>
+                Clique para ver todas as {cards.length} {cards.length === 1 ? 'carta' : 'cartas'}
+              </span>
+            </button>
+          )}
         </div>
       </div>
     );
@@ -904,13 +944,26 @@ export const NovidadesSection: React.FC<NovidadesSectionProps> = ({
                 </button>
                 <button
                   type="button"
-                  onClick={() => openManagerModal('rare_list')}
+                  onClick={() => openManagerModal('catalog')}
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-slate-950 font-black text-xs transition cursor-pointer"
                 >
                   <Plus size={14} />
                   <span>+ Adicionar Cartas Raras</span>
                 </button>
               </div>
+            </div>
+          )}
+
+          {saveFeedback && (
+            <div className="mb-3 px-4 py-2 rounded-xl bg-emerald-950/90 border border-emerald-500/60 text-emerald-200 text-xs font-bold flex items-center justify-between shadow-lg">
+              <span>{saveFeedback}</span>
+              <button
+                type="button"
+                onClick={() => setSaveFeedback(null)}
+                className="text-emerald-300 hover:text-white cursor-pointer"
+              >
+                <X size={14} />
+              </button>
             </div>
           )}
 
@@ -1001,10 +1054,72 @@ export const NovidadesSection: React.FC<NovidadesSectionProps> = ({
         <div className="h-[1px] w-full bg-gradient-to-r from-transparent via-purple-500/40 to-transparent"></div>
       </div>
 
+      {/* Full Rare Cards List Modal (Opened when clicking the overlapped showcase) */}
+      {isRareListModalOpen && effectiveRareCards.length > 0 && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-black/90 backdrop-blur-md animate-in fade-in duration-200"
+          onClick={() => setIsRareListModalOpen(false)}
+        >
+          <div
+            className="bg-slate-950 border-2 border-amber-500/70 rounded-2xl max-w-5xl w-full max-h-[90vh] flex flex-col shadow-[0_0_70px_rgba(245,158,11,0.3)] overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-4 sm:p-5 bg-gradient-to-r from-slate-900 via-purple-950/60 to-slate-900 border-b border-amber-500/30 flex items-center justify-between gap-3">
+              <div className="flex flex-wrap items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-amber-500/20 border border-amber-400/60 flex items-center justify-center text-amber-300 shrink-0">
+                  <Crown size={20} />
+                </div>
+                <div>
+                  <h3 className="text-base sm:text-lg font-cinzel font-black text-amber-200">
+                    {rareShowcaseTitle}
+                  </h3>
+                  <div className="flex flex-wrap items-center gap-2 text-[11px] font-mono text-amber-300/90">
+                    <span>Coleção: {rareShowcaseCollection}</span>
+                    <span>•</span>
+                    <span>{effectiveRareCards.length} {effectiveRareCards.length === 1 ? 'carta' : 'cartas'}</span>
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsRareListModalOpen(false)}
+                className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition cursor-pointer shrink-0"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-4 sm:p-5 bg-slate-950">
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 sm:gap-4">
+                {effectiveRareCards.map((card, idx) => (
+                  <button
+                    key={card.id || idx}
+                    type="button"
+                    onClick={() => setInspectingRareCard(card)}
+                    className="group relative aspect-[63/88] rounded-xl overflow-hidden border-2 border-amber-400/60 hover:border-amber-300 bg-slate-950 shadow-[0_0_20px_rgba(245,158,11,0.18)] hover:shadow-[0_0_28px_rgba(245,158,11,0.4)] transition-all duration-200 hover:scale-[1.03] cursor-pointer"
+                  >
+                    <img
+                      src={card.imageUrl}
+                      alt={card.collection || rareShowcaseCollection}
+                      className="w-full h-full object-fill"
+                    />
+                    <div className="absolute bottom-1.5 inset-x-1.5 bg-black/85 backdrop-blur-md border border-amber-400/50 rounded-md px-2 py-0.5 text-center pointer-events-none">
+                      <div className="text-[10px] font-mono font-bold text-amber-300 uppercase tracking-wider truncate">
+                        {card.collection || rareShowcaseCollection}
+                      </div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Lightbox Modal to Inspect a Rare Card: ONLY Image + Collection */}
       {inspectingRareCard && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90 backdrop-blur-md animate-in fade-in duration-200"
+          className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md animate-in fade-in duration-200"
           onClick={() => setInspectingRareCard(null)}
         >
           <div
@@ -1022,11 +1137,11 @@ export const NovidadesSection: React.FC<NovidadesSectionProps> = ({
               Coleção: {inspectingRareCard.collection || rareShowcaseCollection}
             </span>
 
-            <div className="w-72 sm:w-80 aspect-[2.5/3.5] rounded-xl overflow-hidden border-2 border-amber-400 shadow-[0_0_35px_rgba(245,158,11,0.4)] bg-black">
+            <div className="w-72 sm:w-80 aspect-[63/88] rounded-xl overflow-hidden border-2 border-amber-400 shadow-[0_0_35px_rgba(245,158,11,0.4)] bg-slate-950">
               <img
                 src={inspectingRareCard.imageUrl}
                 alt={inspectingRareCard.collection || rareShowcaseCollection}
-                className="w-full h-full object-contain"
+                className="w-full h-full object-fill"
               />
             </div>
 
@@ -1043,7 +1158,7 @@ export const NovidadesSection: React.FC<NovidadesSectionProps> = ({
                         : 'border-slate-700 opacity-50 hover:opacity-100'
                     }`}
                   >
-                    <img src={c.imageUrl} alt={c.collection} className="w-full h-full object-cover" />
+                    <img src={c.imageUrl} alt={c.collection} className="w-full h-full object-fill" />
                   </button>
                 ))}
               </div>
@@ -1162,22 +1277,24 @@ export const NovidadesSection: React.FC<NovidadesSectionProps> = ({
                     <div className="flex items-center gap-2 shrink-0">
                       <button
                         type="button"
-                        onClick={() =>
+                        onClick={() => {
+                          setProductsDirty(true);
                           setDraftProducts(prev =>
                             prev.map(p => ({ ...p, showInHomeCarousel: true }))
-                          )
-                        }
+                          );
+                        }}
                         className="px-3 py-1.5 rounded-lg bg-purple-600/25 hover:bg-purple-600/40 border border-purple-500/50 text-purple-200 text-xs font-bold transition cursor-pointer"
                       >
                         Marcar Todos
                       </button>
                       <button
                         type="button"
-                        onClick={() =>
+                        onClick={() => {
+                          setProductsDirty(true);
                           setDraftProducts(prev =>
                             prev.map(p => ({ ...p, showInHomeCarousel: false }))
-                          )
-                        }
+                          );
+                        }}
                         className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 text-xs font-bold transition cursor-pointer"
                       >
                         Desmarcar Todos
@@ -1226,6 +1343,7 @@ export const NovidadesSection: React.FC<NovidadesSectionProps> = ({
                             checked={prod.showInHomeCarousel !== false && !isHiddenInStore}
                             onChange={(e) => {
                               const checked = e.target.checked;
+                              setProductsDirty(true);
                               setDraftProducts(prev =>
                                 prev.map((p, i) =>
                                   i === idx ? { ...p, showInHomeCarousel: checked } : p
@@ -1267,6 +1385,7 @@ export const NovidadesSection: React.FC<NovidadesSectionProps> = ({
                       </label>
                       <input
                         type="text"
+                        list="carousel-available-collections"
                         value={draftConfig.collectionName || ''}
                         onChange={(e) =>
                           setDraftConfig(prev => ({ ...prev, collectionName: e.target.value }))
@@ -1370,11 +1489,11 @@ export const NovidadesSection: React.FC<NovidadesSectionProps> = ({
                           key={card.id || idx}
                           className="p-2.5 rounded-xl bg-slate-900 border border-slate-800 hover:border-amber-500/50 flex flex-col gap-2"
                         >
-                          <div className="relative aspect-[2.5/3.5] rounded-lg overflow-hidden bg-black border border-amber-500/30">
+                          <div className="relative aspect-[63/88] rounded-lg overflow-hidden bg-slate-950 border border-amber-500/30">
                             <img
                               src={card.imageUrl}
                               alt={card.collection}
-                              className="w-full h-full object-contain"
+                              className="w-full h-full object-fill"
                             />
                           </div>
 
@@ -1439,22 +1558,69 @@ export const NovidadesSection: React.FC<NovidadesSectionProps> = ({
 
               {/* TAB 3: PICK CARDS FROM SITE CATALOG */}
               {managerTab === 'catalog' && (
-                <div>
-                  <div className="flex flex-wrap items-center gap-3 mb-4 bg-slate-900 p-3 rounded-xl border border-slate-800">
+                <div className="space-y-3">
+                  {/* Selection status & quick save bar */}
+                  <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-400/50 flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 text-xs text-amber-200 font-bold">
+                      <Sparkles size={15} className="text-amber-400 shrink-0" />
+                      <span>
+                        {draftConfig.cards.length > 0
+                          ? `${draftConfig.cards.length} carta(s) selecionada(s) para o Carrossel. Clique nas cartas abaixo para marcar ou desmarcar e depois salve.`
+                          : 'Clique nas cartas abaixo para adicionar ao Carrossel de Cartas Raras.'}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      {draftConfig.cards.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setManagerTab('rare_list')}
+                          className="px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-amber-500/40 text-amber-300 text-xs font-bold transition cursor-pointer"
+                        >
+                          Ver Selecionadas ({draftConfig.cards.length})
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={handleSaveAllCarouselSettings}
+                        disabled={isSavingConfig}
+                        className="px-3.5 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-black transition cursor-pointer"
+                      >
+                        {isSavingConfig ? 'Salvando...' : 'Salvar no Carrossel'}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Filters */}
+                  <div className="flex flex-wrap items-center gap-3 bg-slate-900 p-3 rounded-xl border border-slate-800">
                     <div className="flex items-center bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 flex-1 min-w-[200px]">
                       <Search size={15} className="text-slate-400 mr-2" />
                       <input
                         type="text"
                         value={catalogSearch}
-                        onChange={(e) => setCatalogSearch(e.target.value)}
-                        placeholder="Buscar carta no catálogo..."
+                        onChange={(e) => {
+                          setCatalogSearch(e.target.value);
+                          setCatalogVisibleLimit(60);
+                        }}
+                        placeholder="Buscar por nome, código ou coleção..."
                         className="w-full bg-transparent text-xs text-white outline-none"
                       />
+                      {catalogSearch && (
+                        <button
+                          type="button"
+                          onClick={() => setCatalogSearch('')}
+                          className="text-slate-400 hover:text-white ml-1 cursor-pointer"
+                        >
+                          <X size={13} />
+                        </button>
+                      )}
                     </div>
 
                     <select
                       value={catalogCollectionFilter}
-                      onChange={(e) => setCatalogCollectionFilter(e.target.value)}
+                      onChange={(e) => {
+                        setCatalogCollectionFilter(e.target.value);
+                        setCatalogVisibleLimit(60);
+                      }}
                       className="px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-xs text-white outline-none cursor-pointer"
                     >
                       <option value="Todas">Todas as Coleções</option>
@@ -1469,48 +1635,89 @@ export const NovidadesSection: React.FC<NovidadesSectionProps> = ({
                       <input
                         type="checkbox"
                         checked={catalogOnlyRare}
-                        onChange={(e) => setCatalogOnlyRare(e.target.checked)}
+                        onChange={(e) => {
+                          setCatalogOnlyRare(e.target.checked);
+                          setCatalogVisibleLimit(60);
+                        }}
                         className="accent-amber-500"
                       />
                       <span>Apenas Raras</span>
                     </label>
+
+                    <span className="text-[11px] font-mono text-slate-400">
+                      {catalogPickerCandidates.length} carta(s)
+                    </span>
                   </div>
 
-                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 max-h-[48vh] overflow-y-auto pr-1">
-                    {catalogPickerCandidates.slice(0, 120).map((item) => {
-                      const isSelected = draftConfig.cards.some(
-                        c => c.imageUrl === item.imageUrl
-                      );
-                      return (
-                        <div
-                          key={item.id}
-                          onClick={() => handleToggleCardInDraft(item)}
-                          className={`p-2 rounded-xl border transition cursor-pointer flex flex-col relative ${
-                            isSelected
-                              ? 'bg-amber-500/20 border-amber-400 shadow-[0_0_15px_rgba(245,158,11,0.3)]'
-                              : 'bg-slate-900/90 border-slate-800 hover:border-slate-600'
-                          }`}
-                        >
-                          <div className="relative aspect-[2.5/3.5] rounded-lg overflow-hidden bg-black mb-1.5">
-                            <img
-                              src={item.imageUrl}
-                              alt={item.collection}
-                              loading="lazy"
-                              className="w-full h-full object-contain"
-                            />
-                            {isSelected && (
-                              <div className="absolute top-1.5 right-1.5 w-6 h-6 rounded-full bg-amber-400 text-slate-950 flex items-center justify-center shadow-md">
-                                <Check size={14} strokeWidth={3} />
+                  {catalogPickerCandidates.length === 0 ? (
+                    <div className="p-8 rounded-xl border border-dashed border-slate-800 text-center text-xs text-slate-400">
+                      Nenhuma carta encontrada com os filtros atuais.
+                    </div>
+                  ) : (
+                    <>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 max-h-[46vh] overflow-y-auto pr-1">
+                        {catalogPickerCandidates.slice(0, catalogVisibleLimit).map((item) => {
+                          const normalizedUrl = (item.imageUrl || '').trim();
+                          const isSelected = draftConfig.cards.some(
+                            c => (c.imageUrl || '').trim() === normalizedUrl
+                          );
+                          return (
+                            <button
+                              key={item.id}
+                              type="button"
+                              onClick={() => handleToggleCardInDraft(item)}
+                              className={`p-2 rounded-xl border-2 transition cursor-pointer flex flex-col text-left relative ${
+                                isSelected
+                                  ? 'bg-amber-500/20 border-amber-400 shadow-[0_0_18px_rgba(245,158,11,0.35)]'
+                                  : 'bg-slate-900/90 border-slate-800 hover:border-slate-500'
+                              }`}
+                            >
+                              <div className="relative aspect-[63/88] w-full rounded-lg overflow-hidden bg-slate-950 mb-1.5">
+                                <img
+                                  src={item.imageUrl}
+                                  alt={item.name || item.collection}
+                                  loading="lazy"
+                                  className="w-full h-full object-fill"
+                                />
+                                {isSelected && (
+                                  <div className="absolute top-1.5 right-1.5 w-6 h-6 rounded-full bg-amber-400 text-slate-950 flex items-center justify-center shadow-md">
+                                    <Check size={14} strokeWidth={3} />
+                                  </div>
+                                )}
                               </div>
-                            )}
-                          </div>
-                          <div className="text-[11px] font-mono text-amber-300 font-bold truncate text-center">
-                            {item.collection}
-                          </div>
+                              <div className="text-[11px] font-bold text-white truncate w-full">
+                                {item.name}
+                              </div>
+                              <div className="text-[10px] font-mono text-amber-300 truncate w-full mb-1.5">
+                                {item.collection}
+                              </div>
+                              <div
+                                className={`mt-auto w-full py-1 rounded-md text-center text-[10px] font-black uppercase tracking-wider ${
+                                  isSelected
+                                    ? 'bg-amber-400 text-slate-950'
+                                    : 'bg-slate-800 text-slate-300'
+                                }`}
+                              >
+                                {isSelected ? '✓ Selecionada' : '+ Adicionar'}
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      {catalogPickerCandidates.length > catalogVisibleLimit && (
+                        <div className="flex justify-center pt-1">
+                          <button
+                            type="button"
+                            onClick={() => setCatalogVisibleLimit(prev => prev + 60)}
+                            className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-bold transition cursor-pointer"
+                          >
+                            Carregar mais cartas ({catalogVisibleLimit} de {catalogPickerCandidates.length})
+                          </button>
                         </div>
-                      );
-                    })}
-                  </div>
+                      )}
+                    </>
+                  )}
                 </div>
               )}
 
@@ -1527,6 +1734,7 @@ export const NovidadesSection: React.FC<NovidadesSectionProps> = ({
                     </label>
                     <input
                       type="text"
+                      list="carousel-available-collections"
                       value={customCardCollection}
                       onChange={(e) => setCustomCardCollection(e.target.value)}
                       placeholder={draftConfig.collectionName || 'Ex: Invasão do Caos'}
@@ -1590,36 +1798,49 @@ export const NovidadesSection: React.FC<NovidadesSectionProps> = ({
               )}
             </div>
 
-            {/* Modal Footer */}
-            <div className="p-4 bg-slate-900 border-t border-slate-800 flex flex-wrap items-center justify-between gap-3">
-              <label className="flex items-center gap-2 text-xs text-slate-200 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={draftConfig.isEnabled !== false}
-                  onChange={(e) =>
-                    setDraftConfig(prev => ({ ...prev, isEnabled: e.target.checked }))
-                  }
-                  className="accent-amber-500 w-4 h-4"
-                />
-                <span>Exibir &ldquo;Cartas Raras da Coleção Atual&rdquo; no Carrossel</span>
-              </label>
+            <datalist id="carousel-available-collections">
+              {availableCollections.map(col => (
+                <option key={col} value={col} />
+              ))}
+            </datalist>
 
-              <div className="flex items-center gap-3">
-                <button
-                  type="button"
-                  onClick={() => setIsManagerOpen(false)}
-                  className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold transition cursor-pointer"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="button"
-                  onClick={handleSaveAllCarouselSettings}
-                  disabled={isSavingConfig}
-                  className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 via-yellow-500 to-amber-600 hover:from-amber-400 hover:to-yellow-400 text-slate-950 font-black text-xs uppercase tracking-wider shadow-lg transition cursor-pointer"
-                >
-                  {isSavingConfig ? 'Salvando...' : 'Salvar Alterações do Carrossel'}
-                </button>
+            {/* Modal Footer */}
+            <div className="p-4 bg-slate-900 border-t border-slate-800 flex flex-col gap-2">
+              {saveError && (
+                <div className="px-3 py-2 rounded-lg bg-rose-950/90 border border-rose-500/60 text-rose-200 text-xs font-bold">
+                  Erro ao salvar: {saveError}
+                </div>
+              )}
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <label className="flex items-center gap-2 text-xs text-slate-200 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={draftConfig.isEnabled !== false}
+                    onChange={(e) =>
+                      setDraftConfig(prev => ({ ...prev, isEnabled: e.target.checked }))
+                    }
+                    className="accent-amber-500 w-4 h-4"
+                  />
+                  <span>Exibir &ldquo;Cartas Raras da Coleção Atual&rdquo; no Carrossel ({draftConfig.cards.length} selecionada(s))</span>
+                </label>
+
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setIsManagerOpen(false)}
+                    className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold transition cursor-pointer"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSaveAllCarouselSettings}
+                    disabled={isSavingConfig}
+                    className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 via-yellow-500 to-amber-600 hover:from-amber-400 hover:to-yellow-400 text-slate-950 font-black text-xs uppercase tracking-wider shadow-lg transition cursor-pointer"
+                  >
+                    {isSavingConfig ? 'Salvando...' : 'Salvar Alterações do Carrossel'}
+                  </button>
+                </div>
               </div>
             </div>
           </div>
