@@ -590,9 +590,20 @@ export const StoreProductManagerView: React.FC<StoreProductManagerViewProps> = (
       .toLowerCase()
       .normalize('NFD')
       .replace(/[\u0300-\u036f]/g, '')
-      .replace(/[^a-z0-9\s]/g, ' ')
+      .replace(/[^a-z0-9\s/]/g, ' ')
       .trim();
     if (!clean || clean.length < 2) return undefined;
+
+    // Se o arquivo for um TOKEN (ex: "TOKEN 01", "TOKEN13", "2026_0001_TOKEN14"), só vincula se o código exato do token já existir; nunca agrupa pelo nome genérico "TOKEN"!
+    const tokenNumMatch = rawName.match(/TOKEN[-_\s]*(\d+)/i);
+    if (tokenNumMatch || /^token$/i.test(clean)) {
+      if (tokenNumMatch) {
+        const tNum = tokenNumMatch[1].padStart(2, '0');
+        const targetTokenCode = `TOKEN${tNum}`.toLowerCase();
+        return cards.find((c) => (c.code || '').toLowerCase().endsWith(targetTokenCode));
+      }
+      return undefined;
+    }
 
     // 1. Exact code match or exact name match
     const exact = cards.find((c) => {
@@ -601,6 +612,7 @@ export const StoreProductManagerView: React.FC<StoreProductManagerViewProps> = (
         .normalize('NFD')
         .replace(/[\u0300-\u036f]/g, '')
         .trim();
+      if (cName === 'token' || c.type === 'Token') return false;
       const cCode = (c.code || '').toLowerCase();
       return cName === clean || cCode === clean || cCode.endsWith(clean);
     });
@@ -613,6 +625,7 @@ export const StoreProductManagerView: React.FC<StoreProductManagerViewProps> = (
         .normalize('NFD')
         .replace(/[\u0300-\u036f]/g, '')
         .trim();
+      if (cName === 'token' || c.type === 'Token') return false;
       const firstPart = cName.split(/\s*[-–:]\s*/)[0]?.trim() || '';
       return firstPart === clean || cName.startsWith(clean + ' ') || cName.startsWith(clean + '-');
     });
@@ -626,10 +639,24 @@ export const StoreProductManagerView: React.FC<StoreProductManagerViewProps> = (
           .normalize('NFD')
           .replace(/[\u0300-\u036f]/g, '')
           .trim();
+        if (cName === 'token' || c.type === 'Token') return false;
         return cName.includes(clean);
       });
     }
     return undefined;
+  };
+
+  const getNextTokenCode = (offset: number = 0): string => {
+    let maxNum = 0;
+    for (const c of cards) {
+      const m = (c.code || '').match(/TOKEN[-_]?(\d+)/i);
+      if (m) {
+        const n = parseInt(m[1], 10);
+        if (n > maxNum) maxNum = n;
+      }
+    }
+    const nextNum = String(maxNum + 1 + offset).padStart(2, '0');
+    return `2026/0001/TOKEN${nextNum}`;
   };
 
   const handleUploadCustomCardFiles = async (prodIdx: number, files: FileList) => {
@@ -638,10 +665,13 @@ export const StoreProductManagerView: React.FC<StoreProductManagerViewProps> = (
     const activeCollection = (defaultProductCardsCollection || 'Natal Macroversal').trim() || 'Natal Macroversal';
     try {
       const uploadedItems: ProductIndividualCardItem[] = [];
+      let tokenAutoOffset = 0;
       for (let fIdx = 0; fIdx < files.length; fIdx++) {
         const file = files[fIdx];
         const url = await uploadMarketplaceImage(file, 'product_cards');
         const cleanName = file.name.replace(/\.[^/.]+$/, '').replace(/[-_]+/g, ' ').trim();
+        const isTokenFile = /\btoken\b/i.test(cleanName) || /^token\d+/i.test(cleanName.replace(/\s+/g, ''));
+        const explicitTokenMatch = file.name.match(/TOKEN[-_\s]*(\d+)/i);
         const matchedCatalogCard = findBestCatalogMatch(cleanName);
 
         if (matchedCatalogCard) {
@@ -653,6 +683,23 @@ export const StoreProductManagerView: React.FC<StoreProductManagerViewProps> = (
             imageUrl: url,
             type: matchedCatalogCard.type || 'Herói',
             rarity: matchedCatalogCard.rarity || 'Moderno Exclusiva',
+            collection: activeCollection,
+            frame: 'Moderno',
+            syncedToCatalog: false,
+            quantity: 1
+          });
+        } else if (isTokenFile) {
+          const tokenCode = explicitTokenMatch
+            ? `2026/0001/TOKEN${explicitTokenMatch[1].padStart(2, '0')}`
+            : getNextTokenCode(tokenAutoOffset++);
+          uploadedItems.push({
+            id: `pcard_new_${Date.now()}_${fIdx}`,
+            source: 'custom_new',
+            cardCode: tokenCode,
+            name: 'TOKEN',
+            imageUrl: url,
+            type: 'Token',
+            rarity: 'Moderno Comum',
             collection: activeCollection,
             frame: 'Moderno',
             syncedToCatalog: false,
@@ -709,9 +756,17 @@ export const StoreProductManagerView: React.FC<StoreProductManagerViewProps> = (
         const targetRarity = pc.rarity && pc.rarity !== 'Nova / Exclusiva' ? pc.rarity : 'Moderno Exclusiva';
         collectionsToSave.add(targetCollection);
 
-        // Find catalog card by linked cardCode or exact name
+        const isTokenCard =
+          pc.type === 'Token' ||
+          (pc.name || '').trim().toUpperCase() === 'TOKEN' ||
+          /TOKEN\d+/i.test(pc.cardCode || '');
+
+        // Para TOKENs: só considera carta existente se o CÓDIGO exato (ex: 2026/0001/TOKEN14) já existir!
+        // NUNCA junta tokens diferentes pelo nome "TOKEN", pois todos os tokens têm o mesmo nome "TOKEN" e códigos diferentes (2026/0001/TOKEN01, TOKEN02...).
         const existingCard = pc.cardCode
-          ? cards.find((c) => c.code === pc.cardCode)
+          ? cards.find((c) => c.code.toLowerCase() === pc.cardCode!.trim().toLowerCase())
+          : isTokenCard
+          ? undefined
           : cards.find((c) => c.name.toLowerCase() === (pc.name || '').toLowerCase());
 
         if (existingCard) {
@@ -2138,23 +2193,43 @@ export const StoreProductManagerView: React.FC<StoreProductManagerViewProps> = (
                     <div className="flex-1 space-y-1.5">
                       <label className="text-[11px] font-black uppercase tracking-wider text-emerald-300 flex items-center gap-1.5">
                         <Sparkles size={13} className="text-emerald-400" />
-                        <span>Nome da Coleção Nova para Vincular as Cartas no Catálogo:</span>
+                        <span>Selecionar Coleção Existente ou Digitar Nova Coleção:</span>
                       </label>
                       <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                        <select
+                          value={
+                            Array.from(new Set(['Natal Macroversal', ...(collections || [])])).includes(
+                              defaultProductCardsCollection
+                            )
+                              ? defaultProductCardsCollection
+                              : '__CUSTOM__'
+                          }
+                          onChange={(e) => {
+                            if (e.target.value !== '__CUSTOM__') {
+                              setDefaultProductCardsCollection(e.target.value);
+                            } else {
+                              setDefaultProductCardsCollection('');
+                            }
+                          }}
+                          className="bg-slate-950 border border-emerald-500/50 rounded-lg px-3 py-2 text-xs text-emerald-300 font-bold outline-none focus:border-emerald-400"
+                        >
+                          <optgroup label="Coleções Existentes no Site">
+                            {Array.from(new Set(['Natal Macroversal', ...(collections || [])])).map((col) => (
+                              <option key={col} value={col}>
+                                {col}
+                              </option>
+                            ))}
+                          </optgroup>
+                          <option value="__CUSTOM__">+ Digitar Nova Coleção...</option>
+                        </select>
+
                         <input
                           type="text"
                           value={defaultProductCardsCollection}
                           onChange={(e) => setDefaultProductCardsCollection(e.target.value)}
-                          placeholder="Ex: Natal Macroversal"
-                          list={`collections-datalist-${i}`}
+                          placeholder="Ou digite o nome da coleção nova..."
                           className="flex-1 bg-slate-950 border border-emerald-500/50 rounded-lg px-3 py-2 text-xs text-white font-bold outline-none focus:border-emerald-400"
                         />
-                        <datalist id={`collections-datalist-${i}`}>
-                          <option value="Natal Macroversal" />
-                          {(collections || []).map((col) => (
-                            <option key={col} value={col} />
-                          ))}
-                        </datalist>
                         <button
                           type="button"
                           onClick={() => {
@@ -2199,7 +2274,7 @@ export const StoreProductManagerView: React.FC<StoreProductManagerViewProps> = (
                     )}
                   </div>
                   <p className="text-[11px] text-emerald-200/80">
-                    Ao subir várias imagens de cartas, o sistema tenta identificar o nome da carta automaticamente pelo nome do arquivo. Você pode confirmar ou trocar a carta vinculada do catálogo abaixo e clicar em <strong>&quot;Vincular &amp; Adicionar Todas no Catálogo&quot;</strong> para que elas entrem imediatamente no Catálogo de Cartas com a coleção <strong>&quot;{defaultProductCardsCollection || 'Natal Macroversal'}&quot;</strong>.
+                    Escolha uma coleção existente na lista acima (ou digite uma nova) e clique em <strong>&quot;Vincular &amp; Adicionar Todas no Catálogo&quot;</strong>. Para cartas de <strong>TOKEN</strong>, todas podem usar o mesmo nome <strong>&quot;TOKEN&quot;</strong> com códigos diferentes (ex: <code>2026/0001/TOKEN01</code>, <code>2026/0001/TOKEN13</code>, <code>2026/0001/TOKEN14</code>) e aparecerão separadas no catálogo!
                   </p>
                 </div>
 
@@ -2284,7 +2359,7 @@ export const StoreProductManagerView: React.FC<StoreProductManagerViewProps> = (
                     {prod.productCards.map((pc, pcIdx) => {
                       const localSearch = (cardLinkSearchByIndex[pcIdx] || '').toLowerCase().trim();
                       const filteredCatalogOptions = (cards || []).filter((c) => {
-                        if (c.deleted || c.isHidden) return false;
+                        if (c.deleted) return false;
                         if (pc.cardCode && c.code === pc.cardCode) return true;
                         if (!localSearch) return true;
                         return (
@@ -2292,6 +2367,11 @@ export const StoreProductManagerView: React.FC<StoreProductManagerViewProps> = (
                           c.code.toLowerCase().includes(localSearch)
                         );
                       });
+                      const allExistingCols = Array.from(
+                        new Set(['Natal Macroversal', ...(collections || [])])
+                      );
+                      const currentCardCol =
+                        pc.collection ?? defaultProductCardsCollection ?? 'Natal Macroversal';
 
                       return (
                         <div
@@ -2321,15 +2401,42 @@ export const StoreProductManagerView: React.FC<StoreProductManagerViewProps> = (
                               <div className="flex items-center gap-1.5 flex-wrap">
                                 <span
                                   className={`px-1.5 py-0.5 rounded text-[9px] font-black uppercase ${
-                                    pc.cardCode
+                                    pc.source === 'catalog' && pc.cardCode
                                       ? 'bg-purple-500/25 text-purple-300 border border-purple-500/30'
                                       : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
                                   }`}
                                 >
-                                  {pc.cardCode
+                                  {pc.source === 'catalog' && pc.cardCode
                                     ? `Vinculada: ${pc.cardCode}`
+                                    : pc.cardCode
+                                    ? `Nova Carta (${pc.cardCode})`
                                     : 'Nova Carta Independente'}
                                 </span>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    updateProductAt(i, (p) => {
+                                      const list = [...(p.productCards || [])];
+                                      const nextCode =
+                                        list[pcIdx].cardCode && /TOKEN\d+/i.test(list[pcIdx].cardCode!)
+                                          ? list[pcIdx].cardCode
+                                          : getNextTokenCode(pcIdx);
+                                      list[pcIdx] = {
+                                        ...list[pcIdx],
+                                        source: 'custom_new',
+                                        name: 'TOKEN',
+                                        type: 'Token',
+                                        cardCode: nextCode,
+                                        syncedToCatalog: false
+                                      };
+                                      return { ...p, productCards: list };
+                                    })
+                                  }
+                                  className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-cyan-500/20 hover:bg-cyan-500/35 text-cyan-300 border border-cyan-500/40 cursor-pointer transition"
+                                  title="Definir como TOKEN com nome 'TOKEN' e código 2026/0001/TOKENXX separado no catálogo"
+                                >
+                                  ⚡ Definir como TOKEN
+                                </button>
                                 {pc.syncedToCatalog && (
                                   <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-emerald-500/25 text-emerald-300 border border-emerald-500/40">
                                     ✓ No Catálogo
@@ -2373,7 +2480,7 @@ export const StoreProductManagerView: React.FC<StoreProductManagerViewProps> = (
                                 />
                               </div>
                               <select
-                                value={pc.cardCode || ''}
+                                value={pc.source === 'catalog' ? pc.cardCode || '' : ''}
                                 onChange={(e) => {
                                   const selectedCode = e.target.value;
                                   const matched = (cards || []).find((c) => c.code === selectedCode);
@@ -2392,7 +2499,6 @@ export const StoreProductManagerView: React.FC<StoreProductManagerViewProps> = (
                                       list[pcIdx] = {
                                         ...list[pcIdx],
                                         source: 'custom_new',
-                                        cardCode: undefined,
                                         syncedToCatalog: false
                                       };
                                     }
@@ -2402,7 +2508,7 @@ export const StoreProductManagerView: React.FC<StoreProductManagerViewProps> = (
                                 className="w-full bg-slate-950 border border-purple-500/40 rounded px-2 py-1 text-[11px] text-white outline-none"
                               >
                                 <option value="">
-                                  + Criar como Nova Carta Independente no Catálogo
+                                  + Criar como Nova Carta / Novo TOKEN Separado no Catálogo
                                 </option>
                                 {filteredCatalogOptions.map((c) => (
                                   <option key={c.code} value={c.code}>
@@ -2412,8 +2518,8 @@ export const StoreProductManagerView: React.FC<StoreProductManagerViewProps> = (
                               </select>
                             </div>
 
-                            {/* Step 2B: Nome da Carta & Nome da Coleção Nova */}
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                            {/* Step 2B: Nome da Carta, Código (Ex: 2026/0001/TOKEN01) & Coleção */}
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-1.5">
                               <div>
                                 <label className="text-[9px] font-bold uppercase text-slate-400 block mb-0.5">
                                   Nome da Carta:
@@ -2432,8 +2538,31 @@ export const StoreProductManagerView: React.FC<StoreProductManagerViewProps> = (
                                       return { ...p, productCards: list };
                                     })
                                   }
-                                  placeholder="Nome da carta"
+                                  placeholder="Ex: TOKEN"
                                   className="w-full bg-slate-900 border border-slate-800 rounded px-2 py-1 text-xs text-white font-bold"
+                                />
+                              </div>
+
+                              <div>
+                                <label className="text-[9px] font-bold uppercase text-cyan-400 block mb-0.5">
+                                  Código (Ex: 2026/0001/TOKEN01):
+                                </label>
+                                <input
+                                  type="text"
+                                  value={pc.cardCode || ''}
+                                  onChange={(e) =>
+                                    updateProductAt(i, (p) => {
+                                      const list = [...(p.productCards || [])];
+                                      list[pcIdx] = {
+                                        ...list[pcIdx],
+                                        cardCode: e.target.value,
+                                        syncedToCatalog: false
+                                      };
+                                      return { ...p, productCards: list };
+                                    })
+                                  }
+                                  placeholder="2026/0001/TOKEN01"
+                                  className="w-full bg-slate-900 border border-cyan-500/40 rounded px-2 py-1 text-xs text-cyan-200 font-mono font-bold"
                                 />
                               </div>
 
@@ -2441,24 +2570,52 @@ export const StoreProductManagerView: React.FC<StoreProductManagerViewProps> = (
                                 <label className="text-[9px] font-bold uppercase text-emerald-400 block mb-0.5">
                                   Coleção no Catálogo:
                                 </label>
-                                <input
-                                  type="text"
-                                  value={pc.collection ?? defaultProductCardsCollection ?? 'Natal Macroversal'}
-                                  onChange={(e) =>
+                                <select
+                                  value={
+                                    allExistingCols.includes(currentCardCol)
+                                      ? currentCardCol
+                                      : '__CUSTOM__'
+                                  }
+                                  onChange={(e) => {
+                                    const val = e.target.value;
                                     updateProductAt(i, (p) => {
                                       const list = [...(p.productCards || [])];
                                       list[pcIdx] = {
                                         ...list[pcIdx],
-                                        collection: e.target.value,
+                                        collection: val === '__CUSTOM__' ? '' : val,
                                         syncedToCatalog: false
                                       };
                                       return { ...p, productCards: list };
-                                    })
-                                  }
-                                  placeholder="Ex: Natal Macroversal"
-                                  list={`collections-datalist-${i}`}
-                                  className="w-full bg-slate-900 border border-emerald-500/40 rounded px-2 py-1 text-xs text-emerald-200 font-bold"
-                                />
+                                    });
+                                  }}
+                                  className="w-full bg-slate-900 border border-emerald-500/40 rounded px-2 py-1 text-xs text-emerald-200 font-bold outline-none"
+                                >
+                                  {allExistingCols.map((col) => (
+                                    <option key={col} value={col}>
+                                      {col}
+                                    </option>
+                                  ))}
+                                  <option value="__CUSTOM__">+ Digitar Nova Coleção...</option>
+                                </select>
+                                {!allExistingCols.includes(currentCardCol) && (
+                                  <input
+                                    type="text"
+                                    value={currentCardCol}
+                                    onChange={(e) =>
+                                      updateProductAt(i, (p) => {
+                                        const list = [...(p.productCards || [])];
+                                        list[pcIdx] = {
+                                          ...list[pcIdx],
+                                          collection: e.target.value,
+                                          syncedToCatalog: false
+                                        };
+                                        return { ...p, productCards: list };
+                                      })
+                                    }
+                                    placeholder="Digite a nova coleção..."
+                                    className="w-full mt-1 bg-slate-900 border border-emerald-500/40 rounded px-2 py-1 text-xs text-emerald-200 font-bold"
+                                  />
+                                )}
                               </div>
                             </div>
 

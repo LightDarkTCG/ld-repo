@@ -1598,10 +1598,35 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
                         
                         <div>
                           <label className="text-sm font-bold text-slate-400 block mb-1">Coleção</label>
-                          <input type="text" list="collections-list" value={cardCollection} onChange={e => setCardCollection(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded p-2 text-white" />
-                          <datalist id="collections-list">
-                             {collections.map(c => <option key={c} value={c} />)}
-                          </datalist>
+                          <div className="flex flex-col gap-1.5">
+                            <select
+                              value={collections.includes(cardCollection) ? cardCollection : '__CUSTOM__'}
+                              onChange={e => {
+                                if (e.target.value !== '__CUSTOM__') {
+                                  setCardCollection(e.target.value);
+                                } else if (collections.includes(cardCollection)) {
+                                  setCardCollection('');
+                                }
+                              }}
+                              className="w-full bg-slate-950 border border-slate-700 rounded p-2 text-white font-bold text-sm"
+                            >
+                              <option value="__CUSTOM__">+ Digitar / Criar Nova Coleção...</option>
+                              <optgroup label="Coleções Existentes">
+                                {collections.map(c => (
+                                  <option key={c} value={c}>{c}</option>
+                                ))}
+                              </optgroup>
+                            </select>
+                            {(!collections.includes(cardCollection) || !cardCollection) && (
+                              <input
+                                type="text"
+                                value={cardCollection}
+                                onChange={e => setCardCollection(e.target.value)}
+                                placeholder="Digite o nome da nova coleção..."
+                                className="w-full bg-slate-950 border border-purple-500/60 rounded p-2 text-white text-sm"
+                              />
+                            )}
+                          </div>
                         </div>
                         <div>
                           <label className="text-sm font-bold text-slate-400 block mb-1">Frame</label>
@@ -1634,7 +1659,31 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
                         </div>
                         <div>
                           <label className="text-sm font-bold text-slate-400 block mb-1">Tipo</label>
-                          <select value={cardEditType} onChange={e => setCardEditType(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded p-2 text-white">
+                          <select
+                            value={cardEditType}
+                            onChange={e => {
+                              const nextType = e.target.value;
+                              setCardEditType(nextType);
+                              if (nextType === 'Token') {
+                                if (!formName.trim()) {
+                                  setFormName('TOKEN');
+                                }
+                                if (!cardEditCode.trim() || !/TOKEN/i.test(cardEditCode)) {
+                                  let maxTokenNum = 0;
+                                  cards.forEach(c => {
+                                    const m = (c.code || '').match(/TOKEN[-_]?(\d+)/i);
+                                    if (m) {
+                                      const n = parseInt(m[1], 10);
+                                      if (n > maxTokenNum) maxTokenNum = n;
+                                    }
+                                  });
+                                  const nextNum = String(maxTokenNum + 1).padStart(2, '0');
+                                  setCardEditCode(`2026/0001/TOKEN${nextNum}`);
+                                }
+                              }
+                            }}
+                            className="w-full bg-slate-950 border border-slate-700 rounded p-2 text-white"
+                          >
                             <option value="Herói">Herói</option>
                             <option value="Combatente">Combatente</option>
                             <option value="Equipamento">Equipamento</option>
@@ -2025,18 +2074,46 @@ export const AdminPanel = ({ onClose, adminType = 'master' }: { onClose: () => v
                       <>
                         <div className="mb-6 bg-slate-800 p-4 rounded border border-slate-700 flex flex-col xl:flex-row gap-4">
                           <div className="flex-1">
-                            <label className="text-sm font-bold text-slate-400 block mb-2">Coleção Global (Deixe vazio para manter a da carta, ou preencha para criar/sobrescrever a coleção destas cartas)</label>
-                            <input 
-                              type="text" 
-                              list="collections-list-batch"
-                              value={batchCollection} 
-                              onChange={e => setBatchCollection(e.target.value)} 
-                              className="w-full bg-slate-950 border border-slate-700 rounded p-2 text-white" 
-                              placeholder="Ex: Reforço Macroversal" 
-                            />
-                            <datalist id="collections-list-batch">
-                               {collections.map(c => <option key={c} value={c} />)}
-                            </datalist>
+                            <label className="text-sm font-bold text-slate-400 block mb-2">Coleção Global (Selecione uma coleção existente ou digite uma nova)</label>
+                            <div className="flex flex-col sm:flex-row gap-2">
+                              <select
+                                value={
+                                  !batchCollection
+                                    ? '__KEEP_CARD__'
+                                    : collections.includes(batchCollection)
+                                    ? batchCollection
+                                    : '__CUSTOM__'
+                                }
+                                onChange={e => {
+                                  const val = e.target.value;
+                                  if (val === '__KEEP_CARD__') {
+                                    setBatchCollection('');
+                                  } else if (val === '__CUSTOM__') {
+                                    if (collections.includes(batchCollection)) {
+                                      setBatchCollection('');
+                                    }
+                                  } else {
+                                    setBatchCollection(val);
+                                  }
+                                }}
+                                className="flex-1 bg-slate-950 border border-slate-700 rounded p-2 text-white font-bold text-sm"
+                              >
+                                <option value="__KEEP_CARD__">Manter coleção original de cada carta</option>
+                                <optgroup label="Coleções Existentes">
+                                  {collections.map(c => (
+                                    <option key={c} value={c}>{c}</option>
+                                  ))}
+                                </optgroup>
+                                <option value="__CUSTOM__">+ Digitar Nova Coleção...</option>
+                              </select>
+                              <input 
+                                type="text" 
+                                value={batchCollection} 
+                                onChange={e => setBatchCollection(e.target.value)} 
+                                className="flex-1 bg-slate-950 border border-slate-700 rounded p-2 text-white text-sm" 
+                                placeholder="Ou digite o nome da coleção..." 
+                              />
+                            </div>
                           </div>
                           <div className="w-full xl:w-1/4">
                             <label className="text-sm font-bold text-slate-400 block mb-2">Frame Padrão</label>

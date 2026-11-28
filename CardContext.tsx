@@ -76,12 +76,22 @@ export const getBaseCardCode = (rawCode?: string, parentCode?: string): string =
     const year = parts[0];
     const sheet = parts[1];
     const numStr = parts[2];
-    const digits = numStr.replace(/[^0-9]/g, '');
-    if (digits) {
-      const paddedNum = digits.padStart(5, '0');
-      const cleanSheetDigits = sheet.replace(/[^0-9]/g, '');
-      const paddedSheet = cleanSheetDigits ? cleanSheetDigits.padStart(4, '0') : sheet;
-      result = `${year}/${paddedSheet}/${paddedNum}`;
+    const cleanSheetDigits = sheet.replace(/[^0-9]/g, '');
+    const paddedSheet = cleanSheetDigits ? cleanSheetDigits.padStart(4, '0') : sheet;
+
+    // Preserva o prefixo TOKEN para que 2026/0001/TOKEN01, TOKEN13, TOKEN14 etc. fiquem separados no catálogo e não colidam com cartas 00001, 00013, 00014
+    const tokenMatch = numStr.match(/^TOKEN[-_]?(\d+)/i);
+    if (tokenMatch) {
+      const tokenNum = tokenMatch[1].padStart(2, '0');
+      result = `${year}/${paddedSheet}/TOKEN${tokenNum}`;
+    } else if (/^TOKEN/i.test(numStr)) {
+      result = `${year}/${paddedSheet}/${numStr.toUpperCase()}`;
+    } else {
+      const digits = numStr.replace(/[^0-9]/g, '');
+      if (digits) {
+        const paddedNum = digits.padStart(5, '0');
+        result = `${year}/${paddedSheet}/${paddedNum}`;
+      }
     }
   }
   baseCodeCache.set(codeToUse, result);
@@ -998,6 +1008,7 @@ export const CardProvider = ({ children }: { children: ReactNode }) => {
         canonicalCards.push({
           ...chosenCard,
           ...customProps,
+          isVariation: false,
           code: cleanCardCode(baseCode) || cleanCardCode(chosenCard.code),
           rarity: finalRarity,
           catalogCoverImageUrl: coverImageUrl || undefined,

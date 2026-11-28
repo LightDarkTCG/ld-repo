@@ -56,7 +56,7 @@ export const BatchImageMatcher: React.FC<BatchImageMatcherProps> = ({
   saveCard,
   onSuccess
 }) => {
-  const { cleanAllCardSuffixes } = useCards();
+  const { cleanAllCardSuffixes, saveCollection } = useCards();
 
   // Uploaded images in tray
   const [stagedImages, setStagedImages] = useState<StagedImage[]>([]);
@@ -79,10 +79,7 @@ export const BatchImageMatcher: React.FC<BatchImageMatcherProps> = ({
   const [customCollectionName, setCustomCollectionName] = useState<string>('');
 
   // Filters & Pagination
-  const [selectedCollection, setSelectedCollection] = useState<string>(() => {
-    if (collections.includes('Legado')) return 'Legado';
-    return collections[0] || '';
-  });
+  const [selectedCollection, setSelectedCollection] = useState<string>('');
   const [cardSearchTerm, setCardSearchTerm] = useState('');
   const [imageSearchTerm, setImageSearchTerm] = useState('');
   const [cardStatusFilter, setCardStatusFilter] = useState<'all' | 'pending' | 'assigned'>('all');
@@ -338,15 +335,15 @@ export const BatchImageMatcher: React.FC<BatchImageMatcherProps> = ({
     });
   }, [stagedImages, imageSearchTerm]);
 
-  // Base target cards only: filter out variations and deduplicate by collection + baseCode
+  // Base target cards: include all non-deleted catalog cards deduplicated by baseCode
   const baseTargetCards = useMemo(() => {
     const map = new Map<string, CardData>();
     for (const card of cards) {
-      if (card.deleted || card.isVariation) continue;
+      if (card.deleted) continue;
       const baseCode = cleanCardCode(card.parentCode || card.code);
-      const key = `${card.collection || ''}_${baseCode}`;
-      if (!map.has(key)) {
-        map.set(key, {
+      if (!baseCode) continue;
+      if (!map.has(baseCode)) {
+        map.set(baseCode, {
           ...card,
           code: baseCode
         });
@@ -466,7 +463,9 @@ export const BatchImageMatcher: React.FC<BatchImageMatcherProps> = ({
 
       for (const cCode of assignedCardCodes) {
         const assignedItems = assignments[cCode] || [];
-        const card = cards.find(c => c.code === cCode);
+        const card =
+          baseTargetCards.find(c => c.code === cCode) ||
+          cards.find(c => cleanCardCode(c.parentCode || c.code) === cCode || c.code === cCode);
         if (!card || assignedItems.length === 0) continue;
 
         const currentVariants: CardVariationItem[] = card.variants ? [...card.variants] : [];
@@ -498,6 +497,10 @@ export const BatchImageMatcher: React.FC<BatchImageMatcherProps> = ({
               ? customCollectionName.trim() 
               : card.collection;
 
+            if (targetCollectionMode === 'custom' && customCollectionName.trim()) {
+              await saveCollection(customCollectionName.trim());
+            }
+
             const variationDocId = `${cleanCodeForPath}_var_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
             const chosenRarity = item.rarity || defaultRarity || (item.frame === 'Moderno' ? 'Comum' : 'Comum');
 
@@ -522,6 +525,7 @@ export const BatchImageMatcher: React.FC<BatchImageMatcherProps> = ({
               name: item.variationType,
               imageUrl: newDownloadUrl,
               frame: item.frame,
+              collection: targetCollection,
               code: finalCleanCode,
               rarity: chosenRarity
             });
@@ -800,25 +804,52 @@ export const BatchImageMatcher: React.FC<BatchImageMatcherProps> = ({
                 <Filter size={13} className="text-purple-400" />
                 Coleção de Destino
               </label>
-              <div className="flex gap-2">
+              <div className="flex flex-col gap-1.5">
                 <select
-                  value={targetCollectionMode}
-                  onChange={(e) => setTargetCollectionMode(e.target.value as any)}
-                  className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2 py-2 text-white text-xs focus:border-purple-500 outline-none"
+                  value={
+                    targetCollectionMode === 'same'
+                      ? '__SAME__'
+                      : collections.includes(customCollectionName)
+                      ? customCollectionName
+                      : '__NEW__'
+                  }
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (val === '__SAME__') {
+                      setTargetCollectionMode('same');
+                    } else if (val === '__NEW__') {
+                      setTargetCollectionMode('custom');
+                      if (collections.includes(customCollectionName)) {
+                        setCustomCollectionName('');
+                      }
+                    } else {
+                      setTargetCollectionMode('custom');
+                      setCustomCollectionName(val);
+                    }
+                  }}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-2 text-white font-bold text-xs focus:border-purple-500 outline-none"
                 >
-                  <option value="same">Mesma Coleção da Carta Base</option>
-                  <option value="custom">Outra Coleção Específica...</option>
+                  <option value="__SAME__">Manter Mesma Coleção da Carta Base</option>
+                  <optgroup label="Coleções Existentes no Site">
+                    {collections.map((col) => (
+                      <option key={col} value={col}>
+                        {col}
+                      </option>
+                    ))}
+                  </optgroup>
+                  <option value="__NEW__">+ Criar / Digitar Nova Coleção...</option>
                 </select>
+
+                {targetCollectionMode === 'custom' && !collections.includes(customCollectionName) && (
+                  <input
+                    type="text"
+                    placeholder="Digite o nome da nova coleção (ex: Natal Macroversal)"
+                    value={customCollectionName}
+                    onChange={(e) => setCustomCollectionName(e.target.value)}
+                    className="w-full bg-slate-950 border border-purple-500/50 rounded-lg px-2.5 py-1.5 text-white text-xs focus:border-purple-500 outline-none"
+                  />
+                )}
               </div>
-              {targetCollectionMode === 'custom' && (
-                <input
-                  type="text"
-                  placeholder="Nome da coleção (ex: Legado Moderno)"
-                  value={customCollectionName}
-                  onChange={(e) => setCustomCollectionName(e.target.value)}
-                  className="w-full mt-1 bg-slate-950 border border-purple-500/50 rounded-lg px-2.5 py-1.5 text-white text-xs focus:border-purple-500 outline-none"
-                />
-              )}
             </div>
           </div>
         ) : (
